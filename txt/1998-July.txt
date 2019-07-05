@@ -1,0 +1,4533 @@
+From Martin Maechler <maechler@stat.math.ethz.ch>  Wed Jul  1 11:26:17 1998
+From: Martin Maechler <maechler@stat.math.ethz.ch> (Martin Maechler)
+Date: Wed, 1 Jul 1998 12:26:17 +0200
+Subject: "Coding conventions" for R:  Use  TRUE & FALSE, and not T & F
+Message-ID: <199807011026.MAA18481@sophie.ethz.ch>
+
+The reason being 
+a design decision of a while ago
+that "T" and "F"  shouldn't be reserved words in R as they are in S-plus.
+Hence, T & F are just variables being set to TRUE and FALSE respectively;
+they *can* be overwritten by the user which is very useful e.g.,
+when you do
+	  mydat <- read.table(file, header =TRUE)
+and the file has variable names "T" or "F" and then do  attach(mydat).
+
+Even more important is the situation when you have factors with levels
+"T" or "F" which (I think to remember) is a pain in S.
+
+
+-----------
+Consequence
+-----------
+	 Package writers 
+		(including R-core'ers incorporating other people's patches..):
+
+	 *Please* always use  TRUE and FALSE
+
+Kurt: Part of the above should definitely go into the 
+	R-FAQ "Differences S & R"
+
+Martin Maechler <maechler@stat.math.ethz.ch>			<><
+Seminar fuer Statistik, ETH-Zentrum SOL G1;	Sonneggstr.33
+ETH (Federal Inst. Technology)	8092 Zurich	SWITZERLAND
+phone: x-41-1-632-3408		fax: ...-1086
+http://www.stat.math.ethz.ch/~maechler/
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From Martin Maechler <maechler@stat.math.ethz.ch>  Wed Jul  1 17:30:42 1998
+From: Martin Maechler <maechler@stat.math.ethz.ch> (Martin Maechler)
+Date: Wed, 1 Jul 1998 18:30:42 +0200
+Subject: ordinal(): [was "a handy function ..." in March..]
+Message-ID: <199807011630.SAA18825@sophie.ethz.ch>
+
+I'm finally cleaning up old things / todo's;
+We had about half a dozen e-mails on R-devel back in mid March...... 
+Here is my proposal, a sometimes useful utility for constructing strings
+in cat() or text(), legend(), etc.:
+
+
+ordinal <-
+function(i, language =3D "english", gender =3D c("female","male"), sep=3D""=
+) {
+    ii <- i
+    if(!is.numeric(i) || any(i < 0) || any(ii !=3D (i <- as.integer(i))))
+      stop("'i' must be non-negative integer")
+    ilang <- pmatch(language, c("english", "francais", "deutsch",
+                                "italiano", "espanol")) #, "portugues" ?
+    if(is.na(ilang))
+      stop(paste("language '", language, "' not (yet) implemented.", sep=3D=
+""))
+    ig <- pmatch(gender, c("female","male"))[1]
+    if(is.na(ig)) stop(paste("gender '", gender, "' is invalid.", sep=3D"")=
+)
+    suffix <- switch(ilang,
+                     c("st","nd","rd","th")[pmin(4,ifelse(i<20,ifelse(i=3D=
+=3D0,4,i),
+                                                          1+(i-1)%%10))],# =
+engl
+                     c(c("=E8re","er")[ig],"me")[1 + (i!=3D1)],# french
+                     ".",# german
+                     c("a","o")[ig], # italian
+                     c("a","o")[ig], # spanish
+                     )
+    paste(i, suffix, sep=3Dsep)
+}
+
+nn <- c(0:3,9:13,20:22,99:102)
+
+
+---------------------------------------------------------------------------=
+---
+-------------------- Test a few interesting cases ----------------
+---------------------------------------------------------------------------=
+---
+
+-------------------- Is this correct/acceptable for the given languages? 
+--------------------
+-------------------- Additions, bugs, ``patches'' ?
+
+> ordinal(1:22)
+ [1] "1st"  "2nd"  "3rd"  "4th"  "5th"  "6th"  "7th"  "8th"  "9th"  "10th"
+[11] "11th" "12th" "13th" "14th" "15th" "16th" "17th" "18th" "19th" "20th"
+[21] "21st" "22nd"
+> ordinal(nn,"english")
+ [1] "0th"   "1st"   "2nd"   "3rd"   "9th"   "10th"  "11th"  "12th"  "13th"=
+ 
+[10] "20th"  "21st"  "22nd"  "99th"  "100th" "101st" "102nd"
+> ordinal(nn,"francais")
+ [1] "0me"   "1=E8re"  "2me"   "3me"   "9me"   "10me"  "11me"  "12me"  "13m=
+e" 
+[10] "20me"  "21me"  "22me"  "99me"  "100me" "101me" "102me"
+> ordinal(1:3,"fr","m")
+[1] "1er" "2me" "3me"
+> ordinal(nn, "italian")# Ladies first =3D> Ladies default...
+ [1] "0a"   "1a"   "2a"   "3a"   "9a"   "10a"  "11a"  "12a"  "13a"  "20a" 
+[11] "21a"  "22a"  "99a"  "100a" "101a" "102a"
+> ordinal(nn, "espan", "m")
+ [1] "0o"   "1o"   "2o"   "3o"   "9o"   "10o"  "11o"  "12o"  "13o"  "20o" 
+[11] "21o"  "22o"  "99o"  "100o" "101o" "102o"
+> 
+> ordinal(nn, "deutsch", "m")
+ [1] "0."   "1."   "2."   "3."   "9."   "10."  "11."  "12."  "13."  "20." 
+[11] "21."  "22."  "99."  "100." "101." "102."
+> 
+> ## These give an error
+> ordinal(pi)
+Error: 'i' must be non-negative integer
+Execution halted
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From p.dalgaard@biostat.ku.dk  Wed Jul  1 18:32:19 1998
+From: p.dalgaard@biostat.ku.dk (Peter Dalgaard BSA)
+Date: 01 Jul 1998 19:32:19 +0200
+Subject: ordinal(): [was "a handy function ..." in March..]
+In-Reply-To: Martin Maechler's message of Wed, 1 Jul 1998 18:30:42 +0200
+References: <199807011630.SAA18825@sophie.ethz.ch>
+Message-ID: <x23eclfpek.fsf@blueberry.kubism.ku.dk>
+
+Martin Maechler <maechler@stat.math.ethz.ch> writes:
+
+>     ilang <- pmatch(language, c("english", "francais", "deutsch",
+>                                 "italiano", "espanol")) #, "portugues" ?
+>     if(is.na(ilang))
+>       stop(paste("language '", language, "' not (yet) implemented.", sep=""))
+
+Danish is exactly like German in this respect...
+
+-- 
+   O__  ---- Peter Dalgaard             Blegdamsvej 3  
+  c/ /'_ --- Dept. of Biostatistics     2200 Cph. N   
+ (*) \(*) -- University of Copenhagen   Denmark      Ph: (+45) 35327918
+~~~~~~~~~~ - (p.dalgaard@biostat.ku.dk)             FAX: (+45) 35327907
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From wsimpson@uwinnipeg.ca  Tue Jul  7 22:17:51 1998
+From: wsimpson@uwinnipeg.ca (Bill Simpson)
+Date: Tue, 7 Jul 1998 16:17:51 -0500 (CDT)
+Subject: S speedup in R
+Message-ID: <Pine.OSF.3.95.980707160152.21173A-100000@io.uwinnipeg.ca>
+
+Venables and Ripley describe a speedup where you take a structure like
+
+x<-NULL
+for(i in sequence)
+	y<-c(y,function(x,i))
+	
+and convert it to one like
+
+x<-numeric(its length)
+for(i in sequence)
+	y[i]<-function(x,i)
+
+I tried this speedup on some simple examples and it made them twice as
+fast.
+
+But now I am hitting a snag with some real code.
+
+This original version works:
+cif<-function(x, y, tau, h=tau[2]-tau[1])
+{
+# conditional cross-intensity function for two point process realizations.
+# estimated at tau.
+# x and y are vectors of event times (sorting is not necessary).
+# tau is the lag (or vector of lags) 
+# h is binwidth.
+# see Brillinger, Bryant, & Segundo (1976) eq 13, mhatAB(u)
+n <- length(x)
+cif.numerator <- NULL
+for(tt in tau)
+	{
+	point.counter <- sum(round(rank(c(x + tt + h/2, y))[1:n], 0) -
+	round(rank(c(x + tt - h/2, y))[1:n], 0))
+	cif.numerator <- c(cif.numerator,point.counter)
+	}
+cif.numerator/(n * h)
+}
+
+But the sped-up version just returns a vector of zeros:
+
+cif<-function(x, y, tau, h=tau[2]-tau[1])
+{
+# conditional cross-intensity function for two point process realizations.
+# estimated at tau.
+# x and y are vectors of event times (sorting is not necessary).
+# tau is the lag (or vector of lags) 
+# h is binwidth.
+# see Brillinger, Bryant, & Segundo (1976) eq 13, mhatAB(u)
+n <- length(x)
+cif.numerator <- numeric(length(tau))
+for(tt in tau)
+	{
+	cif.numerator[tt] <- sum(round(rank(c(x + tt + h/2, y))[1:n], 0) -
+	round(rank(c(x + tt - h/2, y))[1:n], 0))
+	}
+cif.numerator/(n * h)
+}
+
+I can't see why this isn't working. Is this hitting a peculiarity of 
+R? Thanks very much for any help.
+
+Bill Simpson
+
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From bates@stat.wisc.edu  Tue Jul  7 22:49:46 1998
+From: bates@stat.wisc.edu (Douglas Bates)
+Date: 07 Jul 1998 16:49:46 -0500
+Subject: S speedup in R
+In-Reply-To: Bill Simpson's message of Tue, 7 Jul 1998 16:17:51 -0500 (CDT)
+References: <Pine.OSF.3.95.980707160152.21173A-100000@io.uwinnipeg.ca>
+Message-ID: <6r67h9nxfp.fsf@verdi.stat.wisc.edu>
+
+Bill Simpson <wsimpson@uwinnipeg.ca> writes:
+
+...
+> But the sped-up version just returns a vector of zeros:
+> 
+> cif<-function(x, y, tau, h=tau[2]-tau[1])
+> {
+> # conditional cross-intensity function for two point process realizations.
+> # estimated at tau.
+> # x and y are vectors of event times (sorting is not necessary).
+> # tau is the lag (or vector of lags) 
+> # h is binwidth.
+> # see Brillinger, Bryant, & Segundo (1976) eq 13, mhatAB(u)
+> n <- length(x)
+> cif.numerator <- numeric(length(tau))
+> for(tt in tau)
+> 	{
+> 	cif.numerator[tt] <- sum(round(rank(c(x + tt + h/2, y))[1:n], 0) -
+> 	round(rank(c(x + tt - h/2, y))[1:n], 0))
+> 	}
+> cif.numerator/(n * h)
+> }
+
+You are using tt for an index in addition to being the value of an
+element of the tau vector.  Unless tau always happens to be
+1:length(tau) that won't work.
+
+You probably want to change the "for" statement to
+  for (tt in seq( along = tau ) )
+ 	{
+ 	cif.numerator[tt] <- sum(round(rank(c(x + tau[tt] + h/2, y))[1:n], 0) -
+ 	round(rank(c(x + tau[tt] - h/2, y))[1:n], 0))
+ 	}
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From plummer@iarc.fr  Wed Jul  8 12:47:05 1998
+From: plummer@iarc.fr (Martyn Plummer)
+Date: Wed, 08 Jul 1998 11:47:05 -0000 ()
+Subject: Serious bug in save.image
+Message-ID: <XFMail.980708124450.plummer@iarc.fr>
+
+I am using a  package which tends to crash R, so I have been saving
+my work at regular intervals with "save.image()". Unfortunately, this
+overwrites .RData with an empty workspace, so when R crashed I lost
+my workspace and a day's work.
+
+The problem is easily fixed: "save.image" looks like this
+
+function () 
+save(list = ls(), file = ".RData")
+
+The expression "ls()" is evaluated in the calling environment, which
+is empty. You need to evaluate it in the global environment, like this:
+
+function () 
+save(list = eval(expression(ls()), .GlobalEnv), file = ".RData")
+
+Martyn
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From p.dalgaard@biostat.ku.dk  Wed Jul  8 15:52:03 1998
+From: p.dalgaard@biostat.ku.dk (Peter Dalgaard BSA)
+Date: 08 Jul 1998 16:52:03 +0200
+Subject: Serious bug in save.image
+In-Reply-To: Martyn Plummer's message of Wed, 08 Jul 1998 11:47:05 -0000 ()
+References: <XFMail.980708124450.plummer@iarc.fr>
+Message-ID: <x2pvfg2y5o.fsf@blueberry.kubism.ku.dk>
+
+Martyn Plummer <plummer@iarc.fr> writes:
+
+> function () 
+> save(list = ls(), file = ".RData")
+> 
+> The expression "ls()" is evaluated in the calling environment, which
+> is empty. You need to evaluate it in the global environment, like this:
+> 
+> function () 
+> save(list = eval(expression(ls()), .GlobalEnv), file = ".RData")
+
+Ouch! Fixed in my sources. Will get to the prerelease versions after I
+squash an elusive memory corruption bug.
+
+Actually, I did you one better:
+
+> save.image
+function (f = ".RData") 
+eval(substitute(save(list = ls(), file = f)), .GlobalEnv)
+
+so that you can now save the image under a different name.
+
+-- 
+   O__  ---- Peter Dalgaard             Blegdamsvej 3  
+  c/ /'_ --- Dept. of Biostatistics     2200 Cph. N   
+ (*) \(*) -- University of Copenhagen   Denmark      Ph: (+45) 35327918
+~~~~~~~~~~ - (p.dalgaard@biostat.ku.dk)             FAX: (+45) 35327907
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From wsimpson@uwinnipeg.ca  Wed Jul  8 16:05:22 1998
+From: wsimpson@uwinnipeg.ca (Bill Simpson)
+Date: Wed, 8 Jul 1998 10:05:22 -0500 (CDT)
+Subject: S speedup in R
+In-Reply-To: <6r67h9nxfp.fsf@verdi.stat.wisc.edu>
+Message-ID: <Pine.OSF.3.95.980708100459.32011C-100000@io.uwinnipeg.ca>
+
+Thanks very much Douglas for pointing out my dumb mistakes.
+
+Bill
+
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From wsimpson@uwinnipeg.ca  Thu Jul  9 01:55:53 1998
+From: wsimpson@uwinnipeg.ca (Bill Simpson)
+Date: Wed, 8 Jul 1998 19:55:53 -0500 (CDT)
+Subject: numeric(0) -> NA
+Message-ID: <Pine.OSF.3.95.980708194226.19813A-100000@io.uwinnipeg.ca>
+
+I noticed this in current intermediate patch version:
+> runif(0,0,4095)
+numeric(0)
+> round(runif(0,0,4095))
+[1] NA
+
+I don't like it, but maybe it is the way it is supposed to be. I would
+prefer for it to stay numeric(0).
+
+I notice also
+> ceiling(runif(0,0,4095))
+numeric(0)
+> floor(runif(0,0,4095))
+numeric(0)
+which leads me to thing round() is not working right.
+
+
+I have some code like this:
+do.sim<-function(nnoise, nsignal, jump)
+{
+ntotal<-nsignal+nnoise
+x<-numeric(ntotal)
+y<-numeric(ntotal)
+
+#generate noise dots
+nx1<-round(runif(nnoise,0,4095))
+nx2<-round(runif(nnoise,0,4095))
+ny1<-round(runif(nnoise,0,4095))
+ny2<-round(runif(nnoise,0,4095))
+
+#generate signal dots
+sx1<-round(runif(nsignal,0,4095))
+...
+
+and I need to do do.sim(0,1000,10). But that gives me NAs which are a
+problem later. (in particular, I can't do
+if(rr<rbest)
+if rr is computed from an NA.)
+
+BTW I think it is a ghastly waste of resources to do
+round(runif(nnoise,0,4095))
+but I couldn't think of a better way to get ints between 0 and 4095.
+(It's a waste because the random number generator makes unsigned long ints
+to begin with, then they are divided by 2^32 to get a double between 0
+and 1, and now I am undoing that!)
+
+I guess there is sample(,replace=true), which seems even worse for
+wasted resources. Maybe not.
+
+Thanks for any help.
+
+Bill Simpson
+
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From p.dalgaard@biostat.ku.dk  Thu Jul  9 11:37:25 1998
+From: p.dalgaard@biostat.ku.dk (Peter Dalgaard BSA)
+Date: 09 Jul 1998 12:37:25 +0200
+Subject: numeric(0) -> NA
+In-Reply-To: Bill Simpson's message of Wed, 8 Jul 1998 19:55:53 -0500 (CDT)
+References: <Pine.OSF.3.95.980708194226.19813A-100000@io.uwinnipeg.ca>
+Message-ID: <x267h79uoq.fsf@blueberry.kubism.ku.dk>
+
+Bill Simpson <wsimpson@uwinnipeg.ca> writes:
+
+> I noticed this in current intermediate patch version:
+> > runif(0,0,4095)
+> numeric(0)
+> > round(runif(0,0,4095))
+> [1] NA
+> 
+> I don't like it, but maybe it is the way it is supposed to be. I would
+> prefer for it to stay numeric(0).
+> 
+> I notice also
+> > ceiling(runif(0,0,4095))
+> numeric(0)
+> > floor(runif(0,0,4095))
+> numeric(0)
+> which leads me to thing round() is not working right.
+
+You're right, but it's not all that easily fixed. The problem is that
+round() unlike the other two isn't a unary operation (it has a digits
+argument) and the automatic logic for binary functions is that 
+length(f(a,b)) = max(length(a),length(b)).
+
+There are several of these anomalies, e.g.:
+
+> log(numeric(0))
+numeric(0)
+> log(numeric(0),10)
+[1] NA
+> log10(numeric(0))
+[1] NA
+> pt(numeric(0),15)
+[1] NA
+> choose(numeric(0),5)
+[1] NA
+
+whereas Splus has
+
+> log(numeric(0))
+numeric(0)
+> log(numeric(0),10)
+[1] NA
+> log10(numeric(0))
+[1] NA
+> pt(numeric(0),15)
+numeric(0)
+# choose doesn't exist...
+>  round(numeric(0))
+numeric(0)
+
+I.e. it seems to special-case *some* functions....
+
+We probably should have a special version of math2() which said that
+the first argument was more important than the other.
+
+> BTW I think it is a ghastly waste of resources to do
+> round(runif(nnoise,0,4095))
+> but I couldn't think of a better way to get ints between 0 and 4095.
+> (It's a waste because the random number generator makes unsigned long ints
+> to begin with, then they are divided by 2^32 to get a double between 0
+> and 1, and now I am undoing that!)
+
+Compared to all the other inefficiencies going on, I don't think this
+is worth worrying about (unless nnoise is *very* large). If you really
+need this to be efficient, you could make a clone of runif in .C
+callable code, and replace the floatingpoint (l / 2.^32) by a shift
+operation (l >> 18 or thereabouts).
+
+> I guess there is sample(,replace=true), which seems even worse for
+> wasted resources. Maybe not.
+
+Most likely it is...
+
+-- 
+   O__  ---- Peter Dalgaard             Blegdamsvej 3  
+  c/ /'_ --- Dept. of Biostatistics     2200 Cph. N   
+ (*) \(*) -- University of Copenhagen   Denmark      Ph: (+45) 35327918
+~~~~~~~~~~ - (p.dalgaard@biostat.ku.dk)             FAX: (+45) 35327907
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From pgilbert@bank-banque-canada.ca  Thu Jul  9 18:28:25 1998
+From: pgilbert@bank-banque-canada.ca (Paul Gilbert)
+Date: Thu, 9 Jul 1998 13:28:25 -0400
+Subject: R 0.62.1 with SunOS 5.6 problems
+Message-ID: <98Jul9.140020edt.13442@mailgate.bank-banque-canada.ca>
+
+I compiled and ran R 0.62.1 without any serious problem on SunOS 5.5.1 and it
+also ran on SunOS 5.6. To compile on SunOS 5.6 I had to get a new version of gcc
+and g77 . Having done that I can now compile with no errors on SunOS 5.6, but
+when I try to run R there are serious problems:
+
+R : Copyright 1998, The R Development Core Team
+Version 0.62.1  (June 15, 1998)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type    "?license" or "?licence" for distribution details.
+
+R is a collaborative project with many contributors.
+Type    "?contributors" for a list.
+
+Type    "demo()" for some demos, "help()" for on-line help, or
+        "help.start()" for a HTML browser interface to help.
+
+Error: Object "colors" not found
+Error: couldn't find function "Version"
+> traceback()
+Error: couldn't find function "traceback"
+> q()
+Error: couldn't find function "q"
+>
+
+Does anyone have any ideas what might be wrong. (Yes I did start clean with the
+tar file and then ./configure.)
+
+Paul Gilbert
+
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From p.dalgaard@biostat.ku.dk  Thu Jul  9 20:38:16 1998
+From: p.dalgaard@biostat.ku.dk (Peter Dalgaard BSA)
+Date: 09 Jul 1998 21:38:16 +0200
+Subject: R 0.62.1 with SunOS 5.6 problems
+In-Reply-To: Paul Gilbert's message of Thu, 9 Jul 1998 13:28:25 -0400
+References: <98Jul9.140020edt.13442@mailgate.bank-banque-canada.ca>
+Message-ID: <x2iul6x1av.fsf@biostat.ku.dk>
+
+Paul Gilbert <pgilbert@bank-banque-canada.ca> writes:
+
+> R is a collaborative project with many contributors.
+> Type    "?contributors" for a list.
+> 
+> Type    "demo()" for some demos, "help()" for on-line help, or
+>         "help.start()" for a HTML browser interface to help.
+> 
+> Error: Object "colors" not found
+> Error: couldn't find function "Version"
+> > traceback()
+> Error: couldn't find function "traceback"
+> > q()
+> Error: couldn't find function "q"
+> >
+> 
+> Does anyone have any ideas what might be wrong. (Yes I did start clean with the
+> tar file and then ./configure.)
+
+In general, this means that R bails out while executing
+library/base/R/base, leaving most of the functions undefined. Almost
+the entire file is simple assignments, so it's very likely likely that
+the trouble spot is the .Alias line in:
+
+..
+machine <- function().Internal(machine())
+colors <- function().Internal(colors())
+colours <- .Alias(colors)
+args <- function(name).Internal(args(name))
+..
+which, pretty obviously should not fail. Check whether the file looks
+sane and if it is then whether you can execute the lines by hand. 
+
+-- 
+   O__  ---- Peter Dalgaard             Blegdamsvej 3  
+  c/ /'_ --- Dept. of Biostatistics     2200 Cph. N   
+ (*) \(*) -- University of Copenhagen   Denmark      Ph: (+45) 35327918
+~~~~~~~~~~ - (p.dalgaard@biostat.ku.dk)             FAX: (+45) 35327907
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From pgilbert@bank-banque-canada.ca  Fri Jul 10 14:31:16 1998
+From: pgilbert@bank-banque-canada.ca (Paul Gilbert)
+Date: Fri, 10 Jul 1998 09:31:16 -0400
+Subject: partial matches for attribute name
+References: <x2hg0pzxwi.fsf@blueberry.kubism.ku.dk>
+Message-ID: <98Jul10.100706edt.13457@mailgate.bank-banque-canada.ca>
+
+ >   o   attr() partial matches for attribute name.
+
+If this does what I think it does then I don't think it is a very good idea, and
+is also not consistent with S:
+
+In Splus I get
+> attr(diag(.5,3), "dim")
+[1] 3 3
+> attr(diag(.5,3), "di")
+NULL
+>
+
+If I understand what partial matching does then I will not get this in R 0.62.2.
+(I don't even like partial matching of list elements but I've learned to live
+with that.)
+
+Paul Gilbert
+
+
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From Kurt.Hornik@ci.tuwien.ac.at  Fri Jul 10 17:41:45 1998
+From: Kurt.Hornik@ci.tuwien.ac.at (Kurt Hornik)
+Date: Fri, 10 Jul 1998 18:41:45 +0200 (CEST)
+Subject: partial matches for attribute name
+In-Reply-To: <98Jul10.100706edt.13457@mailgate.bank-banque-canada.ca>
+References: <x2hg0pzxwi.fsf@blueberry.kubism.ku.dk>
+ <98Jul10.100706edt.13457@mailgate.bank-banque-canada.ca>
+Message-ID: <13734.17481.13866.883711@pc87.maho.magnaeu.com>
+
+>>>>> Paul Gilbert writes:
+
+>> o   attr() partial matches for attribute name.
+
+> If this does what I think it does then I don't think it is a very good
+> idea, and is also not consistent with S:
+
+> In Splus I get
+>> attr(diag(.5,3), "dim")
+> [1] 3 3
+>> attr(diag(.5,3), "di")
+> NULL
+>>
+
+Which is clearly a bug.  The Splus documentation says,
+
+       The semantics of attr are defined by saying  that  attr(x,
+       which)  is equivalent to attributes(x)[[which]] for either
+       extracting or replacing attributes, with  the  restriction
+       that which is interpreted as mode character.  The value of
+       attributes(x) is a list  object  (possibly  of  length  0)
+       associated  implicitly  with  any object x.  See Subscript
+       for the semantics of "[[".
+
+and we have
+
+> attributes(diag(.5,3))[["di"]]
+[1] 3 3
+
+-kh
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From pgilbert@bank-banque-canada.ca  Fri Jul 10 18:44:00 1998
+From: pgilbert@bank-banque-canada.ca (Paul Gilbert)
+Date: Fri, 10 Jul 1998 13:44:00 -0400
+Subject: partial matches for attribute name
+References: <x2hg0pzxwi.fsf@blueberry.kubism.ku.dk>
+ <98Jul10.100706edt.13457@mailgate.bank-banque-canada.ca> <13734.17481.13866.883711@pc87.maho.magnaeu.com>
+Message-ID: <98Jul10.141623edt.13446@mailgate.bank-banque-canada.ca>
+
+>>> o   attr() partial matches for attribute name.
+
+>> If this does what I think it does then I don't think it is a very good
+>> idea, and is also not consistent with S:
+
+>Which is clearly a bug.  The Splus documentation says
+...
+
+I'd be prepared to call this one an incorrectly documented feature. So in the
+name of S compatiblity should one do as it says or do as it does? There is
+clearly not very much code around which requires partial matching, since it
+hasn't worked, but there may be things that break if it does work. Also, the
+documention is not very clear about whether attr(x,"di") will return dim or
+dimnames if both exist. As near as I can tell the documentation is not even
+clear about whether attr(x,"dim") will return dim or dimnames, although the sane
+choice seems to be made by [[.
+
+Paul Gilbert
+
+
+
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From p.dalgaard@biostat.ku.dk  Tue Jul 14 11:39:24 1998
+From: p.dalgaard@biostat.ku.dk (Peter Dalgaard BSA)
+Date: 14 Jul 1998 12:39:24 +0200
+Subject: R-beta: R-beta Win95 glm
+In-Reply-To: Guido Masarotto's message of Tue, 14 Jul 1998 10:58:06 +0100
+References: <3.0.5.16.19980713124753.2e7fd3ec@deimos.tc.uaslp.mx>
+ <x2af6dcv1v.fsf@biostat.ku.dk>
+ <19980714105806.A5289@sirio.stat.unipd.it>
+Message-ID: <x2pvf8n2cj.fsf@biostat.ku.dk>
+
+Guido Masarotto <guido@sirio.stat.unipd.it> writes:
+
+> > I'm currently summer-vacationing in my home. If the weather keeps
+> > acting up, I might get myself up to speed on crosscompiling R for
+> > Win32 with gcc on a Unix host. This has been a long-standing wish of
+> > mine because it could potentially bring the versions in much better
+> > sync.
+>   BTW, I made a similar (small) attempt. 
+>   On a Linux box, I installed gcc as a cross-compiler for mingw32
+>   (gcc-2.8.1, g77-0.5.23, binutils-2.9.1, the 1July snapshot
+>   of mingw32 and of WinApi (from the Colins Peters's site)).
+>   Then I tried to recompile R.0.61.3 (my actual windows version).
+>   And all seems to work. So, this seems a viable alternative.
+>   Hence, I plan to modify my Makefile's so that cross-compiling
+>   would be easy.
+>   
+>   guido masarotto
+
+Great! I'm almost there with a set of instructions for building the
+egcs-1.0.2 as a cross-compiler. This is in some sense easier, although
+proving a bit tricky because of makefile bugs (parts of the compiler
+build - including "make cross" - seems to assume that the
+cross-compiler is installed!) but I think I got it now.
+
+The Tk project appears to be in deep coma. But you are quite right,
+the R console slowness is *the* most annoying feature of the Win32
+version. It is buggy too, characters are getting lost on long
+printouts. Tk is doing similar stuff *much* faster, so either we
+should peek at the Tk sources and see how it is done there or try
+coding the console *in* Tcl/Tk.
+
+(OK, so the lack of command recall and ugly graphics hardcopy are
+close contenders to first place in annoyances).
+
+Hey, presto! I seem to have a clean build of egcs-mingw-cross (was
+running in another window as I typed this). Here's my makefile if you
+want to try:
+
+
+# Preliminaries: 
+#	Unpack binutils-2.9.1 somewhere
+#	Unpack egcs somewhere and PATCH IT with Mumit's patches
+#	 if (and only if) it's version 1.0.2 
+#	 [ cd to egcs dir and
+#		gzip -dc egcs-1.0.2-mingw32.diff.gz | patch -p2
+#	 ]
+#	Get the zipped files for the *native* egcs-mingw32
+
+prefix=$(shell pwd)# ... or e.g. /usr/local
+wkdir=$(shell pwd)
+
+# This name got a bit mangled by the Joliet CD "standard"
+# Note that I'm not asking you to unpack it.
+native=/mnt/cdrom/egcs-1~1.zip
+
+binutils=~/binutils-2.9.1
+egcs=~/egcs-1.0.2
+
+all: egcs-final
+
+egcs-final: egcs
+	export PATH=$(PATH):$(prefix)/bin ;\
+	cd $(wkdir)/EGCS ;\
+	$(egcs)/configure --srcdir=$(egcs)\
+		--prefix=$(prefix) --target=i386-mingw32 ; \
+	make &&\
+	make install
+	touch egcs-final
+egcs: inc-install binutils-install
+	mkdir -p $(wkdir)/EGCS
+	cd $(wkdir)/EGCS ; \
+	export PATH=$(PATH):$(prefix)/bin ;\
+	$(egcs)/configure --srcdir=$(egcs)\
+		--prefix=$(prefix) --target=i386-mingw32 ; \
+	make info &&\
+	make install LANGUAGES="c c++"
+	touch egcs
+binutils-install: binutils
+	cd $(wkdir)/BINU ; make install
+	touch binutils-install
+binutils: inc-install 
+	mkdir -p $(wkdir)/BINU
+	cd $(wkdir)/BINU ; \
+	$(binutils)/configure --srcdir=$(binutils) \
+		--prefix=$(prefix) --target=i386-mingw32 ; \
+	make
+	touch binutils
+inc-install:
+	unzip -o $(native) 'i386-mingw32/*' -d $(prefix) 
+	touch inc-install
+
+# This doesn't quite cut it, but I'm not going to  rm $(prefix)/bin/*, etc.
+clean:
+	rm -rf $(wkdir)/EGCS $(wkdir)/BINU
+	rm egcs-final egcs binutils binutils-install inc-install
+
+
+-- 
+   O__  ---- Peter Dalgaard             Blegdamsvej 3  
+  c/ /'_ --- Dept. of Biostatistics     2200 Cph. N   
+ (*) \(*) -- University of Copenhagen   Denmark      Ph: (+45) 35327918
+~~~~~~~~~~ - (p.dalgaard@biostat.ku.dk)             FAX: (+45) 35327907
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From mwkay@spud.me.wustl.edu  Tue Jul 14 19:57:28 1998
+From: mwkay@spud.me.wustl.edu (Matthew Kay)
+Date: Tue, 14 Jul 1998 13:57:28 -0500
+Subject: Are post-hoc tests being developed for R?
+Message-ID: <35ABAA17.74C1B359@spud.me.wustl.edu>
+
+Hi-
+
+Is anyone working on multiple comparisons of means or post-hoc tests
+(ie: Tukey, Bonferroni) for R? I saw in the winter 98' archives of the R
+
+mailing lists that these tests had not been implemented yet, I was just
+wondering if I could look foward to having them. ;-)
+I also looked through the contributed packages and didn't see anything
+that offered such tests.
+I guess I could check for compatible S code, has anyone had any luck
+with that?
+
+If anyone can provide any info, please respond to me via email.
+Thanks,
+Matt
+
+
+
+--
+Matthew W. Kay                       Office: (314) 935-7562
+Washington University, St. Louis        Fax: (314) 935-4014
+E-mail: mwkay@spud.me.wustl.edu
+WWW: http://userfs.cec.wustl.edu/~mwk2/HOMEPAGE/index.html
+
+
+
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From pgilbert@bank-banque-canada.ca  Tue Jul 14 22:00:04 1998
+From: pgilbert@bank-banque-canada.ca (Paul Gilbert)
+Date: Tue, 14 Jul 1998 17:00:04 -0400
+Subject: lwd subscript error?
+Message-ID: <98Jul14.173435edt.13441@mailgate.bank-banque-canada.ca>
+
+In R 0.62.2 I'm getting an error in one of my tests which I don't think occurs
+in 0.62.1 (but I have been changing things too).  It looks like it is associated
+with lwd. I haven't traced it down completely, but if anyone can see the problem
+immediately I would appreciate help.
+
+Paul Gilbert
+_______
+> > dse3.graphics.tests()
+  dse3 graphics test 1 ... ok
+  dse3 graphics test 2 ...ok
+  dse3 graphics test 3 ...ok
+  dse3 graphics test 4 ...Error: subscript (5) out of bounds, should be at most
+4
+> traceback()
+[1] "#- next version of R: lwd = lwd[ok.l],"
+[2] "segments2(xt[ok.l] + x.off * xchar, yt[ok.l], dx = 2 * xchar, "
+[3] "\t    dy = 0, lty = lty[ok.l], col = col[ok.l])"
+[4] "legend((par()$usr)[1:2], (par()$usr)[3:4], Legend, lty = lty, "
+[5] "\t    bty = \"n\")"
+[6] "plot.forecast.cov(zz)"
+[7] "dse3.graphics.tests()"
+>
+
+
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From thomas@biostat.washington.edu  Wed Jul 15 01:33:58 1998
+From: thomas@biostat.washington.edu (Thomas Lumley)
+Date: Tue, 14 Jul 1998 17:33:58 -0700 (PDT)
+Subject: Are post-hoc tests being developed for R?
+In-Reply-To: <35ABAA17.74C1B359@spud.me.wustl.edu>
+Message-ID: <Pine.SOL.3.95.980714172634.13636A-100000@sol>
+
+
+Here is code for three p-value based post hoc tests: bonferroni, holm, and
+hochberg. Holm is better than Bonferroni under all circumtances. Hochberg
+is more powerful than Holm, but under some slightly pathological
+situations it can exceed the nominal Type I error rate. 
+
+I haven't looked at this code for a long time, but I think it works
+correctly. Refeerences for the methods are in "Adjusted p-values for
+simultaneous inference" by S. Paul Wright in Biometrics some time in
+the early 90s (I'm in the wrong country at the moment so I don't have the
+full reference).
+
+	-thomas
+-------------------------
+
+   p.adjust.holm <-function(p,n=length(p)) {  
+        ##n<-length(p)
+        r<-rank(p)
+        index<-order(p)
+        qi<-p*(n+1-r)
+        for (i in 2:length(p)) {
+                qi[index[i]]<-max(qi[index[i]], qi[index[i-1]])
+        }
+        list(adjp=pmin(qi,1),p=p,method="Holm")
+        }
+  p.adjust.hochberg <-function(p) {
+        n<-length(p)
+        r<-rank(p)
+        index<-order(p)
+        qi<-p*(n+1-r)
+        for (i in (n-1):1) {
+                qi[index[i]]<-min(qi[index[i]], qi[index[i+1]])
+        }
+        list(adjp=qi,p=p,method="Hochberg")
+        }
+  p.adjust.bonferroni<-function(p,n=length(p)){ 
+        list(adjp=pmin(p*n,1),p=p,method="Bonferroni")
+        }
+
+p.adjust<-function(p,method=c("hochberg","holm","bonferroni"),...){
+  how<-pmatch(method[1],c("hochberg","holm","bonferroni"))
+  if (is.na(how)) stop(paste("Don't know method:",method))
+  m<-match.call()
+  m[[1]]<-as.name(paste("p.adjust",c("hochberg","holm","bonferroni")[how],sep="."))
+  m$method<-NULL
+  eval(m,sys.parent())
+}
+
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From p.dalgaard@biostat.ku.dk  Wed Jul 15 12:27:58 1998
+From: p.dalgaard@biostat.ku.dk (Peter Dalgaard BSA)
+Date: 15 Jul 1998 13:27:58 +0200
+Subject: Are post-hoc tests being developed for R?
+In-Reply-To: Thomas Lumley's message of Tue, 14 Jul 1998 17:33:58 -0700 (PDT)
+References: <Pine.SOL.3.95.980714172634.13636A-100000@sol>
+Message-ID: <x2btqrnykh.fsf@biostat.ku.dk>
+
+Thomas Lumley <thomas@biostat.washington.edu> writes:
+
+> p.adjust<-function(p,method=c("hochberg","holm","bonferroni"),...){
+>   how<-pmatch(method[1],c("hochberg","holm","bonferroni"))
+>   if (is.na(how)) stop(paste("Don't know method:",method))
+>   m<-match.call()
+>   m[[1]]<-as.name(paste("p.adjust",c("hochberg","holm","bonferroni")[how],sep="."))
+>   m$method<-NULL
+>   eval(m,sys.parent())
+> }
+
+Been a while since you wrote that? Surely, you mean:
+
+> p.adjust
+function (p, method = c("hochberg", "holm", "bonferroni"), ...) 
+{
+            how <- match.arg(method)
+            FUN <- get(paste("p.adjust", how, sep = "."))
+            FUN(p, ...)
+}
+
+
+-- 
+   O__  ---- Peter Dalgaard             Blegdamsvej 3  
+  c/ /'_ --- Dept. of Biostatistics     2200 Cph. N   
+ (*) \(*) -- University of Copenhagen   Denmark      Ph: (+45) 35327918
+~~~~~~~~~~ - (p.dalgaard@biostat.ku.dk)             FAX: (+45) 35327907
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From jimrc@mathfs.math.montana.edu  Thu Jul 30 00:19:27 1998
+From: jimrc@mathfs.math.montana.edu (Jim Robison-Cox)
+Date: Wed, 29 Jul 1998 17:19:27 -0600 (MDT)
+Subject: aov with Error Strata
+Message-ID: <Pine.NEB.4.00.9807291701240.6003-200000@mathfs.math.montana.edu>
+
+  This message is in MIME format.  The first part should be readable text,
+  while the remaining parts are likely unreadable without MIME-aware tools.
+  Send mail to mime@docserver.cac.washington.edu for more info.
+
+--0-488534781-901753860=:6003
+Content-Type: TEXT/PLAIN; CHARSET=US-ASCII
+Content-ID: <Pine.NEB.4.00.9807291716501.6003@mathfs.math.montana.edu>
+
+
+  Attached is R code for an aov function which handles multiple error
+strata.  
+  I took a different approach from that suggested in the model.c code of
+R&R.  Rather than modify model.c, I did all of the functions as
+interpreted R code.  They work on the examples in Chambers & Hastie _Stat
+models in S_.  So far I don't have the projections working.  I have a
+crude alias() function which I'm not including. I modified print.mlm and
+summary.mlm because they didn't work for me.
+
+  print.aov and summary.aov are basically the same because I don't like
+the print.aov in S which strings out sums of squares on one line.
+
+  Comments and testing on various datasets are needed.  Please let me know
+what you think.
+
+Jim Robison-Cox                 ____________            
+Department of Math Sciences    |            |           phone: (406)994-5340
+2-214 Wilson Hall               \   BZN, MT |           FAX:   (406)994-1789
+Montana State University         |  *_______|
+Bozeman, MT 59717                 \_|         e-mail: jimrc@math.montana.edu 
+
+
+
+--0-488534781-901753860=:6003
+Content-Type: TEXT/PLAIN; CHARSET=US-ASCII; NAME="aov.R"
+Content-Transfer-Encoding: BASE64
+Content-ID: <Pine.NEB.4.00.9807291711000.6003@mathfs.math.montana.edu>
+Content-Description: 
+Content-Disposition: ATTACHMENT; FILENAME="aov.R"
+
+YW92IDwtIGZ1bmN0aW9uIChmb3JtdWxhLCBkYXRhID0gbGlzdCgpLCBzdWJz
+ZXQsIHdlaWdodHM9TlVMTCwgbmEuYWN0aW9uLCANCiAgICAgICAgbWV0aG9k
+ID0gInFyIiwgbW9kZWwgPSBUUlVFLCBrZWVwLm9yZGVyPUZBTFNFLCBwcm9q
+PUZBTFNFLCBvbmVkZj1GQUxTRSwNCiAgICAgICAgICAgICAgICAgdG9sPSBz
+cXJ0KC5NYWNoaW5lJGRvdWJsZS5lcHMpLCAuLi4pIA0Kew0KICBpcy56ZXJv
+IDwtIGZ1bmN0aW9uKHgsdG9sPTEuMGUtNykgYWJzKHgpIDwgdG9sDQogIGlm
+IChtZXRob2QgPT0gIm1vZGVsLmZyYW1lIikgDQogICAgcmV0dXJuKG1mKQ0K
+ICBlbHNlIGlmIChtZXRob2QgIT0gInFyIikgDQogICAgd2FybmluZyhwYXN0
+ZSgibWV0aG9kID0iLCBtZXRob2QsICJpcyBub3Qgc3VwcG9ydGVkLiBVc2lu
+ZyBcInFyXCIuIikpDQogIGlmIChsZW5ndGgobGlzdCguLi4pKSkgDQogICAg
+d2FybmluZyhwYXN0ZSgiRXh0cmEgYXJndW1lbnRzIiwgZGVwYXJzZShzdWJz
+dGl0dXRlKC4uLikpLCANCiAgICAgICAgICAgICAgICAgICJhcmUganVzdCBk
+aXNyZWdhcmRlZC4iKSkNCiAgbXQgPC0gdGVybXMoZm9ybXVsYSwgZGF0YSA9
+IGRhdGEsIGtlZXAub3JkZXI9a2VlcC5vcmRlcikNCiAgaWYoaXMubmEoY2hh
+cm1hdGNoKCJFcnJvciIsYXR0cihtdCwidGVybS5sYWJlbHMiKSkpKXsNCiAg
+ICAjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMj
+IyMjIyMjIyMjIyMjIyMjIw0KICAgICMjICAgICAgICAgICAgICAgICAgIFBs
+YWluIEFOT1ZBIHdpdGggYSBzaW5nbGUgRXJyb3IgdGVybSANCiAgICAjIyMj
+IyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMj
+IyMjIyMjIyMjIw0KICAgIG1mIDwtIG1hdGNoLmNhbGwoKQ0KICAgIG1mJHNp
+bmd1bGFyLm9rIDwtIE5VTEwNCiAgICBtZiRtb2RlbCA8LSBOVUxMDQogICAg
+bWYkbWV0aG9kIDwtIE5VTEwNCiAgICBtZltbMV1dIDwtIGFzLm5hbWUoIm1v
+ZGVsLmZyYW1lIikNCiAgICBtZiA8LSBldmFsKG1mLCBzeXMuZnJhbWUoc3lz
+LnBhcmVudCgpKSkNCiAgICB5IDwtIG1vZGVsLnJlc3BvbnNlKG1mLCAibnVt
+ZXJpYyIpDQogICAgbnkgPC0gTkNPTCh5KQ0KICAgIGlmKG55ID4gMSAmIGlz
+Lm51bGwoZGltbmFtZXMoeSlbWzJdXSkpDQogICAgICBkaW1uYW1lcyh5KVtb
+Ml1dIDwtIHBhc3RlKCJ5IiwxOm55LHNlcD0iIikNCiAgICB3IDwtIG1vZGVs
+LndlaWdodHMobWYpDQogICAgaWYgKGlzLmVtcHR5Lm1vZGVsKG10KSkgew0K
+ICAgICAgeiA8LSBsaXN0KGNvZWZmaWNpZW50cyA9IG51bWVyaWMoMCksIHJl
+c2lkdWFscyA9IHksIA0KICAgICAgICAgICAgICAgIGZpdHRlZC52YWx1ZXMg
+PSAwICogeSwgd2VpZ2h0cyA9IHcsIHJhbmsgPSAwLCANCiAgICAgICAgICAg
+ICAgICBkZi5yZXNpZHVhbCA9IGxlbmd0aCh5KSkNCiAgICAgIGNsYXNzKHop
+IDwtIGlmIChpcy5tYXRyaXgoeSkpIA0KICAgICAgICBjKCJtYW92Lm51bGwi
+LCAiYW92Lm51bGwiLCAibWFvdiIsICJhb3YiKQ0KICAgICAgZWxzZSBjKCJh
+b3YubnVsbCIsICJhb3YiKQ0KICAgIH0NCiAgICBlbHNlIHsNCiAgICAgIHgg
+PC0gbW9kZWwubWF0cml4KG10LCBtZikNCiAgICAgIHogPC0gaWYgKGlzLm51
+bGwodykpIA0KICAgICAgICBsbS5maXQoeCwgeSwgdG9sPXRvbCkNCiAgICAg
+IGVsc2UgbG0ud2ZpdCh4LCB5LCB3LCB0b2w9dG9sKQ0KICAgICAgeiRyZXNp
+ZC5hc3NpZ24gPC0gKHokcXIkcmFuaysxKTogZGltKHgpWzFdDQogICAgICBj
+bGFzcyh6KSA8LSBjKGlmIChpcy5tYXRyaXgoeSkpIGMoIm1hb3YiLCJtbG0i
+KSwgImFvdiIsICJsbSIpDQogICAgfQ0KICAgICMjIyBTZXQgdXAgY29udHJh
+c3RzIA0KICAgIGNvbnRyIDwtICBhcy5saXN0KGF0dHIobXQsInRlcm0ubGFi
+ZWxzIilbIGF0dHIobXQsIm9yZGVyIikgPT0gMV0pDQogICAgbmFtZXMoY29u
+dHIpIDwtIHVubGlzdChjb250cikNCiAgICBmb3IgKGkgaW4gMTpsZW5ndGgo
+Y29udHIpKQ0KICAgICAgY29udHJbW2ldXSA8LSBjb250cmFzdHMoZGF0YVss
+Y29udHJbW2ldXSBdKQ0KICAgIHokY29udHJhc3RzIDwtIGNvbnRyDQogICAg
+aWYocHJvaikNCiAgICAgIHokcHJvaiA8LSBwcm9qLmFvdih4LHksb25lZGYp
+DQogICAgeiRjYWxsIDwtIG1hdGNoLmNhbGwoKQ0KICAgIHokdGVybXMgPC0g
+bXQNCiAgICBpZiAobW9kZWwpIA0KICAgICAgeiRtb2RlbCA8LSBtZg0KICB9
+DQogIGVsc2V7DQogICAgIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMj
+IyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMNCiAgICAjIyMgICAgICAg
+ICAgICAgICAgICAgICAgICAgICAgICBNdWx0aXBsZSBFcnJvciBzdHJhdGEN
+CiAgICAjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMj
+IyMjIyMjIyMjIyMjIyMjIyMjIw0KICAgIGZvcm11bGFzIDwtIHNwbGl0LmZv
+cm11bGEuYnlFcnJvcihmb3JtdWxhKQ0KICAgIGVycm9yLmZvcm0gPC0gZm9y
+bXVsYXMkZXJyb3IuZm9ybQ0KICAgIG1vZC5mb3JtIDwtIGZvcm11bGFzJG1v
+ZGVsLmZvcm0NCiAgICBlbXQgPC0gdGVybXMoZXJyb3IuZm9ybSkgICMgbW9k
+ZWwgdGVybXMgZm9yIGVycm9yDQogICAgZW1mIDwtIG1vZGVsLmZyYW1lKGZv
+cm11bGE9ZXJyb3IuZm9ybSxkYXRhPWRhdGEpICMgbW9kZWwgZnJhbWUgZm9y
+IGVycm9yDQogICAgeSAgIDwtIG1vZGVsLnJlc3BvbnNlKGVtZiwgIm51bWVy
+aWMiKQ0KICAgIGlmKE5DT0woeSkgPiAxKQ0KICAgICAgc3RvcCgiV2l0aCBF
+cnJvciBzdHJhdGEgdXNlIGEgdmVjdG9yIChvbmx5KSByZXNwb25zZS4iKQ0K
+ICAgIGV4ICA8LSBtb2RlbC5tYXRyaXgoZW10LCBkYXRhKQ0KICAgIG5yIDwt
+IG5yb3coZXgpDQogICAgZXJyLmFvdiA8LSBpZihpcy5udWxsKHdlaWdodHMp
+KSBsbS5maXQoZXgseSwgdG9sPXRvbCkNCiAgICAgICAgICAgICAgIGVsc2Ug
+bG0ud2ZpdChleCx5LHdlaWdodHMsdG9sPXRvbCkNCiAgICBRZSA8LSBxci5R
+KGVyci5hb3YkcXIsIGNvbXBsZXRlPVRSVUUpDQogICAgeSA8LSB0KFFlKSAl
+KiUgeSAgICAgICAgICAgICAgICAgIyMgUHJvamVjdCB5IG9udG8gdGhlIGVy
+cm9yIHNwYWNlDQogICAgZXJyLnJhbmsgPC0gZXJyLmFvdiRyYW5rDQogICAg
+cGl2b3QgPC0gZXJyLmFvdiRxciRwaXZvdA0KICAgIGFzc24gPC0gc3BsaXQo
+KDE6ZXJyLnJhbmspLGZhY3RvcihlcnIuYW92JGFzc2lnbltwaXZvdF1bMTpl
+cnIucmFua10sDQogICAgICAgICAgICAgICAgICBsZXZlbHMgPSB1bmlxdWUo
+ZXJyLmFvdiRhc3NpZ25bcGl2b3RdKSkpDQogICAgbmFtZXMoYXNzbikgIDwt
+IGMoaWYoYXR0cihlbXQsImludGVyY2VwdCIpKSAiSW50ZXJjZXB0IiwNCiAg
+ICAgICAgICAgICAgICAgICAgICAgICBhdHRyKGVtdCwidGVybS5sYWJlbHMi
+KSkNCiAgICBzdHJhdGEubmR4IDwtIGMoYXNzbiwgbGlzdChSZXNpZHVhbCA9
+IChlcnIucmFuaysxKTpucikpDQogICAgICAgICAgICAgICAgICAgICAgICMj
+IGluZGljZXMgb2YgY29sdW1ucyBvZiBleCBpbnRvIHN0cmF0YQ0KICAgIGRm
+LmVycm9yIDwtIHVubGlzdChsYXBwbHkoIHN0cmF0YS5uZHgsbGVuZ3RoKSkN
+CiAgICBuLnN0cmF0YSA8LSBsZW5ndGgoZGYuZXJyb3IpDQogICAgc3RyYXRh
+IDwtIG5hbWVzKHN0cmF0YS5uZHgpDQogICAgbXQgPC0gdGVybXMobW9kLmZv
+cm0sIGtlZXAub3JkZXIgPSBrZWVwLm9yZGVyKQ0KICAgIE14IDwtIG1vZGVs
+Lm1hdHJpeChtdCwgZGF0YSkNCiAgICB0UWUuTSA8LSB0KFFlKSAlKiUgTXgg
+ICAgICAgICAgICAjIyBQcm9qZWN0IHggb250byBlcnJvciBzcGFjZQ0KICAg
+IGF0dHIodFFlLk0sImFzc2lnbiIpIDwtIGF0dHIoTXgsImFzc2lnbiIpDQog
+ICAgbmMgPC0gbmNvbChNeCkNCiAgICBjb2wubmR4IDwtIE5VTEwNCiAgICBt
+ZiA8LSBtYXRjaC5jYWxsKCkNCiAgICBtZiRtb2RlbCA8LSBOVUxMDQogICAg
+bWZbWzFdXSA8LSBhcy5uYW1lKCJtb2RlbC5mcmFtZSIpDQogICAgeiA8LSBh
+cy5saXN0KDE6bi5zdHJhdGEpICAgICMjIGJlZ2luIHRvIHNldHVwIHRoZSBy
+ZXN1bHQgb2JqZWN0DQogICAgIyMgTG9vcCBvdmVyIHN0cmF0YSANCiAgICBm
+b3IgKCBpIGluICgxICsgYXR0cihlbXQsImludGVyY2VwdCIpKSA6bi5zdHJh
+dGEpew0KICAgICAgaWYoIGkgPiAxICYgbGVuZ3RoKGNvbC5uZHgpID4gMCl7
+DQogICAgICAgIHkgPC0geSAgLSB0UWUuTVsgLGNvbC5uZHhdICUqJSBzdHJ0
+LmNvZWYNCiAgICAgIH0NCiAgICAgIHJvdy5uZHggPC0gc3RyYXRhLm5keFtb
+aV1dDQogICAgICBjb2wubmR4IDwtICgxOm5jKVthcHBseSh0UWUuTVtyb3cu
+bmR4LCxkcm9wPUZBTFNFXSwyLA0KICAgICAgICAgICAgICAgICAgICAgICAg
+ICAgICAgZnVuY3Rpb24oeCkgIWFsbChpcy56ZXJvKHgsIHRvbD10b2wpKSld
+DQogICAgICBsY24gPC0gbGVuZ3RoKGNvbC5uZHgpDQogICAgICBpZiggbGNu
+ID4gMCl7DQogICAgICAgIGlmKGxjbiA+IGRmLmVycm9yW1tpXV0pDQogICAg
+ICAgICAgIGNvbC5uZHggPC0gY29sLm5keFsxOmRmLmVycm9yW1tpXV1dDQog
+ICAgICAgIHggPC0gdFFlLk1bcm93Lm5keCxjb2wubmR4LGRyb3A9RkFMU0Vd
+DQogICAgICAgIGF0dHIoeCwiYXNzaWduIikgPC0gYXR0cih0UWUuTSwiYXNz
+aWduIilbY29sLm5keF0NCiAgICAgICAgemkgPC0gaWYoaXMubnVsbCh3ZWln
+aHRzKSkgbG0uZml0KHgsIHlbcm93Lm5keF0pDQogICAgICAgICAgICAgIGVs
+c2UgbG0uZml0KHgsIHlbcm93Lm5keF0sd2VpZ2h0c1tyb3cubmR4XSkNCiAg
+ICAgICAgemkkcmVzaWQuYXNzaWduIDwtICh6aSRxciRyYW5rKzEpOiBkaW0o
+eClbMV0NCiAgICAgICAgc3RydC5jb2VmIDwtIHppJGNvZWZmaWNpZW50c1sh
+aXMubmEoemkkY29lZmZpY2llbnRzKV0NCiAgICAgICAgaWYoYW55KGlzLm5h
+KHppJGNvZWZmaWNpZW50cykpKQ0KICAgICAgICAgIGNvbC5uZHggPC0gY29s
+Lm5keFshaXMubmEoemkkY29lZmZpY2llbnRzKV0NCiAgICAgICAgICAgIyAo
+Tm90IG5lZWRlZCBmb3IgaGVsbWVydCBjb250cmFzdHMpDQogICAgICAgIHpp
+JHRlcm1zIDwtIG10DQogICAgICAgIGF0dHIoemkkdGVybXMsInRlcm0ubGFi
+ZWxzIikgPC0gdW5pcXVlKGF0dHIoemkkdGVybXMsDQogICAgICAgICAgICAg
+ICAgICAgICAgICJ0ZXJtLmxhYmVscyIpW2F0dHIodFFlLk0sImFzc2lnbiIp
+W2NvbC5uZHhdXSkNCiAgICAgICAgYXR0cih6aSR0ZXJtcywiZmFjdG9ycyIp
+IDwtICBhdHRyKHppJHRlcm1zLA0KICAgICAgICAgICAgICAgICAgICAgICJm
+YWN0b3JzIilbLGF0dHIoemkkdGVybXMsInRlcm0ubGFiZWxzIiksZHJvcD1G
+QUxTRV0NCiAgICAgICAgYXR0cih6aSR0ZXJtcywiaW50ZXJjZXB0IikgPC0g
+MA0KICAgICAgICBjbGFzcyh6aSkgPC0gYygiYW92IiwgImxtIikNCiAgICAg
+ICAgICAjIyMgU2V0IHVwIGNvbnRyYXN0cw0KICAgICAgICBjb250ciA8LSAg
+YXR0cih6aSR0ZXJtcywidGVybS5sYWJlbHMiKQ0KICAgICAgICBjb250ciA8
+LSBhcy5saXN0KGNvbnRyW3VubGlzdChsYXBwbHkoc3Ryc3BsaXQoY29udHIs
+IjoiKSxsZW5ndGgpKT09IDFdKQ0KICAgICAgICAgICAgICAgICAgICAgICAg
+ICAgICAgICAgICAgICAgICMgcmVtb3ZlIGludGVyYWN0aW9ucw0KICAgICAg
+ICBuYW1lcyhjb250cikgPC0gdW5saXN0KGNvbnRyKQ0KICAgICAgICBmb3Ig
+KGogaW4gMTpsZW5ndGgoY29udHIpKQ0KICAgICAgICAgIGNvbnRyW1tqXV0g
+PC0gY29udHJhc3RzKGRhdGFbLGNvbnRyW1tqXV0gXSkNCiAgICAgICAgemkk
+Y29udHJhc3RzIDwtIGNvbnRyDQogICAgICAgIGlmKHByb2opDQogICAgICAg
+ICAgemkkcHJvaiA8LSBwcm9qLmFvdih4LHksb25lZGY9b25lZGYpDQogICAg
+ICB9DQogICAgICBlbHNlIHsgICAgICAjIyBObyB0ZXJtcyB0byBmaXQgaW4g
+dGhpcyBlcnJvciBzdHJhdHVtDQogICAgICAgICB6aSA8LSBsaXN0KGNvZWZm
+aWNpZW50cz0gTkEsICAgIHJlc2lkdWFscyA9IHlbcm93Lm5keF0sDQogICAg
+ICAgICAgICAgICAgIGVmZmVjdHMgPSBOQSwgcmFuayA9IDAsDQogICAgICAg
+ICAgICAgICAgIGZpdHRlZC52YWx1ZXMgPSAwICpyb3cubmR4ICwgcXIgPSBO
+QSwgIA0KICAgICAgICAgICAgICAgICBhc3NpZ24gPSBOQSwgIGRmID0gTkEs
+IGRmLnJlc2lkdWFsID0gZGYuZXJyb3JbaV0sDQogICAgICAgICAgICAgICAg
+ICAgcmVzaWQuYXNzaWduID0gMTpkZi5lcnJvcltpXSkNCiAgICAgICB9DQog
+ICAgICBjbGFzcyh6aSkgPC0gYygiYW92IiwibG0iKQ0KICAgICAgeltbaV1d
+IDwtIHppDQogICAgfQ0KICBuYW1lcyh6KSA8LSAgYyggaWYoYXR0cihlbXQs
+ImludGVyY2VwdCIpKSAiKEludGVyY2VwdCkiLA0KICAgICAgICAgICAgICAg
+ICBhdHRyKGVtdCwidGVybS5sYWJlbHMiKSwiV2l0aGluIikNCiAgYXR0cih6
+LCJyZXNwb25zZSIpIDwtICBhdHRyKGVtdCwidmFyaWFibGVzIilbWzJdXQ0K
+ICBhdHRyKG10LCJzcGVjaWFscyIpIDwtIGxpc3QoRXJyb3I9ZW10KQ0KICBh
+dHRyKHosInRlcm1zIikgPC0gIG10DQogIGF0dHIoeiwiY2FsbCIpIDwtIG1h
+dGNoLmNhbGwoKQ0KICBjbGFzcyh6KSA8LSBjKCJhb3ZsaXN0IiwibGlzdG9m
+IikNCiAgfQ0KICB6DQp9DQoNCg0KDQogd2VpZ2h0cy5hb3YgPC0gZnVuY3Rp
+b24gKHgpICB4JHdlaWdodHMNCiByZXNpZHVhbHMuYW92IDwtIGZ1bmN0aW9u
+ICh4KSAgeCRyZXNpZHVhbHMNCiBkZi5yZXNpZHVhbC5hb3YgPC0gZnVuY3Rp
+b24gKHgpICB4JGRmLnJlc2lkdWFsDQoNCg0KcHJpbnQuYW92IDwtIGZ1bmN0
+aW9uKG9iamVjdCwgZGlnaXRzPSAzLCAuLi4pDQp7DQogIGNhdCgiQ2FsbDpc
+biIpDQogIHByaW50KG9iamVjdCRjYWxsKQ0KICB3IDwtIHdlaWdodHMob2Jq
+ZWN0KQ0KICBjYXQocGFzdGUoIGlmKCFpcy5udWxsKHcpKSAiV2VpZ2h0ZWQi
+LCAiUmVzaWR1YWxzOlxuIikpDQogIGlmIChpcy5udWxsKHcpKSB7DQogICAg
+c3NyIDwtIHN1bShyZXNpZChvYmplY3QpXjIpDQogICAgcHJpbnQoc3VtbWFy
+eShhcy5udW1lcmljKHJlc2lkKG9iamVjdCkpKSkNCiAgfQ0KICBlbHNlew0K
+ICAgIHNzciA8LSBzdW0odyAqIHJlc2lkKG9iamVjdCleMikNCiAgICBwcmlu
+dChzdW1tYXJ5KGFzLm51bWVyaWMoc3FydCh3KSAqIHJlc2lkKG9iamVjdCkp
+KSkNCiAgfQ0KICBwMSA8LSAxOm9iamVjdCRyYW5rDQogIGNvbXAgPC0gb2Jq
+ZWN0JGVmZmVjdHNbcDFdDQogIGFzZ24gPC0gb2JqZWN0JGFzc2lnbltvYmpl
+Y3QkcXIkcGl2b3RdW3AxXQ0KICBkZnIgPC0gZGYucmVzaWR1YWwob2JqZWN0
+KQ0KICBzcyA8LSBjKGFzLm51bWVyaWMobGFwcGx5KHNwbGl0KGNvbXBeMiwg
+YXNnbiksIHN1bSkpLCBzc3IpDQogIGRmIDwtIGMoYXMubnVtZXJpYyhsYXBw
+bHkoc3BsaXQoYXNnbiwgICBhc2duKSwgbGVuZ3RoKSksIGRmcikNCiAgaWYg
+KGF0dHIob2JqZWN0JHRlcm1zLCAiaW50ZXJjZXB0IikpIHsNCiAgICBzcyA8
+LSBzc1stMV0NCiAgICBkZiA8LSBkZlstMV0NCiAgfQ0KICBtcyA8LSBzcy9k
+Zg0KICBtc1tpcy5uYW4obXMpXSA8LSBOQQ0KICBmIDwtIGlmKGRmciA+IDFl
+LTEwKSBtcy8oc3NyL2RmcikNCiAgICAgICBlbHNlIHJlcChOQSxsZW5ndGgo
+ZGYpKQ0KICBwIDwtIDEgLSBwZihmLCBkZiwgZGZyKQ0KICB0YWJsZSA8LSBj
+YmluZChkZiwgc3MsIG1zLCBmLCBwKQ0KICB0YWJsZVtsZW5ndGgocCksIDQ6
+NV0gPC0gTkENCiAgZGltbmFtZXModGFibGUpIDwtIGxpc3QoYyhhdHRyKG9i
+amVjdCR0ZXJtcywidGVybS5sYWJlbHMiKSwiUmVzaWR1YWwiKSwNCiAgICAg
+ICAgICAgICAgICAgICAgICAgICAgYygiRGYiLCAiU3VtIFNxIiwgIk1lYW4g
+U3EiLCAiRiIsICJQcig+RikiKSkNCiAgcmVzdWx0IDwtIGxpc3QodGFibGUg
+PSB0YWJsZSwgdGl0bGUgPQ0KICAgICAgICAgcGFzdGUoIkFuYWx5c2lzIG9m
+IFZhcmlhbmNlIFRhYmxlXG5SZXNwb25zZToiLCBmb3JtdWxhKG9iamVjdClb
+WzJdXSkpDQogIGNsYXNzKHJlc3VsdCkgPC0gInRhYnVsYXIiDQogIHByaW50
+KHJlc3VsdCkNCiAgbm9uLmVzdC50ZXJtcyA8LSBsZW5ndGgob2JqZWN0JGNv
+ZWZbaXMubmEob2JqZWN0JGNvZWYpXSkNCiAgaWYoIG5vbi5lc3QudGVybXMg
+Pj0gMSkNCiAgICBjYXQocGFzdGUobm9uLmVzdC50ZXJtcywgIm91dCBvZiIs
+IGxlbmd0aChvYmplY3QkY29lZiksDQogICAgICAgICAgICAgICJjb2VmZmlj
+aWVudHMgYXJlIG5vdCBlc3RpbWFibGUuXG4iKSkNCiAgY2F0KHBhc3RlKCJS
+ZXNpZHVhbCBzdGFuZGFyZCBlcnJvcjoiLCByb3VuZChzcXJ0KG1zW2xlbmd0
+aChtcyldKSxkaWdpdHMpLA0KICAgICAgICAgICAgIm9uIiwgZGZyLCAiZGVn
+cmVlcyBvZiBmcmVlZG9tXG4iKSkNCiAgY292LnVuc2NhbGVkIDwtIGNob2wy
+aW52KG9iamVjdCRxciRxclsxOm9iamVjdCRyYW5rLCAxOm9iamVjdCRyYW5r
+LA0KICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIGRy
+b3AgPSBGQUxTRV0pDQogICMjIENoZWNrIHRvIHNlZSBpZiBpbnZlcnNlIHZh
+ci1jb3ZhcmlhbmNlIGlzIGEgZGlhZ29uYWwgbWF0cml4DQogIGlmKG1heChh
+YnMoY292LnVuc2NhbGVkW3Jvdyhjb3YudW5zY2FsZWQpID4gY29sKGNvdi51
+bnNjYWxlZCldKSkgPiAxZS0xMCkNCiAgICBjYXQoIkVzdGltYXRlZCBlZmZl
+Y3RzIG1heSBiZSB1bmJhbGFuY2VkLlxuIikNCiAgZWxzZSBjYXQoIkVzdGlt
+YXRlZCBlZmZlY3RzIGFyZSBiYWxhbmNlZFxuIikNCiAgY2F0KCJGb3IgZGV0
+YWlscyBvbiBjb2VmZmljaWVudHMgdXNlIHN1bW1hcnkubG1cbiIpDQogIGlu
+dmlzaWJsZShyZXN1bHQpDQp9DQogIA0KICANCnByb2ouYW92IDwtIGZ1bmN0
+aW9uKHgseSxvbmVkZil7DQogeQ0KfQ0KDQoNCnByZWRpY3QuYW92IDwtIA0K
+ZnVuY3Rpb24gKG9iamVjdCwgbmV3ZGF0YSA9IG1vZGVsLmZyYW1lKG9iamVj
+dCksIGNvbmYubGV2ZWwgPSAwLjk1LCANCgkgICAgdG9sLmxldmVsID0gY29u
+Zi5sZXZlbCkgDQp7DQoJICAgIGZvcm0gPC0gZGVsZXRlLnJlc3BvbnNlKHRl
+cm1zKG9iamVjdCkpDQoJICAgIFggPC0gbW9kZWwubWF0cml4KGZvcm0sIG5l
+d2RhdGEpDQoJICAgIG4gPC0gTlJPVyhvYmplY3QkcXIkcXIpDQoJICAgIHAg
+PC0gb2JqZWN0JHJhbmsNCgkgICAgcDEgPC0gMTpwDQoJICAgIHBpdiA8LSBv
+YmplY3QkcXIkcGl2b3RbcDFdDQoJICAgIHIgPC0gcmVzaWQob2JqZWN0KQ0K
+CSAgICBmIDwtIGZpdHRlZChvYmplY3QpDQoJICAgIHcgPC0gd2VpZ2h0cyhv
+YmplY3QpDQoJICAgIHJzcyA8LSBzdW0oaWYgKGlzLm51bGwodykpIA0KCSAg
+ICAJICAgIHJeMg0KCSAgICBlbHNlIHcgKiByXjIpDQoJICAgIFIgPC0gY2hv
+bDJpbnYob2JqZWN0JHFyJHFyW3AxLCBwMSwgZHJvcCA9IEZBTFNFXSkNCgkg
+ICAgZXN0IDwtIG9iamVjdCRjb2VmZmljaWVudHNbcGl2XQ0KCSAgICBwcmVk
+aWN0b3IgPC0gYyhYWywgcGl2LCBkcm9wID0gRl0gJSolIGVzdCkNCgkgICAg
+aXAgPC0gcmVhbChOUk9XKFgpKQ0KCSAgICByZXN2YXIgPC0gcnNzLyhuIC0g
+cCkNCgkgICAgdmNvdiA8LSByZXN2YXIgKiBSDQoJICAgIGZvciAoaSBpbiAo
+MTpOUk9XKFgpKSkgew0KCSAgICAJICAgIHhpIDwtIFhbaSwgcGl2XQ0KCSAg
+ICAJICAgIGlwW2ldIDwtIHhpICUqJSB2Y292ICUqJSB4aQ0KCSAgICB9DQoJ
+ICAgIHN0ZGVycjEgPC0gc3FydChpcCkNCgkgICAgc3RkZXJyMiA8LSBzcXJ0
+KHJlc3ZhciArIGlwKQ0KCSAgICB0dDEgPC0gcXQoKDEgLSBjb25mLmxldmVs
+KS8yLCBuIC0gcCkNCgkgICAgdHQyIDwtIHF0KCgxIC0gdG9sLmxldmVsKS8y
+LCBuIC0gcCkNCgkgICAgY29uZi5sIDwtIHByZWRpY3RvciArIHR0MSAqIHN0
+ZGVycjENCgkgICAgY29uZi51IDwtIHByZWRpY3RvciAtIHR0MSAqIHN0ZGVy
+cjENCgkgICAgcHJlZC5sIDwtIHByZWRpY3RvciArIHR0MiAqIHN0ZGVycjIN
+CgkgICAgcHJlZC51IDwtIHByZWRpY3RvciAtIHR0MiAqIHN0ZGVycjINCgkg
+ICAgZGF0YS5mcmFtZShwcmVkaWN0b3IgPSBwcmVkaWN0b3IsIGNvbmYubCA9
+IGNvbmYubCwgY29uZi51ID0gY29uZi51LCANCgkgICAgCSAgICBwcmVkLmwg
+PSBwcmVkLmwsIHByZWQudSA9IHByZWQudSwgcm93Lm5hbWVzID0gcm93bmFt
+ZXMobmV3ZGF0YSkpDQp9DQoNCiBzcGxpdC5mb3JtdWxhLmJ5RXJyb3IgPC0g
+ZnVuY3Rpb24gKGZvcm1sYSkgDQp7DQoJICAgIHZhcnMgPC0gYXMuY2hhcmFj
+dGVyKGF0dHIodGVybXMoZm9ybWxhKSwgInRlcm0ubGFiZWxzIikpDQoJICAg
+IGV0ZXJtIDwtICgxOmxlbmd0aCh2YXJzKSlbY2hhcm1hdGNoKCJFcnJvciIs
+IHZhcnMpXQ0KCSAgICAjIyBObyBlcnJvciB0ZXJtIHVzZWQgaW4gZm9ybXVs
+YSwgcmV0dXJuIHRoZSBvcmlnaW5hbCBmb3JtdWxhDQoJICAgIGlmIChpcy5u
+YShldGVybSkgfCBpcy5udWxsKGV0ZXJtKSkgDQoJICAgIAkgICAgcmV0dXJu
+KGxpc3QoZXJyLmZvcm0gPSBOVUxMLCBtb2RlbC5mb3JtID0gZm9ybWxhKSkN
+CgkgICAgZWxlbmd0aCA8LSBuY2hhcih2YXJzW2V0ZXJtXSkgLSAxDQoJICAg
+IGVyci5mb3JtIDwtIGFzLmZvcm11bGEocGFzdGUoYXR0cih0ZXJtcyhmb3Jt
+bGEpLCAidmFyaWFibGVzIilbWzJdXSwgDQoJICAgIAkgICAgIn4iLCBzdWJz
+dHJpbmcodmFyc1tldGVybV0sIDcsIGVsZW5ndGgpKSkNCgkgICAgbW9kZWwu
+Zm9ybSA8LSBhcy5mb3JtdWxhKHBhc3RlKGMoYXMuY2hhcmFjdGVyKGF0dHIo
+dGVybXMoZm9ybWxhKSwgDQoJICAgIAkgICAgInZhcmlhYmxlcyIpW1syXV0p
+LCBwYXN0ZSh2YXJzWy1ldGVybV0sIGNvbGxhcHNlID0gIiArICIpKSwgDQoJ
+ICAgIAkgICAgY29sbGFwc2UgPSAiIH4gIikpDQoJICAgICMjIFVzZSB1cGRh
+dGUuZm9ybXVsYSBpbnN0ZWFkPyAgSSBjb3VsZG4ndCBnZXQgaXQgdG8gd29y
+ayByaWdodC4NCgkgICAgbGlzdChlcnJvci5mb3JtID0gZXJyLmZvcm0sIG1v
+ZGVsLmZvcm0gPSBtb2RlbC5mb3JtKQ0KfQ0KDQojIyBtb2RlbC5mcmFtZSBk
+b2Vzbid0IGhhbmRsZSBtdWx0aWNvbHVtbiB5IGluIHRoZSB3YXkgaW5kaWNh
+dGVkIGJ5IFN0YXQgbW9kZWxzIGluIFMgcCAxNTUNCiNUaGlzIHdvcmtzIGlm
+IHdhZmVybSBoYXMgY29sdW1uczogbWFza2RpbSwgdmlzYy50ZW0sIHNwaW5z
+cCwgYmFrZXRpbWUsIGFwZXJ0dXJlLCBleHB0aW1lLCBkZXZ0aW1lLGV0Y2h0
+aW1lOg0KI3dtYW92IDwtIGxtKExpbmUgfm1hc2tkaW0gKyB2aXNjLnRlbStz
+cGluc3ArYmFrZXRpbWUrYXBlcnR1cmUrZXhwdGltZSArIGRldnRpbWUgK2V0
+Y2h0aW1lLHdhZmVybSkNCg0KIyMgVGhpcyBkb2Vzbid0IHdvcmsgOg0KIyB3
+YWZlcm0kTGluZSA8LSBjYmluZChwcmUubWVhbixsb2cocHJlLmRldikscG9z
+dC5tZWFuLGxvZyhwb3N0LmRldikpDQojPiB3bWFvdiA8LSBhb3YoTGluZSB+
+Lix3YWZlcm0pDQojRXJyb3I6IE9iamVjdCAiTGluZS4xIiBub3QgZm91bmQN
+CiNFcnJvciBhcHBlYXJzIGluIC5JbnRlcm5hbChtb2RlbC5mcmFtZSkNCg0K
+I0luIHRoZSBjYXNlIGFib3ZlIHdoaWNoIHdvcmtzLCBzdW1tYXJ5LmxtIGRv
+ZXNuJ3QgaGFuZGxlIHRoZSBjb2VmZmljaWVudHMgcHJvcGVybHkuIE5lZWQg
+YSBzdW1tYXJ5Lm1sbS4NCg0KDQpwcmludC5tYW92IDwtIGZ1bmN0aW9uKG9i
+amVjdCl7DQogIGZvcihyZXNwIGluIGRpbW5hbWVzKG9iamVjdCRjb2VmZmlj
+aWVudHMpW1syXV0pew0KICAgIGNhdChwYXN0ZSgiXG4gUmVzcG9uc2U6ICIs
+cmVzcCwiXG4iKSkNCiAgICBvYmogPC0gb2JqZWN0DQogICAgb2JqJGNvZWZm
+aWNpZW50cyA8LSBvYmplY3QkY29lZmZpY2llbnRzWyxyZXNwLGRyb3A9RkFM
+U0VdDQogICAgb2JqJGVmZmVjdHMgPC0gb2JqZWN0JGVmZmVjdHNbLHJlc3As
+ZHJvcD1GQUxTRV0NCiAgICBvYmokcmVzaWR1YWxzIDwtIG9iamVjdCRyZXNp
+ZHVhbHNbLHJlc3AsZHJvcD1GQUxTRV0NCiAgICBvYmokZml0dGVkLnZhbHVl
+cyA8LSBvYmplY3QkZml0dGVkLnZhbHVlc1sscmVzcCxkcm9wPUZBTFNFXQ0K
+ICAgIG9iaiR0ZXJtc1tbMl1dIDwtIHJlc3ANCiAgICBwcmludC5hb3Yob2Jq
+KQ0KICB9DQp9DQoNCiAgc3VtbWFyeS5tYW92IDwtIGZ1bmN0aW9uKG9iamVj
+dCl7DQogIGZvcihyZXNwIGluIGRpbW5hbWVzKG9iamVjdCRjb2VmZmljaWVu
+dHMpW1syXV0pew0KICAgIGNhdChwYXN0ZSgiXG4gUmVzcG9uc2U6ICIscmVz
+cCwiXG4iKSkNCiAgICBvYmogPC0gb2JqZWN0DQogICAgb2JqJGNvZWZmaWNp
+ZW50cyA8LSBvYmplY3QkY29lZmZpY2llbnRzWyxyZXNwLGRyb3A9RkFMU0Vd
+DQogICAgb2JqJGVmZmVjdHMgPC0gb2JqZWN0JGVmZmVjdHNbLHJlc3AsZHJv
+cD1GQUxTRV0NCiAgICBvYmokcmVzaWR1YWxzIDwtIG9iamVjdCRyZXNpZHVh
+bHNbLHJlc3AsZHJvcD1GQUxTRV0NCiAgICBvYmokZml0dGVkLnZhbHVlcyA8
+LSBvYmplY3QkZml0dGVkLnZhbHVlc1sscmVzcCxkcm9wPUZBTFNFXQ0KICAg
+IG9iaiR0ZXJtc1tbMl1dIDwtIHJlc3ANCiAgICBwcmludChzdW1tYXJ5LmFv
+dihvYmopKQ0KICB9DQp9DQoNCnByaW50Lm1sbSA8LSBmdW5jdGlvbihvYmpl
+Y3Qpew0KICBmb3IocmVzcCBpbiBkaW1uYW1lcyhvYmplY3QkY29lZmZpY2ll
+bnRzKVtbMl1dKXsNCiAgICBjYXQocGFzdGUoIlxuIFJlc3BvbnNlOiAiLHJl
+c3AsIlxuIikpDQogICAgb2JqIDwtIG9iamVjdA0KICAgIG9iaiRjb2VmZmlj
+aWVudHMgPC0gb2JqZWN0JGNvZWZmaWNpZW50c1sscmVzcF0NCiAgICBvYmok
+ZWZmZWN0cyA8LSBvYmplY3QkZWZmZWN0c1sscmVzcF0NCiAgICBvYmokcmVz
+aWR1YWxzIDwtIG9iamVjdCRyZXNpZHVhbHNbLHJlc3BdDQogICAgb2JqJGZp
+dHRlZC52YWx1ZXMgPC0gb2JqZWN0JGZpdHRlZC52YWx1ZXNbLHJlc3BdDQog
+ICAgb2JqJHRlcm1zW1syXV0gPC0gcmVzcA0KICAgIHByaW50LmxtKG9iaikN
+CiAgfQ0KfQ0KDQogIHN1bW1hcnkubWxtIDwtIGZ1bmN0aW9uKG9iamVjdCl7
+DQogIGZvcihyZXNwIGluIGRpbW5hbWVzKG9iamVjdCRjb2VmZmljaWVudHMp
+W1syXV0pew0KICAgIGNhdChwYXN0ZSgiXG4gUmVzcG9uc2U6ICIscmVzcCwi
+XG4iKSkNCiAgICBvYmogPC0gb2JqZWN0DQogICAgb2JqJGNvZWZmaWNpZW50
+cyA8LSBvYmplY3QkY29lZmZpY2llbnRzWyxyZXNwXQ0KICAgIG9iaiRlZmZl
+Y3RzIDwtIG9iamVjdCRlZmZlY3RzWyxyZXNwXQ0KICAgIG9iaiRyZXNpZHVh
+bHMgPC0gb2JqZWN0JHJlc2lkdWFsc1sscmVzcF0NCiAgICBvYmokZml0dGVk
+LnZhbHVlcyA8LSBvYmplY3QkZml0dGVkLnZhbHVlc1sscmVzcF0NCiAgICBv
+YmokdGVybXNbWzJdXSA8LSByZXNwDQogICAgcHJpbnQoc3VtbWFyeS5sbShv
+YmopLHNpZ25pZi5zdGFycz1GQUxTRSkNCiAgfQ0KfQ0KDQpwcmludC5hb3Zs
+aXN0IDwtIA0Kc3VtbWFyeS5hb3ZsaXN0IDwtIGZ1bmN0aW9uIChvYmplY3Qs
+IGRpZ2l0cyA9IG1heCgzLCAuT3B0aW9ucyRkaWdpdHMgLSAzKSwgLi4uKQ0K
+ew0KICBjYXQocGFzdGUoYygiQW5hbHlzaXMgb2YgVmFyaWFuY2UuICBSZXNw
+b25zZSA9ICIpKSkNCiAgcHJpbnQoYXR0cihvYmplY3QsInRlcm1zIilbWzJd
+XSkNCiAgY2F0KCJDYWxsOlxuIikNCiAgcHJpbnQoYXR0cihvYmplY3QsImNh
+bGwiKSkNCiAgY2F0KCJcbiBTZXF1ZW50aWFsIEFuYWx5c2lzIFxuIikNCiAg
+bGlzdGxlbiA8LSBsZW5ndGgob2JqZWN0KQ0KICBmb3IoIGkgaW4gMjpsaXN0
+bGVuKXsNCiAgICBjYXQocGFzdGUoYygiXG5FcnJvciBzdHJhdHVtOiIsIG5h
+bWVzKG9iamVjdClbaV0sIlxuIikpKQ0KICAgIHByaW50KHN1bW1hcnkuYW92
+KG9iamVjdFtbaV1dLCBvbmUub2YubWFueSA9IFRSVUUpKQ0KICB9DQp9DQoN
+CnN1bW1hcnkuYW92IDwtIGZ1bmN0aW9uIChvYmplY3QsIG9uZS5vZi5tYW55
+PUZBTFNFLCAuLi4pIA0Kew0KICB3IDwtIHdlaWdodHMob2JqZWN0KQ0KICBp
+ZiAoaXMubnVsbCh3KSkgew0KICAgIHNzciA8LSBzdW0ocmVzaWQob2JqZWN0
+KV4yKQ0KICB9DQogIGVsc2V7DQogICAgc3NyIDwtIHN1bSh3ICogcmVzaWQo
+b2JqZWN0KV4yKQ0KICB9DQogIGRmciA8LSBkZi5yZXNpZHVhbChvYmplY3Qp
+DQogIGlmKCBvYmplY3QkcmFuayA+IDApew0KICAgIHAxIDwtIDE6b2JqZWN0
+JHJhbmsNCiAgICBjb21wIDwtIG9iamVjdCRlZmZlY3RzW3AxXQ0KICAgIGFz
+Z24gPC0gb2JqZWN0JGFzc2lnbltvYmplY3QkcXIkcGl2b3RdW3AxXQ0KICAg
+IHNzIDwtIGMoYXMubnVtZXJpYyhsYXBwbHkoc3BsaXQoY29tcF4yLCBhc2du
+KSwgc3VtKSksIHNzcikNCiAgICBkZiA8LSBjKGFzLm51bWVyaWMobGFwcGx5
+KHNwbGl0KGFzZ24sICAgYXNnbiksIGxlbmd0aCkpLCBkZnIpDQogICAgaWYg
+KGF0dHIob2JqZWN0JHRlcm1zLCAiaW50ZXJjZXB0IikpIHsNCiAgICAgIHNz
+IDwtIHNzWy0xXQ0KICAgICAgZGYgPC0gZGZbLTFdDQogICAgfQ0KICAgIG1z
+IDwtIHNzL2RmDQogICAgbXNbaXMubmFuKG1zKV0gPC0gTkENCiAgICBmIDwt
+IGlmKGRmciA+IDFlLTEwKSBtcy8oc3NyL2RmcikNCiAgICBlbHNlIHJlcChO
+QSxsZW5ndGgoZGYpKQ0KICAgIHAgPC0gMSAtIHBmKGYsIGRmLCBkZnIpDQog
+ICAgdGFibGUgPC0gY2JpbmQoZGYsIHNzLCBtcywgZiwgcCkNCiAgICB0YWJs
+ZVtsZW5ndGgocCksIDQ6NV0gPC0gTkENCiAgICBkaW1uYW1lcyh0YWJsZSkg
+PC0gbGlzdChjKGF0dHIob2JqZWN0JHRlcm1zLCJ0ZXJtLmxhYmVscyIpLCJS
+ZXNpZHVhbCIpLA0KICAgICAgICAgICAgICAgICAgICAgICAgICBjKCJEZiIs
+ICJTdW0gU3EiLCAiTWVhbiBTcSIsICJGIiwgIlByKD5GKSIpKQ0KICB9DQog
+IGVsc2V7DQogICAgdGFibGUgPC0gY2JpbmQoZGZyLCBzc3IsIHNzci9kZnIs
+IE5BLCBOQSkNCiAgICBkaW1uYW1lcyh0YWJsZSkgPC0gbGlzdCgiUmVzaWR1
+YWwiLA0KICAgICAgICAgICAgICAgICAgICAgICAgICAgIGMoIkRmIiwgIlN1
+bSBTcSIsICJNZWFuIFNxIiwgIkYiLCAiUHIoPkYpIikpDQogIH0NCiAgICBp
+Zighb25lLm9mLm1hbnkpDQogICAgICBjYXQocGFzdGUoIkFuYWx5c2lzIG9m
+IFZhcmlhbmNlIFRhYmxlXG5SZXNwb25zZToiLCBmb3JtdWxhKG9iamVjdClb
+WzJdXSksDQogICAgICAgICJcbiIpDQogIHJlc3VsdCA8LSBsaXN0KHRhYmxl
+ID0gdGFibGUpDQogIGNsYXNzKHJlc3VsdCkgPC0gInRhYnVsYXIiDQogIHJl
+c3VsdA0KfQ0K
+--0-488534781-901753860=:6003--
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From p.dalgaard@biostat.ku.dk  Thu Jul 30 11:02:59 1998
+From: p.dalgaard@biostat.ku.dk (Peter Dalgaard BSA)
+Date: 30 Jul 1998 12:02:59 +0200
+Subject: R-beta: feedback R-0.62.2
+In-Reply-To: Rashid Nassar's message of Wed, 29 Jul 1998 20:38:46 -0400 (EDT)
+References: <Pine.SOL.3.91.980729201132.28799A-100000@bio3.acpub.duke.edu>
+Message-ID: <x2vhofslkc.fsf@biostat.ku.dk>
+
+Rashid Nassar <rnassar@acpub.duke.edu> writes:
+
+> I have one more nitpick, if I may:
+> 
+> summary(aov.obj) prints significance *'s but doesn't print the legend
+> at the bottom explaining their meaning (it is not parallel with
+> summary(lm.obj)
+> 
+> 
+> Question: Is this kind of nitpicking feedback useful (if so I'd be
+> glad to continue to keep notes and send them as I'm using/playing with
+> R, and please there is no need for you to answer or give workarounds,
+> since none of this really prevents getting results)?  Or does it just
+> get in the way of more important stuff (in which case I'll quite the
+> nitpicking and only report if I get a real problem)? 
+
+In general, it is useful. It's especially the smaller things that we
+tend to overlook. The best place to send them is the R-devel list,
+though - if you send them to a single person they may get lost. E.g.
+significance stars are really Martin Maechlers pet. (I'll Cc: this
+particular note to R-devel).
+
+
+-- 
+   O__  ---- Peter Dalgaard             Blegdamsvej 3  
+  c/ /'_ --- Dept. of Biostatistics     2200 Cph. N   
+ (*) \(*) -- University of Copenhagen   Denmark      Ph: (+45) 35327918
+~~~~~~~~~~ - (p.dalgaard@biostat.ku.dk)             FAX: (+45) 35327907
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From p.dalgaard@biostat.ku.dk  Fri Jul 31 00:09:24 1998
+From: p.dalgaard@biostat.ku.dk (Peter Dalgaard BSA)
+Date: 31 Jul 1998 01:09:24 +0200
+Subject: zero-extent matrix crash
+Message-ID: <x290lbkkbf.fsf@biostat.ku.dk>
+
+Anyone for a little debugging?
+
+>  matrix(numeric(0),0,0)
+Floating point exception (core dumped)
+
+[I've decided to make a habit of sending bugs that I'm not going to
+attack right away to R-devel, in case someone might be interested in
+chipping in and saving the core team the work]
+
+-- 
+   O__  ---- Peter Dalgaard             Blegdamsvej 3  
+  c/ /'_ --- Dept. of Biostatistics     2200 Cph. N   
+ (*) \(*) -- University of Copenhagen   Denmark      Ph: (+45) 35327918
+~~~~~~~~~~ - (p.dalgaard@biostat.ku.dk)             FAX: (+45) 35327907
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From thomas@biostat.washington.edu  Fri Jul 31 01:13:30 1998
+From: thomas@biostat.washington.edu (Thomas Lumley)
+Date: Thu, 30 Jul 1998 17:13:30 -0700 (PDT)
+Subject: zero-extent matrix crash
+In-Reply-To: <x290lbkkbf.fsf@biostat.ku.dk>
+Message-ID: <Pine.SOL.3.95.980730171231.27092B-100000@gorn>
+
+On 31 Jul 1998, Peter Dalgaard BSA wrote:
+
+> Anyone for a little debugging?
+> 
+> >  matrix(numeric(0),0,0)
+> Floating point exception (core dumped)
+> 
+
+Fixed. (there wasn't any checking for zero extents in matrix(); there is
+now)
+
+	-thomas
+
+Thomas Lumley
+------------------------------------------------------+------
+Biostatistics		: "Never attribute to malice what  :
+Uni of Washington	:  can be adequately explained by  :
+Box 357232		:  incompetence" - Hanlon's Razor  :
+Seattle WA 98195-7232	:				   :
+------------------------------------------------------------
+
+
+
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From Martin Maechler <maechler@stat.math.ethz.ch>  Wed Jul  1 11:26:17 1998
+From: Martin Maechler <maechler@stat.math.ethz.ch> (Martin Maechler)
+Date: Wed, 1 Jul 1998 12:26:17 +0200
+Subject: "Coding conventions" for R:  Use  TRUE & FALSE, and not T & F
+Message-ID: <199807011026.MAA18481@sophie.ethz.ch>
+
+The reason being 
+a design decision of a while ago
+that "T" and "F"  shouldn't be reserved words in R as they are in S-plus.
+Hence, T & F are just variables being set to TRUE and FALSE respectively;
+they *can* be overwritten by the user which is very useful e.g.,
+when you do
+	  mydat <- read.table(file, header =TRUE)
+and the file has variable names "T" or "F" and then do  attach(mydat).
+
+Even more important is the situation when you have factors with levels
+"T" or "F" which (I think to remember) is a pain in S.
+
+
+-----------
+Consequence
+-----------
+	 Package writers 
+		(including R-core'ers incorporating other people's patches..):
+
+	 *Please* always use  TRUE and FALSE
+
+Kurt: Part of the above should definitely go into the 
+	R-FAQ "Differences S & R"
+
+Martin Maechler <maechler@stat.math.ethz.ch>			<><
+Seminar fuer Statistik, ETH-Zentrum SOL G1;	Sonneggstr.33
+ETH (Federal Inst. Technology)	8092 Zurich	SWITZERLAND
+phone: x-41-1-632-3408		fax: ...-1086
+http://www.stat.math.ethz.ch/~maechler/
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From Martin Maechler <maechler@stat.math.ethz.ch>  Wed Jul  1 17:30:42 1998
+From: Martin Maechler <maechler@stat.math.ethz.ch> (Martin Maechler)
+Date: Wed, 1 Jul 1998 18:30:42 +0200
+Subject: ordinal(): [was "a handy function ..." in March..]
+Message-ID: <199807011630.SAA18825@sophie.ethz.ch>
+
+I'm finally cleaning up old things / todo's;
+We had about half a dozen e-mails on R-devel back in mid March...... 
+Here is my proposal, a sometimes useful utility for constructing strings
+in cat() or text(), legend(), etc.:
+
+
+ordinal <-
+function(i, language =3D "english", gender =3D c("female","male"), sep=3D""=
+) {
+    ii <- i
+    if(!is.numeric(i) || any(i < 0) || any(ii !=3D (i <- as.integer(i))))
+      stop("'i' must be non-negative integer")
+    ilang <- pmatch(language, c("english", "francais", "deutsch",
+                                "italiano", "espanol")) #, "portugues" ?
+    if(is.na(ilang))
+      stop(paste("language '", language, "' not (yet) implemented.", sep=3D=
+""))
+    ig <- pmatch(gender, c("female","male"))[1]
+    if(is.na(ig)) stop(paste("gender '", gender, "' is invalid.", sep=3D"")=
+)
+    suffix <- switch(ilang,
+                     c("st","nd","rd","th")[pmin(4,ifelse(i<20,ifelse(i=3D=
+=3D0,4,i),
+                                                          1+(i-1)%%10))],# =
+engl
+                     c(c("=E8re","er")[ig],"me")[1 + (i!=3D1)],# french
+                     ".",# german
+                     c("a","o")[ig], # italian
+                     c("a","o")[ig], # spanish
+                     )
+    paste(i, suffix, sep=3Dsep)
+}
+
+nn <- c(0:3,9:13,20:22,99:102)
+
+
+---------------------------------------------------------------------------=
+---
+-------------------- Test a few interesting cases ----------------
+---------------------------------------------------------------------------=
+---
+
+-------------------- Is this correct/acceptable for the given languages? 
+--------------------
+-------------------- Additions, bugs, ``patches'' ?
+
+> ordinal(1:22)
+ [1] "1st"  "2nd"  "3rd"  "4th"  "5th"  "6th"  "7th"  "8th"  "9th"  "10th"
+[11] "11th" "12th" "13th" "14th" "15th" "16th" "17th" "18th" "19th" "20th"
+[21] "21st" "22nd"
+> ordinal(nn,"english")
+ [1] "0th"   "1st"   "2nd"   "3rd"   "9th"   "10th"  "11th"  "12th"  "13th"=
+ 
+[10] "20th"  "21st"  "22nd"  "99th"  "100th" "101st" "102nd"
+> ordinal(nn,"francais")
+ [1] "0me"   "1=E8re"  "2me"   "3me"   "9me"   "10me"  "11me"  "12me"  "13m=
+e" 
+[10] "20me"  "21me"  "22me"  "99me"  "100me" "101me" "102me"
+> ordinal(1:3,"fr","m")
+[1] "1er" "2me" "3me"
+> ordinal(nn, "italian")# Ladies first =3D> Ladies default...
+ [1] "0a"   "1a"   "2a"   "3a"   "9a"   "10a"  "11a"  "12a"  "13a"  "20a" 
+[11] "21a"  "22a"  "99a"  "100a" "101a" "102a"
+> ordinal(nn, "espan", "m")
+ [1] "0o"   "1o"   "2o"   "3o"   "9o"   "10o"  "11o"  "12o"  "13o"  "20o" 
+[11] "21o"  "22o"  "99o"  "100o" "101o" "102o"
+> 
+> ordinal(nn, "deutsch", "m")
+ [1] "0."   "1."   "2."   "3."   "9."   "10."  "11."  "12."  "13."  "20." 
+[11] "21."  "22."  "99."  "100." "101." "102."
+> 
+> ## These give an error
+> ordinal(pi)
+Error: 'i' must be non-negative integer
+Execution halted
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From p.dalgaard@biostat.ku.dk  Wed Jul  1 18:32:19 1998
+From: p.dalgaard@biostat.ku.dk (Peter Dalgaard BSA)
+Date: 01 Jul 1998 19:32:19 +0200
+Subject: ordinal(): [was "a handy function ..." in March..]
+In-Reply-To: Martin Maechler's message of Wed, 1 Jul 1998 18:30:42 +0200
+References: <199807011630.SAA18825@sophie.ethz.ch>
+Message-ID: <x23eclfpek.fsf@blueberry.kubism.ku.dk>
+
+Martin Maechler <maechler@stat.math.ethz.ch> writes:
+
+>     ilang <- pmatch(language, c("english", "francais", "deutsch",
+>                                 "italiano", "espanol")) #, "portugues" ?
+>     if(is.na(ilang))
+>       stop(paste("language '", language, "' not (yet) implemented.", sep=""))
+
+Danish is exactly like German in this respect...
+
+-- 
+   O__  ---- Peter Dalgaard             Blegdamsvej 3  
+  c/ /'_ --- Dept. of Biostatistics     2200 Cph. N   
+ (*) \(*) -- University of Copenhagen   Denmark      Ph: (+45) 35327918
+~~~~~~~~~~ - (p.dalgaard@biostat.ku.dk)             FAX: (+45) 35327907
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From wsimpson@uwinnipeg.ca  Tue Jul  7 22:17:51 1998
+From: wsimpson@uwinnipeg.ca (Bill Simpson)
+Date: Tue, 7 Jul 1998 16:17:51 -0500 (CDT)
+Subject: S speedup in R
+Message-ID: <Pine.OSF.3.95.980707160152.21173A-100000@io.uwinnipeg.ca>
+
+Venables and Ripley describe a speedup where you take a structure like
+
+x<-NULL
+for(i in sequence)
+	y<-c(y,function(x,i))
+	
+and convert it to one like
+
+x<-numeric(its length)
+for(i in sequence)
+	y[i]<-function(x,i)
+
+I tried this speedup on some simple examples and it made them twice as
+fast.
+
+But now I am hitting a snag with some real code.
+
+This original version works:
+cif<-function(x, y, tau, h=tau[2]-tau[1])
+{
+# conditional cross-intensity function for two point process realizations.
+# estimated at tau.
+# x and y are vectors of event times (sorting is not necessary).
+# tau is the lag (or vector of lags) 
+# h is binwidth.
+# see Brillinger, Bryant, & Segundo (1976) eq 13, mhatAB(u)
+n <- length(x)
+cif.numerator <- NULL
+for(tt in tau)
+	{
+	point.counter <- sum(round(rank(c(x + tt + h/2, y))[1:n], 0) -
+	round(rank(c(x + tt - h/2, y))[1:n], 0))
+	cif.numerator <- c(cif.numerator,point.counter)
+	}
+cif.numerator/(n * h)
+}
+
+But the sped-up version just returns a vector of zeros:
+
+cif<-function(x, y, tau, h=tau[2]-tau[1])
+{
+# conditional cross-intensity function for two point process realizations.
+# estimated at tau.
+# x and y are vectors of event times (sorting is not necessary).
+# tau is the lag (or vector of lags) 
+# h is binwidth.
+# see Brillinger, Bryant, & Segundo (1976) eq 13, mhatAB(u)
+n <- length(x)
+cif.numerator <- numeric(length(tau))
+for(tt in tau)
+	{
+	cif.numerator[tt] <- sum(round(rank(c(x + tt + h/2, y))[1:n], 0) -
+	round(rank(c(x + tt - h/2, y))[1:n], 0))
+	}
+cif.numerator/(n * h)
+}
+
+I can't see why this isn't working. Is this hitting a peculiarity of 
+R? Thanks very much for any help.
+
+Bill Simpson
+
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From bates@stat.wisc.edu  Tue Jul  7 22:49:46 1998
+From: bates@stat.wisc.edu (Douglas Bates)
+Date: 07 Jul 1998 16:49:46 -0500
+Subject: S speedup in R
+In-Reply-To: Bill Simpson's message of Tue, 7 Jul 1998 16:17:51 -0500 (CDT)
+References: <Pine.OSF.3.95.980707160152.21173A-100000@io.uwinnipeg.ca>
+Message-ID: <6r67h9nxfp.fsf@verdi.stat.wisc.edu>
+
+Bill Simpson <wsimpson@uwinnipeg.ca> writes:
+
+...
+> But the sped-up version just returns a vector of zeros:
+> 
+> cif<-function(x, y, tau, h=tau[2]-tau[1])
+> {
+> # conditional cross-intensity function for two point process realizations.
+> # estimated at tau.
+> # x and y are vectors of event times (sorting is not necessary).
+> # tau is the lag (or vector of lags) 
+> # h is binwidth.
+> # see Brillinger, Bryant, & Segundo (1976) eq 13, mhatAB(u)
+> n <- length(x)
+> cif.numerator <- numeric(length(tau))
+> for(tt in tau)
+> 	{
+> 	cif.numerator[tt] <- sum(round(rank(c(x + tt + h/2, y))[1:n], 0) -
+> 	round(rank(c(x + tt - h/2, y))[1:n], 0))
+> 	}
+> cif.numerator/(n * h)
+> }
+
+You are using tt for an index in addition to being the value of an
+element of the tau vector.  Unless tau always happens to be
+1:length(tau) that won't work.
+
+You probably want to change the "for" statement to
+  for (tt in seq( along = tau ) )
+ 	{
+ 	cif.numerator[tt] <- sum(round(rank(c(x + tau[tt] + h/2, y))[1:n], 0) -
+ 	round(rank(c(x + tau[tt] - h/2, y))[1:n], 0))
+ 	}
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From plummer@iarc.fr  Wed Jul  8 12:47:05 1998
+From: plummer@iarc.fr (Martyn Plummer)
+Date: Wed, 08 Jul 1998 11:47:05 -0000 ()
+Subject: Serious bug in save.image
+Message-ID: <XFMail.980708124450.plummer@iarc.fr>
+
+I am using a  package which tends to crash R, so I have been saving
+my work at regular intervals with "save.image()". Unfortunately, this
+overwrites .RData with an empty workspace, so when R crashed I lost
+my workspace and a day's work.
+
+The problem is easily fixed: "save.image" looks like this
+
+function () 
+save(list = ls(), file = ".RData")
+
+The expression "ls()" is evaluated in the calling environment, which
+is empty. You need to evaluate it in the global environment, like this:
+
+function () 
+save(list = eval(expression(ls()), .GlobalEnv), file = ".RData")
+
+Martyn
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From p.dalgaard@biostat.ku.dk  Wed Jul  8 15:52:03 1998
+From: p.dalgaard@biostat.ku.dk (Peter Dalgaard BSA)
+Date: 08 Jul 1998 16:52:03 +0200
+Subject: Serious bug in save.image
+In-Reply-To: Martyn Plummer's message of Wed, 08 Jul 1998 11:47:05 -0000 ()
+References: <XFMail.980708124450.plummer@iarc.fr>
+Message-ID: <x2pvfg2y5o.fsf@blueberry.kubism.ku.dk>
+
+Martyn Plummer <plummer@iarc.fr> writes:
+
+> function () 
+> save(list = ls(), file = ".RData")
+> 
+> The expression "ls()" is evaluated in the calling environment, which
+> is empty. You need to evaluate it in the global environment, like this:
+> 
+> function () 
+> save(list = eval(expression(ls()), .GlobalEnv), file = ".RData")
+
+Ouch! Fixed in my sources. Will get to the prerelease versions after I
+squash an elusive memory corruption bug.
+
+Actually, I did you one better:
+
+> save.image
+function (f = ".RData") 
+eval(substitute(save(list = ls(), file = f)), .GlobalEnv)
+
+so that you can now save the image under a different name.
+
+-- 
+   O__  ---- Peter Dalgaard             Blegdamsvej 3  
+  c/ /'_ --- Dept. of Biostatistics     2200 Cph. N   
+ (*) \(*) -- University of Copenhagen   Denmark      Ph: (+45) 35327918
+~~~~~~~~~~ - (p.dalgaard@biostat.ku.dk)             FAX: (+45) 35327907
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From wsimpson@uwinnipeg.ca  Wed Jul  8 16:05:22 1998
+From: wsimpson@uwinnipeg.ca (Bill Simpson)
+Date: Wed, 8 Jul 1998 10:05:22 -0500 (CDT)
+Subject: S speedup in R
+In-Reply-To: <6r67h9nxfp.fsf@verdi.stat.wisc.edu>
+Message-ID: <Pine.OSF.3.95.980708100459.32011C-100000@io.uwinnipeg.ca>
+
+Thanks very much Douglas for pointing out my dumb mistakes.
+
+Bill
+
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From wsimpson@uwinnipeg.ca  Thu Jul  9 01:55:53 1998
+From: wsimpson@uwinnipeg.ca (Bill Simpson)
+Date: Wed, 8 Jul 1998 19:55:53 -0500 (CDT)
+Subject: numeric(0) -> NA
+Message-ID: <Pine.OSF.3.95.980708194226.19813A-100000@io.uwinnipeg.ca>
+
+I noticed this in current intermediate patch version:
+> runif(0,0,4095)
+numeric(0)
+> round(runif(0,0,4095))
+[1] NA
+
+I don't like it, but maybe it is the way it is supposed to be. I would
+prefer for it to stay numeric(0).
+
+I notice also
+> ceiling(runif(0,0,4095))
+numeric(0)
+> floor(runif(0,0,4095))
+numeric(0)
+which leads me to thing round() is not working right.
+
+
+I have some code like this:
+do.sim<-function(nnoise, nsignal, jump)
+{
+ntotal<-nsignal+nnoise
+x<-numeric(ntotal)
+y<-numeric(ntotal)
+
+#generate noise dots
+nx1<-round(runif(nnoise,0,4095))
+nx2<-round(runif(nnoise,0,4095))
+ny1<-round(runif(nnoise,0,4095))
+ny2<-round(runif(nnoise,0,4095))
+
+#generate signal dots
+sx1<-round(runif(nsignal,0,4095))
+...
+
+and I need to do do.sim(0,1000,10). But that gives me NAs which are a
+problem later. (in particular, I can't do
+if(rr<rbest)
+if rr is computed from an NA.)
+
+BTW I think it is a ghastly waste of resources to do
+round(runif(nnoise,0,4095))
+but I couldn't think of a better way to get ints between 0 and 4095.
+(It's a waste because the random number generator makes unsigned long ints
+to begin with, then they are divided by 2^32 to get a double between 0
+and 1, and now I am undoing that!)
+
+I guess there is sample(,replace=true), which seems even worse for
+wasted resources. Maybe not.
+
+Thanks for any help.
+
+Bill Simpson
+
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From p.dalgaard@biostat.ku.dk  Thu Jul  9 11:37:25 1998
+From: p.dalgaard@biostat.ku.dk (Peter Dalgaard BSA)
+Date: 09 Jul 1998 12:37:25 +0200
+Subject: numeric(0) -> NA
+In-Reply-To: Bill Simpson's message of Wed, 8 Jul 1998 19:55:53 -0500 (CDT)
+References: <Pine.OSF.3.95.980708194226.19813A-100000@io.uwinnipeg.ca>
+Message-ID: <x267h79uoq.fsf@blueberry.kubism.ku.dk>
+
+Bill Simpson <wsimpson@uwinnipeg.ca> writes:
+
+> I noticed this in current intermediate patch version:
+> > runif(0,0,4095)
+> numeric(0)
+> > round(runif(0,0,4095))
+> [1] NA
+> 
+> I don't like it, but maybe it is the way it is supposed to be. I would
+> prefer for it to stay numeric(0).
+> 
+> I notice also
+> > ceiling(runif(0,0,4095))
+> numeric(0)
+> > floor(runif(0,0,4095))
+> numeric(0)
+> which leads me to thing round() is not working right.
+
+You're right, but it's not all that easily fixed. The problem is that
+round() unlike the other two isn't a unary operation (it has a digits
+argument) and the automatic logic for binary functions is that 
+length(f(a,b)) = max(length(a),length(b)).
+
+There are several of these anomalies, e.g.:
+
+> log(numeric(0))
+numeric(0)
+> log(numeric(0),10)
+[1] NA
+> log10(numeric(0))
+[1] NA
+> pt(numeric(0),15)
+[1] NA
+> choose(numeric(0),5)
+[1] NA
+
+whereas Splus has
+
+> log(numeric(0))
+numeric(0)
+> log(numeric(0),10)
+[1] NA
+> log10(numeric(0))
+[1] NA
+> pt(numeric(0),15)
+numeric(0)
+# choose doesn't exist...
+>  round(numeric(0))
+numeric(0)
+
+I.e. it seems to special-case *some* functions....
+
+We probably should have a special version of math2() which said that
+the first argument was more important than the other.
+
+> BTW I think it is a ghastly waste of resources to do
+> round(runif(nnoise,0,4095))
+> but I couldn't think of a better way to get ints between 0 and 4095.
+> (It's a waste because the random number generator makes unsigned long ints
+> to begin with, then they are divided by 2^32 to get a double between 0
+> and 1, and now I am undoing that!)
+
+Compared to all the other inefficiencies going on, I don't think this
+is worth worrying about (unless nnoise is *very* large). If you really
+need this to be efficient, you could make a clone of runif in .C
+callable code, and replace the floatingpoint (l / 2.^32) by a shift
+operation (l >> 18 or thereabouts).
+
+> I guess there is sample(,replace=true), which seems even worse for
+> wasted resources. Maybe not.
+
+Most likely it is...
+
+-- 
+   O__  ---- Peter Dalgaard             Blegdamsvej 3  
+  c/ /'_ --- Dept. of Biostatistics     2200 Cph. N   
+ (*) \(*) -- University of Copenhagen   Denmark      Ph: (+45) 35327918
+~~~~~~~~~~ - (p.dalgaard@biostat.ku.dk)             FAX: (+45) 35327907
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From pgilbert@bank-banque-canada.ca  Thu Jul  9 18:28:25 1998
+From: pgilbert@bank-banque-canada.ca (Paul Gilbert)
+Date: Thu, 9 Jul 1998 13:28:25 -0400
+Subject: R 0.62.1 with SunOS 5.6 problems
+Message-ID: <98Jul9.140020edt.13442@mailgate.bank-banque-canada.ca>
+
+I compiled and ran R 0.62.1 without any serious problem on SunOS 5.5.1 and it
+also ran on SunOS 5.6. To compile on SunOS 5.6 I had to get a new version of gcc
+and g77 . Having done that I can now compile with no errors on SunOS 5.6, but
+when I try to run R there are serious problems:
+
+R : Copyright 1998, The R Development Core Team
+Version 0.62.1  (June 15, 1998)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type    "?license" or "?licence" for distribution details.
+
+R is a collaborative project with many contributors.
+Type    "?contributors" for a list.
+
+Type    "demo()" for some demos, "help()" for on-line help, or
+        "help.start()" for a HTML browser interface to help.
+
+Error: Object "colors" not found
+Error: couldn't find function "Version"
+> traceback()
+Error: couldn't find function "traceback"
+> q()
+Error: couldn't find function "q"
+>
+
+Does anyone have any ideas what might be wrong. (Yes I did start clean with the
+tar file and then ./configure.)
+
+Paul Gilbert
+
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From p.dalgaard@biostat.ku.dk  Thu Jul  9 20:38:16 1998
+From: p.dalgaard@biostat.ku.dk (Peter Dalgaard BSA)
+Date: 09 Jul 1998 21:38:16 +0200
+Subject: R 0.62.1 with SunOS 5.6 problems
+In-Reply-To: Paul Gilbert's message of Thu, 9 Jul 1998 13:28:25 -0400
+References: <98Jul9.140020edt.13442@mailgate.bank-banque-canada.ca>
+Message-ID: <x2iul6x1av.fsf@biostat.ku.dk>
+
+Paul Gilbert <pgilbert@bank-banque-canada.ca> writes:
+
+> R is a collaborative project with many contributors.
+> Type    "?contributors" for a list.
+> 
+> Type    "demo()" for some demos, "help()" for on-line help, or
+>         "help.start()" for a HTML browser interface to help.
+> 
+> Error: Object "colors" not found
+> Error: couldn't find function "Version"
+> > traceback()
+> Error: couldn't find function "traceback"
+> > q()
+> Error: couldn't find function "q"
+> >
+> 
+> Does anyone have any ideas what might be wrong. (Yes I did start clean with the
+> tar file and then ./configure.)
+
+In general, this means that R bails out while executing
+library/base/R/base, leaving most of the functions undefined. Almost
+the entire file is simple assignments, so it's very likely likely that
+the trouble spot is the .Alias line in:
+
+..
+machine <- function().Internal(machine())
+colors <- function().Internal(colors())
+colours <- .Alias(colors)
+args <- function(name).Internal(args(name))
+..
+which, pretty obviously should not fail. Check whether the file looks
+sane and if it is then whether you can execute the lines by hand. 
+
+-- 
+   O__  ---- Peter Dalgaard             Blegdamsvej 3  
+  c/ /'_ --- Dept. of Biostatistics     2200 Cph. N   
+ (*) \(*) -- University of Copenhagen   Denmark      Ph: (+45) 35327918
+~~~~~~~~~~ - (p.dalgaard@biostat.ku.dk)             FAX: (+45) 35327907
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From pgilbert@bank-banque-canada.ca  Fri Jul 10 14:31:16 1998
+From: pgilbert@bank-banque-canada.ca (Paul Gilbert)
+Date: Fri, 10 Jul 1998 09:31:16 -0400
+Subject: partial matches for attribute name
+References: <x2hg0pzxwi.fsf@blueberry.kubism.ku.dk>
+Message-ID: <98Jul10.100706edt.13457@mailgate.bank-banque-canada.ca>
+
+ >   o   attr() partial matches for attribute name.
+
+If this does what I think it does then I don't think it is a very good idea, and
+is also not consistent with S:
+
+In Splus I get
+> attr(diag(.5,3), "dim")
+[1] 3 3
+> attr(diag(.5,3), "di")
+NULL
+>
+
+If I understand what partial matching does then I will not get this in R 0.62.2.
+(I don't even like partial matching of list elements but I've learned to live
+with that.)
+
+Paul Gilbert
+
+
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From Kurt.Hornik@ci.tuwien.ac.at  Fri Jul 10 17:41:45 1998
+From: Kurt.Hornik@ci.tuwien.ac.at (Kurt Hornik)
+Date: Fri, 10 Jul 1998 18:41:45 +0200 (CEST)
+Subject: partial matches for attribute name
+In-Reply-To: <98Jul10.100706edt.13457@mailgate.bank-banque-canada.ca>
+References: <x2hg0pzxwi.fsf@blueberry.kubism.ku.dk>
+ <98Jul10.100706edt.13457@mailgate.bank-banque-canada.ca>
+Message-ID: <13734.17481.13866.883711@pc87.maho.magnaeu.com>
+
+>>>>> Paul Gilbert writes:
+
+>> o   attr() partial matches for attribute name.
+
+> If this does what I think it does then I don't think it is a very good
+> idea, and is also not consistent with S:
+
+> In Splus I get
+>> attr(diag(.5,3), "dim")
+> [1] 3 3
+>> attr(diag(.5,3), "di")
+> NULL
+>>
+
+Which is clearly a bug.  The Splus documentation says,
+
+       The semantics of attr are defined by saying  that  attr(x,
+       which)  is equivalent to attributes(x)[[which]] for either
+       extracting or replacing attributes, with  the  restriction
+       that which is interpreted as mode character.  The value of
+       attributes(x) is a list  object  (possibly  of  length  0)
+       associated  implicitly  with  any object x.  See Subscript
+       for the semantics of "[[".
+
+and we have
+
+> attributes(diag(.5,3))[["di"]]
+[1] 3 3
+
+-kh
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From pgilbert@bank-banque-canada.ca  Fri Jul 10 18:44:00 1998
+From: pgilbert@bank-banque-canada.ca (Paul Gilbert)
+Date: Fri, 10 Jul 1998 13:44:00 -0400
+Subject: partial matches for attribute name
+References: <x2hg0pzxwi.fsf@blueberry.kubism.ku.dk>
+ <98Jul10.100706edt.13457@mailgate.bank-banque-canada.ca> <13734.17481.13866.883711@pc87.maho.magnaeu.com>
+Message-ID: <98Jul10.141623edt.13446@mailgate.bank-banque-canada.ca>
+
+>>> o   attr() partial matches for attribute name.
+
+>> If this does what I think it does then I don't think it is a very good
+>> idea, and is also not consistent with S:
+
+>Which is clearly a bug.  The Splus documentation says
+...
+
+I'd be prepared to call this one an incorrectly documented feature. So in the
+name of S compatiblity should one do as it says or do as it does? There is
+clearly not very much code around which requires partial matching, since it
+hasn't worked, but there may be things that break if it does work. Also, the
+documention is not very clear about whether attr(x,"di") will return dim or
+dimnames if both exist. As near as I can tell the documentation is not even
+clear about whether attr(x,"dim") will return dim or dimnames, although the sane
+choice seems to be made by [[.
+
+Paul Gilbert
+
+
+
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From p.dalgaard@biostat.ku.dk  Tue Jul 14 11:39:24 1998
+From: p.dalgaard@biostat.ku.dk (Peter Dalgaard BSA)
+Date: 14 Jul 1998 12:39:24 +0200
+Subject: R-beta: R-beta Win95 glm
+In-Reply-To: Guido Masarotto's message of Tue, 14 Jul 1998 10:58:06 +0100
+References: <3.0.5.16.19980713124753.2e7fd3ec@deimos.tc.uaslp.mx>
+ <x2af6dcv1v.fsf@biostat.ku.dk>
+ <19980714105806.A5289@sirio.stat.unipd.it>
+Message-ID: <x2pvf8n2cj.fsf@biostat.ku.dk>
+
+Guido Masarotto <guido@sirio.stat.unipd.it> writes:
+
+> > I'm currently summer-vacationing in my home. If the weather keeps
+> > acting up, I might get myself up to speed on crosscompiling R for
+> > Win32 with gcc on a Unix host. This has been a long-standing wish of
+> > mine because it could potentially bring the versions in much better
+> > sync.
+>   BTW, I made a similar (small) attempt. 
+>   On a Linux box, I installed gcc as a cross-compiler for mingw32
+>   (gcc-2.8.1, g77-0.5.23, binutils-2.9.1, the 1July snapshot
+>   of mingw32 and of WinApi (from the Colins Peters's site)).
+>   Then I tried to recompile R.0.61.3 (my actual windows version).
+>   And all seems to work. So, this seems a viable alternative.
+>   Hence, I plan to modify my Makefile's so that cross-compiling
+>   would be easy.
+>   
+>   guido masarotto
+
+Great! I'm almost there with a set of instructions for building the
+egcs-1.0.2 as a cross-compiler. This is in some sense easier, although
+proving a bit tricky because of makefile bugs (parts of the compiler
+build - including "make cross" - seems to assume that the
+cross-compiler is installed!) but I think I got it now.
+
+The Tk project appears to be in deep coma. But you are quite right,
+the R console slowness is *the* most annoying feature of the Win32
+version. It is buggy too, characters are getting lost on long
+printouts. Tk is doing similar stuff *much* faster, so either we
+should peek at the Tk sources and see how it is done there or try
+coding the console *in* Tcl/Tk.
+
+(OK, so the lack of command recall and ugly graphics hardcopy are
+close contenders to first place in annoyances).
+
+Hey, presto! I seem to have a clean build of egcs-mingw-cross (was
+running in another window as I typed this). Here's my makefile if you
+want to try:
+
+
+# Preliminaries: 
+#	Unpack binutils-2.9.1 somewhere
+#	Unpack egcs somewhere and PATCH IT with Mumit's patches
+#	 if (and only if) it's version 1.0.2 
+#	 [ cd to egcs dir and
+#		gzip -dc egcs-1.0.2-mingw32.diff.gz | patch -p2
+#	 ]
+#	Get the zipped files for the *native* egcs-mingw32
+
+prefix=$(shell pwd)# ... or e.g. /usr/local
+wkdir=$(shell pwd)
+
+# This name got a bit mangled by the Joliet CD "standard"
+# Note that I'm not asking you to unpack it.
+native=/mnt/cdrom/egcs-1~1.zip
+
+binutils=~/binutils-2.9.1
+egcs=~/egcs-1.0.2
+
+all: egcs-final
+
+egcs-final: egcs
+	export PATH=$(PATH):$(prefix)/bin ;\
+	cd $(wkdir)/EGCS ;\
+	$(egcs)/configure --srcdir=$(egcs)\
+		--prefix=$(prefix) --target=i386-mingw32 ; \
+	make &&\
+	make install
+	touch egcs-final
+egcs: inc-install binutils-install
+	mkdir -p $(wkdir)/EGCS
+	cd $(wkdir)/EGCS ; \
+	export PATH=$(PATH):$(prefix)/bin ;\
+	$(egcs)/configure --srcdir=$(egcs)\
+		--prefix=$(prefix) --target=i386-mingw32 ; \
+	make info &&\
+	make install LANGUAGES="c c++"
+	touch egcs
+binutils-install: binutils
+	cd $(wkdir)/BINU ; make install
+	touch binutils-install
+binutils: inc-install 
+	mkdir -p $(wkdir)/BINU
+	cd $(wkdir)/BINU ; \
+	$(binutils)/configure --srcdir=$(binutils) \
+		--prefix=$(prefix) --target=i386-mingw32 ; \
+	make
+	touch binutils
+inc-install:
+	unzip -o $(native) 'i386-mingw32/*' -d $(prefix) 
+	touch inc-install
+
+# This doesn't quite cut it, but I'm not going to  rm $(prefix)/bin/*, etc.
+clean:
+	rm -rf $(wkdir)/EGCS $(wkdir)/BINU
+	rm egcs-final egcs binutils binutils-install inc-install
+
+
+-- 
+   O__  ---- Peter Dalgaard             Blegdamsvej 3  
+  c/ /'_ --- Dept. of Biostatistics     2200 Cph. N   
+ (*) \(*) -- University of Copenhagen   Denmark      Ph: (+45) 35327918
+~~~~~~~~~~ - (p.dalgaard@biostat.ku.dk)             FAX: (+45) 35327907
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From mwkay@spud.me.wustl.edu  Tue Jul 14 19:57:28 1998
+From: mwkay@spud.me.wustl.edu (Matthew Kay)
+Date: Tue, 14 Jul 1998 13:57:28 -0500
+Subject: Are post-hoc tests being developed for R?
+Message-ID: <35ABAA17.74C1B359@spud.me.wustl.edu>
+
+Hi-
+
+Is anyone working on multiple comparisons of means or post-hoc tests
+(ie: Tukey, Bonferroni) for R? I saw in the winter 98' archives of the R
+
+mailing lists that these tests had not been implemented yet, I was just
+wondering if I could look foward to having them. ;-)
+I also looked through the contributed packages and didn't see anything
+that offered such tests.
+I guess I could check for compatible S code, has anyone had any luck
+with that?
+
+If anyone can provide any info, please respond to me via email.
+Thanks,
+Matt
+
+
+
+--
+Matthew W. Kay                       Office: (314) 935-7562
+Washington University, St. Louis        Fax: (314) 935-4014
+E-mail: mwkay@spud.me.wustl.edu
+WWW: http://userfs.cec.wustl.edu/~mwk2/HOMEPAGE/index.html
+
+
+
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From pgilbert@bank-banque-canada.ca  Tue Jul 14 22:00:04 1998
+From: pgilbert@bank-banque-canada.ca (Paul Gilbert)
+Date: Tue, 14 Jul 1998 17:00:04 -0400
+Subject: lwd subscript error?
+Message-ID: <98Jul14.173435edt.13441@mailgate.bank-banque-canada.ca>
+
+In R 0.62.2 I'm getting an error in one of my tests which I don't think occurs
+in 0.62.1 (but I have been changing things too).  It looks like it is associated
+with lwd. I haven't traced it down completely, but if anyone can see the problem
+immediately I would appreciate help.
+
+Paul Gilbert
+_______
+> > dse3.graphics.tests()
+  dse3 graphics test 1 ... ok
+  dse3 graphics test 2 ...ok
+  dse3 graphics test 3 ...ok
+  dse3 graphics test 4 ...Error: subscript (5) out of bounds, should be at most
+4
+> traceback()
+[1] "#- next version of R: lwd = lwd[ok.l],"
+[2] "segments2(xt[ok.l] + x.off * xchar, yt[ok.l], dx = 2 * xchar, "
+[3] "\t    dy = 0, lty = lty[ok.l], col = col[ok.l])"
+[4] "legend((par()$usr)[1:2], (par()$usr)[3:4], Legend, lty = lty, "
+[5] "\t    bty = \"n\")"
+[6] "plot.forecast.cov(zz)"
+[7] "dse3.graphics.tests()"
+>
+
+
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From thomas@biostat.washington.edu  Wed Jul 15 01:33:58 1998
+From: thomas@biostat.washington.edu (Thomas Lumley)
+Date: Tue, 14 Jul 1998 17:33:58 -0700 (PDT)
+Subject: Are post-hoc tests being developed for R?
+In-Reply-To: <35ABAA17.74C1B359@spud.me.wustl.edu>
+Message-ID: <Pine.SOL.3.95.980714172634.13636A-100000@sol>
+
+
+Here is code for three p-value based post hoc tests: bonferroni, holm, and
+hochberg. Holm is better than Bonferroni under all circumtances. Hochberg
+is more powerful than Holm, but under some slightly pathological
+situations it can exceed the nominal Type I error rate. 
+
+I haven't looked at this code for a long time, but I think it works
+correctly. Refeerences for the methods are in "Adjusted p-values for
+simultaneous inference" by S. Paul Wright in Biometrics some time in
+the early 90s (I'm in the wrong country at the moment so I don't have the
+full reference).
+
+	-thomas
+-------------------------
+
+   p.adjust.holm <-function(p,n=length(p)) {  
+        ##n<-length(p)
+        r<-rank(p)
+        index<-order(p)
+        qi<-p*(n+1-r)
+        for (i in 2:length(p)) {
+                qi[index[i]]<-max(qi[index[i]], qi[index[i-1]])
+        }
+        list(adjp=pmin(qi,1),p=p,method="Holm")
+        }
+  p.adjust.hochberg <-function(p) {
+        n<-length(p)
+        r<-rank(p)
+        index<-order(p)
+        qi<-p*(n+1-r)
+        for (i in (n-1):1) {
+                qi[index[i]]<-min(qi[index[i]], qi[index[i+1]])
+        }
+        list(adjp=qi,p=p,method="Hochberg")
+        }
+  p.adjust.bonferroni<-function(p,n=length(p)){ 
+        list(adjp=pmin(p*n,1),p=p,method="Bonferroni")
+        }
+
+p.adjust<-function(p,method=c("hochberg","holm","bonferroni"),...){
+  how<-pmatch(method[1],c("hochberg","holm","bonferroni"))
+  if (is.na(how)) stop(paste("Don't know method:",method))
+  m<-match.call()
+  m[[1]]<-as.name(paste("p.adjust",c("hochberg","holm","bonferroni")[how],sep="."))
+  m$method<-NULL
+  eval(m,sys.parent())
+}
+
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From p.dalgaard@biostat.ku.dk  Wed Jul 15 12:27:58 1998
+From: p.dalgaard@biostat.ku.dk (Peter Dalgaard BSA)
+Date: 15 Jul 1998 13:27:58 +0200
+Subject: Are post-hoc tests being developed for R?
+In-Reply-To: Thomas Lumley's message of Tue, 14 Jul 1998 17:33:58 -0700 (PDT)
+References: <Pine.SOL.3.95.980714172634.13636A-100000@sol>
+Message-ID: <x2btqrnykh.fsf@biostat.ku.dk>
+
+Thomas Lumley <thomas@biostat.washington.edu> writes:
+
+> p.adjust<-function(p,method=c("hochberg","holm","bonferroni"),...){
+>   how<-pmatch(method[1],c("hochberg","holm","bonferroni"))
+>   if (is.na(how)) stop(paste("Don't know method:",method))
+>   m<-match.call()
+>   m[[1]]<-as.name(paste("p.adjust",c("hochberg","holm","bonferroni")[how],sep="."))
+>   m$method<-NULL
+>   eval(m,sys.parent())
+> }
+
+Been a while since you wrote that? Surely, you mean:
+
+> p.adjust
+function (p, method = c("hochberg", "holm", "bonferroni"), ...) 
+{
+            how <- match.arg(method)
+            FUN <- get(paste("p.adjust", how, sep = "."))
+            FUN(p, ...)
+}
+
+
+-- 
+   O__  ---- Peter Dalgaard             Blegdamsvej 3  
+  c/ /'_ --- Dept. of Biostatistics     2200 Cph. N   
+ (*) \(*) -- University of Copenhagen   Denmark      Ph: (+45) 35327918
+~~~~~~~~~~ - (p.dalgaard@biostat.ku.dk)             FAX: (+45) 35327907
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From jimrc@mathfs.math.montana.edu  Thu Jul 30 00:19:27 1998
+From: jimrc@mathfs.math.montana.edu (Jim Robison-Cox)
+Date: Wed, 29 Jul 1998 17:19:27 -0600 (MDT)
+Subject: aov with Error Strata
+Message-ID: <Pine.NEB.4.00.9807291701240.6003-200000@mathfs.math.montana.edu>
+
+  This message is in MIME format.  The first part should be readable text,
+  while the remaining parts are likely unreadable without MIME-aware tools.
+  Send mail to mime@docserver.cac.washington.edu for more info.
+
+--0-488534781-901753860=:6003
+Content-Type: TEXT/PLAIN; CHARSET=US-ASCII
+Content-ID: <Pine.NEB.4.00.9807291716501.6003@mathfs.math.montana.edu>
+
+
+  Attached is R code for an aov function which handles multiple error
+strata.  
+  I took a different approach from that suggested in the model.c code of
+R&R.  Rather than modify model.c, I did all of the functions as
+interpreted R code.  They work on the examples in Chambers & Hastie _Stat
+models in S_.  So far I don't have the projections working.  I have a
+crude alias() function which I'm not including. I modified print.mlm and
+summary.mlm because they didn't work for me.
+
+  print.aov and summary.aov are basically the same because I don't like
+the print.aov in S which strings out sums of squares on one line.
+
+  Comments and testing on various datasets are needed.  Please let me know
+what you think.
+
+Jim Robison-Cox                 ____________            
+Department of Math Sciences    |            |           phone: (406)994-5340
+2-214 Wilson Hall               \   BZN, MT |           FAX:   (406)994-1789
+Montana State University         |  *_______|
+Bozeman, MT 59717                 \_|         e-mail: jimrc@math.montana.edu 
+
+
+
+--0-488534781-901753860=:6003
+Content-Type: TEXT/PLAIN; CHARSET=US-ASCII; NAME="aov.R"
+Content-Transfer-Encoding: BASE64
+Content-ID: <Pine.NEB.4.00.9807291711000.6003@mathfs.math.montana.edu>
+Content-Description: 
+Content-Disposition: ATTACHMENT; FILENAME="aov.R"
+
+YW92IDwtIGZ1bmN0aW9uIChmb3JtdWxhLCBkYXRhID0gbGlzdCgpLCBzdWJz
+ZXQsIHdlaWdodHM9TlVMTCwgbmEuYWN0aW9uLCANCiAgICAgICAgbWV0aG9k
+ID0gInFyIiwgbW9kZWwgPSBUUlVFLCBrZWVwLm9yZGVyPUZBTFNFLCBwcm9q
+PUZBTFNFLCBvbmVkZj1GQUxTRSwNCiAgICAgICAgICAgICAgICAgdG9sPSBz
+cXJ0KC5NYWNoaW5lJGRvdWJsZS5lcHMpLCAuLi4pIA0Kew0KICBpcy56ZXJv
+IDwtIGZ1bmN0aW9uKHgsdG9sPTEuMGUtNykgYWJzKHgpIDwgdG9sDQogIGlm
+IChtZXRob2QgPT0gIm1vZGVsLmZyYW1lIikgDQogICAgcmV0dXJuKG1mKQ0K
+ICBlbHNlIGlmIChtZXRob2QgIT0gInFyIikgDQogICAgd2FybmluZyhwYXN0
+ZSgibWV0aG9kID0iLCBtZXRob2QsICJpcyBub3Qgc3VwcG9ydGVkLiBVc2lu
+ZyBcInFyXCIuIikpDQogIGlmIChsZW5ndGgobGlzdCguLi4pKSkgDQogICAg
+d2FybmluZyhwYXN0ZSgiRXh0cmEgYXJndW1lbnRzIiwgZGVwYXJzZShzdWJz
+dGl0dXRlKC4uLikpLCANCiAgICAgICAgICAgICAgICAgICJhcmUganVzdCBk
+aXNyZWdhcmRlZC4iKSkNCiAgbXQgPC0gdGVybXMoZm9ybXVsYSwgZGF0YSA9
+IGRhdGEsIGtlZXAub3JkZXI9a2VlcC5vcmRlcikNCiAgaWYoaXMubmEoY2hh
+cm1hdGNoKCJFcnJvciIsYXR0cihtdCwidGVybS5sYWJlbHMiKSkpKXsNCiAg
+ICAjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMj
+IyMjIyMjIyMjIyMjIyMjIw0KICAgICMjICAgICAgICAgICAgICAgICAgIFBs
+YWluIEFOT1ZBIHdpdGggYSBzaW5nbGUgRXJyb3IgdGVybSANCiAgICAjIyMj
+IyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMj
+IyMjIyMjIyMjIw0KICAgIG1mIDwtIG1hdGNoLmNhbGwoKQ0KICAgIG1mJHNp
+bmd1bGFyLm9rIDwtIE5VTEwNCiAgICBtZiRtb2RlbCA8LSBOVUxMDQogICAg
+bWYkbWV0aG9kIDwtIE5VTEwNCiAgICBtZltbMV1dIDwtIGFzLm5hbWUoIm1v
+ZGVsLmZyYW1lIikNCiAgICBtZiA8LSBldmFsKG1mLCBzeXMuZnJhbWUoc3lz
+LnBhcmVudCgpKSkNCiAgICB5IDwtIG1vZGVsLnJlc3BvbnNlKG1mLCAibnVt
+ZXJpYyIpDQogICAgbnkgPC0gTkNPTCh5KQ0KICAgIGlmKG55ID4gMSAmIGlz
+Lm51bGwoZGltbmFtZXMoeSlbWzJdXSkpDQogICAgICBkaW1uYW1lcyh5KVtb
+Ml1dIDwtIHBhc3RlKCJ5IiwxOm55LHNlcD0iIikNCiAgICB3IDwtIG1vZGVs
+LndlaWdodHMobWYpDQogICAgaWYgKGlzLmVtcHR5Lm1vZGVsKG10KSkgew0K
+ICAgICAgeiA8LSBsaXN0KGNvZWZmaWNpZW50cyA9IG51bWVyaWMoMCksIHJl
+c2lkdWFscyA9IHksIA0KICAgICAgICAgICAgICAgIGZpdHRlZC52YWx1ZXMg
+PSAwICogeSwgd2VpZ2h0cyA9IHcsIHJhbmsgPSAwLCANCiAgICAgICAgICAg
+ICAgICBkZi5yZXNpZHVhbCA9IGxlbmd0aCh5KSkNCiAgICAgIGNsYXNzKHop
+IDwtIGlmIChpcy5tYXRyaXgoeSkpIA0KICAgICAgICBjKCJtYW92Lm51bGwi
+LCAiYW92Lm51bGwiLCAibWFvdiIsICJhb3YiKQ0KICAgICAgZWxzZSBjKCJh
+b3YubnVsbCIsICJhb3YiKQ0KICAgIH0NCiAgICBlbHNlIHsNCiAgICAgIHgg
+PC0gbW9kZWwubWF0cml4KG10LCBtZikNCiAgICAgIHogPC0gaWYgKGlzLm51
+bGwodykpIA0KICAgICAgICBsbS5maXQoeCwgeSwgdG9sPXRvbCkNCiAgICAg
+IGVsc2UgbG0ud2ZpdCh4LCB5LCB3LCB0b2w9dG9sKQ0KICAgICAgeiRyZXNp
+ZC5hc3NpZ24gPC0gKHokcXIkcmFuaysxKTogZGltKHgpWzFdDQogICAgICBj
+bGFzcyh6KSA8LSBjKGlmIChpcy5tYXRyaXgoeSkpIGMoIm1hb3YiLCJtbG0i
+KSwgImFvdiIsICJsbSIpDQogICAgfQ0KICAgICMjIyBTZXQgdXAgY29udHJh
+c3RzIA0KICAgIGNvbnRyIDwtICBhcy5saXN0KGF0dHIobXQsInRlcm0ubGFi
+ZWxzIilbIGF0dHIobXQsIm9yZGVyIikgPT0gMV0pDQogICAgbmFtZXMoY29u
+dHIpIDwtIHVubGlzdChjb250cikNCiAgICBmb3IgKGkgaW4gMTpsZW5ndGgo
+Y29udHIpKQ0KICAgICAgY29udHJbW2ldXSA8LSBjb250cmFzdHMoZGF0YVss
+Y29udHJbW2ldXSBdKQ0KICAgIHokY29udHJhc3RzIDwtIGNvbnRyDQogICAg
+aWYocHJvaikNCiAgICAgIHokcHJvaiA8LSBwcm9qLmFvdih4LHksb25lZGYp
+DQogICAgeiRjYWxsIDwtIG1hdGNoLmNhbGwoKQ0KICAgIHokdGVybXMgPC0g
+bXQNCiAgICBpZiAobW9kZWwpIA0KICAgICAgeiRtb2RlbCA8LSBtZg0KICB9
+DQogIGVsc2V7DQogICAgIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMj
+IyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMNCiAgICAjIyMgICAgICAg
+ICAgICAgICAgICAgICAgICAgICAgICBNdWx0aXBsZSBFcnJvciBzdHJhdGEN
+CiAgICAjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMj
+IyMjIyMjIyMjIyMjIyMjIyMjIw0KICAgIGZvcm11bGFzIDwtIHNwbGl0LmZv
+cm11bGEuYnlFcnJvcihmb3JtdWxhKQ0KICAgIGVycm9yLmZvcm0gPC0gZm9y
+bXVsYXMkZXJyb3IuZm9ybQ0KICAgIG1vZC5mb3JtIDwtIGZvcm11bGFzJG1v
+ZGVsLmZvcm0NCiAgICBlbXQgPC0gdGVybXMoZXJyb3IuZm9ybSkgICMgbW9k
+ZWwgdGVybXMgZm9yIGVycm9yDQogICAgZW1mIDwtIG1vZGVsLmZyYW1lKGZv
+cm11bGE9ZXJyb3IuZm9ybSxkYXRhPWRhdGEpICMgbW9kZWwgZnJhbWUgZm9y
+IGVycm9yDQogICAgeSAgIDwtIG1vZGVsLnJlc3BvbnNlKGVtZiwgIm51bWVy
+aWMiKQ0KICAgIGlmKE5DT0woeSkgPiAxKQ0KICAgICAgc3RvcCgiV2l0aCBF
+cnJvciBzdHJhdGEgdXNlIGEgdmVjdG9yIChvbmx5KSByZXNwb25zZS4iKQ0K
+ICAgIGV4ICA8LSBtb2RlbC5tYXRyaXgoZW10LCBkYXRhKQ0KICAgIG5yIDwt
+IG5yb3coZXgpDQogICAgZXJyLmFvdiA8LSBpZihpcy5udWxsKHdlaWdodHMp
+KSBsbS5maXQoZXgseSwgdG9sPXRvbCkNCiAgICAgICAgICAgICAgIGVsc2Ug
+bG0ud2ZpdChleCx5LHdlaWdodHMsdG9sPXRvbCkNCiAgICBRZSA8LSBxci5R
+KGVyci5hb3YkcXIsIGNvbXBsZXRlPVRSVUUpDQogICAgeSA8LSB0KFFlKSAl
+KiUgeSAgICAgICAgICAgICAgICAgIyMgUHJvamVjdCB5IG9udG8gdGhlIGVy
+cm9yIHNwYWNlDQogICAgZXJyLnJhbmsgPC0gZXJyLmFvdiRyYW5rDQogICAg
+cGl2b3QgPC0gZXJyLmFvdiRxciRwaXZvdA0KICAgIGFzc24gPC0gc3BsaXQo
+KDE6ZXJyLnJhbmspLGZhY3RvcihlcnIuYW92JGFzc2lnbltwaXZvdF1bMTpl
+cnIucmFua10sDQogICAgICAgICAgICAgICAgICBsZXZlbHMgPSB1bmlxdWUo
+ZXJyLmFvdiRhc3NpZ25bcGl2b3RdKSkpDQogICAgbmFtZXMoYXNzbikgIDwt
+IGMoaWYoYXR0cihlbXQsImludGVyY2VwdCIpKSAiSW50ZXJjZXB0IiwNCiAg
+ICAgICAgICAgICAgICAgICAgICAgICBhdHRyKGVtdCwidGVybS5sYWJlbHMi
+KSkNCiAgICBzdHJhdGEubmR4IDwtIGMoYXNzbiwgbGlzdChSZXNpZHVhbCA9
+IChlcnIucmFuaysxKTpucikpDQogICAgICAgICAgICAgICAgICAgICAgICMj
+IGluZGljZXMgb2YgY29sdW1ucyBvZiBleCBpbnRvIHN0cmF0YQ0KICAgIGRm
+LmVycm9yIDwtIHVubGlzdChsYXBwbHkoIHN0cmF0YS5uZHgsbGVuZ3RoKSkN
+CiAgICBuLnN0cmF0YSA8LSBsZW5ndGgoZGYuZXJyb3IpDQogICAgc3RyYXRh
+IDwtIG5hbWVzKHN0cmF0YS5uZHgpDQogICAgbXQgPC0gdGVybXMobW9kLmZv
+cm0sIGtlZXAub3JkZXIgPSBrZWVwLm9yZGVyKQ0KICAgIE14IDwtIG1vZGVs
+Lm1hdHJpeChtdCwgZGF0YSkNCiAgICB0UWUuTSA8LSB0KFFlKSAlKiUgTXgg
+ICAgICAgICAgICAjIyBQcm9qZWN0IHggb250byBlcnJvciBzcGFjZQ0KICAg
+IGF0dHIodFFlLk0sImFzc2lnbiIpIDwtIGF0dHIoTXgsImFzc2lnbiIpDQog
+ICAgbmMgPC0gbmNvbChNeCkNCiAgICBjb2wubmR4IDwtIE5VTEwNCiAgICBt
+ZiA8LSBtYXRjaC5jYWxsKCkNCiAgICBtZiRtb2RlbCA8LSBOVUxMDQogICAg
+bWZbWzFdXSA8LSBhcy5uYW1lKCJtb2RlbC5mcmFtZSIpDQogICAgeiA8LSBh
+cy5saXN0KDE6bi5zdHJhdGEpICAgICMjIGJlZ2luIHRvIHNldHVwIHRoZSBy
+ZXN1bHQgb2JqZWN0DQogICAgIyMgTG9vcCBvdmVyIHN0cmF0YSANCiAgICBm
+b3IgKCBpIGluICgxICsgYXR0cihlbXQsImludGVyY2VwdCIpKSA6bi5zdHJh
+dGEpew0KICAgICAgaWYoIGkgPiAxICYgbGVuZ3RoKGNvbC5uZHgpID4gMCl7
+DQogICAgICAgIHkgPC0geSAgLSB0UWUuTVsgLGNvbC5uZHhdICUqJSBzdHJ0
+LmNvZWYNCiAgICAgIH0NCiAgICAgIHJvdy5uZHggPC0gc3RyYXRhLm5keFtb
+aV1dDQogICAgICBjb2wubmR4IDwtICgxOm5jKVthcHBseSh0UWUuTVtyb3cu
+bmR4LCxkcm9wPUZBTFNFXSwyLA0KICAgICAgICAgICAgICAgICAgICAgICAg
+ICAgICAgZnVuY3Rpb24oeCkgIWFsbChpcy56ZXJvKHgsIHRvbD10b2wpKSld
+DQogICAgICBsY24gPC0gbGVuZ3RoKGNvbC5uZHgpDQogICAgICBpZiggbGNu
+ID4gMCl7DQogICAgICAgIGlmKGxjbiA+IGRmLmVycm9yW1tpXV0pDQogICAg
+ICAgICAgIGNvbC5uZHggPC0gY29sLm5keFsxOmRmLmVycm9yW1tpXV1dDQog
+ICAgICAgIHggPC0gdFFlLk1bcm93Lm5keCxjb2wubmR4LGRyb3A9RkFMU0Vd
+DQogICAgICAgIGF0dHIoeCwiYXNzaWduIikgPC0gYXR0cih0UWUuTSwiYXNz
+aWduIilbY29sLm5keF0NCiAgICAgICAgemkgPC0gaWYoaXMubnVsbCh3ZWln
+aHRzKSkgbG0uZml0KHgsIHlbcm93Lm5keF0pDQogICAgICAgICAgICAgIGVs
+c2UgbG0uZml0KHgsIHlbcm93Lm5keF0sd2VpZ2h0c1tyb3cubmR4XSkNCiAg
+ICAgICAgemkkcmVzaWQuYXNzaWduIDwtICh6aSRxciRyYW5rKzEpOiBkaW0o
+eClbMV0NCiAgICAgICAgc3RydC5jb2VmIDwtIHppJGNvZWZmaWNpZW50c1sh
+aXMubmEoemkkY29lZmZpY2llbnRzKV0NCiAgICAgICAgaWYoYW55KGlzLm5h
+KHppJGNvZWZmaWNpZW50cykpKQ0KICAgICAgICAgIGNvbC5uZHggPC0gY29s
+Lm5keFshaXMubmEoemkkY29lZmZpY2llbnRzKV0NCiAgICAgICAgICAgIyAo
+Tm90IG5lZWRlZCBmb3IgaGVsbWVydCBjb250cmFzdHMpDQogICAgICAgIHpp
+JHRlcm1zIDwtIG10DQogICAgICAgIGF0dHIoemkkdGVybXMsInRlcm0ubGFi
+ZWxzIikgPC0gdW5pcXVlKGF0dHIoemkkdGVybXMsDQogICAgICAgICAgICAg
+ICAgICAgICAgICJ0ZXJtLmxhYmVscyIpW2F0dHIodFFlLk0sImFzc2lnbiIp
+W2NvbC5uZHhdXSkNCiAgICAgICAgYXR0cih6aSR0ZXJtcywiZmFjdG9ycyIp
+IDwtICBhdHRyKHppJHRlcm1zLA0KICAgICAgICAgICAgICAgICAgICAgICJm
+YWN0b3JzIilbLGF0dHIoemkkdGVybXMsInRlcm0ubGFiZWxzIiksZHJvcD1G
+QUxTRV0NCiAgICAgICAgYXR0cih6aSR0ZXJtcywiaW50ZXJjZXB0IikgPC0g
+MA0KICAgICAgICBjbGFzcyh6aSkgPC0gYygiYW92IiwgImxtIikNCiAgICAg
+ICAgICAjIyMgU2V0IHVwIGNvbnRyYXN0cw0KICAgICAgICBjb250ciA8LSAg
+YXR0cih6aSR0ZXJtcywidGVybS5sYWJlbHMiKQ0KICAgICAgICBjb250ciA8
+LSBhcy5saXN0KGNvbnRyW3VubGlzdChsYXBwbHkoc3Ryc3BsaXQoY29udHIs
+IjoiKSxsZW5ndGgpKT09IDFdKQ0KICAgICAgICAgICAgICAgICAgICAgICAg
+ICAgICAgICAgICAgICAgICMgcmVtb3ZlIGludGVyYWN0aW9ucw0KICAgICAg
+ICBuYW1lcyhjb250cikgPC0gdW5saXN0KGNvbnRyKQ0KICAgICAgICBmb3Ig
+KGogaW4gMTpsZW5ndGgoY29udHIpKQ0KICAgICAgICAgIGNvbnRyW1tqXV0g
+PC0gY29udHJhc3RzKGRhdGFbLGNvbnRyW1tqXV0gXSkNCiAgICAgICAgemkk
+Y29udHJhc3RzIDwtIGNvbnRyDQogICAgICAgIGlmKHByb2opDQogICAgICAg
+ICAgemkkcHJvaiA8LSBwcm9qLmFvdih4LHksb25lZGY9b25lZGYpDQogICAg
+ICB9DQogICAgICBlbHNlIHsgICAgICAjIyBObyB0ZXJtcyB0byBmaXQgaW4g
+dGhpcyBlcnJvciBzdHJhdHVtDQogICAgICAgICB6aSA8LSBsaXN0KGNvZWZm
+aWNpZW50cz0gTkEsICAgIHJlc2lkdWFscyA9IHlbcm93Lm5keF0sDQogICAg
+ICAgICAgICAgICAgIGVmZmVjdHMgPSBOQSwgcmFuayA9IDAsDQogICAgICAg
+ICAgICAgICAgIGZpdHRlZC52YWx1ZXMgPSAwICpyb3cubmR4ICwgcXIgPSBO
+QSwgIA0KICAgICAgICAgICAgICAgICBhc3NpZ24gPSBOQSwgIGRmID0gTkEs
+IGRmLnJlc2lkdWFsID0gZGYuZXJyb3JbaV0sDQogICAgICAgICAgICAgICAg
+ICAgcmVzaWQuYXNzaWduID0gMTpkZi5lcnJvcltpXSkNCiAgICAgICB9DQog
+ICAgICBjbGFzcyh6aSkgPC0gYygiYW92IiwibG0iKQ0KICAgICAgeltbaV1d
+IDwtIHppDQogICAgfQ0KICBuYW1lcyh6KSA8LSAgYyggaWYoYXR0cihlbXQs
+ImludGVyY2VwdCIpKSAiKEludGVyY2VwdCkiLA0KICAgICAgICAgICAgICAg
+ICBhdHRyKGVtdCwidGVybS5sYWJlbHMiKSwiV2l0aGluIikNCiAgYXR0cih6
+LCJyZXNwb25zZSIpIDwtICBhdHRyKGVtdCwidmFyaWFibGVzIilbWzJdXQ0K
+ICBhdHRyKG10LCJzcGVjaWFscyIpIDwtIGxpc3QoRXJyb3I9ZW10KQ0KICBh
+dHRyKHosInRlcm1zIikgPC0gIG10DQogIGF0dHIoeiwiY2FsbCIpIDwtIG1h
+dGNoLmNhbGwoKQ0KICBjbGFzcyh6KSA8LSBjKCJhb3ZsaXN0IiwibGlzdG9m
+IikNCiAgfQ0KICB6DQp9DQoNCg0KDQogd2VpZ2h0cy5hb3YgPC0gZnVuY3Rp
+b24gKHgpICB4JHdlaWdodHMNCiByZXNpZHVhbHMuYW92IDwtIGZ1bmN0aW9u
+ICh4KSAgeCRyZXNpZHVhbHMNCiBkZi5yZXNpZHVhbC5hb3YgPC0gZnVuY3Rp
+b24gKHgpICB4JGRmLnJlc2lkdWFsDQoNCg0KcHJpbnQuYW92IDwtIGZ1bmN0
+aW9uKG9iamVjdCwgZGlnaXRzPSAzLCAuLi4pDQp7DQogIGNhdCgiQ2FsbDpc
+biIpDQogIHByaW50KG9iamVjdCRjYWxsKQ0KICB3IDwtIHdlaWdodHMob2Jq
+ZWN0KQ0KICBjYXQocGFzdGUoIGlmKCFpcy5udWxsKHcpKSAiV2VpZ2h0ZWQi
+LCAiUmVzaWR1YWxzOlxuIikpDQogIGlmIChpcy5udWxsKHcpKSB7DQogICAg
+c3NyIDwtIHN1bShyZXNpZChvYmplY3QpXjIpDQogICAgcHJpbnQoc3VtbWFy
+eShhcy5udW1lcmljKHJlc2lkKG9iamVjdCkpKSkNCiAgfQ0KICBlbHNlew0K
+ICAgIHNzciA8LSBzdW0odyAqIHJlc2lkKG9iamVjdCleMikNCiAgICBwcmlu
+dChzdW1tYXJ5KGFzLm51bWVyaWMoc3FydCh3KSAqIHJlc2lkKG9iamVjdCkp
+KSkNCiAgfQ0KICBwMSA8LSAxOm9iamVjdCRyYW5rDQogIGNvbXAgPC0gb2Jq
+ZWN0JGVmZmVjdHNbcDFdDQogIGFzZ24gPC0gb2JqZWN0JGFzc2lnbltvYmpl
+Y3QkcXIkcGl2b3RdW3AxXQ0KICBkZnIgPC0gZGYucmVzaWR1YWwob2JqZWN0
+KQ0KICBzcyA8LSBjKGFzLm51bWVyaWMobGFwcGx5KHNwbGl0KGNvbXBeMiwg
+YXNnbiksIHN1bSkpLCBzc3IpDQogIGRmIDwtIGMoYXMubnVtZXJpYyhsYXBw
+bHkoc3BsaXQoYXNnbiwgICBhc2duKSwgbGVuZ3RoKSksIGRmcikNCiAgaWYg
+KGF0dHIob2JqZWN0JHRlcm1zLCAiaW50ZXJjZXB0IikpIHsNCiAgICBzcyA8
+LSBzc1stMV0NCiAgICBkZiA8LSBkZlstMV0NCiAgfQ0KICBtcyA8LSBzcy9k
+Zg0KICBtc1tpcy5uYW4obXMpXSA8LSBOQQ0KICBmIDwtIGlmKGRmciA+IDFl
+LTEwKSBtcy8oc3NyL2RmcikNCiAgICAgICBlbHNlIHJlcChOQSxsZW5ndGgo
+ZGYpKQ0KICBwIDwtIDEgLSBwZihmLCBkZiwgZGZyKQ0KICB0YWJsZSA8LSBj
+YmluZChkZiwgc3MsIG1zLCBmLCBwKQ0KICB0YWJsZVtsZW5ndGgocCksIDQ6
+NV0gPC0gTkENCiAgZGltbmFtZXModGFibGUpIDwtIGxpc3QoYyhhdHRyKG9i
+amVjdCR0ZXJtcywidGVybS5sYWJlbHMiKSwiUmVzaWR1YWwiKSwNCiAgICAg
+ICAgICAgICAgICAgICAgICAgICAgYygiRGYiLCAiU3VtIFNxIiwgIk1lYW4g
+U3EiLCAiRiIsICJQcig+RikiKSkNCiAgcmVzdWx0IDwtIGxpc3QodGFibGUg
+PSB0YWJsZSwgdGl0bGUgPQ0KICAgICAgICAgcGFzdGUoIkFuYWx5c2lzIG9m
+IFZhcmlhbmNlIFRhYmxlXG5SZXNwb25zZToiLCBmb3JtdWxhKG9iamVjdClb
+WzJdXSkpDQogIGNsYXNzKHJlc3VsdCkgPC0gInRhYnVsYXIiDQogIHByaW50
+KHJlc3VsdCkNCiAgbm9uLmVzdC50ZXJtcyA8LSBsZW5ndGgob2JqZWN0JGNv
+ZWZbaXMubmEob2JqZWN0JGNvZWYpXSkNCiAgaWYoIG5vbi5lc3QudGVybXMg
+Pj0gMSkNCiAgICBjYXQocGFzdGUobm9uLmVzdC50ZXJtcywgIm91dCBvZiIs
+IGxlbmd0aChvYmplY3QkY29lZiksDQogICAgICAgICAgICAgICJjb2VmZmlj
+aWVudHMgYXJlIG5vdCBlc3RpbWFibGUuXG4iKSkNCiAgY2F0KHBhc3RlKCJS
+ZXNpZHVhbCBzdGFuZGFyZCBlcnJvcjoiLCByb3VuZChzcXJ0KG1zW2xlbmd0
+aChtcyldKSxkaWdpdHMpLA0KICAgICAgICAgICAgIm9uIiwgZGZyLCAiZGVn
+cmVlcyBvZiBmcmVlZG9tXG4iKSkNCiAgY292LnVuc2NhbGVkIDwtIGNob2wy
+aW52KG9iamVjdCRxciRxclsxOm9iamVjdCRyYW5rLCAxOm9iamVjdCRyYW5r
+LA0KICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIGRy
+b3AgPSBGQUxTRV0pDQogICMjIENoZWNrIHRvIHNlZSBpZiBpbnZlcnNlIHZh
+ci1jb3ZhcmlhbmNlIGlzIGEgZGlhZ29uYWwgbWF0cml4DQogIGlmKG1heChh
+YnMoY292LnVuc2NhbGVkW3Jvdyhjb3YudW5zY2FsZWQpID4gY29sKGNvdi51
+bnNjYWxlZCldKSkgPiAxZS0xMCkNCiAgICBjYXQoIkVzdGltYXRlZCBlZmZl
+Y3RzIG1heSBiZSB1bmJhbGFuY2VkLlxuIikNCiAgZWxzZSBjYXQoIkVzdGlt
+YXRlZCBlZmZlY3RzIGFyZSBiYWxhbmNlZFxuIikNCiAgY2F0KCJGb3IgZGV0
+YWlscyBvbiBjb2VmZmljaWVudHMgdXNlIHN1bW1hcnkubG1cbiIpDQogIGlu
+dmlzaWJsZShyZXN1bHQpDQp9DQogIA0KICANCnByb2ouYW92IDwtIGZ1bmN0
+aW9uKHgseSxvbmVkZil7DQogeQ0KfQ0KDQoNCnByZWRpY3QuYW92IDwtIA0K
+ZnVuY3Rpb24gKG9iamVjdCwgbmV3ZGF0YSA9IG1vZGVsLmZyYW1lKG9iamVj
+dCksIGNvbmYubGV2ZWwgPSAwLjk1LCANCgkgICAgdG9sLmxldmVsID0gY29u
+Zi5sZXZlbCkgDQp7DQoJICAgIGZvcm0gPC0gZGVsZXRlLnJlc3BvbnNlKHRl
+cm1zKG9iamVjdCkpDQoJICAgIFggPC0gbW9kZWwubWF0cml4KGZvcm0sIG5l
+d2RhdGEpDQoJICAgIG4gPC0gTlJPVyhvYmplY3QkcXIkcXIpDQoJICAgIHAg
+PC0gb2JqZWN0JHJhbmsNCgkgICAgcDEgPC0gMTpwDQoJICAgIHBpdiA8LSBv
+YmplY3QkcXIkcGl2b3RbcDFdDQoJICAgIHIgPC0gcmVzaWQob2JqZWN0KQ0K
+CSAgICBmIDwtIGZpdHRlZChvYmplY3QpDQoJICAgIHcgPC0gd2VpZ2h0cyhv
+YmplY3QpDQoJICAgIHJzcyA8LSBzdW0oaWYgKGlzLm51bGwodykpIA0KCSAg
+ICAJICAgIHJeMg0KCSAgICBlbHNlIHcgKiByXjIpDQoJICAgIFIgPC0gY2hv
+bDJpbnYob2JqZWN0JHFyJHFyW3AxLCBwMSwgZHJvcCA9IEZBTFNFXSkNCgkg
+ICAgZXN0IDwtIG9iamVjdCRjb2VmZmljaWVudHNbcGl2XQ0KCSAgICBwcmVk
+aWN0b3IgPC0gYyhYWywgcGl2LCBkcm9wID0gRl0gJSolIGVzdCkNCgkgICAg
+aXAgPC0gcmVhbChOUk9XKFgpKQ0KCSAgICByZXN2YXIgPC0gcnNzLyhuIC0g
+cCkNCgkgICAgdmNvdiA8LSByZXN2YXIgKiBSDQoJICAgIGZvciAoaSBpbiAo
+MTpOUk9XKFgpKSkgew0KCSAgICAJICAgIHhpIDwtIFhbaSwgcGl2XQ0KCSAg
+ICAJICAgIGlwW2ldIDwtIHhpICUqJSB2Y292ICUqJSB4aQ0KCSAgICB9DQoJ
+ICAgIHN0ZGVycjEgPC0gc3FydChpcCkNCgkgICAgc3RkZXJyMiA8LSBzcXJ0
+KHJlc3ZhciArIGlwKQ0KCSAgICB0dDEgPC0gcXQoKDEgLSBjb25mLmxldmVs
+KS8yLCBuIC0gcCkNCgkgICAgdHQyIDwtIHF0KCgxIC0gdG9sLmxldmVsKS8y
+LCBuIC0gcCkNCgkgICAgY29uZi5sIDwtIHByZWRpY3RvciArIHR0MSAqIHN0
+ZGVycjENCgkgICAgY29uZi51IDwtIHByZWRpY3RvciAtIHR0MSAqIHN0ZGVy
+cjENCgkgICAgcHJlZC5sIDwtIHByZWRpY3RvciArIHR0MiAqIHN0ZGVycjIN
+CgkgICAgcHJlZC51IDwtIHByZWRpY3RvciAtIHR0MiAqIHN0ZGVycjINCgkg
+ICAgZGF0YS5mcmFtZShwcmVkaWN0b3IgPSBwcmVkaWN0b3IsIGNvbmYubCA9
+IGNvbmYubCwgY29uZi51ID0gY29uZi51LCANCgkgICAgCSAgICBwcmVkLmwg
+PSBwcmVkLmwsIHByZWQudSA9IHByZWQudSwgcm93Lm5hbWVzID0gcm93bmFt
+ZXMobmV3ZGF0YSkpDQp9DQoNCiBzcGxpdC5mb3JtdWxhLmJ5RXJyb3IgPC0g
+ZnVuY3Rpb24gKGZvcm1sYSkgDQp7DQoJICAgIHZhcnMgPC0gYXMuY2hhcmFj
+dGVyKGF0dHIodGVybXMoZm9ybWxhKSwgInRlcm0ubGFiZWxzIikpDQoJICAg
+IGV0ZXJtIDwtICgxOmxlbmd0aCh2YXJzKSlbY2hhcm1hdGNoKCJFcnJvciIs
+IHZhcnMpXQ0KCSAgICAjIyBObyBlcnJvciB0ZXJtIHVzZWQgaW4gZm9ybXVs
+YSwgcmV0dXJuIHRoZSBvcmlnaW5hbCBmb3JtdWxhDQoJICAgIGlmIChpcy5u
+YShldGVybSkgfCBpcy5udWxsKGV0ZXJtKSkgDQoJICAgIAkgICAgcmV0dXJu
+KGxpc3QoZXJyLmZvcm0gPSBOVUxMLCBtb2RlbC5mb3JtID0gZm9ybWxhKSkN
+CgkgICAgZWxlbmd0aCA8LSBuY2hhcih2YXJzW2V0ZXJtXSkgLSAxDQoJICAg
+IGVyci5mb3JtIDwtIGFzLmZvcm11bGEocGFzdGUoYXR0cih0ZXJtcyhmb3Jt
+bGEpLCAidmFyaWFibGVzIilbWzJdXSwgDQoJICAgIAkgICAgIn4iLCBzdWJz
+dHJpbmcodmFyc1tldGVybV0sIDcsIGVsZW5ndGgpKSkNCgkgICAgbW9kZWwu
+Zm9ybSA8LSBhcy5mb3JtdWxhKHBhc3RlKGMoYXMuY2hhcmFjdGVyKGF0dHIo
+dGVybXMoZm9ybWxhKSwgDQoJICAgIAkgICAgInZhcmlhYmxlcyIpW1syXV0p
+LCBwYXN0ZSh2YXJzWy1ldGVybV0sIGNvbGxhcHNlID0gIiArICIpKSwgDQoJ
+ICAgIAkgICAgY29sbGFwc2UgPSAiIH4gIikpDQoJICAgICMjIFVzZSB1cGRh
+dGUuZm9ybXVsYSBpbnN0ZWFkPyAgSSBjb3VsZG4ndCBnZXQgaXQgdG8gd29y
+ayByaWdodC4NCgkgICAgbGlzdChlcnJvci5mb3JtID0gZXJyLmZvcm0sIG1v
+ZGVsLmZvcm0gPSBtb2RlbC5mb3JtKQ0KfQ0KDQojIyBtb2RlbC5mcmFtZSBk
+b2Vzbid0IGhhbmRsZSBtdWx0aWNvbHVtbiB5IGluIHRoZSB3YXkgaW5kaWNh
+dGVkIGJ5IFN0YXQgbW9kZWxzIGluIFMgcCAxNTUNCiNUaGlzIHdvcmtzIGlm
+IHdhZmVybSBoYXMgY29sdW1uczogbWFza2RpbSwgdmlzYy50ZW0sIHNwaW5z
+cCwgYmFrZXRpbWUsIGFwZXJ0dXJlLCBleHB0aW1lLCBkZXZ0aW1lLGV0Y2h0
+aW1lOg0KI3dtYW92IDwtIGxtKExpbmUgfm1hc2tkaW0gKyB2aXNjLnRlbStz
+cGluc3ArYmFrZXRpbWUrYXBlcnR1cmUrZXhwdGltZSArIGRldnRpbWUgK2V0
+Y2h0aW1lLHdhZmVybSkNCg0KIyMgVGhpcyBkb2Vzbid0IHdvcmsgOg0KIyB3
+YWZlcm0kTGluZSA8LSBjYmluZChwcmUubWVhbixsb2cocHJlLmRldikscG9z
+dC5tZWFuLGxvZyhwb3N0LmRldikpDQojPiB3bWFvdiA8LSBhb3YoTGluZSB+
+Lix3YWZlcm0pDQojRXJyb3I6IE9iamVjdCAiTGluZS4xIiBub3QgZm91bmQN
+CiNFcnJvciBhcHBlYXJzIGluIC5JbnRlcm5hbChtb2RlbC5mcmFtZSkNCg0K
+I0luIHRoZSBjYXNlIGFib3ZlIHdoaWNoIHdvcmtzLCBzdW1tYXJ5LmxtIGRv
+ZXNuJ3QgaGFuZGxlIHRoZSBjb2VmZmljaWVudHMgcHJvcGVybHkuIE5lZWQg
+YSBzdW1tYXJ5Lm1sbS4NCg0KDQpwcmludC5tYW92IDwtIGZ1bmN0aW9uKG9i
+amVjdCl7DQogIGZvcihyZXNwIGluIGRpbW5hbWVzKG9iamVjdCRjb2VmZmlj
+aWVudHMpW1syXV0pew0KICAgIGNhdChwYXN0ZSgiXG4gUmVzcG9uc2U6ICIs
+cmVzcCwiXG4iKSkNCiAgICBvYmogPC0gb2JqZWN0DQogICAgb2JqJGNvZWZm
+aWNpZW50cyA8LSBvYmplY3QkY29lZmZpY2llbnRzWyxyZXNwLGRyb3A9RkFM
+U0VdDQogICAgb2JqJGVmZmVjdHMgPC0gb2JqZWN0JGVmZmVjdHNbLHJlc3As
+ZHJvcD1GQUxTRV0NCiAgICBvYmokcmVzaWR1YWxzIDwtIG9iamVjdCRyZXNp
+ZHVhbHNbLHJlc3AsZHJvcD1GQUxTRV0NCiAgICBvYmokZml0dGVkLnZhbHVl
+cyA8LSBvYmplY3QkZml0dGVkLnZhbHVlc1sscmVzcCxkcm9wPUZBTFNFXQ0K
+ICAgIG9iaiR0ZXJtc1tbMl1dIDwtIHJlc3ANCiAgICBwcmludC5hb3Yob2Jq
+KQ0KICB9DQp9DQoNCiAgc3VtbWFyeS5tYW92IDwtIGZ1bmN0aW9uKG9iamVj
+dCl7DQogIGZvcihyZXNwIGluIGRpbW5hbWVzKG9iamVjdCRjb2VmZmljaWVu
+dHMpW1syXV0pew0KICAgIGNhdChwYXN0ZSgiXG4gUmVzcG9uc2U6ICIscmVz
+cCwiXG4iKSkNCiAgICBvYmogPC0gb2JqZWN0DQogICAgb2JqJGNvZWZmaWNp
+ZW50cyA8LSBvYmplY3QkY29lZmZpY2llbnRzWyxyZXNwLGRyb3A9RkFMU0Vd
+DQogICAgb2JqJGVmZmVjdHMgPC0gb2JqZWN0JGVmZmVjdHNbLHJlc3AsZHJv
+cD1GQUxTRV0NCiAgICBvYmokcmVzaWR1YWxzIDwtIG9iamVjdCRyZXNpZHVh
+bHNbLHJlc3AsZHJvcD1GQUxTRV0NCiAgICBvYmokZml0dGVkLnZhbHVlcyA8
+LSBvYmplY3QkZml0dGVkLnZhbHVlc1sscmVzcCxkcm9wPUZBTFNFXQ0KICAg
+IG9iaiR0ZXJtc1tbMl1dIDwtIHJlc3ANCiAgICBwcmludChzdW1tYXJ5LmFv
+dihvYmopKQ0KICB9DQp9DQoNCnByaW50Lm1sbSA8LSBmdW5jdGlvbihvYmpl
+Y3Qpew0KICBmb3IocmVzcCBpbiBkaW1uYW1lcyhvYmplY3QkY29lZmZpY2ll
+bnRzKVtbMl1dKXsNCiAgICBjYXQocGFzdGUoIlxuIFJlc3BvbnNlOiAiLHJl
+c3AsIlxuIikpDQogICAgb2JqIDwtIG9iamVjdA0KICAgIG9iaiRjb2VmZmlj
+aWVudHMgPC0gb2JqZWN0JGNvZWZmaWNpZW50c1sscmVzcF0NCiAgICBvYmok
+ZWZmZWN0cyA8LSBvYmplY3QkZWZmZWN0c1sscmVzcF0NCiAgICBvYmokcmVz
+aWR1YWxzIDwtIG9iamVjdCRyZXNpZHVhbHNbLHJlc3BdDQogICAgb2JqJGZp
+dHRlZC52YWx1ZXMgPC0gb2JqZWN0JGZpdHRlZC52YWx1ZXNbLHJlc3BdDQog
+ICAgb2JqJHRlcm1zW1syXV0gPC0gcmVzcA0KICAgIHByaW50LmxtKG9iaikN
+CiAgfQ0KfQ0KDQogIHN1bW1hcnkubWxtIDwtIGZ1bmN0aW9uKG9iamVjdCl7
+DQogIGZvcihyZXNwIGluIGRpbW5hbWVzKG9iamVjdCRjb2VmZmljaWVudHMp
+W1syXV0pew0KICAgIGNhdChwYXN0ZSgiXG4gUmVzcG9uc2U6ICIscmVzcCwi
+XG4iKSkNCiAgICBvYmogPC0gb2JqZWN0DQogICAgb2JqJGNvZWZmaWNpZW50
+cyA8LSBvYmplY3QkY29lZmZpY2llbnRzWyxyZXNwXQ0KICAgIG9iaiRlZmZl
+Y3RzIDwtIG9iamVjdCRlZmZlY3RzWyxyZXNwXQ0KICAgIG9iaiRyZXNpZHVh
+bHMgPC0gb2JqZWN0JHJlc2lkdWFsc1sscmVzcF0NCiAgICBvYmokZml0dGVk
+LnZhbHVlcyA8LSBvYmplY3QkZml0dGVkLnZhbHVlc1sscmVzcF0NCiAgICBv
+YmokdGVybXNbWzJdXSA8LSByZXNwDQogICAgcHJpbnQoc3VtbWFyeS5sbShv
+YmopLHNpZ25pZi5zdGFycz1GQUxTRSkNCiAgfQ0KfQ0KDQpwcmludC5hb3Zs
+aXN0IDwtIA0Kc3VtbWFyeS5hb3ZsaXN0IDwtIGZ1bmN0aW9uIChvYmplY3Qs
+IGRpZ2l0cyA9IG1heCgzLCAuT3B0aW9ucyRkaWdpdHMgLSAzKSwgLi4uKQ0K
+ew0KICBjYXQocGFzdGUoYygiQW5hbHlzaXMgb2YgVmFyaWFuY2UuICBSZXNw
+b25zZSA9ICIpKSkNCiAgcHJpbnQoYXR0cihvYmplY3QsInRlcm1zIilbWzJd
+XSkNCiAgY2F0KCJDYWxsOlxuIikNCiAgcHJpbnQoYXR0cihvYmplY3QsImNh
+bGwiKSkNCiAgY2F0KCJcbiBTZXF1ZW50aWFsIEFuYWx5c2lzIFxuIikNCiAg
+bGlzdGxlbiA8LSBsZW5ndGgob2JqZWN0KQ0KICBmb3IoIGkgaW4gMjpsaXN0
+bGVuKXsNCiAgICBjYXQocGFzdGUoYygiXG5FcnJvciBzdHJhdHVtOiIsIG5h
+bWVzKG9iamVjdClbaV0sIlxuIikpKQ0KICAgIHByaW50KHN1bW1hcnkuYW92
+KG9iamVjdFtbaV1dLCBvbmUub2YubWFueSA9IFRSVUUpKQ0KICB9DQp9DQoN
+CnN1bW1hcnkuYW92IDwtIGZ1bmN0aW9uIChvYmplY3QsIG9uZS5vZi5tYW55
+PUZBTFNFLCAuLi4pIA0Kew0KICB3IDwtIHdlaWdodHMob2JqZWN0KQ0KICBp
+ZiAoaXMubnVsbCh3KSkgew0KICAgIHNzciA8LSBzdW0ocmVzaWQob2JqZWN0
+KV4yKQ0KICB9DQogIGVsc2V7DQogICAgc3NyIDwtIHN1bSh3ICogcmVzaWQo
+b2JqZWN0KV4yKQ0KICB9DQogIGRmciA8LSBkZi5yZXNpZHVhbChvYmplY3Qp
+DQogIGlmKCBvYmplY3QkcmFuayA+IDApew0KICAgIHAxIDwtIDE6b2JqZWN0
+JHJhbmsNCiAgICBjb21wIDwtIG9iamVjdCRlZmZlY3RzW3AxXQ0KICAgIGFz
+Z24gPC0gb2JqZWN0JGFzc2lnbltvYmplY3QkcXIkcGl2b3RdW3AxXQ0KICAg
+IHNzIDwtIGMoYXMubnVtZXJpYyhsYXBwbHkoc3BsaXQoY29tcF4yLCBhc2du
+KSwgc3VtKSksIHNzcikNCiAgICBkZiA8LSBjKGFzLm51bWVyaWMobGFwcGx5
+KHNwbGl0KGFzZ24sICAgYXNnbiksIGxlbmd0aCkpLCBkZnIpDQogICAgaWYg
+KGF0dHIob2JqZWN0JHRlcm1zLCAiaW50ZXJjZXB0IikpIHsNCiAgICAgIHNz
+IDwtIHNzWy0xXQ0KICAgICAgZGYgPC0gZGZbLTFdDQogICAgfQ0KICAgIG1z
+IDwtIHNzL2RmDQogICAgbXNbaXMubmFuKG1zKV0gPC0gTkENCiAgICBmIDwt
+IGlmKGRmciA+IDFlLTEwKSBtcy8oc3NyL2RmcikNCiAgICBlbHNlIHJlcChO
+QSxsZW5ndGgoZGYpKQ0KICAgIHAgPC0gMSAtIHBmKGYsIGRmLCBkZnIpDQog
+ICAgdGFibGUgPC0gY2JpbmQoZGYsIHNzLCBtcywgZiwgcCkNCiAgICB0YWJs
+ZVtsZW5ndGgocCksIDQ6NV0gPC0gTkENCiAgICBkaW1uYW1lcyh0YWJsZSkg
+PC0gbGlzdChjKGF0dHIob2JqZWN0JHRlcm1zLCJ0ZXJtLmxhYmVscyIpLCJS
+ZXNpZHVhbCIpLA0KICAgICAgICAgICAgICAgICAgICAgICAgICBjKCJEZiIs
+ICJTdW0gU3EiLCAiTWVhbiBTcSIsICJGIiwgIlByKD5GKSIpKQ0KICB9DQog
+IGVsc2V7DQogICAgdGFibGUgPC0gY2JpbmQoZGZyLCBzc3IsIHNzci9kZnIs
+IE5BLCBOQSkNCiAgICBkaW1uYW1lcyh0YWJsZSkgPC0gbGlzdCgiUmVzaWR1
+YWwiLA0KICAgICAgICAgICAgICAgICAgICAgICAgICAgIGMoIkRmIiwgIlN1
+bSBTcSIsICJNZWFuIFNxIiwgIkYiLCAiUHIoPkYpIikpDQogIH0NCiAgICBp
+Zighb25lLm9mLm1hbnkpDQogICAgICBjYXQocGFzdGUoIkFuYWx5c2lzIG9m
+IFZhcmlhbmNlIFRhYmxlXG5SZXNwb25zZToiLCBmb3JtdWxhKG9iamVjdClb
+WzJdXSksDQogICAgICAgICJcbiIpDQogIHJlc3VsdCA8LSBsaXN0KHRhYmxl
+ID0gdGFibGUpDQogIGNsYXNzKHJlc3VsdCkgPC0gInRhYnVsYXIiDQogIHJl
+c3VsdA0KfQ0K
+--0-488534781-901753860=:6003--
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From p.dalgaard@biostat.ku.dk  Thu Jul 30 11:02:59 1998
+From: p.dalgaard@biostat.ku.dk (Peter Dalgaard BSA)
+Date: 30 Jul 1998 12:02:59 +0200
+Subject: R-beta: feedback R-0.62.2
+In-Reply-To: Rashid Nassar's message of Wed, 29 Jul 1998 20:38:46 -0400 (EDT)
+References: <Pine.SOL.3.91.980729201132.28799A-100000@bio3.acpub.duke.edu>
+Message-ID: <x2vhofslkc.fsf@biostat.ku.dk>
+
+Rashid Nassar <rnassar@acpub.duke.edu> writes:
+
+> I have one more nitpick, if I may:
+> 
+> summary(aov.obj) prints significance *'s but doesn't print the legend
+> at the bottom explaining their meaning (it is not parallel with
+> summary(lm.obj)
+> 
+> 
+> Question: Is this kind of nitpicking feedback useful (if so I'd be
+> glad to continue to keep notes and send them as I'm using/playing with
+> R, and please there is no need for you to answer or give workarounds,
+> since none of this really prevents getting results)?  Or does it just
+> get in the way of more important stuff (in which case I'll quite the
+> nitpicking and only report if I get a real problem)? 
+
+In general, it is useful. It's especially the smaller things that we
+tend to overlook. The best place to send them is the R-devel list,
+though - if you send them to a single person they may get lost. E.g.
+significance stars are really Martin Maechlers pet. (I'll Cc: this
+particular note to R-devel).
+
+
+-- 
+   O__  ---- Peter Dalgaard             Blegdamsvej 3  
+  c/ /'_ --- Dept. of Biostatistics     2200 Cph. N   
+ (*) \(*) -- University of Copenhagen   Denmark      Ph: (+45) 35327918
+~~~~~~~~~~ - (p.dalgaard@biostat.ku.dk)             FAX: (+45) 35327907
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From p.dalgaard@biostat.ku.dk  Fri Jul 31 00:09:24 1998
+From: p.dalgaard@biostat.ku.dk (Peter Dalgaard BSA)
+Date: 31 Jul 1998 01:09:24 +0200
+Subject: zero-extent matrix crash
+Message-ID: <x290lbkkbf.fsf@biostat.ku.dk>
+
+Anyone for a little debugging?
+
+>  matrix(numeric(0),0,0)
+Floating point exception (core dumped)
+
+[I've decided to make a habit of sending bugs that I'm not going to
+attack right away to R-devel, in case someone might be interested in
+chipping in and saving the core team the work]
+
+-- 
+   O__  ---- Peter Dalgaard             Blegdamsvej 3  
+  c/ /'_ --- Dept. of Biostatistics     2200 Cph. N   
+ (*) \(*) -- University of Copenhagen   Denmark      Ph: (+45) 35327918
+~~~~~~~~~~ - (p.dalgaard@biostat.ku.dk)             FAX: (+45) 35327907
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From thomas@biostat.washington.edu  Fri Jul 31 01:13:30 1998
+From: thomas@biostat.washington.edu (Thomas Lumley)
+Date: Thu, 30 Jul 1998 17:13:30 -0700 (PDT)
+Subject: zero-extent matrix crash
+In-Reply-To: <x290lbkkbf.fsf@biostat.ku.dk>
+Message-ID: <Pine.SOL.3.95.980730171231.27092B-100000@gorn>
+
+On 31 Jul 1998, Peter Dalgaard BSA wrote:
+
+> Anyone for a little debugging?
+> 
+> >  matrix(numeric(0),0,0)
+> Floating point exception (core dumped)
+> 
+
+Fixed. (there wasn't any checking for zero extents in matrix(); there is
+now)
+
+	-thomas
+
+Thomas Lumley
+------------------------------------------------------+------
+Biostatistics		: "Never attribute to malice what  :
+Uni of Washington	:  can be adequately explained by  :
+Box 357232		:  incompetence" - Hanlon's Razor  :
+Seattle WA 98195-7232	:				   :
+------------------------------------------------------------
+
+
+
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From Martin Maechler <maechler@stat.math.ethz.ch>  Wed Jul  1 11:26:17 1998
+From: Martin Maechler <maechler@stat.math.ethz.ch> (Martin Maechler)
+Date: Wed, 1 Jul 1998 12:26:17 +0200
+Subject: "Coding conventions" for R:  Use  TRUE & FALSE, and not T & F
+Message-ID: <199807011026.MAA18481@sophie.ethz.ch>
+
+The reason being 
+a design decision of a while ago
+that "T" and "F"  shouldn't be reserved words in R as they are in S-plus.
+Hence, T & F are just variables being set to TRUE and FALSE respectively;
+they *can* be overwritten by the user which is very useful e.g.,
+when you do
+	  mydat <- read.table(file, header =TRUE)
+and the file has variable names "T" or "F" and then do  attach(mydat).
+
+Even more important is the situation when you have factors with levels
+"T" or "F" which (I think to remember) is a pain in S.
+
+
+-----------
+Consequence
+-----------
+	 Package writers 
+		(including R-core'ers incorporating other people's patches..):
+
+	 *Please* always use  TRUE and FALSE
+
+Kurt: Part of the above should definitely go into the 
+	R-FAQ "Differences S & R"
+
+Martin Maechler <maechler@stat.math.ethz.ch>			<><
+Seminar fuer Statistik, ETH-Zentrum SOL G1;	Sonneggstr.33
+ETH (Federal Inst. Technology)	8092 Zurich	SWITZERLAND
+phone: x-41-1-632-3408		fax: ...-1086
+http://www.stat.math.ethz.ch/~maechler/
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From Martin Maechler <maechler@stat.math.ethz.ch>  Wed Jul  1 17:30:42 1998
+From: Martin Maechler <maechler@stat.math.ethz.ch> (Martin Maechler)
+Date: Wed, 1 Jul 1998 18:30:42 +0200
+Subject: ordinal(): [was "a handy function ..." in March..]
+Message-ID: <199807011630.SAA18825@sophie.ethz.ch>
+
+I'm finally cleaning up old things / todo's;
+We had about half a dozen e-mails on R-devel back in mid March...... 
+Here is my proposal, a sometimes useful utility for constructing strings
+in cat() or text(), legend(), etc.:
+
+
+ordinal <-
+function(i, language =3D "english", gender =3D c("female","male"), sep=3D""=
+) {
+    ii <- i
+    if(!is.numeric(i) || any(i < 0) || any(ii !=3D (i <- as.integer(i))))
+      stop("'i' must be non-negative integer")
+    ilang <- pmatch(language, c("english", "francais", "deutsch",
+                                "italiano", "espanol")) #, "portugues" ?
+    if(is.na(ilang))
+      stop(paste("language '", language, "' not (yet) implemented.", sep=3D=
+""))
+    ig <- pmatch(gender, c("female","male"))[1]
+    if(is.na(ig)) stop(paste("gender '", gender, "' is invalid.", sep=3D"")=
+)
+    suffix <- switch(ilang,
+                     c("st","nd","rd","th")[pmin(4,ifelse(i<20,ifelse(i=3D=
+=3D0,4,i),
+                                                          1+(i-1)%%10))],# =
+engl
+                     c(c("=E8re","er")[ig],"me")[1 + (i!=3D1)],# french
+                     ".",# german
+                     c("a","o")[ig], # italian
+                     c("a","o")[ig], # spanish
+                     )
+    paste(i, suffix, sep=3Dsep)
+}
+
+nn <- c(0:3,9:13,20:22,99:102)
+
+
+---------------------------------------------------------------------------=
+---
+-------------------- Test a few interesting cases ----------------
+---------------------------------------------------------------------------=
+---
+
+-------------------- Is this correct/acceptable for the given languages? 
+--------------------
+-------------------- Additions, bugs, ``patches'' ?
+
+> ordinal(1:22)
+ [1] "1st"  "2nd"  "3rd"  "4th"  "5th"  "6th"  "7th"  "8th"  "9th"  "10th"
+[11] "11th" "12th" "13th" "14th" "15th" "16th" "17th" "18th" "19th" "20th"
+[21] "21st" "22nd"
+> ordinal(nn,"english")
+ [1] "0th"   "1st"   "2nd"   "3rd"   "9th"   "10th"  "11th"  "12th"  "13th"=
+ 
+[10] "20th"  "21st"  "22nd"  "99th"  "100th" "101st" "102nd"
+> ordinal(nn,"francais")
+ [1] "0me"   "1=E8re"  "2me"   "3me"   "9me"   "10me"  "11me"  "12me"  "13m=
+e" 
+[10] "20me"  "21me"  "22me"  "99me"  "100me" "101me" "102me"
+> ordinal(1:3,"fr","m")
+[1] "1er" "2me" "3me"
+> ordinal(nn, "italian")# Ladies first =3D> Ladies default...
+ [1] "0a"   "1a"   "2a"   "3a"   "9a"   "10a"  "11a"  "12a"  "13a"  "20a" 
+[11] "21a"  "22a"  "99a"  "100a" "101a" "102a"
+> ordinal(nn, "espan", "m")
+ [1] "0o"   "1o"   "2o"   "3o"   "9o"   "10o"  "11o"  "12o"  "13o"  "20o" 
+[11] "21o"  "22o"  "99o"  "100o" "101o" "102o"
+> 
+> ordinal(nn, "deutsch", "m")
+ [1] "0."   "1."   "2."   "3."   "9."   "10."  "11."  "12."  "13."  "20." 
+[11] "21."  "22."  "99."  "100." "101." "102."
+> 
+> ## These give an error
+> ordinal(pi)
+Error: 'i' must be non-negative integer
+Execution halted
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From p.dalgaard@biostat.ku.dk  Wed Jul  1 18:32:19 1998
+From: p.dalgaard@biostat.ku.dk (Peter Dalgaard BSA)
+Date: 01 Jul 1998 19:32:19 +0200
+Subject: ordinal(): [was "a handy function ..." in March..]
+In-Reply-To: Martin Maechler's message of Wed, 1 Jul 1998 18:30:42 +0200
+References: <199807011630.SAA18825@sophie.ethz.ch>
+Message-ID: <x23eclfpek.fsf@blueberry.kubism.ku.dk>
+
+Martin Maechler <maechler@stat.math.ethz.ch> writes:
+
+>     ilang <- pmatch(language, c("english", "francais", "deutsch",
+>                                 "italiano", "espanol")) #, "portugues" ?
+>     if(is.na(ilang))
+>       stop(paste("language '", language, "' not (yet) implemented.", sep=""))
+
+Danish is exactly like German in this respect...
+
+-- 
+   O__  ---- Peter Dalgaard             Blegdamsvej 3  
+  c/ /'_ --- Dept. of Biostatistics     2200 Cph. N   
+ (*) \(*) -- University of Copenhagen   Denmark      Ph: (+45) 35327918
+~~~~~~~~~~ - (p.dalgaard@biostat.ku.dk)             FAX: (+45) 35327907
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From wsimpson@uwinnipeg.ca  Tue Jul  7 22:17:51 1998
+From: wsimpson@uwinnipeg.ca (Bill Simpson)
+Date: Tue, 7 Jul 1998 16:17:51 -0500 (CDT)
+Subject: S speedup in R
+Message-ID: <Pine.OSF.3.95.980707160152.21173A-100000@io.uwinnipeg.ca>
+
+Venables and Ripley describe a speedup where you take a structure like
+
+x<-NULL
+for(i in sequence)
+	y<-c(y,function(x,i))
+	
+and convert it to one like
+
+x<-numeric(its length)
+for(i in sequence)
+	y[i]<-function(x,i)
+
+I tried this speedup on some simple examples and it made them twice as
+fast.
+
+But now I am hitting a snag with some real code.
+
+This original version works:
+cif<-function(x, y, tau, h=tau[2]-tau[1])
+{
+# conditional cross-intensity function for two point process realizations.
+# estimated at tau.
+# x and y are vectors of event times (sorting is not necessary).
+# tau is the lag (or vector of lags) 
+# h is binwidth.
+# see Brillinger, Bryant, & Segundo (1976) eq 13, mhatAB(u)
+n <- length(x)
+cif.numerator <- NULL
+for(tt in tau)
+	{
+	point.counter <- sum(round(rank(c(x + tt + h/2, y))[1:n], 0) -
+	round(rank(c(x + tt - h/2, y))[1:n], 0))
+	cif.numerator <- c(cif.numerator,point.counter)
+	}
+cif.numerator/(n * h)
+}
+
+But the sped-up version just returns a vector of zeros:
+
+cif<-function(x, y, tau, h=tau[2]-tau[1])
+{
+# conditional cross-intensity function for two point process realizations.
+# estimated at tau.
+# x and y are vectors of event times (sorting is not necessary).
+# tau is the lag (or vector of lags) 
+# h is binwidth.
+# see Brillinger, Bryant, & Segundo (1976) eq 13, mhatAB(u)
+n <- length(x)
+cif.numerator <- numeric(length(tau))
+for(tt in tau)
+	{
+	cif.numerator[tt] <- sum(round(rank(c(x + tt + h/2, y))[1:n], 0) -
+	round(rank(c(x + tt - h/2, y))[1:n], 0))
+	}
+cif.numerator/(n * h)
+}
+
+I can't see why this isn't working. Is this hitting a peculiarity of 
+R? Thanks very much for any help.
+
+Bill Simpson
+
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From bates@stat.wisc.edu  Tue Jul  7 22:49:46 1998
+From: bates@stat.wisc.edu (Douglas Bates)
+Date: 07 Jul 1998 16:49:46 -0500
+Subject: S speedup in R
+In-Reply-To: Bill Simpson's message of Tue, 7 Jul 1998 16:17:51 -0500 (CDT)
+References: <Pine.OSF.3.95.980707160152.21173A-100000@io.uwinnipeg.ca>
+Message-ID: <6r67h9nxfp.fsf@verdi.stat.wisc.edu>
+
+Bill Simpson <wsimpson@uwinnipeg.ca> writes:
+
+...
+> But the sped-up version just returns a vector of zeros:
+> 
+> cif<-function(x, y, tau, h=tau[2]-tau[1])
+> {
+> # conditional cross-intensity function for two point process realizations.
+> # estimated at tau.
+> # x and y are vectors of event times (sorting is not necessary).
+> # tau is the lag (or vector of lags) 
+> # h is binwidth.
+> # see Brillinger, Bryant, & Segundo (1976) eq 13, mhatAB(u)
+> n <- length(x)
+> cif.numerator <- numeric(length(tau))
+> for(tt in tau)
+> 	{
+> 	cif.numerator[tt] <- sum(round(rank(c(x + tt + h/2, y))[1:n], 0) -
+> 	round(rank(c(x + tt - h/2, y))[1:n], 0))
+> 	}
+> cif.numerator/(n * h)
+> }
+
+You are using tt for an index in addition to being the value of an
+element of the tau vector.  Unless tau always happens to be
+1:length(tau) that won't work.
+
+You probably want to change the "for" statement to
+  for (tt in seq( along = tau ) )
+ 	{
+ 	cif.numerator[tt] <- sum(round(rank(c(x + tau[tt] + h/2, y))[1:n], 0) -
+ 	round(rank(c(x + tau[tt] - h/2, y))[1:n], 0))
+ 	}
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From plummer@iarc.fr  Wed Jul  8 12:47:05 1998
+From: plummer@iarc.fr (Martyn Plummer)
+Date: Wed, 08 Jul 1998 11:47:05 -0000 ()
+Subject: Serious bug in save.image
+Message-ID: <XFMail.980708124450.plummer@iarc.fr>
+
+I am using a  package which tends to crash R, so I have been saving
+my work at regular intervals with "save.image()". Unfortunately, this
+overwrites .RData with an empty workspace, so when R crashed I lost
+my workspace and a day's work.
+
+The problem is easily fixed: "save.image" looks like this
+
+function () 
+save(list = ls(), file = ".RData")
+
+The expression "ls()" is evaluated in the calling environment, which
+is empty. You need to evaluate it in the global environment, like this:
+
+function () 
+save(list = eval(expression(ls()), .GlobalEnv), file = ".RData")
+
+Martyn
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From p.dalgaard@biostat.ku.dk  Wed Jul  8 15:52:03 1998
+From: p.dalgaard@biostat.ku.dk (Peter Dalgaard BSA)
+Date: 08 Jul 1998 16:52:03 +0200
+Subject: Serious bug in save.image
+In-Reply-To: Martyn Plummer's message of Wed, 08 Jul 1998 11:47:05 -0000 ()
+References: <XFMail.980708124450.plummer@iarc.fr>
+Message-ID: <x2pvfg2y5o.fsf@blueberry.kubism.ku.dk>
+
+Martyn Plummer <plummer@iarc.fr> writes:
+
+> function () 
+> save(list = ls(), file = ".RData")
+> 
+> The expression "ls()" is evaluated in the calling environment, which
+> is empty. You need to evaluate it in the global environment, like this:
+> 
+> function () 
+> save(list = eval(expression(ls()), .GlobalEnv), file = ".RData")
+
+Ouch! Fixed in my sources. Will get to the prerelease versions after I
+squash an elusive memory corruption bug.
+
+Actually, I did you one better:
+
+> save.image
+function (f = ".RData") 
+eval(substitute(save(list = ls(), file = f)), .GlobalEnv)
+
+so that you can now save the image under a different name.
+
+-- 
+   O__  ---- Peter Dalgaard             Blegdamsvej 3  
+  c/ /'_ --- Dept. of Biostatistics     2200 Cph. N   
+ (*) \(*) -- University of Copenhagen   Denmark      Ph: (+45) 35327918
+~~~~~~~~~~ - (p.dalgaard@biostat.ku.dk)             FAX: (+45) 35327907
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From wsimpson@uwinnipeg.ca  Wed Jul  8 16:05:22 1998
+From: wsimpson@uwinnipeg.ca (Bill Simpson)
+Date: Wed, 8 Jul 1998 10:05:22 -0500 (CDT)
+Subject: S speedup in R
+In-Reply-To: <6r67h9nxfp.fsf@verdi.stat.wisc.edu>
+Message-ID: <Pine.OSF.3.95.980708100459.32011C-100000@io.uwinnipeg.ca>
+
+Thanks very much Douglas for pointing out my dumb mistakes.
+
+Bill
+
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From wsimpson@uwinnipeg.ca  Thu Jul  9 01:55:53 1998
+From: wsimpson@uwinnipeg.ca (Bill Simpson)
+Date: Wed, 8 Jul 1998 19:55:53 -0500 (CDT)
+Subject: numeric(0) -> NA
+Message-ID: <Pine.OSF.3.95.980708194226.19813A-100000@io.uwinnipeg.ca>
+
+I noticed this in current intermediate patch version:
+> runif(0,0,4095)
+numeric(0)
+> round(runif(0,0,4095))
+[1] NA
+
+I don't like it, but maybe it is the way it is supposed to be. I would
+prefer for it to stay numeric(0).
+
+I notice also
+> ceiling(runif(0,0,4095))
+numeric(0)
+> floor(runif(0,0,4095))
+numeric(0)
+which leads me to thing round() is not working right.
+
+
+I have some code like this:
+do.sim<-function(nnoise, nsignal, jump)
+{
+ntotal<-nsignal+nnoise
+x<-numeric(ntotal)
+y<-numeric(ntotal)
+
+#generate noise dots
+nx1<-round(runif(nnoise,0,4095))
+nx2<-round(runif(nnoise,0,4095))
+ny1<-round(runif(nnoise,0,4095))
+ny2<-round(runif(nnoise,0,4095))
+
+#generate signal dots
+sx1<-round(runif(nsignal,0,4095))
+...
+
+and I need to do do.sim(0,1000,10). But that gives me NAs which are a
+problem later. (in particular, I can't do
+if(rr<rbest)
+if rr is computed from an NA.)
+
+BTW I think it is a ghastly waste of resources to do
+round(runif(nnoise,0,4095))
+but I couldn't think of a better way to get ints between 0 and 4095.
+(It's a waste because the random number generator makes unsigned long ints
+to begin with, then they are divided by 2^32 to get a double between 0
+and 1, and now I am undoing that!)
+
+I guess there is sample(,replace=true), which seems even worse for
+wasted resources. Maybe not.
+
+Thanks for any help.
+
+Bill Simpson
+
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From p.dalgaard@biostat.ku.dk  Thu Jul  9 11:37:25 1998
+From: p.dalgaard@biostat.ku.dk (Peter Dalgaard BSA)
+Date: 09 Jul 1998 12:37:25 +0200
+Subject: numeric(0) -> NA
+In-Reply-To: Bill Simpson's message of Wed, 8 Jul 1998 19:55:53 -0500 (CDT)
+References: <Pine.OSF.3.95.980708194226.19813A-100000@io.uwinnipeg.ca>
+Message-ID: <x267h79uoq.fsf@blueberry.kubism.ku.dk>
+
+Bill Simpson <wsimpson@uwinnipeg.ca> writes:
+
+> I noticed this in current intermediate patch version:
+> > runif(0,0,4095)
+> numeric(0)
+> > round(runif(0,0,4095))
+> [1] NA
+> 
+> I don't like it, but maybe it is the way it is supposed to be. I would
+> prefer for it to stay numeric(0).
+> 
+> I notice also
+> > ceiling(runif(0,0,4095))
+> numeric(0)
+> > floor(runif(0,0,4095))
+> numeric(0)
+> which leads me to thing round() is not working right.
+
+You're right, but it's not all that easily fixed. The problem is that
+round() unlike the other two isn't a unary operation (it has a digits
+argument) and the automatic logic for binary functions is that 
+length(f(a,b)) = max(length(a),length(b)).
+
+There are several of these anomalies, e.g.:
+
+> log(numeric(0))
+numeric(0)
+> log(numeric(0),10)
+[1] NA
+> log10(numeric(0))
+[1] NA
+> pt(numeric(0),15)
+[1] NA
+> choose(numeric(0),5)
+[1] NA
+
+whereas Splus has
+
+> log(numeric(0))
+numeric(0)
+> log(numeric(0),10)
+[1] NA
+> log10(numeric(0))
+[1] NA
+> pt(numeric(0),15)
+numeric(0)
+# choose doesn't exist...
+>  round(numeric(0))
+numeric(0)
+
+I.e. it seems to special-case *some* functions....
+
+We probably should have a special version of math2() which said that
+the first argument was more important than the other.
+
+> BTW I think it is a ghastly waste of resources to do
+> round(runif(nnoise,0,4095))
+> but I couldn't think of a better way to get ints between 0 and 4095.
+> (It's a waste because the random number generator makes unsigned long ints
+> to begin with, then they are divided by 2^32 to get a double between 0
+> and 1, and now I am undoing that!)
+
+Compared to all the other inefficiencies going on, I don't think this
+is worth worrying about (unless nnoise is *very* large). If you really
+need this to be efficient, you could make a clone of runif in .C
+callable code, and replace the floatingpoint (l / 2.^32) by a shift
+operation (l >> 18 or thereabouts).
+
+> I guess there is sample(,replace=true), which seems even worse for
+> wasted resources. Maybe not.
+
+Most likely it is...
+
+-- 
+   O__  ---- Peter Dalgaard             Blegdamsvej 3  
+  c/ /'_ --- Dept. of Biostatistics     2200 Cph. N   
+ (*) \(*) -- University of Copenhagen   Denmark      Ph: (+45) 35327918
+~~~~~~~~~~ - (p.dalgaard@biostat.ku.dk)             FAX: (+45) 35327907
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From pgilbert@bank-banque-canada.ca  Thu Jul  9 18:28:25 1998
+From: pgilbert@bank-banque-canada.ca (Paul Gilbert)
+Date: Thu, 9 Jul 1998 13:28:25 -0400
+Subject: R 0.62.1 with SunOS 5.6 problems
+Message-ID: <98Jul9.140020edt.13442@mailgate.bank-banque-canada.ca>
+
+I compiled and ran R 0.62.1 without any serious problem on SunOS 5.5.1 and it
+also ran on SunOS 5.6. To compile on SunOS 5.6 I had to get a new version of gcc
+and g77 . Having done that I can now compile with no errors on SunOS 5.6, but
+when I try to run R there are serious problems:
+
+R : Copyright 1998, The R Development Core Team
+Version 0.62.1  (June 15, 1998)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type    "?license" or "?licence" for distribution details.
+
+R is a collaborative project with many contributors.
+Type    "?contributors" for a list.
+
+Type    "demo()" for some demos, "help()" for on-line help, or
+        "help.start()" for a HTML browser interface to help.
+
+Error: Object "colors" not found
+Error: couldn't find function "Version"
+> traceback()
+Error: couldn't find function "traceback"
+> q()
+Error: couldn't find function "q"
+>
+
+Does anyone have any ideas what might be wrong. (Yes I did start clean with the
+tar file and then ./configure.)
+
+Paul Gilbert
+
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From p.dalgaard@biostat.ku.dk  Thu Jul  9 20:38:16 1998
+From: p.dalgaard@biostat.ku.dk (Peter Dalgaard BSA)
+Date: 09 Jul 1998 21:38:16 +0200
+Subject: R 0.62.1 with SunOS 5.6 problems
+In-Reply-To: Paul Gilbert's message of Thu, 9 Jul 1998 13:28:25 -0400
+References: <98Jul9.140020edt.13442@mailgate.bank-banque-canada.ca>
+Message-ID: <x2iul6x1av.fsf@biostat.ku.dk>
+
+Paul Gilbert <pgilbert@bank-banque-canada.ca> writes:
+
+> R is a collaborative project with many contributors.
+> Type    "?contributors" for a list.
+> 
+> Type    "demo()" for some demos, "help()" for on-line help, or
+>         "help.start()" for a HTML browser interface to help.
+> 
+> Error: Object "colors" not found
+> Error: couldn't find function "Version"
+> > traceback()
+> Error: couldn't find function "traceback"
+> > q()
+> Error: couldn't find function "q"
+> >
+> 
+> Does anyone have any ideas what might be wrong. (Yes I did start clean with the
+> tar file and then ./configure.)
+
+In general, this means that R bails out while executing
+library/base/R/base, leaving most of the functions undefined. Almost
+the entire file is simple assignments, so it's very likely likely that
+the trouble spot is the .Alias line in:
+
+..
+machine <- function().Internal(machine())
+colors <- function().Internal(colors())
+colours <- .Alias(colors)
+args <- function(name).Internal(args(name))
+..
+which, pretty obviously should not fail. Check whether the file looks
+sane and if it is then whether you can execute the lines by hand. 
+
+-- 
+   O__  ---- Peter Dalgaard             Blegdamsvej 3  
+  c/ /'_ --- Dept. of Biostatistics     2200 Cph. N   
+ (*) \(*) -- University of Copenhagen   Denmark      Ph: (+45) 35327918
+~~~~~~~~~~ - (p.dalgaard@biostat.ku.dk)             FAX: (+45) 35327907
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From pgilbert@bank-banque-canada.ca  Fri Jul 10 14:31:16 1998
+From: pgilbert@bank-banque-canada.ca (Paul Gilbert)
+Date: Fri, 10 Jul 1998 09:31:16 -0400
+Subject: partial matches for attribute name
+References: <x2hg0pzxwi.fsf@blueberry.kubism.ku.dk>
+Message-ID: <98Jul10.100706edt.13457@mailgate.bank-banque-canada.ca>
+
+ >   o   attr() partial matches for attribute name.
+
+If this does what I think it does then I don't think it is a very good idea, and
+is also not consistent with S:
+
+In Splus I get
+> attr(diag(.5,3), "dim")
+[1] 3 3
+> attr(diag(.5,3), "di")
+NULL
+>
+
+If I understand what partial matching does then I will not get this in R 0.62.2.
+(I don't even like partial matching of list elements but I've learned to live
+with that.)
+
+Paul Gilbert
+
+
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From Kurt.Hornik@ci.tuwien.ac.at  Fri Jul 10 17:41:45 1998
+From: Kurt.Hornik@ci.tuwien.ac.at (Kurt Hornik)
+Date: Fri, 10 Jul 1998 18:41:45 +0200 (CEST)
+Subject: partial matches for attribute name
+In-Reply-To: <98Jul10.100706edt.13457@mailgate.bank-banque-canada.ca>
+References: <x2hg0pzxwi.fsf@blueberry.kubism.ku.dk>
+ <98Jul10.100706edt.13457@mailgate.bank-banque-canada.ca>
+Message-ID: <13734.17481.13866.883711@pc87.maho.magnaeu.com>
+
+>>>>> Paul Gilbert writes:
+
+>> o   attr() partial matches for attribute name.
+
+> If this does what I think it does then I don't think it is a very good
+> idea, and is also not consistent with S:
+
+> In Splus I get
+>> attr(diag(.5,3), "dim")
+> [1] 3 3
+>> attr(diag(.5,3), "di")
+> NULL
+>>
+
+Which is clearly a bug.  The Splus documentation says,
+
+       The semantics of attr are defined by saying  that  attr(x,
+       which)  is equivalent to attributes(x)[[which]] for either
+       extracting or replacing attributes, with  the  restriction
+       that which is interpreted as mode character.  The value of
+       attributes(x) is a list  object  (possibly  of  length  0)
+       associated  implicitly  with  any object x.  See Subscript
+       for the semantics of "[[".
+
+and we have
+
+> attributes(diag(.5,3))[["di"]]
+[1] 3 3
+
+-kh
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From pgilbert@bank-banque-canada.ca  Fri Jul 10 18:44:00 1998
+From: pgilbert@bank-banque-canada.ca (Paul Gilbert)
+Date: Fri, 10 Jul 1998 13:44:00 -0400
+Subject: partial matches for attribute name
+References: <x2hg0pzxwi.fsf@blueberry.kubism.ku.dk>
+ <98Jul10.100706edt.13457@mailgate.bank-banque-canada.ca> <13734.17481.13866.883711@pc87.maho.magnaeu.com>
+Message-ID: <98Jul10.141623edt.13446@mailgate.bank-banque-canada.ca>
+
+>>> o   attr() partial matches for attribute name.
+
+>> If this does what I think it does then I don't think it is a very good
+>> idea, and is also not consistent with S:
+
+>Which is clearly a bug.  The Splus documentation says
+...
+
+I'd be prepared to call this one an incorrectly documented feature. So in the
+name of S compatiblity should one do as it says or do as it does? There is
+clearly not very much code around which requires partial matching, since it
+hasn't worked, but there may be things that break if it does work. Also, the
+documention is not very clear about whether attr(x,"di") will return dim or
+dimnames if both exist. As near as I can tell the documentation is not even
+clear about whether attr(x,"dim") will return dim or dimnames, although the sane
+choice seems to be made by [[.
+
+Paul Gilbert
+
+
+
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From p.dalgaard@biostat.ku.dk  Tue Jul 14 11:39:24 1998
+From: p.dalgaard@biostat.ku.dk (Peter Dalgaard BSA)
+Date: 14 Jul 1998 12:39:24 +0200
+Subject: R-beta: R-beta Win95 glm
+In-Reply-To: Guido Masarotto's message of Tue, 14 Jul 1998 10:58:06 +0100
+References: <3.0.5.16.19980713124753.2e7fd3ec@deimos.tc.uaslp.mx>
+ <x2af6dcv1v.fsf@biostat.ku.dk>
+ <19980714105806.A5289@sirio.stat.unipd.it>
+Message-ID: <x2pvf8n2cj.fsf@biostat.ku.dk>
+
+Guido Masarotto <guido@sirio.stat.unipd.it> writes:
+
+> > I'm currently summer-vacationing in my home. If the weather keeps
+> > acting up, I might get myself up to speed on crosscompiling R for
+> > Win32 with gcc on a Unix host. This has been a long-standing wish of
+> > mine because it could potentially bring the versions in much better
+> > sync.
+>   BTW, I made a similar (small) attempt. 
+>   On a Linux box, I installed gcc as a cross-compiler for mingw32
+>   (gcc-2.8.1, g77-0.5.23, binutils-2.9.1, the 1July snapshot
+>   of mingw32 and of WinApi (from the Colins Peters's site)).
+>   Then I tried to recompile R.0.61.3 (my actual windows version).
+>   And all seems to work. So, this seems a viable alternative.
+>   Hence, I plan to modify my Makefile's so that cross-compiling
+>   would be easy.
+>   
+>   guido masarotto
+
+Great! I'm almost there with a set of instructions for building the
+egcs-1.0.2 as a cross-compiler. This is in some sense easier, although
+proving a bit tricky because of makefile bugs (parts of the compiler
+build - including "make cross" - seems to assume that the
+cross-compiler is installed!) but I think I got it now.
+
+The Tk project appears to be in deep coma. But you are quite right,
+the R console slowness is *the* most annoying feature of the Win32
+version. It is buggy too, characters are getting lost on long
+printouts. Tk is doing similar stuff *much* faster, so either we
+should peek at the Tk sources and see how it is done there or try
+coding the console *in* Tcl/Tk.
+
+(OK, so the lack of command recall and ugly graphics hardcopy are
+close contenders to first place in annoyances).
+
+Hey, presto! I seem to have a clean build of egcs-mingw-cross (was
+running in another window as I typed this). Here's my makefile if you
+want to try:
+
+
+# Preliminaries: 
+#	Unpack binutils-2.9.1 somewhere
+#	Unpack egcs somewhere and PATCH IT with Mumit's patches
+#	 if (and only if) it's version 1.0.2 
+#	 [ cd to egcs dir and
+#		gzip -dc egcs-1.0.2-mingw32.diff.gz | patch -p2
+#	 ]
+#	Get the zipped files for the *native* egcs-mingw32
+
+prefix=$(shell pwd)# ... or e.g. /usr/local
+wkdir=$(shell pwd)
+
+# This name got a bit mangled by the Joliet CD "standard"
+# Note that I'm not asking you to unpack it.
+native=/mnt/cdrom/egcs-1~1.zip
+
+binutils=~/binutils-2.9.1
+egcs=~/egcs-1.0.2
+
+all: egcs-final
+
+egcs-final: egcs
+	export PATH=$(PATH):$(prefix)/bin ;\
+	cd $(wkdir)/EGCS ;\
+	$(egcs)/configure --srcdir=$(egcs)\
+		--prefix=$(prefix) --target=i386-mingw32 ; \
+	make &&\
+	make install
+	touch egcs-final
+egcs: inc-install binutils-install
+	mkdir -p $(wkdir)/EGCS
+	cd $(wkdir)/EGCS ; \
+	export PATH=$(PATH):$(prefix)/bin ;\
+	$(egcs)/configure --srcdir=$(egcs)\
+		--prefix=$(prefix) --target=i386-mingw32 ; \
+	make info &&\
+	make install LANGUAGES="c c++"
+	touch egcs
+binutils-install: binutils
+	cd $(wkdir)/BINU ; make install
+	touch binutils-install
+binutils: inc-install 
+	mkdir -p $(wkdir)/BINU
+	cd $(wkdir)/BINU ; \
+	$(binutils)/configure --srcdir=$(binutils) \
+		--prefix=$(prefix) --target=i386-mingw32 ; \
+	make
+	touch binutils
+inc-install:
+	unzip -o $(native) 'i386-mingw32/*' -d $(prefix) 
+	touch inc-install
+
+# This doesn't quite cut it, but I'm not going to  rm $(prefix)/bin/*, etc.
+clean:
+	rm -rf $(wkdir)/EGCS $(wkdir)/BINU
+	rm egcs-final egcs binutils binutils-install inc-install
+
+
+-- 
+   O__  ---- Peter Dalgaard             Blegdamsvej 3  
+  c/ /'_ --- Dept. of Biostatistics     2200 Cph. N   
+ (*) \(*) -- University of Copenhagen   Denmark      Ph: (+45) 35327918
+~~~~~~~~~~ - (p.dalgaard@biostat.ku.dk)             FAX: (+45) 35327907
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From mwkay@spud.me.wustl.edu  Tue Jul 14 19:57:28 1998
+From: mwkay@spud.me.wustl.edu (Matthew Kay)
+Date: Tue, 14 Jul 1998 13:57:28 -0500
+Subject: Are post-hoc tests being developed for R?
+Message-ID: <35ABAA17.74C1B359@spud.me.wustl.edu>
+
+Hi-
+
+Is anyone working on multiple comparisons of means or post-hoc tests
+(ie: Tukey, Bonferroni) for R? I saw in the winter 98' archives of the R
+
+mailing lists that these tests had not been implemented yet, I was just
+wondering if I could look foward to having them. ;-)
+I also looked through the contributed packages and didn't see anything
+that offered such tests.
+I guess I could check for compatible S code, has anyone had any luck
+with that?
+
+If anyone can provide any info, please respond to me via email.
+Thanks,
+Matt
+
+
+
+--
+Matthew W. Kay                       Office: (314) 935-7562
+Washington University, St. Louis        Fax: (314) 935-4014
+E-mail: mwkay@spud.me.wustl.edu
+WWW: http://userfs.cec.wustl.edu/~mwk2/HOMEPAGE/index.html
+
+
+
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From pgilbert@bank-banque-canada.ca  Tue Jul 14 22:00:04 1998
+From: pgilbert@bank-banque-canada.ca (Paul Gilbert)
+Date: Tue, 14 Jul 1998 17:00:04 -0400
+Subject: lwd subscript error?
+Message-ID: <98Jul14.173435edt.13441@mailgate.bank-banque-canada.ca>
+
+In R 0.62.2 I'm getting an error in one of my tests which I don't think occurs
+in 0.62.1 (but I have been changing things too).  It looks like it is associated
+with lwd. I haven't traced it down completely, but if anyone can see the problem
+immediately I would appreciate help.
+
+Paul Gilbert
+_______
+> > dse3.graphics.tests()
+  dse3 graphics test 1 ... ok
+  dse3 graphics test 2 ...ok
+  dse3 graphics test 3 ...ok
+  dse3 graphics test 4 ...Error: subscript (5) out of bounds, should be at most
+4
+> traceback()
+[1] "#- next version of R: lwd = lwd[ok.l],"
+[2] "segments2(xt[ok.l] + x.off * xchar, yt[ok.l], dx = 2 * xchar, "
+[3] "\t    dy = 0, lty = lty[ok.l], col = col[ok.l])"
+[4] "legend((par()$usr)[1:2], (par()$usr)[3:4], Legend, lty = lty, "
+[5] "\t    bty = \"n\")"
+[6] "plot.forecast.cov(zz)"
+[7] "dse3.graphics.tests()"
+>
+
+
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From thomas@biostat.washington.edu  Wed Jul 15 01:33:58 1998
+From: thomas@biostat.washington.edu (Thomas Lumley)
+Date: Tue, 14 Jul 1998 17:33:58 -0700 (PDT)
+Subject: Are post-hoc tests being developed for R?
+In-Reply-To: <35ABAA17.74C1B359@spud.me.wustl.edu>
+Message-ID: <Pine.SOL.3.95.980714172634.13636A-100000@sol>
+
+
+Here is code for three p-value based post hoc tests: bonferroni, holm, and
+hochberg. Holm is better than Bonferroni under all circumtances. Hochberg
+is more powerful than Holm, but under some slightly pathological
+situations it can exceed the nominal Type I error rate. 
+
+I haven't looked at this code for a long time, but I think it works
+correctly. Refeerences for the methods are in "Adjusted p-values for
+simultaneous inference" by S. Paul Wright in Biometrics some time in
+the early 90s (I'm in the wrong country at the moment so I don't have the
+full reference).
+
+	-thomas
+-------------------------
+
+   p.adjust.holm <-function(p,n=length(p)) {  
+        ##n<-length(p)
+        r<-rank(p)
+        index<-order(p)
+        qi<-p*(n+1-r)
+        for (i in 2:length(p)) {
+                qi[index[i]]<-max(qi[index[i]], qi[index[i-1]])
+        }
+        list(adjp=pmin(qi,1),p=p,method="Holm")
+        }
+  p.adjust.hochberg <-function(p) {
+        n<-length(p)
+        r<-rank(p)
+        index<-order(p)
+        qi<-p*(n+1-r)
+        for (i in (n-1):1) {
+                qi[index[i]]<-min(qi[index[i]], qi[index[i+1]])
+        }
+        list(adjp=qi,p=p,method="Hochberg")
+        }
+  p.adjust.bonferroni<-function(p,n=length(p)){ 
+        list(adjp=pmin(p*n,1),p=p,method="Bonferroni")
+        }
+
+p.adjust<-function(p,method=c("hochberg","holm","bonferroni"),...){
+  how<-pmatch(method[1],c("hochberg","holm","bonferroni"))
+  if (is.na(how)) stop(paste("Don't know method:",method))
+  m<-match.call()
+  m[[1]]<-as.name(paste("p.adjust",c("hochberg","holm","bonferroni")[how],sep="."))
+  m$method<-NULL
+  eval(m,sys.parent())
+}
+
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From p.dalgaard@biostat.ku.dk  Wed Jul 15 12:27:58 1998
+From: p.dalgaard@biostat.ku.dk (Peter Dalgaard BSA)
+Date: 15 Jul 1998 13:27:58 +0200
+Subject: Are post-hoc tests being developed for R?
+In-Reply-To: Thomas Lumley's message of Tue, 14 Jul 1998 17:33:58 -0700 (PDT)
+References: <Pine.SOL.3.95.980714172634.13636A-100000@sol>
+Message-ID: <x2btqrnykh.fsf@biostat.ku.dk>
+
+Thomas Lumley <thomas@biostat.washington.edu> writes:
+
+> p.adjust<-function(p,method=c("hochberg","holm","bonferroni"),...){
+>   how<-pmatch(method[1],c("hochberg","holm","bonferroni"))
+>   if (is.na(how)) stop(paste("Don't know method:",method))
+>   m<-match.call()
+>   m[[1]]<-as.name(paste("p.adjust",c("hochberg","holm","bonferroni")[how],sep="."))
+>   m$method<-NULL
+>   eval(m,sys.parent())
+> }
+
+Been a while since you wrote that? Surely, you mean:
+
+> p.adjust
+function (p, method = c("hochberg", "holm", "bonferroni"), ...) 
+{
+            how <- match.arg(method)
+            FUN <- get(paste("p.adjust", how, sep = "."))
+            FUN(p, ...)
+}
+
+
+-- 
+   O__  ---- Peter Dalgaard             Blegdamsvej 3  
+  c/ /'_ --- Dept. of Biostatistics     2200 Cph. N   
+ (*) \(*) -- University of Copenhagen   Denmark      Ph: (+45) 35327918
+~~~~~~~~~~ - (p.dalgaard@biostat.ku.dk)             FAX: (+45) 35327907
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From jimrc@mathfs.math.montana.edu  Thu Jul 30 00:19:27 1998
+From: jimrc@mathfs.math.montana.edu (Jim Robison-Cox)
+Date: Wed, 29 Jul 1998 17:19:27 -0600 (MDT)
+Subject: aov with Error Strata
+Message-ID: <Pine.NEB.4.00.9807291701240.6003-200000@mathfs.math.montana.edu>
+
+  This message is in MIME format.  The first part should be readable text,
+  while the remaining parts are likely unreadable without MIME-aware tools.
+  Send mail to mime@docserver.cac.washington.edu for more info.
+
+--0-488534781-901753860=:6003
+Content-Type: TEXT/PLAIN; CHARSET=US-ASCII
+Content-ID: <Pine.NEB.4.00.9807291716501.6003@mathfs.math.montana.edu>
+
+
+  Attached is R code for an aov function which handles multiple error
+strata.  
+  I took a different approach from that suggested in the model.c code of
+R&R.  Rather than modify model.c, I did all of the functions as
+interpreted R code.  They work on the examples in Chambers & Hastie _Stat
+models in S_.  So far I don't have the projections working.  I have a
+crude alias() function which I'm not including. I modified print.mlm and
+summary.mlm because they didn't work for me.
+
+  print.aov and summary.aov are basically the same because I don't like
+the print.aov in S which strings out sums of squares on one line.
+
+  Comments and testing on various datasets are needed.  Please let me know
+what you think.
+
+Jim Robison-Cox                 ____________            
+Department of Math Sciences    |            |           phone: (406)994-5340
+2-214 Wilson Hall               \   BZN, MT |           FAX:   (406)994-1789
+Montana State University         |  *_______|
+Bozeman, MT 59717                 \_|         e-mail: jimrc@math.montana.edu 
+
+
+
+--0-488534781-901753860=:6003
+Content-Type: TEXT/PLAIN; CHARSET=US-ASCII; NAME="aov.R"
+Content-Transfer-Encoding: BASE64
+Content-ID: <Pine.NEB.4.00.9807291711000.6003@mathfs.math.montana.edu>
+Content-Description: 
+Content-Disposition: ATTACHMENT; FILENAME="aov.R"
+
+YW92IDwtIGZ1bmN0aW9uIChmb3JtdWxhLCBkYXRhID0gbGlzdCgpLCBzdWJz
+ZXQsIHdlaWdodHM9TlVMTCwgbmEuYWN0aW9uLCANCiAgICAgICAgbWV0aG9k
+ID0gInFyIiwgbW9kZWwgPSBUUlVFLCBrZWVwLm9yZGVyPUZBTFNFLCBwcm9q
+PUZBTFNFLCBvbmVkZj1GQUxTRSwNCiAgICAgICAgICAgICAgICAgdG9sPSBz
+cXJ0KC5NYWNoaW5lJGRvdWJsZS5lcHMpLCAuLi4pIA0Kew0KICBpcy56ZXJv
+IDwtIGZ1bmN0aW9uKHgsdG9sPTEuMGUtNykgYWJzKHgpIDwgdG9sDQogIGlm
+IChtZXRob2QgPT0gIm1vZGVsLmZyYW1lIikgDQogICAgcmV0dXJuKG1mKQ0K
+ICBlbHNlIGlmIChtZXRob2QgIT0gInFyIikgDQogICAgd2FybmluZyhwYXN0
+ZSgibWV0aG9kID0iLCBtZXRob2QsICJpcyBub3Qgc3VwcG9ydGVkLiBVc2lu
+ZyBcInFyXCIuIikpDQogIGlmIChsZW5ndGgobGlzdCguLi4pKSkgDQogICAg
+d2FybmluZyhwYXN0ZSgiRXh0cmEgYXJndW1lbnRzIiwgZGVwYXJzZShzdWJz
+dGl0dXRlKC4uLikpLCANCiAgICAgICAgICAgICAgICAgICJhcmUganVzdCBk
+aXNyZWdhcmRlZC4iKSkNCiAgbXQgPC0gdGVybXMoZm9ybXVsYSwgZGF0YSA9
+IGRhdGEsIGtlZXAub3JkZXI9a2VlcC5vcmRlcikNCiAgaWYoaXMubmEoY2hh
+cm1hdGNoKCJFcnJvciIsYXR0cihtdCwidGVybS5sYWJlbHMiKSkpKXsNCiAg
+ICAjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMj
+IyMjIyMjIyMjIyMjIyMjIw0KICAgICMjICAgICAgICAgICAgICAgICAgIFBs
+YWluIEFOT1ZBIHdpdGggYSBzaW5nbGUgRXJyb3IgdGVybSANCiAgICAjIyMj
+IyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMj
+IyMjIyMjIyMjIw0KICAgIG1mIDwtIG1hdGNoLmNhbGwoKQ0KICAgIG1mJHNp
+bmd1bGFyLm9rIDwtIE5VTEwNCiAgICBtZiRtb2RlbCA8LSBOVUxMDQogICAg
+bWYkbWV0aG9kIDwtIE5VTEwNCiAgICBtZltbMV1dIDwtIGFzLm5hbWUoIm1v
+ZGVsLmZyYW1lIikNCiAgICBtZiA8LSBldmFsKG1mLCBzeXMuZnJhbWUoc3lz
+LnBhcmVudCgpKSkNCiAgICB5IDwtIG1vZGVsLnJlc3BvbnNlKG1mLCAibnVt
+ZXJpYyIpDQogICAgbnkgPC0gTkNPTCh5KQ0KICAgIGlmKG55ID4gMSAmIGlz
+Lm51bGwoZGltbmFtZXMoeSlbWzJdXSkpDQogICAgICBkaW1uYW1lcyh5KVtb
+Ml1dIDwtIHBhc3RlKCJ5IiwxOm55LHNlcD0iIikNCiAgICB3IDwtIG1vZGVs
+LndlaWdodHMobWYpDQogICAgaWYgKGlzLmVtcHR5Lm1vZGVsKG10KSkgew0K
+ICAgICAgeiA8LSBsaXN0KGNvZWZmaWNpZW50cyA9IG51bWVyaWMoMCksIHJl
+c2lkdWFscyA9IHksIA0KICAgICAgICAgICAgICAgIGZpdHRlZC52YWx1ZXMg
+PSAwICogeSwgd2VpZ2h0cyA9IHcsIHJhbmsgPSAwLCANCiAgICAgICAgICAg
+ICAgICBkZi5yZXNpZHVhbCA9IGxlbmd0aCh5KSkNCiAgICAgIGNsYXNzKHop
+IDwtIGlmIChpcy5tYXRyaXgoeSkpIA0KICAgICAgICBjKCJtYW92Lm51bGwi
+LCAiYW92Lm51bGwiLCAibWFvdiIsICJhb3YiKQ0KICAgICAgZWxzZSBjKCJh
+b3YubnVsbCIsICJhb3YiKQ0KICAgIH0NCiAgICBlbHNlIHsNCiAgICAgIHgg
+PC0gbW9kZWwubWF0cml4KG10LCBtZikNCiAgICAgIHogPC0gaWYgKGlzLm51
+bGwodykpIA0KICAgICAgICBsbS5maXQoeCwgeSwgdG9sPXRvbCkNCiAgICAg
+IGVsc2UgbG0ud2ZpdCh4LCB5LCB3LCB0b2w9dG9sKQ0KICAgICAgeiRyZXNp
+ZC5hc3NpZ24gPC0gKHokcXIkcmFuaysxKTogZGltKHgpWzFdDQogICAgICBj
+bGFzcyh6KSA8LSBjKGlmIChpcy5tYXRyaXgoeSkpIGMoIm1hb3YiLCJtbG0i
+KSwgImFvdiIsICJsbSIpDQogICAgfQ0KICAgICMjIyBTZXQgdXAgY29udHJh
+c3RzIA0KICAgIGNvbnRyIDwtICBhcy5saXN0KGF0dHIobXQsInRlcm0ubGFi
+ZWxzIilbIGF0dHIobXQsIm9yZGVyIikgPT0gMV0pDQogICAgbmFtZXMoY29u
+dHIpIDwtIHVubGlzdChjb250cikNCiAgICBmb3IgKGkgaW4gMTpsZW5ndGgo
+Y29udHIpKQ0KICAgICAgY29udHJbW2ldXSA8LSBjb250cmFzdHMoZGF0YVss
+Y29udHJbW2ldXSBdKQ0KICAgIHokY29udHJhc3RzIDwtIGNvbnRyDQogICAg
+aWYocHJvaikNCiAgICAgIHokcHJvaiA8LSBwcm9qLmFvdih4LHksb25lZGYp
+DQogICAgeiRjYWxsIDwtIG1hdGNoLmNhbGwoKQ0KICAgIHokdGVybXMgPC0g
+bXQNCiAgICBpZiAobW9kZWwpIA0KICAgICAgeiRtb2RlbCA8LSBtZg0KICB9
+DQogIGVsc2V7DQogICAgIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMj
+IyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMNCiAgICAjIyMgICAgICAg
+ICAgICAgICAgICAgICAgICAgICAgICBNdWx0aXBsZSBFcnJvciBzdHJhdGEN
+CiAgICAjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMj
+IyMjIyMjIyMjIyMjIyMjIyMjIw0KICAgIGZvcm11bGFzIDwtIHNwbGl0LmZv
+cm11bGEuYnlFcnJvcihmb3JtdWxhKQ0KICAgIGVycm9yLmZvcm0gPC0gZm9y
+bXVsYXMkZXJyb3IuZm9ybQ0KICAgIG1vZC5mb3JtIDwtIGZvcm11bGFzJG1v
+ZGVsLmZvcm0NCiAgICBlbXQgPC0gdGVybXMoZXJyb3IuZm9ybSkgICMgbW9k
+ZWwgdGVybXMgZm9yIGVycm9yDQogICAgZW1mIDwtIG1vZGVsLmZyYW1lKGZv
+cm11bGE9ZXJyb3IuZm9ybSxkYXRhPWRhdGEpICMgbW9kZWwgZnJhbWUgZm9y
+IGVycm9yDQogICAgeSAgIDwtIG1vZGVsLnJlc3BvbnNlKGVtZiwgIm51bWVy
+aWMiKQ0KICAgIGlmKE5DT0woeSkgPiAxKQ0KICAgICAgc3RvcCgiV2l0aCBF
+cnJvciBzdHJhdGEgdXNlIGEgdmVjdG9yIChvbmx5KSByZXNwb25zZS4iKQ0K
+ICAgIGV4ICA8LSBtb2RlbC5tYXRyaXgoZW10LCBkYXRhKQ0KICAgIG5yIDwt
+IG5yb3coZXgpDQogICAgZXJyLmFvdiA8LSBpZihpcy5udWxsKHdlaWdodHMp
+KSBsbS5maXQoZXgseSwgdG9sPXRvbCkNCiAgICAgICAgICAgICAgIGVsc2Ug
+bG0ud2ZpdChleCx5LHdlaWdodHMsdG9sPXRvbCkNCiAgICBRZSA8LSBxci5R
+KGVyci5hb3YkcXIsIGNvbXBsZXRlPVRSVUUpDQogICAgeSA8LSB0KFFlKSAl
+KiUgeSAgICAgICAgICAgICAgICAgIyMgUHJvamVjdCB5IG9udG8gdGhlIGVy
+cm9yIHNwYWNlDQogICAgZXJyLnJhbmsgPC0gZXJyLmFvdiRyYW5rDQogICAg
+cGl2b3QgPC0gZXJyLmFvdiRxciRwaXZvdA0KICAgIGFzc24gPC0gc3BsaXQo
+KDE6ZXJyLnJhbmspLGZhY3RvcihlcnIuYW92JGFzc2lnbltwaXZvdF1bMTpl
+cnIucmFua10sDQogICAgICAgICAgICAgICAgICBsZXZlbHMgPSB1bmlxdWUo
+ZXJyLmFvdiRhc3NpZ25bcGl2b3RdKSkpDQogICAgbmFtZXMoYXNzbikgIDwt
+IGMoaWYoYXR0cihlbXQsImludGVyY2VwdCIpKSAiSW50ZXJjZXB0IiwNCiAg
+ICAgICAgICAgICAgICAgICAgICAgICBhdHRyKGVtdCwidGVybS5sYWJlbHMi
+KSkNCiAgICBzdHJhdGEubmR4IDwtIGMoYXNzbiwgbGlzdChSZXNpZHVhbCA9
+IChlcnIucmFuaysxKTpucikpDQogICAgICAgICAgICAgICAgICAgICAgICMj
+IGluZGljZXMgb2YgY29sdW1ucyBvZiBleCBpbnRvIHN0cmF0YQ0KICAgIGRm
+LmVycm9yIDwtIHVubGlzdChsYXBwbHkoIHN0cmF0YS5uZHgsbGVuZ3RoKSkN
+CiAgICBuLnN0cmF0YSA8LSBsZW5ndGgoZGYuZXJyb3IpDQogICAgc3RyYXRh
+IDwtIG5hbWVzKHN0cmF0YS5uZHgpDQogICAgbXQgPC0gdGVybXMobW9kLmZv
+cm0sIGtlZXAub3JkZXIgPSBrZWVwLm9yZGVyKQ0KICAgIE14IDwtIG1vZGVs
+Lm1hdHJpeChtdCwgZGF0YSkNCiAgICB0UWUuTSA8LSB0KFFlKSAlKiUgTXgg
+ICAgICAgICAgICAjIyBQcm9qZWN0IHggb250byBlcnJvciBzcGFjZQ0KICAg
+IGF0dHIodFFlLk0sImFzc2lnbiIpIDwtIGF0dHIoTXgsImFzc2lnbiIpDQog
+ICAgbmMgPC0gbmNvbChNeCkNCiAgICBjb2wubmR4IDwtIE5VTEwNCiAgICBt
+ZiA8LSBtYXRjaC5jYWxsKCkNCiAgICBtZiRtb2RlbCA8LSBOVUxMDQogICAg
+bWZbWzFdXSA8LSBhcy5uYW1lKCJtb2RlbC5mcmFtZSIpDQogICAgeiA8LSBh
+cy5saXN0KDE6bi5zdHJhdGEpICAgICMjIGJlZ2luIHRvIHNldHVwIHRoZSBy
+ZXN1bHQgb2JqZWN0DQogICAgIyMgTG9vcCBvdmVyIHN0cmF0YSANCiAgICBm
+b3IgKCBpIGluICgxICsgYXR0cihlbXQsImludGVyY2VwdCIpKSA6bi5zdHJh
+dGEpew0KICAgICAgaWYoIGkgPiAxICYgbGVuZ3RoKGNvbC5uZHgpID4gMCl7
+DQogICAgICAgIHkgPC0geSAgLSB0UWUuTVsgLGNvbC5uZHhdICUqJSBzdHJ0
+LmNvZWYNCiAgICAgIH0NCiAgICAgIHJvdy5uZHggPC0gc3RyYXRhLm5keFtb
+aV1dDQogICAgICBjb2wubmR4IDwtICgxOm5jKVthcHBseSh0UWUuTVtyb3cu
+bmR4LCxkcm9wPUZBTFNFXSwyLA0KICAgICAgICAgICAgICAgICAgICAgICAg
+ICAgICAgZnVuY3Rpb24oeCkgIWFsbChpcy56ZXJvKHgsIHRvbD10b2wpKSld
+DQogICAgICBsY24gPC0gbGVuZ3RoKGNvbC5uZHgpDQogICAgICBpZiggbGNu
+ID4gMCl7DQogICAgICAgIGlmKGxjbiA+IGRmLmVycm9yW1tpXV0pDQogICAg
+ICAgICAgIGNvbC5uZHggPC0gY29sLm5keFsxOmRmLmVycm9yW1tpXV1dDQog
+ICAgICAgIHggPC0gdFFlLk1bcm93Lm5keCxjb2wubmR4LGRyb3A9RkFMU0Vd
+DQogICAgICAgIGF0dHIoeCwiYXNzaWduIikgPC0gYXR0cih0UWUuTSwiYXNz
+aWduIilbY29sLm5keF0NCiAgICAgICAgemkgPC0gaWYoaXMubnVsbCh3ZWln
+aHRzKSkgbG0uZml0KHgsIHlbcm93Lm5keF0pDQogICAgICAgICAgICAgIGVs
+c2UgbG0uZml0KHgsIHlbcm93Lm5keF0sd2VpZ2h0c1tyb3cubmR4XSkNCiAg
+ICAgICAgemkkcmVzaWQuYXNzaWduIDwtICh6aSRxciRyYW5rKzEpOiBkaW0o
+eClbMV0NCiAgICAgICAgc3RydC5jb2VmIDwtIHppJGNvZWZmaWNpZW50c1sh
+aXMubmEoemkkY29lZmZpY2llbnRzKV0NCiAgICAgICAgaWYoYW55KGlzLm5h
+KHppJGNvZWZmaWNpZW50cykpKQ0KICAgICAgICAgIGNvbC5uZHggPC0gY29s
+Lm5keFshaXMubmEoemkkY29lZmZpY2llbnRzKV0NCiAgICAgICAgICAgIyAo
+Tm90IG5lZWRlZCBmb3IgaGVsbWVydCBjb250cmFzdHMpDQogICAgICAgIHpp
+JHRlcm1zIDwtIG10DQogICAgICAgIGF0dHIoemkkdGVybXMsInRlcm0ubGFi
+ZWxzIikgPC0gdW5pcXVlKGF0dHIoemkkdGVybXMsDQogICAgICAgICAgICAg
+ICAgICAgICAgICJ0ZXJtLmxhYmVscyIpW2F0dHIodFFlLk0sImFzc2lnbiIp
+W2NvbC5uZHhdXSkNCiAgICAgICAgYXR0cih6aSR0ZXJtcywiZmFjdG9ycyIp
+IDwtICBhdHRyKHppJHRlcm1zLA0KICAgICAgICAgICAgICAgICAgICAgICJm
+YWN0b3JzIilbLGF0dHIoemkkdGVybXMsInRlcm0ubGFiZWxzIiksZHJvcD1G
+QUxTRV0NCiAgICAgICAgYXR0cih6aSR0ZXJtcywiaW50ZXJjZXB0IikgPC0g
+MA0KICAgICAgICBjbGFzcyh6aSkgPC0gYygiYW92IiwgImxtIikNCiAgICAg
+ICAgICAjIyMgU2V0IHVwIGNvbnRyYXN0cw0KICAgICAgICBjb250ciA8LSAg
+YXR0cih6aSR0ZXJtcywidGVybS5sYWJlbHMiKQ0KICAgICAgICBjb250ciA8
+LSBhcy5saXN0KGNvbnRyW3VubGlzdChsYXBwbHkoc3Ryc3BsaXQoY29udHIs
+IjoiKSxsZW5ndGgpKT09IDFdKQ0KICAgICAgICAgICAgICAgICAgICAgICAg
+ICAgICAgICAgICAgICAgICMgcmVtb3ZlIGludGVyYWN0aW9ucw0KICAgICAg
+ICBuYW1lcyhjb250cikgPC0gdW5saXN0KGNvbnRyKQ0KICAgICAgICBmb3Ig
+KGogaW4gMTpsZW5ndGgoY29udHIpKQ0KICAgICAgICAgIGNvbnRyW1tqXV0g
+PC0gY29udHJhc3RzKGRhdGFbLGNvbnRyW1tqXV0gXSkNCiAgICAgICAgemkk
+Y29udHJhc3RzIDwtIGNvbnRyDQogICAgICAgIGlmKHByb2opDQogICAgICAg
+ICAgemkkcHJvaiA8LSBwcm9qLmFvdih4LHksb25lZGY9b25lZGYpDQogICAg
+ICB9DQogICAgICBlbHNlIHsgICAgICAjIyBObyB0ZXJtcyB0byBmaXQgaW4g
+dGhpcyBlcnJvciBzdHJhdHVtDQogICAgICAgICB6aSA8LSBsaXN0KGNvZWZm
+aWNpZW50cz0gTkEsICAgIHJlc2lkdWFscyA9IHlbcm93Lm5keF0sDQogICAg
+ICAgICAgICAgICAgIGVmZmVjdHMgPSBOQSwgcmFuayA9IDAsDQogICAgICAg
+ICAgICAgICAgIGZpdHRlZC52YWx1ZXMgPSAwICpyb3cubmR4ICwgcXIgPSBO
+QSwgIA0KICAgICAgICAgICAgICAgICBhc3NpZ24gPSBOQSwgIGRmID0gTkEs
+IGRmLnJlc2lkdWFsID0gZGYuZXJyb3JbaV0sDQogICAgICAgICAgICAgICAg
+ICAgcmVzaWQuYXNzaWduID0gMTpkZi5lcnJvcltpXSkNCiAgICAgICB9DQog
+ICAgICBjbGFzcyh6aSkgPC0gYygiYW92IiwibG0iKQ0KICAgICAgeltbaV1d
+IDwtIHppDQogICAgfQ0KICBuYW1lcyh6KSA8LSAgYyggaWYoYXR0cihlbXQs
+ImludGVyY2VwdCIpKSAiKEludGVyY2VwdCkiLA0KICAgICAgICAgICAgICAg
+ICBhdHRyKGVtdCwidGVybS5sYWJlbHMiKSwiV2l0aGluIikNCiAgYXR0cih6
+LCJyZXNwb25zZSIpIDwtICBhdHRyKGVtdCwidmFyaWFibGVzIilbWzJdXQ0K
+ICBhdHRyKG10LCJzcGVjaWFscyIpIDwtIGxpc3QoRXJyb3I9ZW10KQ0KICBh
+dHRyKHosInRlcm1zIikgPC0gIG10DQogIGF0dHIoeiwiY2FsbCIpIDwtIG1h
+dGNoLmNhbGwoKQ0KICBjbGFzcyh6KSA8LSBjKCJhb3ZsaXN0IiwibGlzdG9m
+IikNCiAgfQ0KICB6DQp9DQoNCg0KDQogd2VpZ2h0cy5hb3YgPC0gZnVuY3Rp
+b24gKHgpICB4JHdlaWdodHMNCiByZXNpZHVhbHMuYW92IDwtIGZ1bmN0aW9u
+ICh4KSAgeCRyZXNpZHVhbHMNCiBkZi5yZXNpZHVhbC5hb3YgPC0gZnVuY3Rp
+b24gKHgpICB4JGRmLnJlc2lkdWFsDQoNCg0KcHJpbnQuYW92IDwtIGZ1bmN0
+aW9uKG9iamVjdCwgZGlnaXRzPSAzLCAuLi4pDQp7DQogIGNhdCgiQ2FsbDpc
+biIpDQogIHByaW50KG9iamVjdCRjYWxsKQ0KICB3IDwtIHdlaWdodHMob2Jq
+ZWN0KQ0KICBjYXQocGFzdGUoIGlmKCFpcy5udWxsKHcpKSAiV2VpZ2h0ZWQi
+LCAiUmVzaWR1YWxzOlxuIikpDQogIGlmIChpcy5udWxsKHcpKSB7DQogICAg
+c3NyIDwtIHN1bShyZXNpZChvYmplY3QpXjIpDQogICAgcHJpbnQoc3VtbWFy
+eShhcy5udW1lcmljKHJlc2lkKG9iamVjdCkpKSkNCiAgfQ0KICBlbHNlew0K
+ICAgIHNzciA8LSBzdW0odyAqIHJlc2lkKG9iamVjdCleMikNCiAgICBwcmlu
+dChzdW1tYXJ5KGFzLm51bWVyaWMoc3FydCh3KSAqIHJlc2lkKG9iamVjdCkp
+KSkNCiAgfQ0KICBwMSA8LSAxOm9iamVjdCRyYW5rDQogIGNvbXAgPC0gb2Jq
+ZWN0JGVmZmVjdHNbcDFdDQogIGFzZ24gPC0gb2JqZWN0JGFzc2lnbltvYmpl
+Y3QkcXIkcGl2b3RdW3AxXQ0KICBkZnIgPC0gZGYucmVzaWR1YWwob2JqZWN0
+KQ0KICBzcyA8LSBjKGFzLm51bWVyaWMobGFwcGx5KHNwbGl0KGNvbXBeMiwg
+YXNnbiksIHN1bSkpLCBzc3IpDQogIGRmIDwtIGMoYXMubnVtZXJpYyhsYXBw
+bHkoc3BsaXQoYXNnbiwgICBhc2duKSwgbGVuZ3RoKSksIGRmcikNCiAgaWYg
+KGF0dHIob2JqZWN0JHRlcm1zLCAiaW50ZXJjZXB0IikpIHsNCiAgICBzcyA8
+LSBzc1stMV0NCiAgICBkZiA8LSBkZlstMV0NCiAgfQ0KICBtcyA8LSBzcy9k
+Zg0KICBtc1tpcy5uYW4obXMpXSA8LSBOQQ0KICBmIDwtIGlmKGRmciA+IDFl
+LTEwKSBtcy8oc3NyL2RmcikNCiAgICAgICBlbHNlIHJlcChOQSxsZW5ndGgo
+ZGYpKQ0KICBwIDwtIDEgLSBwZihmLCBkZiwgZGZyKQ0KICB0YWJsZSA8LSBj
+YmluZChkZiwgc3MsIG1zLCBmLCBwKQ0KICB0YWJsZVtsZW5ndGgocCksIDQ6
+NV0gPC0gTkENCiAgZGltbmFtZXModGFibGUpIDwtIGxpc3QoYyhhdHRyKG9i
+amVjdCR0ZXJtcywidGVybS5sYWJlbHMiKSwiUmVzaWR1YWwiKSwNCiAgICAg
+ICAgICAgICAgICAgICAgICAgICAgYygiRGYiLCAiU3VtIFNxIiwgIk1lYW4g
+U3EiLCAiRiIsICJQcig+RikiKSkNCiAgcmVzdWx0IDwtIGxpc3QodGFibGUg
+PSB0YWJsZSwgdGl0bGUgPQ0KICAgICAgICAgcGFzdGUoIkFuYWx5c2lzIG9m
+IFZhcmlhbmNlIFRhYmxlXG5SZXNwb25zZToiLCBmb3JtdWxhKG9iamVjdClb
+WzJdXSkpDQogIGNsYXNzKHJlc3VsdCkgPC0gInRhYnVsYXIiDQogIHByaW50
+KHJlc3VsdCkNCiAgbm9uLmVzdC50ZXJtcyA8LSBsZW5ndGgob2JqZWN0JGNv
+ZWZbaXMubmEob2JqZWN0JGNvZWYpXSkNCiAgaWYoIG5vbi5lc3QudGVybXMg
+Pj0gMSkNCiAgICBjYXQocGFzdGUobm9uLmVzdC50ZXJtcywgIm91dCBvZiIs
+IGxlbmd0aChvYmplY3QkY29lZiksDQogICAgICAgICAgICAgICJjb2VmZmlj
+aWVudHMgYXJlIG5vdCBlc3RpbWFibGUuXG4iKSkNCiAgY2F0KHBhc3RlKCJS
+ZXNpZHVhbCBzdGFuZGFyZCBlcnJvcjoiLCByb3VuZChzcXJ0KG1zW2xlbmd0
+aChtcyldKSxkaWdpdHMpLA0KICAgICAgICAgICAgIm9uIiwgZGZyLCAiZGVn
+cmVlcyBvZiBmcmVlZG9tXG4iKSkNCiAgY292LnVuc2NhbGVkIDwtIGNob2wy
+aW52KG9iamVjdCRxciRxclsxOm9iamVjdCRyYW5rLCAxOm9iamVjdCRyYW5r
+LA0KICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIGRy
+b3AgPSBGQUxTRV0pDQogICMjIENoZWNrIHRvIHNlZSBpZiBpbnZlcnNlIHZh
+ci1jb3ZhcmlhbmNlIGlzIGEgZGlhZ29uYWwgbWF0cml4DQogIGlmKG1heChh
+YnMoY292LnVuc2NhbGVkW3Jvdyhjb3YudW5zY2FsZWQpID4gY29sKGNvdi51
+bnNjYWxlZCldKSkgPiAxZS0xMCkNCiAgICBjYXQoIkVzdGltYXRlZCBlZmZl
+Y3RzIG1heSBiZSB1bmJhbGFuY2VkLlxuIikNCiAgZWxzZSBjYXQoIkVzdGlt
+YXRlZCBlZmZlY3RzIGFyZSBiYWxhbmNlZFxuIikNCiAgY2F0KCJGb3IgZGV0
+YWlscyBvbiBjb2VmZmljaWVudHMgdXNlIHN1bW1hcnkubG1cbiIpDQogIGlu
+dmlzaWJsZShyZXN1bHQpDQp9DQogIA0KICANCnByb2ouYW92IDwtIGZ1bmN0
+aW9uKHgseSxvbmVkZil7DQogeQ0KfQ0KDQoNCnByZWRpY3QuYW92IDwtIA0K
+ZnVuY3Rpb24gKG9iamVjdCwgbmV3ZGF0YSA9IG1vZGVsLmZyYW1lKG9iamVj
+dCksIGNvbmYubGV2ZWwgPSAwLjk1LCANCgkgICAgdG9sLmxldmVsID0gY29u
+Zi5sZXZlbCkgDQp7DQoJICAgIGZvcm0gPC0gZGVsZXRlLnJlc3BvbnNlKHRl
+cm1zKG9iamVjdCkpDQoJICAgIFggPC0gbW9kZWwubWF0cml4KGZvcm0sIG5l
+d2RhdGEpDQoJICAgIG4gPC0gTlJPVyhvYmplY3QkcXIkcXIpDQoJICAgIHAg
+PC0gb2JqZWN0JHJhbmsNCgkgICAgcDEgPC0gMTpwDQoJICAgIHBpdiA8LSBv
+YmplY3QkcXIkcGl2b3RbcDFdDQoJICAgIHIgPC0gcmVzaWQob2JqZWN0KQ0K
+CSAgICBmIDwtIGZpdHRlZChvYmplY3QpDQoJICAgIHcgPC0gd2VpZ2h0cyhv
+YmplY3QpDQoJICAgIHJzcyA8LSBzdW0oaWYgKGlzLm51bGwodykpIA0KCSAg
+ICAJICAgIHJeMg0KCSAgICBlbHNlIHcgKiByXjIpDQoJICAgIFIgPC0gY2hv
+bDJpbnYob2JqZWN0JHFyJHFyW3AxLCBwMSwgZHJvcCA9IEZBTFNFXSkNCgkg
+ICAgZXN0IDwtIG9iamVjdCRjb2VmZmljaWVudHNbcGl2XQ0KCSAgICBwcmVk
+aWN0b3IgPC0gYyhYWywgcGl2LCBkcm9wID0gRl0gJSolIGVzdCkNCgkgICAg
+aXAgPC0gcmVhbChOUk9XKFgpKQ0KCSAgICByZXN2YXIgPC0gcnNzLyhuIC0g
+cCkNCgkgICAgdmNvdiA8LSByZXN2YXIgKiBSDQoJICAgIGZvciAoaSBpbiAo
+MTpOUk9XKFgpKSkgew0KCSAgICAJICAgIHhpIDwtIFhbaSwgcGl2XQ0KCSAg
+ICAJICAgIGlwW2ldIDwtIHhpICUqJSB2Y292ICUqJSB4aQ0KCSAgICB9DQoJ
+ICAgIHN0ZGVycjEgPC0gc3FydChpcCkNCgkgICAgc3RkZXJyMiA8LSBzcXJ0
+KHJlc3ZhciArIGlwKQ0KCSAgICB0dDEgPC0gcXQoKDEgLSBjb25mLmxldmVs
+KS8yLCBuIC0gcCkNCgkgICAgdHQyIDwtIHF0KCgxIC0gdG9sLmxldmVsKS8y
+LCBuIC0gcCkNCgkgICAgY29uZi5sIDwtIHByZWRpY3RvciArIHR0MSAqIHN0
+ZGVycjENCgkgICAgY29uZi51IDwtIHByZWRpY3RvciAtIHR0MSAqIHN0ZGVy
+cjENCgkgICAgcHJlZC5sIDwtIHByZWRpY3RvciArIHR0MiAqIHN0ZGVycjIN
+CgkgICAgcHJlZC51IDwtIHByZWRpY3RvciAtIHR0MiAqIHN0ZGVycjINCgkg
+ICAgZGF0YS5mcmFtZShwcmVkaWN0b3IgPSBwcmVkaWN0b3IsIGNvbmYubCA9
+IGNvbmYubCwgY29uZi51ID0gY29uZi51LCANCgkgICAgCSAgICBwcmVkLmwg
+PSBwcmVkLmwsIHByZWQudSA9IHByZWQudSwgcm93Lm5hbWVzID0gcm93bmFt
+ZXMobmV3ZGF0YSkpDQp9DQoNCiBzcGxpdC5mb3JtdWxhLmJ5RXJyb3IgPC0g
+ZnVuY3Rpb24gKGZvcm1sYSkgDQp7DQoJICAgIHZhcnMgPC0gYXMuY2hhcmFj
+dGVyKGF0dHIodGVybXMoZm9ybWxhKSwgInRlcm0ubGFiZWxzIikpDQoJICAg
+IGV0ZXJtIDwtICgxOmxlbmd0aCh2YXJzKSlbY2hhcm1hdGNoKCJFcnJvciIs
+IHZhcnMpXQ0KCSAgICAjIyBObyBlcnJvciB0ZXJtIHVzZWQgaW4gZm9ybXVs
+YSwgcmV0dXJuIHRoZSBvcmlnaW5hbCBmb3JtdWxhDQoJICAgIGlmIChpcy5u
+YShldGVybSkgfCBpcy5udWxsKGV0ZXJtKSkgDQoJICAgIAkgICAgcmV0dXJu
+KGxpc3QoZXJyLmZvcm0gPSBOVUxMLCBtb2RlbC5mb3JtID0gZm9ybWxhKSkN
+CgkgICAgZWxlbmd0aCA8LSBuY2hhcih2YXJzW2V0ZXJtXSkgLSAxDQoJICAg
+IGVyci5mb3JtIDwtIGFzLmZvcm11bGEocGFzdGUoYXR0cih0ZXJtcyhmb3Jt
+bGEpLCAidmFyaWFibGVzIilbWzJdXSwgDQoJICAgIAkgICAgIn4iLCBzdWJz
+dHJpbmcodmFyc1tldGVybV0sIDcsIGVsZW5ndGgpKSkNCgkgICAgbW9kZWwu
+Zm9ybSA8LSBhcy5mb3JtdWxhKHBhc3RlKGMoYXMuY2hhcmFjdGVyKGF0dHIo
+dGVybXMoZm9ybWxhKSwgDQoJICAgIAkgICAgInZhcmlhYmxlcyIpW1syXV0p
+LCBwYXN0ZSh2YXJzWy1ldGVybV0sIGNvbGxhcHNlID0gIiArICIpKSwgDQoJ
+ICAgIAkgICAgY29sbGFwc2UgPSAiIH4gIikpDQoJICAgICMjIFVzZSB1cGRh
+dGUuZm9ybXVsYSBpbnN0ZWFkPyAgSSBjb3VsZG4ndCBnZXQgaXQgdG8gd29y
+ayByaWdodC4NCgkgICAgbGlzdChlcnJvci5mb3JtID0gZXJyLmZvcm0sIG1v
+ZGVsLmZvcm0gPSBtb2RlbC5mb3JtKQ0KfQ0KDQojIyBtb2RlbC5mcmFtZSBk
+b2Vzbid0IGhhbmRsZSBtdWx0aWNvbHVtbiB5IGluIHRoZSB3YXkgaW5kaWNh
+dGVkIGJ5IFN0YXQgbW9kZWxzIGluIFMgcCAxNTUNCiNUaGlzIHdvcmtzIGlm
+IHdhZmVybSBoYXMgY29sdW1uczogbWFza2RpbSwgdmlzYy50ZW0sIHNwaW5z
+cCwgYmFrZXRpbWUsIGFwZXJ0dXJlLCBleHB0aW1lLCBkZXZ0aW1lLGV0Y2h0
+aW1lOg0KI3dtYW92IDwtIGxtKExpbmUgfm1hc2tkaW0gKyB2aXNjLnRlbStz
+cGluc3ArYmFrZXRpbWUrYXBlcnR1cmUrZXhwdGltZSArIGRldnRpbWUgK2V0
+Y2h0aW1lLHdhZmVybSkNCg0KIyMgVGhpcyBkb2Vzbid0IHdvcmsgOg0KIyB3
+YWZlcm0kTGluZSA8LSBjYmluZChwcmUubWVhbixsb2cocHJlLmRldikscG9z
+dC5tZWFuLGxvZyhwb3N0LmRldikpDQojPiB3bWFvdiA8LSBhb3YoTGluZSB+
+Lix3YWZlcm0pDQojRXJyb3I6IE9iamVjdCAiTGluZS4xIiBub3QgZm91bmQN
+CiNFcnJvciBhcHBlYXJzIGluIC5JbnRlcm5hbChtb2RlbC5mcmFtZSkNCg0K
+I0luIHRoZSBjYXNlIGFib3ZlIHdoaWNoIHdvcmtzLCBzdW1tYXJ5LmxtIGRv
+ZXNuJ3QgaGFuZGxlIHRoZSBjb2VmZmljaWVudHMgcHJvcGVybHkuIE5lZWQg
+YSBzdW1tYXJ5Lm1sbS4NCg0KDQpwcmludC5tYW92IDwtIGZ1bmN0aW9uKG9i
+amVjdCl7DQogIGZvcihyZXNwIGluIGRpbW5hbWVzKG9iamVjdCRjb2VmZmlj
+aWVudHMpW1syXV0pew0KICAgIGNhdChwYXN0ZSgiXG4gUmVzcG9uc2U6ICIs
+cmVzcCwiXG4iKSkNCiAgICBvYmogPC0gb2JqZWN0DQogICAgb2JqJGNvZWZm
+aWNpZW50cyA8LSBvYmplY3QkY29lZmZpY2llbnRzWyxyZXNwLGRyb3A9RkFM
+U0VdDQogICAgb2JqJGVmZmVjdHMgPC0gb2JqZWN0JGVmZmVjdHNbLHJlc3As
+ZHJvcD1GQUxTRV0NCiAgICBvYmokcmVzaWR1YWxzIDwtIG9iamVjdCRyZXNp
+ZHVhbHNbLHJlc3AsZHJvcD1GQUxTRV0NCiAgICBvYmokZml0dGVkLnZhbHVl
+cyA8LSBvYmplY3QkZml0dGVkLnZhbHVlc1sscmVzcCxkcm9wPUZBTFNFXQ0K
+ICAgIG9iaiR0ZXJtc1tbMl1dIDwtIHJlc3ANCiAgICBwcmludC5hb3Yob2Jq
+KQ0KICB9DQp9DQoNCiAgc3VtbWFyeS5tYW92IDwtIGZ1bmN0aW9uKG9iamVj
+dCl7DQogIGZvcihyZXNwIGluIGRpbW5hbWVzKG9iamVjdCRjb2VmZmljaWVu
+dHMpW1syXV0pew0KICAgIGNhdChwYXN0ZSgiXG4gUmVzcG9uc2U6ICIscmVz
+cCwiXG4iKSkNCiAgICBvYmogPC0gb2JqZWN0DQogICAgb2JqJGNvZWZmaWNp
+ZW50cyA8LSBvYmplY3QkY29lZmZpY2llbnRzWyxyZXNwLGRyb3A9RkFMU0Vd
+DQogICAgb2JqJGVmZmVjdHMgPC0gb2JqZWN0JGVmZmVjdHNbLHJlc3AsZHJv
+cD1GQUxTRV0NCiAgICBvYmokcmVzaWR1YWxzIDwtIG9iamVjdCRyZXNpZHVh
+bHNbLHJlc3AsZHJvcD1GQUxTRV0NCiAgICBvYmokZml0dGVkLnZhbHVlcyA8
+LSBvYmplY3QkZml0dGVkLnZhbHVlc1sscmVzcCxkcm9wPUZBTFNFXQ0KICAg
+IG9iaiR0ZXJtc1tbMl1dIDwtIHJlc3ANCiAgICBwcmludChzdW1tYXJ5LmFv
+dihvYmopKQ0KICB9DQp9DQoNCnByaW50Lm1sbSA8LSBmdW5jdGlvbihvYmpl
+Y3Qpew0KICBmb3IocmVzcCBpbiBkaW1uYW1lcyhvYmplY3QkY29lZmZpY2ll
+bnRzKVtbMl1dKXsNCiAgICBjYXQocGFzdGUoIlxuIFJlc3BvbnNlOiAiLHJl
+c3AsIlxuIikpDQogICAgb2JqIDwtIG9iamVjdA0KICAgIG9iaiRjb2VmZmlj
+aWVudHMgPC0gb2JqZWN0JGNvZWZmaWNpZW50c1sscmVzcF0NCiAgICBvYmok
+ZWZmZWN0cyA8LSBvYmplY3QkZWZmZWN0c1sscmVzcF0NCiAgICBvYmokcmVz
+aWR1YWxzIDwtIG9iamVjdCRyZXNpZHVhbHNbLHJlc3BdDQogICAgb2JqJGZp
+dHRlZC52YWx1ZXMgPC0gb2JqZWN0JGZpdHRlZC52YWx1ZXNbLHJlc3BdDQog
+ICAgb2JqJHRlcm1zW1syXV0gPC0gcmVzcA0KICAgIHByaW50LmxtKG9iaikN
+CiAgfQ0KfQ0KDQogIHN1bW1hcnkubWxtIDwtIGZ1bmN0aW9uKG9iamVjdCl7
+DQogIGZvcihyZXNwIGluIGRpbW5hbWVzKG9iamVjdCRjb2VmZmljaWVudHMp
+W1syXV0pew0KICAgIGNhdChwYXN0ZSgiXG4gUmVzcG9uc2U6ICIscmVzcCwi
+XG4iKSkNCiAgICBvYmogPC0gb2JqZWN0DQogICAgb2JqJGNvZWZmaWNpZW50
+cyA8LSBvYmplY3QkY29lZmZpY2llbnRzWyxyZXNwXQ0KICAgIG9iaiRlZmZl
+Y3RzIDwtIG9iamVjdCRlZmZlY3RzWyxyZXNwXQ0KICAgIG9iaiRyZXNpZHVh
+bHMgPC0gb2JqZWN0JHJlc2lkdWFsc1sscmVzcF0NCiAgICBvYmokZml0dGVk
+LnZhbHVlcyA8LSBvYmplY3QkZml0dGVkLnZhbHVlc1sscmVzcF0NCiAgICBv
+YmokdGVybXNbWzJdXSA8LSByZXNwDQogICAgcHJpbnQoc3VtbWFyeS5sbShv
+YmopLHNpZ25pZi5zdGFycz1GQUxTRSkNCiAgfQ0KfQ0KDQpwcmludC5hb3Zs
+aXN0IDwtIA0Kc3VtbWFyeS5hb3ZsaXN0IDwtIGZ1bmN0aW9uIChvYmplY3Qs
+IGRpZ2l0cyA9IG1heCgzLCAuT3B0aW9ucyRkaWdpdHMgLSAzKSwgLi4uKQ0K
+ew0KICBjYXQocGFzdGUoYygiQW5hbHlzaXMgb2YgVmFyaWFuY2UuICBSZXNw
+b25zZSA9ICIpKSkNCiAgcHJpbnQoYXR0cihvYmplY3QsInRlcm1zIilbWzJd
+XSkNCiAgY2F0KCJDYWxsOlxuIikNCiAgcHJpbnQoYXR0cihvYmplY3QsImNh
+bGwiKSkNCiAgY2F0KCJcbiBTZXF1ZW50aWFsIEFuYWx5c2lzIFxuIikNCiAg
+bGlzdGxlbiA8LSBsZW5ndGgob2JqZWN0KQ0KICBmb3IoIGkgaW4gMjpsaXN0
+bGVuKXsNCiAgICBjYXQocGFzdGUoYygiXG5FcnJvciBzdHJhdHVtOiIsIG5h
+bWVzKG9iamVjdClbaV0sIlxuIikpKQ0KICAgIHByaW50KHN1bW1hcnkuYW92
+KG9iamVjdFtbaV1dLCBvbmUub2YubWFueSA9IFRSVUUpKQ0KICB9DQp9DQoN
+CnN1bW1hcnkuYW92IDwtIGZ1bmN0aW9uIChvYmplY3QsIG9uZS5vZi5tYW55
+PUZBTFNFLCAuLi4pIA0Kew0KICB3IDwtIHdlaWdodHMob2JqZWN0KQ0KICBp
+ZiAoaXMubnVsbCh3KSkgew0KICAgIHNzciA8LSBzdW0ocmVzaWQob2JqZWN0
+KV4yKQ0KICB9DQogIGVsc2V7DQogICAgc3NyIDwtIHN1bSh3ICogcmVzaWQo
+b2JqZWN0KV4yKQ0KICB9DQogIGRmciA8LSBkZi5yZXNpZHVhbChvYmplY3Qp
+DQogIGlmKCBvYmplY3QkcmFuayA+IDApew0KICAgIHAxIDwtIDE6b2JqZWN0
+JHJhbmsNCiAgICBjb21wIDwtIG9iamVjdCRlZmZlY3RzW3AxXQ0KICAgIGFz
+Z24gPC0gb2JqZWN0JGFzc2lnbltvYmplY3QkcXIkcGl2b3RdW3AxXQ0KICAg
+IHNzIDwtIGMoYXMubnVtZXJpYyhsYXBwbHkoc3BsaXQoY29tcF4yLCBhc2du
+KSwgc3VtKSksIHNzcikNCiAgICBkZiA8LSBjKGFzLm51bWVyaWMobGFwcGx5
+KHNwbGl0KGFzZ24sICAgYXNnbiksIGxlbmd0aCkpLCBkZnIpDQogICAgaWYg
+KGF0dHIob2JqZWN0JHRlcm1zLCAiaW50ZXJjZXB0IikpIHsNCiAgICAgIHNz
+IDwtIHNzWy0xXQ0KICAgICAgZGYgPC0gZGZbLTFdDQogICAgfQ0KICAgIG1z
+IDwtIHNzL2RmDQogICAgbXNbaXMubmFuKG1zKV0gPC0gTkENCiAgICBmIDwt
+IGlmKGRmciA+IDFlLTEwKSBtcy8oc3NyL2RmcikNCiAgICBlbHNlIHJlcChO
+QSxsZW5ndGgoZGYpKQ0KICAgIHAgPC0gMSAtIHBmKGYsIGRmLCBkZnIpDQog
+ICAgdGFibGUgPC0gY2JpbmQoZGYsIHNzLCBtcywgZiwgcCkNCiAgICB0YWJs
+ZVtsZW5ndGgocCksIDQ6NV0gPC0gTkENCiAgICBkaW1uYW1lcyh0YWJsZSkg
+PC0gbGlzdChjKGF0dHIob2JqZWN0JHRlcm1zLCJ0ZXJtLmxhYmVscyIpLCJS
+ZXNpZHVhbCIpLA0KICAgICAgICAgICAgICAgICAgICAgICAgICBjKCJEZiIs
+ICJTdW0gU3EiLCAiTWVhbiBTcSIsICJGIiwgIlByKD5GKSIpKQ0KICB9DQog
+IGVsc2V7DQogICAgdGFibGUgPC0gY2JpbmQoZGZyLCBzc3IsIHNzci9kZnIs
+IE5BLCBOQSkNCiAgICBkaW1uYW1lcyh0YWJsZSkgPC0gbGlzdCgiUmVzaWR1
+YWwiLA0KICAgICAgICAgICAgICAgICAgICAgICAgICAgIGMoIkRmIiwgIlN1
+bSBTcSIsICJNZWFuIFNxIiwgIkYiLCAiUHIoPkYpIikpDQogIH0NCiAgICBp
+Zighb25lLm9mLm1hbnkpDQogICAgICBjYXQocGFzdGUoIkFuYWx5c2lzIG9m
+IFZhcmlhbmNlIFRhYmxlXG5SZXNwb25zZToiLCBmb3JtdWxhKG9iamVjdClb
+WzJdXSksDQogICAgICAgICJcbiIpDQogIHJlc3VsdCA8LSBsaXN0KHRhYmxl
+ID0gdGFibGUpDQogIGNsYXNzKHJlc3VsdCkgPC0gInRhYnVsYXIiDQogIHJl
+c3VsdA0KfQ0K
+--0-488534781-901753860=:6003--
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From p.dalgaard@biostat.ku.dk  Thu Jul 30 11:02:59 1998
+From: p.dalgaard@biostat.ku.dk (Peter Dalgaard BSA)
+Date: 30 Jul 1998 12:02:59 +0200
+Subject: R-beta: feedback R-0.62.2
+In-Reply-To: Rashid Nassar's message of Wed, 29 Jul 1998 20:38:46 -0400 (EDT)
+References: <Pine.SOL.3.91.980729201132.28799A-100000@bio3.acpub.duke.edu>
+Message-ID: <x2vhofslkc.fsf@biostat.ku.dk>
+
+Rashid Nassar <rnassar@acpub.duke.edu> writes:
+
+> I have one more nitpick, if I may:
+> 
+> summary(aov.obj) prints significance *'s but doesn't print the legend
+> at the bottom explaining their meaning (it is not parallel with
+> summary(lm.obj)
+> 
+> 
+> Question: Is this kind of nitpicking feedback useful (if so I'd be
+> glad to continue to keep notes and send them as I'm using/playing with
+> R, and please there is no need for you to answer or give workarounds,
+> since none of this really prevents getting results)?  Or does it just
+> get in the way of more important stuff (in which case I'll quite the
+> nitpicking and only report if I get a real problem)? 
+
+In general, it is useful. It's especially the smaller things that we
+tend to overlook. The best place to send them is the R-devel list,
+though - if you send them to a single person they may get lost. E.g.
+significance stars are really Martin Maechlers pet. (I'll Cc: this
+particular note to R-devel).
+
+
+-- 
+   O__  ---- Peter Dalgaard             Blegdamsvej 3  
+  c/ /'_ --- Dept. of Biostatistics     2200 Cph. N   
+ (*) \(*) -- University of Copenhagen   Denmark      Ph: (+45) 35327918
+~~~~~~~~~~ - (p.dalgaard@biostat.ku.dk)             FAX: (+45) 35327907
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From p.dalgaard@biostat.ku.dk  Fri Jul 31 00:09:24 1998
+From: p.dalgaard@biostat.ku.dk (Peter Dalgaard BSA)
+Date: 31 Jul 1998 01:09:24 +0200
+Subject: zero-extent matrix crash
+Message-ID: <x290lbkkbf.fsf@biostat.ku.dk>
+
+Anyone for a little debugging?
+
+>  matrix(numeric(0),0,0)
+Floating point exception (core dumped)
+
+[I've decided to make a habit of sending bugs that I'm not going to
+attack right away to R-devel, in case someone might be interested in
+chipping in and saving the core team the work]
+
+-- 
+   O__  ---- Peter Dalgaard             Blegdamsvej 3  
+  c/ /'_ --- Dept. of Biostatistics     2200 Cph. N   
+ (*) \(*) -- University of Copenhagen   Denmark      Ph: (+45) 35327918
+~~~~~~~~~~ - (p.dalgaard@biostat.ku.dk)             FAX: (+45) 35327907
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
+From thomas@biostat.washington.edu  Fri Jul 31 01:13:30 1998
+From: thomas@biostat.washington.edu (Thomas Lumley)
+Date: Thu, 30 Jul 1998 17:13:30 -0700 (PDT)
+Subject: zero-extent matrix crash
+In-Reply-To: <x290lbkkbf.fsf@biostat.ku.dk>
+Message-ID: <Pine.SOL.3.95.980730171231.27092B-100000@gorn>
+
+On 31 Jul 1998, Peter Dalgaard BSA wrote:
+
+> Anyone for a little debugging?
+> 
+> >  matrix(numeric(0),0,0)
+> Floating point exception (core dumped)
+> 
+
+Fixed. (there wasn't any checking for zero extents in matrix(); there is
+now)
+
+	-thomas
+
+Thomas Lumley
+------------------------------------------------------+------
+Biostatistics		: "Never attribute to malice what  :
+Uni of Washington	:  can be adequately explained by  :
+Box 357232		:  incompetence" - Hanlon's Razor  :
+Seattle WA 98195-7232	:				   :
+------------------------------------------------------------
+
+
+
+-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-.-
+r-devel mailing list -- Read http://www.ci.tuwien.ac.at/~hornik/R/R-FAQ.html
+Send "info", "help", or "[un]subscribe"
+(in the "body", not the subject !)  To: r-devel-request@stat.math.ethz.ch
+_._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._._
+
