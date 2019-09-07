@@ -1,4 +1,4 @@
-#!/usr/local/bin/R
+#!/usr/local/bin/Rscript
 library(rvest)
 
 URL = 'https://stat.ethz.ch/pipermail/r-devel/'
