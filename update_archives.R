@@ -13,13 +13,13 @@ zips = URL %>% read_html %>%
   # linked under "Gzip'd Text NNN KB"
   html_nodes(xpath = '//a[contains(text(), "Gzip")]') %>%
   # only download new archives
-  html_attr('href') %>% setdiff(sprintf('%s.gz', extant), . ) %>%
+  html_attr('href') %>% setdiff(sprintf('%s.gz', extant)) %>%
   # sort should be unnecessary
   sprintf('%s%s', URL, . ) %>% sort
 
 if (length(zips)) {
   message('Acquiring ', length(zips), ' archives: ',
-          head(zips, 1L), ' - ', tail(zips, 1L))
+          basename(head(zips, 1L)), ' - ', basename(tail(zips, 1L)))
 } else {
   message('No new zips to acquire')
 }
