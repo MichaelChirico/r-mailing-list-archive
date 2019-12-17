@@ -8927,3 +8927,2129 @@ https://stat.ethz.ch/mailman/listinfo/r-devel
 	[[alternative HTML version deleted]]
 
 
+From |g@ut|er @end|ng |rom gm@||@com  Sat Dec 14 17:25:07 2019
+From: |g@ut|er @end|ng |rom gm@||@com (Laurent Gautier)
+Date: Sat, 14 Dec 2019 11:25:07 -0500
+Subject: [Rd] Inconsistent behavior for the C AP's R_ParseVector() ?
+In-Reply-To: <a9e51e1e-feb2-4f56-3627-120d9c413f31@gmail.com>
+References: <CA+JCgN0vZ8O1ekweEgPqcH202PKU2dfMW959eF=Q2S8K1OSKeQ@mail.gmail.com>
+ <CA+JCgN05ZRAuWwMEKX77jcfOw7s3g=Sf+vxRjVrVQbUfEutmoA@mail.gmail.com>
+ <CA+JCgN3iocdn8xVxVuYcsqNSeQ3KQHg3P3FHBf=VV7=zDzxQaQ@mail.gmail.com>
+ <8b6673c4-c7a2-d186-61a6-2a92e7d0e0f5@gmail.com>
+ <CA+JCgN0Eu9gzwBipwR5XnWrboZXLGbjroPjuxjtHKiRETim6eA@mail.gmail.com>
+ <9c301815-c18f-38b9-d841-b7d35dc76ba6@gmail.com>
+ <CA+JCgN2Ckchvh3tbXEVk+EKt3d3enkD=MZPKYAJSd9G+oo1FrA@mail.gmail.com>
+ <a9e51e1e-feb2-4f56-3627-120d9c413f31@gmail.com>
+Message-ID: <CA+JCgN1HjZY37k=2Rz885FEPp67YkHRf_Pc8TLQ-Pc=08ZREGw@mail.gmail.com>
+
+Le lun. 9 d?c. 2019 ? 09:57, Tomas Kalibera <tomas.kalibera at gmail.com> a
+?crit :
+
+> On 12/9/19 2:54 PM, Laurent Gautier wrote:
+>
+>
+>
+> Le lun. 9 d?c. 2019 ? 05:43, Tomas Kalibera <tomas.kalibera at gmail.com> a
+> ?crit :
+>
+>> On 12/7/19 10:32 PM, Laurent Gautier wrote:
+>>
+>> Thanks for the quick response Tomas.
+>>
+>> The same error is indeed happening when trying to have a zero-length
+>> variable name in an environment. The surprising bit is then "why is this
+>> happening during parsing" (that is why are variables assigned to an
+>> environment) ?
+>>
+>> The emitted R error (in the R console) is not a parse (syntax) error, but
+>> an error emitted during parsing when the parser tries to intern a name -
+>> look it up in a symbol table. Empty string is not allowed as a symbol name,
+>> and hence the error. In the call "list(''=1)" , the empty name is what
+>> could eventually become a name of a local variable inside list(), even
+>> though not yet during parsing.
+>>
+>
+> Thanks Tomas.
+>
+> I guess this has do with R expressions being lazily evaluated, and names
+> of arguments in a call are also part of the expression. Now the puzzling
+> part is why is that at all part of the parsing: I would have expected
+> R_ParseVector() to be restricted to parsing... Now it feels like
+> R_ParseVector() is performing parsing, and a first level of evalution for
+> expressions that "should never work" (the empty name).
+>
+> Think of it as an exception in say Python. Some failures during parsing
+> result in an exception (called error in R and implemented using a long
+> jump). Any time you are calling into R you can get an error; out of memory
+> is also signalled as R error.
+>
+
+
+The surprising bit for me was that I had expected the function to solely
+perform parsing. I did expect an exception (and a jmp smashing the stack)
+when the function concerned is in the C-API, is parsing a string, and is
+using a parameter (pointer) to store whether parsing was a failure or a
+success.
+
+Since you are making a comparison with Python, the distinction I am making
+between parsing and evaluation seem to apply there. For example:
+
+```
+>>> import parser
+>>> parser.expr('1+')
+  Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+  File "<string>", line 1
+    1+
+     ^
+SyntaxError: unexpected EOF while parsing
+>>> p = parser.expr('list(""=1)')
+>>> p
+<parser.st at 0x7f360e5329f0>
+>>> eval(p)
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+TypeError: eval() arg 1 must be a string, bytes or code object
+
+>>> list(""=1)
+  File "<stdin>", line 1
+SyntaxError: keyword can't be an expression
+```
+
+
+> There is probably some error in how the external code is handling R
+>> errors  (Fatal error: unable to initialize the JIT, stack smashing, etc)
+>> and possibly also how R is initialized before calling ParseVector. Probably
+>> you would get the same problem when running say "stop('myerror')". Please
+>> note R errors are implemented as long-jumps, so care has to be taken when
+>> calling into R, Writing R Extensions has more details (and section 8
+>> specifically about embedding R). This is unlike parse (syntax) errors
+>> signaled via return value to ParseVector()
+>>
+>
+> The issue is that the segfault (because of stack smashing, therefore
+> because of what also suspected to be an incontrolled jump) is happening
+> within the execution of R_ParseVector(). I would think that an issue with
+> the initialization of R is less likely because the project is otherwise
+> used a fair bit and is well covered by automated continuous tests.
+>
+> After looking more into R's gram.c I suspect that an execution context is
+> required for R_ParseVector() to know to properly work (know where to jump
+> in case of error) when the parsing code decides to fail outside what it
+> thinks is a syntax error. If the case, this would make R_ParseVector()
+> function well when called from say, a C-extension to an R package, but fail
+> the way I am seeing it fail when called from an embedded R.
+>
+> Yes, contexts are used internally to handle errors. For external use
+> please see Writing R Extensions, section 6.12.
+>
+
+I have wrapped my call to R_ParseVector() in a R_tryCatchError(), and this
+is seems to help me overcome the issue. Thanks for the pointer.
+
+Best,
+
+
+Laurent
+
+
+> Best
+> Tomas
+>
+>
+> Best,
+>
+> Laurent
+>
+>> Best,
+>> Tomas
+>>
+>>
+>> We are otherwise aware that the error is not occurring in the R console,
+>> but can be traced to a call to R_ParseVector() in R's C API:(
+>> https://github.com/rpy2/rpy2/blob/master/rpy2/rinterface_lib/_rinterface_capi.py#L509
+>> ).
+>>
+>> Our specific setup is calling an embedded R from Python, using the cffi
+>> library. An error on end was the first possibility considered, but the
+>> puzzling specificity of the error (as shown below other parsing errors are
+>> handled properly) and the difficulty tracing what is in happening in
+>> R_ParseVector() made me ask whether someone on this list had a suggestion
+>> about the possible issue"
+>>
+>> ```
+>>
+>> >>> import rpy2.rinterface as ri>>> ri.initr()>>> e = ri.parse("list(''=1+") ---------------------------------------------------------------------------RParsingError                             Traceback (most recent call last)>>> e = ri.parse("list(''=123") R[write to console]: Error: attempt to use zero-length variable name
+>> R[write to console]: Fatal error: unable to initialize the JIT
+>>
+>> *** stack smashing detected ***: <unknown> terminated
+>> ```
+>>
+>>
+>> Le lun. 2 d?c. 2019 ? 06:37, Tomas Kalibera <tomas.kalibera at gmail.com> a
+>> ?crit :
+>>
+>>> Dear Laurent,
+>>>
+>>> could you please provide a complete reproducible example where parsing
+>>> results in a crash of R? Calling parse(text="list(''=123") from R works
+>>> fine for me (gives Error: attempt to use zero-length variable name).
+>>>
+>>> I don't think the problem you observed could be related to the memory
+>>> leak. The leak is on the heap, not stack.
+>>>
+>>> Zero-length names of elements in a list are allowed. They are not the
+>>> same thing as zero-length variables in an environment. If you try to
+>>> convert "lst" from your example to an environment, you would get the
+>>> error (attempt to use zero-length variable name).
+>>>
+>>> Best
+>>> Tomas
+>>>
+>>>
+>>> On 11/30/19 11:55 PM, Laurent Gautier wrote:
+>>> > Hi again,
+>>> >
+>>> > Beside R_ParseVector()'s possible inconsistent behavior, R's handling
+>>> of
+>>> > zero-length named elements does not seem consistent either:
+>>> >
+>>> > ```
+>>> >> lst <- list()
+>>> >> lst[[""]] <- 1
+>>> >> names(lst)
+>>> > [1] ""
+>>> >> list("" = 1)
+>>> > Error: attempt to use zero-length variable name
+>>> > ```
+>>> >
+>>> > Should the parser be made to accept as valid what is otherwise possible
+>>> > when using `[[<` ?
+>>> >
+>>> >
+>>> > Best,
+>>> >
+>>> > Laurent
+>>> >
+>>> >
+>>> >
+>>> > Le sam. 30 nov. 2019 ? 17:33, Laurent Gautier <lgautier at gmail.com> a
+>>> ?crit :
+>>> >
+>>> >> I found the following code comment in `src/main/gram.c`:
+>>> >>
+>>> >> ```
+>>> >>
+>>> >> /* Memory leak
+>>> >>
+>>> >> yyparse(), as generated by bison, allocates extra space for the parser
+>>> >> stack using malloc(). Unfortunately this means that there is a memory
+>>> >> leak in case of an R error (long-jump). In principle, we could define
+>>> >> yyoverflow() to relocate the parser stacks for bison and allocate say
+>>> on
+>>> >> the R heap, but yyoverflow() is undocumented and somewhat complicated
+>>> >> (we would have to replicate some macros from the generated parser
+>>> here).
+>>> >> The same problem exists at least in the Rd and LaTeX parsers in tools.
+>>> >> */
+>>> >>
+>>> >> ```
+>>> >>
+>>> >> Could this be related to be issue ?
+>>> >>
+>>> >> Le sam. 30 nov. 2019 ? 14:04, Laurent Gautier <lgautier at gmail.com> a
+>>> >> ?crit :
+>>> >>
+>>> >>> Hi,
+>>> >>>
+>>> >>> The behavior of
+>>> >>> ```
+>>> >>> SEXP R_ParseVector(SEXP, int, ParseStatus *, SEXP);
+>>> >>> ```
+>>> >>> defined in `src/include/R_ext/Parse.h` appears to be inconsistent
+>>> >>> depending on the string to be parsed.
+>>> >>>
+>>> >>> Trying to parse a string such as `"list(''=1+"` sets the
+>>> >>> `ParseStatus` to incomplete parsing error but trying to parse
+>>> >>> `"list(''=123"` will result in R sending a message to the console
+>>> (followed but a crash):
+>>> >>>
+>>> >>> ```
+>>> >>> R[write to console]: Error: attempt to use zero-length variable
+>>> nameR[write to console]: Fatal error: unable to initialize the JIT*** stack
+>>> smashing detected ***: <unknown> terminated
+>>> >>> ```
+>>> >>>
+>>> >>> Is there a reason for the difference in behavior, and is there a
+>>> workaround ?
+>>> >>>
+>>> >>> Thanks,
+>>> >>>
+>>> >>>
+>>> >>> Laurent
+>>> >>>
+>>> >>>
+>>> >       [[alternative HTML version deleted]]
+>>> >
+>>> > ______________________________________________
+>>> > R-devel at r-project.org mailing list
+>>> > https://stat.ethz.ch/mailman/listinfo/r-devel
+>>>
+>>>
+>>>
+>>
+>
+
+	[[alternative HTML version deleted]]
+
+
+From @|mon@urb@nek @end|ng |rom R-project@org  Sat Dec 14 18:04:20 2019
+From: @|mon@urb@nek @end|ng |rom R-project@org (Simon Urbanek)
+Date: Sat, 14 Dec 2019 12:04:20 -0500
+Subject: [Rd] Inconsistent behavior for the C AP's R_ParseVector() ?
+In-Reply-To: <CA+JCgN1HjZY37k=2Rz885FEPp67YkHRf_Pc8TLQ-Pc=08ZREGw@mail.gmail.com>
+References: <CA+JCgN0vZ8O1ekweEgPqcH202PKU2dfMW959eF=Q2S8K1OSKeQ@mail.gmail.com>
+ <CA+JCgN05ZRAuWwMEKX77jcfOw7s3g=Sf+vxRjVrVQbUfEutmoA@mail.gmail.com>
+ <CA+JCgN3iocdn8xVxVuYcsqNSeQ3KQHg3P3FHBf=VV7=zDzxQaQ@mail.gmail.com>
+ <8b6673c4-c7a2-d186-61a6-2a92e7d0e0f5@gmail.com>
+ <CA+JCgN0Eu9gzwBipwR5XnWrboZXLGbjroPjuxjtHKiRETim6eA@mail.gmail.com>
+ <9c301815-c18f-38b9-d841-b7d35dc76ba6@gmail.com>
+ <CA+JCgN2Ckchvh3tbXEVk+EKt3d3enkD=MZPKYAJSd9G+oo1FrA@mail.gmail.com>
+ <a9e51e1e-feb2-4f56-3627-120d9c413f31@gmail.com>
+ <CA+JCgN1HjZY37k=2Rz885FEPp67YkHRf_Pc8TLQ-Pc=08ZREGw@mail.gmail.com>
+Message-ID: <D785C6B8-2096-45BA-83BC-0CA037BF7718@R-project.org>
+
+Laurent,
+
+the main point here is that ParseVector() just like any other R API has to be called in a correct context since it can raise errors so the issue was that your C code has a bug of not setting R correctly (my guess would be your'e not creating the initial context necessary in embedded R). There are many different errors, your is just one of many that can occur - any R API call that does allocation (and parsing obviously does) can cause errors. Note that this is true for pretty much all R API functions.
+
+Cheers,
+Simon
+
+
+
+> On Dec 14, 2019, at 11:25 AM, Laurent Gautier <lgautier at gmail.com> wrote:
+> 
+> Le lun. 9 d?c. 2019 ? 09:57, Tomas Kalibera <tomas.kalibera at gmail.com> a
+> ?crit :
+> 
+>> On 12/9/19 2:54 PM, Laurent Gautier wrote:
+>> 
+>> 
+>> 
+>> Le lun. 9 d?c. 2019 ? 05:43, Tomas Kalibera <tomas.kalibera at gmail.com> a
+>> ?crit :
+>> 
+>>> On 12/7/19 10:32 PM, Laurent Gautier wrote:
+>>> 
+>>> Thanks for the quick response Tomas.
+>>> 
+>>> The same error is indeed happening when trying to have a zero-length
+>>> variable name in an environment. The surprising bit is then "why is this
+>>> happening during parsing" (that is why are variables assigned to an
+>>> environment) ?
+>>> 
+>>> The emitted R error (in the R console) is not a parse (syntax) error, but
+>>> an error emitted during parsing when the parser tries to intern a name -
+>>> look it up in a symbol table. Empty string is not allowed as a symbol name,
+>>> and hence the error. In the call "list(''=1)" , the empty name is what
+>>> could eventually become a name of a local variable inside list(), even
+>>> though not yet during parsing.
+>>> 
+>> 
+>> Thanks Tomas.
+>> 
+>> I guess this has do with R expressions being lazily evaluated, and names
+>> of arguments in a call are also part of the expression. Now the puzzling
+>> part is why is that at all part of the parsing: I would have expected
+>> R_ParseVector() to be restricted to parsing... Now it feels like
+>> R_ParseVector() is performing parsing, and a first level of evalution for
+>> expressions that "should never work" (the empty name).
+>> 
+>> Think of it as an exception in say Python. Some failures during parsing
+>> result in an exception (called error in R and implemented using a long
+>> jump). Any time you are calling into R you can get an error; out of memory
+>> is also signalled as R error.
+>> 
+> 
+> 
+> The surprising bit for me was that I had expected the function to solely
+> perform parsing. I did expect an exception (and a jmp smashing the stack)
+> when the function concerned is in the C-API, is parsing a string, and is
+> using a parameter (pointer) to store whether parsing was a failure or a
+> success.
+> 
+> Since you are making a comparison with Python, the distinction I am making
+> between parsing and evaluation seem to apply there. For example:
+> 
+> ```
+>>>> import parser
+>>>> parser.expr('1+')
+>  Traceback (most recent call last):
+>  File "<stdin>", line 1, in <module>
+>  File "<string>", line 1
+>    1+
+>     ^
+> SyntaxError: unexpected EOF while parsing
+>>>> p = parser.expr('list(""=1)')
+>>>> p
+> <parser.st at 0x7f360e5329f0>
+>>>> eval(p)
+> Traceback (most recent call last):
+>  File "<stdin>", line 1, in <module>
+> TypeError: eval() arg 1 must be a string, bytes or code object
+> 
+>>>> list(""=1)
+>  File "<stdin>", line 1
+> SyntaxError: keyword can't be an expression
+> ```
+> 
+> 
+>> There is probably some error in how the external code is handling R
+>>> errors  (Fatal error: unable to initialize the JIT, stack smashing, etc)
+>>> and possibly also how R is initialized before calling ParseVector. Probably
+>>> you would get the same problem when running say "stop('myerror')". Please
+>>> note R errors are implemented as long-jumps, so care has to be taken when
+>>> calling into R, Writing R Extensions has more details (and section 8
+>>> specifically about embedding R). This is unlike parse (syntax) errors
+>>> signaled via return value to ParseVector()
+>>> 
+>> 
+>> The issue is that the segfault (because of stack smashing, therefore
+>> because of what also suspected to be an incontrolled jump) is happening
+>> within the execution of R_ParseVector(). I would think that an issue with
+>> the initialization of R is less likely because the project is otherwise
+>> used a fair bit and is well covered by automated continuous tests.
+>> 
+>> After looking more into R's gram.c I suspect that an execution context is
+>> required for R_ParseVector() to know to properly work (know where to jump
+>> in case of error) when the parsing code decides to fail outside what it
+>> thinks is a syntax error. If the case, this would make R_ParseVector()
+>> function well when called from say, a C-extension to an R package, but fail
+>> the way I am seeing it fail when called from an embedded R.
+>> 
+>> Yes, contexts are used internally to handle errors. For external use
+>> please see Writing R Extensions, section 6.12.
+>> 
+> 
+> I have wrapped my call to R_ParseVector() in a R_tryCatchError(), and this
+> is seems to help me overcome the issue. Thanks for the pointer.
+> 
+> Best,
+> 
+> 
+> Laurent
+> 
+> 
+>> Best
+>> Tomas
+>> 
+>> 
+>> Best,
+>> 
+>> Laurent
+>> 
+>>> Best,
+>>> Tomas
+>>> 
+>>> 
+>>> We are otherwise aware that the error is not occurring in the R console,
+>>> but can be traced to a call to R_ParseVector() in R's C API:(
+>>> https://github.com/rpy2/rpy2/blob/master/rpy2/rinterface_lib/_rinterface_capi.py#L509
+>>> ).
+>>> 
+>>> Our specific setup is calling an embedded R from Python, using the cffi
+>>> library. An error on end was the first possibility considered, but the
+>>> puzzling specificity of the error (as shown below other parsing errors are
+>>> handled properly) and the difficulty tracing what is in happening in
+>>> R_ParseVector() made me ask whether someone on this list had a suggestion
+>>> about the possible issue"
+>>> 
+>>> ```
+>>> 
+>>>>>> import rpy2.rinterface as ri>>> ri.initr()>>> e = ri.parse("list(''=1+") ---------------------------------------------------------------------------RParsingError                             Traceback (most recent call last)>>> e = ri.parse("list(''=123") R[write to console]: Error: attempt to use zero-length variable name
+>>> R[write to console]: Fatal error: unable to initialize the JIT
+>>> 
+>>> *** stack smashing detected ***: <unknown> terminated
+>>> ```
+>>> 
+>>> 
+>>> Le lun. 2 d?c. 2019 ? 06:37, Tomas Kalibera <tomas.kalibera at gmail.com> a
+>>> ?crit :
+>>> 
+>>>> Dear Laurent,
+>>>> 
+>>>> could you please provide a complete reproducible example where parsing
+>>>> results in a crash of R? Calling parse(text="list(''=123") from R works
+>>>> fine for me (gives Error: attempt to use zero-length variable name).
+>>>> 
+>>>> I don't think the problem you observed could be related to the memory
+>>>> leak. The leak is on the heap, not stack.
+>>>> 
+>>>> Zero-length names of elements in a list are allowed. They are not the
+>>>> same thing as zero-length variables in an environment. If you try to
+>>>> convert "lst" from your example to an environment, you would get the
+>>>> error (attempt to use zero-length variable name).
+>>>> 
+>>>> Best
+>>>> Tomas
+>>>> 
+>>>> 
+>>>> On 11/30/19 11:55 PM, Laurent Gautier wrote:
+>>>>> Hi again,
+>>>>> 
+>>>>> Beside R_ParseVector()'s possible inconsistent behavior, R's handling
+>>>> of
+>>>>> zero-length named elements does not seem consistent either:
+>>>>> 
+>>>>> ```
+>>>>>> lst <- list()
+>>>>>> lst[[""]] <- 1
+>>>>>> names(lst)
+>>>>> [1] ""
+>>>>>> list("" = 1)
+>>>>> Error: attempt to use zero-length variable name
+>>>>> ```
+>>>>> 
+>>>>> Should the parser be made to accept as valid what is otherwise possible
+>>>>> when using `[[<` ?
+>>>>> 
+>>>>> 
+>>>>> Best,
+>>>>> 
+>>>>> Laurent
+>>>>> 
+>>>>> 
+>>>>> 
+>>>>> Le sam. 30 nov. 2019 ? 17:33, Laurent Gautier <lgautier at gmail.com> a
+>>>> ?crit :
+>>>>> 
+>>>>>> I found the following code comment in `src/main/gram.c`:
+>>>>>> 
+>>>>>> ```
+>>>>>> 
+>>>>>> /* Memory leak
+>>>>>> 
+>>>>>> yyparse(), as generated by bison, allocates extra space for the parser
+>>>>>> stack using malloc(). Unfortunately this means that there is a memory
+>>>>>> leak in case of an R error (long-jump). In principle, we could define
+>>>>>> yyoverflow() to relocate the parser stacks for bison and allocate say
+>>>> on
+>>>>>> the R heap, but yyoverflow() is undocumented and somewhat complicated
+>>>>>> (we would have to replicate some macros from the generated parser
+>>>> here).
+>>>>>> The same problem exists at least in the Rd and LaTeX parsers in tools.
+>>>>>> */
+>>>>>> 
+>>>>>> ```
+>>>>>> 
+>>>>>> Could this be related to be issue ?
+>>>>>> 
+>>>>>> Le sam. 30 nov. 2019 ? 14:04, Laurent Gautier <lgautier at gmail.com> a
+>>>>>> ?crit :
+>>>>>> 
+>>>>>>> Hi,
+>>>>>>> 
+>>>>>>> The behavior of
+>>>>>>> ```
+>>>>>>> SEXP R_ParseVector(SEXP, int, ParseStatus *, SEXP);
+>>>>>>> ```
+>>>>>>> defined in `src/include/R_ext/Parse.h` appears to be inconsistent
+>>>>>>> depending on the string to be parsed.
+>>>>>>> 
+>>>>>>> Trying to parse a string such as `"list(''=1+"` sets the
+>>>>>>> `ParseStatus` to incomplete parsing error but trying to parse
+>>>>>>> `"list(''=123"` will result in R sending a message to the console
+>>>> (followed but a crash):
+>>>>>>> 
+>>>>>>> ```
+>>>>>>> R[write to console]: Error: attempt to use zero-length variable
+>>>> nameR[write to console]: Fatal error: unable to initialize the JIT*** stack
+>>>> smashing detected ***: <unknown> terminated
+>>>>>>> ```
+>>>>>>> 
+>>>>>>> Is there a reason for the difference in behavior, and is there a
+>>>> workaround ?
+>>>>>>> 
+>>>>>>> Thanks,
+>>>>>>> 
+>>>>>>> 
+>>>>>>> Laurent
+>>>>>>> 
+>>>>>>> 
+>>>>>      [[alternative HTML version deleted]]
+>>>>> 
+>>>>> ______________________________________________
+>>>>> R-devel at r-project.org mailing list
+>>>>> https://stat.ethz.ch/mailman/listinfo/r-devel
+>>>> 
+>>>> 
+>>>> 
+>>> 
+>> 
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+> 
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Sat Dec 14 22:50:07 2019
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Sat, 14 Dec 2019 22:50:07 +0100
+Subject: [Rd] Inconsistencies in wilcox.test
+In-Reply-To: <24050.26847.78668.28633@stat.math.ethz.ch>
+References: <20191207185536.b6cmmkzywwyuateq@PMW>
+ <20191207205901.4265F22877@v-lynne.math.ethz.ch>
+ <20191207211858.dpnqeslbln5caz2v@PMW>
+ <20191209214336.iy66s5q4nzawdfch@PMW>
+ <24050.26847.78668.28633@stat.math.ethz.ch>
+Message-ID: <24053.22799.647150.274364@stat.math.ethz.ch>
+
+>>>>> Martin Maechler 
+>>>>>     on Thu, 12 Dec 2019 17:20:47 +0100 writes:
+
+>>>>> Karolis Koncevi?ius 
+>>>>>     on Mon, 9 Dec 2019 23:43:36 +0200 writes:
+
+    >> So I tried adding Infinity support for all cases.  And it
+    >> is (as could be expected) more complicated than I
+    >> thought.
+
+    > "Of course !"  Thank you, Karolis, in any case!
+
+    >> It is easy to add Inf support for the test. The problems
+    >> start with conf.int=TRUE.
+
+    >> Currently confidence intervals are computed via
+    >> `uniroot()` and, in the case of infinities, we are
+    >> computationally looking for roots over infinite interval
+    >> which results in an error. I suspect this is the reason
+    >> Inf values were removed in the first place.
+
+    > Maybe. It's still wrong to be done "up front".  I'm sure
+    > 98% (or so ;-) of all calls to wilcox.test() do *not* use
+    > conf.int = TRUE
+
+
+    >> Just a note, I found a few more errors/inconsistencies
+    >> when requesting confidence intervals with paired=TRUE
+    >> (due to Infinities being left in).
+
+    >> Current error in Inf-Inf scenario:
+
+    >> wilcox.test(c(1,2,Inf), c(4,8,Inf), paired=TRUE,
+    >> conf.int=TRUE) Error in if (ZEROES) x <- x[x != 0] :
+    >> missing value where TRUE/FALSE needed
+
+    > Good catch .. notably as it also happens when
+    > conf.int=FALSE as by default.  My version of wilcox.test()
+    > now does give the same as when the to 'Inf' are left away.
+
+    >> NaN confidence intervals:
+
+    >> wilcox.test(c(1:9,Inf), c(21:28,Inf,30), paired=TRUE,
+    >> conf.int=TRUE)
+
+    >> Wilcoxon signed rank test with continuity correction
+
+    >> data: c(1:9, Inf) and c(21:28, Inf, 30) V = 9.5, p-value
+    >> = 0.0586 alternative hypothesis: true location shift is
+    >> not equal to 0 0 percent confidence interval: NaN NaN
+    >> sample estimates: midrange NaN
+
+    > I don't see a big problem here. The NaN's in some sense
+    > show the best that can be computed with this data.
+    > Statistic and P-value, but no conf.int.
+
+
+    >> The easiest "fix" for consistency would be to simply
+    >> remove Infinity support from the paired=TRUE case.
+
+    > I strongly disagree.  We are not pruning good
+    > functionality just for some definition of consistency.
+
+    >> But going with the more desirable approach of adding
+    >> Infinity support for non-paired cases - it is currently
+    >> not clear to me what confidence intervals and
+    >> pseudomedian should be. Specially when Infinities are on
+    >> both sides.
+
+    > I deem that not to be a big deal.  They are not defined
+    > given the default formulas and that is reflected by NA /
+    > NaN in those parts of the result.
+
+    >> Regards, Karolis Koncevi?ius.
+
+    > But I have also spent a few hours now on
+    > wilcox.test.default() behavior notably also looking at the
+    > "rounding" / "machine precision" situation, and also on
+    > your remark that the 'method: ...' does not indicate well
+    > enough what was computed.
+
+    > In my (not yet committed) but hereby proposed enhancement
+    > of wilcox.test(), I have a new argument, 'digits.rank =
+    > Inf' (the default 'Inf' corresponding to the current
+    > behavior) with help page documentation:
+
+    > digits.rank: a number; if finite, ?rank(signif(r,
+    > digits.rank))? will be used to compute ranks for the test
+    > statistic instead of (the default) ?rank(r)?.
+
+    > and then in 'Details :'
+
+    >      For stability reasons, it may be advisable to use
+    > rounded data or to set ?digits.rank = 7?, say, such that
+    > determination of ties does not depend on very small
+    > numeric differences (see the example).
+
+    > and then in 'Examples: '
+
+    >      ## accuracy in ties determination via 'digits.rank':
+    > wilcox.test( 4:2, 3:1, paired=TRUE) # Warning: cannot
+    > compute exact p-value with ties wilcox.test((4:2)/10,
+    > (3:1)/10, paired=TRUE) # no ties => *no* warning
+    > wilcox.test((4:2)/10, (3:1)/10, paired=TRUE, digits.rank =
+    > 9) # same ties as (4:2, 3:1)
+     
+    > ----------------------
+
+    > Lastly, I propose to replace "test" by "exact test" in the
+    > 'method' component (and print out) in case exact
+    > computations were used.  This information should be part
+    > of the returned "htest" object, and not only visible from
+    > the arguments and warnings that are printed during the
+    > computations.  This last change is in some sense the "most
+    > back-incompatible" change of these, because many
+    > wilcox.test() printouts would slightly change, e.g.,
+
+    >> w0 <- wilcox.test( 1:5, 4*(0:4), paired=TRUE)
+
+    > 	  Wilcoxon signed rank exact test
+
+    >   data: 1:5 and 4 * (0:4) V = 1, p-value = 0.125
+    > alternative hypothesis: true location shift is not equal
+    > to 0
+
+    > where before (in R <= 3.6.x) it is just
+
+    > 	  Wilcoxon signed rank test
+
+    >   data: .........  ...............  ...............
+
+    > but I think R 4.0.0 is a good occasion for such a change.
+
+    > Constructive feedback on all this is very welcome!  Martin
+
+... none  ...  I "assume" this means everybody likes the idea ;-)
+
+Anyway, now comitted to R-devel (for R 4.0.0), svn rev 77569
+(in 'NEW FEATURES').
+
+Martin 
+
+
+
+    >> On 2019-12-07 23:18, Karolis Koncevi?ius wrote:
+    >>> Thank you for a fast response. Nice to see this mailing
+    >>> list being so alive.
+    >>> 
+    >>> Regarding Inf issue: I agree with your assessment that
+    >>> Inf should not be removed. The code gave me an
+    >>> impression that Inf values were intentionally removed
+    >>> (since is.finite() was used everywhere, except for
+    >>> paired case). I will try to adjust my patch according to
+    >>> your feedback.
+    >>> 
+    >>> One more thing: it seems like you assumed that issues
+    >>> 2:4 are all related to machine precision, which is not
+    >>> the case - only 2nd issue is.  Just wanted to draw this
+    >>> to your attention, in case you might have some feedback
+    >>> and guidelines about issues 3 and 4 as well.
+    >>> 
+    >>> 
+    >>> 
+    >>> On 2019-12-07 21:59, Martin Maechler wrote:
+    >>>>>>>>> Karolis Koncevi?ius on Sat, 7 Dec 2019 20:55:36
+    >>>>>>>>> +0200 writes:
+    >>>> 
+    >>>> > Hello, > Writing to share some things I've found
+    >>>> about wilcox.test() that seem a > a bit inconsistent.
+    >>>> 
+    >>>> > 1. Inf values are not removed if paired=TRUE
+    >>>> 
+    >>>> > # returns different results (Inf is removed): >
+    >>>> wilcox.test(c(1,2,3,4), c(0,9,8,7)) >
+    >>>> wilcox.test(c(1,2,3,4), c(0,9,8,Inf))
+    >>>> 
+    >>>> > # returns the same result (Inf is left as value with
+    >>>> highest rank): > wilcox.test(c(1,2,3,4), c(0,9,8,7),
+    >>>> paired=TRUE) > wilcox.test(c(1,2,3,4), c(0,9,8,Inf),
+    >>>> paired=TRUE)
+    >>>> 
+    >>>> Now which of the two cases do you consider correct ?
+    >>>> 
+    >>>> IHMO, the 2nd one is correct: it is exactly one
+    >>>> property of the *robustness* of the wilcoxon test and
+    >>>> very desirable that any (positive) outlier is treated
+    >>>> the same as just "the largest value" and the test
+    >>>> statistic (and hence the p-value) should not change.
+    >>>> 
+    >>>> So I think the first case is wrong, notably if
+    >>>> modified, (such that the last y is the overall maximal
+    >>>> value (slightly larger sample):
+    >>>> 
+    >>>>> wilcox.test(1:7, 1/8+ c(9:4, 12))
+    >>>> 
+    >>>> Wilcoxon rank sum test
+    >>>> 
+    >>>> data: 1:7 and 1/8 + c(9:4, 12) W = 6, p-value = 0.01748
+    >>>> alternative hypothesis: true location shift is not
+    >>>> equal to 0
+    >>>> 
+    >>>>> wilcox.test(1:7, 1/8+ c(9:4, 10000))
+    >>>> 
+    >>>> Wilcoxon rank sum test
+    >>>> 
+    >>>> data: 1:7 and 1/8 + c(9:4, 10000) W = 6, p-value =
+    >>>> 0.01748 alternative hypothesis: true location shift is
+    >>>> not equal to 0
+    >>>> 
+    >>>>> wilcox.test(1:7, 1/8+ c(9:4, Inf))
+    >>>> 
+    >>>> Wilcoxon rank sum test
+    >>>> 
+    >>>> data: 1:7 and 1/8 + c(9:4, Inf) W = 6, p-value =
+    >>>> 0.03497 alternative hypothesis: true location shift is
+    >>>> not equal to 0
+    >>>> 
+    >>>> The Inf case should definitely give the same as the
+    >>>> 10'000 case.  That's exactly one property of a robust
+    >>>> statistic.
+    >>>> 
+    >>>> Thank you, Karolis, this is pretty embarrassing to only
+    >>>> be detected now after 25+ years of R in use ...
+    >>>> 
+    >>>> The correct fix starts with replacing the is.finite()
+    >>>> by !is.na() and keep the 'Inf' in the rank
+    >>>> computations...  (but then probably also deal with the
+    >>>> case of more than one Inf, notably the Inf - Inf
+    >>>> "exception" which is not triggered by your example...)
+    >>>> 
+    >>>> 
+    >>>> ---
+    >>>> 
+    >>>> Ben addressed the "rounding" / numerical issues
+    >>>> unavoidable for the other problems.
+    >>>> 
+    >>>> > 2. tolerance issues with paired=TRUE.
+    >>>> 
+    >>>> > wilcox.test(c(4, 3, 2), c(3, 2, 1), paired=TRUE) > #
+    >>>> ...  > # Warning: cannot compute exact p-value with
+    >>>> ties
+    >>>> 
+    >>>> > wilcox.test(c(0.4,0.3,0.2), c(0.3,0.2,0.1),
+    >>>> paired=TRUE) > # ...  > # no warning
+    >>>> 
+    >>>> > 3. Always 'x observations are missing' when
+    >>>> paired=TRUE
+    >>>> 
+    >>>> > wilcox.test(c(1,2), c(NA_integer_,NA_integer_),
+    >>>> paired=TRUE) > # ...  > # Error: not enough (finite)
+    >>>> 'x' observations
+    >>>> 
+    >>>> > 4. No indication if normal approximation was used:
+    >>>> 
+    >>>> > # different numbers, but same "method" name >
+    >>>> wilcox.test(rnorm(10), exact=FALSE, correct=FALSE) >
+    >>>> wilcox.test(rnorm(10), exact=TRUE, correct=FALSE)
+    >>>> 
+    >>>> 
+    >>>> > From all of these I am pretty sure the 1st one is
+    >>>> likely unintended, > so attaching a small patch to
+    >>>> adjust it. Can also try patching others if > consensus
+    >>>> is reached that the behavioiur has to be modified.
+    >>>> 
+    >>>> > Kind regards, > Karolis Koncevi?ius.
+    >>>>
+
+
+From |g@ut|er @end|ng |rom gm@||@com  Sat Dec 14 23:29:50 2019
+From: |g@ut|er @end|ng |rom gm@||@com (Laurent Gautier)
+Date: Sat, 14 Dec 2019 17:29:50 -0500
+Subject: [Rd] Inconsistent behavior for the C AP's R_ParseVector() ?
+In-Reply-To: <D785C6B8-2096-45BA-83BC-0CA037BF7718@R-project.org>
+References: <CA+JCgN0vZ8O1ekweEgPqcH202PKU2dfMW959eF=Q2S8K1OSKeQ@mail.gmail.com>
+ <CA+JCgN05ZRAuWwMEKX77jcfOw7s3g=Sf+vxRjVrVQbUfEutmoA@mail.gmail.com>
+ <CA+JCgN3iocdn8xVxVuYcsqNSeQ3KQHg3P3FHBf=VV7=zDzxQaQ@mail.gmail.com>
+ <8b6673c4-c7a2-d186-61a6-2a92e7d0e0f5@gmail.com>
+ <CA+JCgN0Eu9gzwBipwR5XnWrboZXLGbjroPjuxjtHKiRETim6eA@mail.gmail.com>
+ <9c301815-c18f-38b9-d841-b7d35dc76ba6@gmail.com>
+ <CA+JCgN2Ckchvh3tbXEVk+EKt3d3enkD=MZPKYAJSd9G+oo1FrA@mail.gmail.com>
+ <a9e51e1e-feb2-4f56-3627-120d9c413f31@gmail.com>
+ <CA+JCgN1HjZY37k=2Rz885FEPp67YkHRf_Pc8TLQ-Pc=08ZREGw@mail.gmail.com>
+ <D785C6B8-2096-45BA-83BC-0CA037BF7718@R-project.org>
+Message-ID: <CA+JCgN1GD1+7uRnurO_5XgDuTKbBe6V5ABi0DTaP48MDuTbmTw@mail.gmail.com>
+
+Hi Simon,
+
+Widespread errors would have caught my earlier as the way that code is
+using only one initialization of the embedded R, is used quite a bit, and
+is covered by quite a few unit tests. This is the only situation I am aware
+of in which an error occurs.
+
+What is a "correct context", or initial context, the code should from ?
+Searching for "context" in the R-exts manual does not return much.
+
+Best,
+
+Laurent
+
+
+Le sam. 14 d?c. 2019 ? 12:20, Simon Urbanek <simon.urbanek at r-project.org> a
+?crit :
+
+> Laurent,
+>
+> the main point here is that ParseVector() just like any other R API has to
+> be called in a correct context since it can raise errors so the issue was
+> that your C code has a bug of not setting R correctly (my guess would be
+> your'e not creating the initial context necessary in embedded R). There are
+> many different errors, your is just one of many that can occur - any R API
+> call that does allocation (and parsing obviously does) can cause errors.
+> Note that this is true for pretty much all R API functions.
+>
+> Cheers,
+> Simon
+>
+>
+>
+> > On Dec 14, 2019, at 11:25 AM, Laurent Gautier <lgautier at gmail.com>
+> wrote:
+> >
+> > Le lun. 9 d?c. 2019 ? 09:57, Tomas Kalibera <tomas.kalibera at gmail.com> a
+> > ?crit :
+> >
+> >> On 12/9/19 2:54 PM, Laurent Gautier wrote:
+> >>
+> >>
+> >>
+> >> Le lun. 9 d?c. 2019 ? 05:43, Tomas Kalibera <tomas.kalibera at gmail.com>
+> a
+> >> ?crit :
+> >>
+> >>> On 12/7/19 10:32 PM, Laurent Gautier wrote:
+> >>>
+> >>> Thanks for the quick response Tomas.
+> >>>
+> >>> The same error is indeed happening when trying to have a zero-length
+> >>> variable name in an environment. The surprising bit is then "why is
+> this
+> >>> happening during parsing" (that is why are variables assigned to an
+> >>> environment) ?
+> >>>
+> >>> The emitted R error (in the R console) is not a parse (syntax) error,
+> but
+> >>> an error emitted during parsing when the parser tries to intern a name
+> -
+> >>> look it up in a symbol table. Empty string is not allowed as a symbol
+> name,
+> >>> and hence the error. In the call "list(''=1)" , the empty name is what
+> >>> could eventually become a name of a local variable inside list(), even
+> >>> though not yet during parsing.
+> >>>
+> >>
+> >> Thanks Tomas.
+> >>
+> >> I guess this has do with R expressions being lazily evaluated, and names
+> >> of arguments in a call are also part of the expression. Now the puzzling
+> >> part is why is that at all part of the parsing: I would have expected
+> >> R_ParseVector() to be restricted to parsing... Now it feels like
+> >> R_ParseVector() is performing parsing, and a first level of evalution
+> for
+> >> expressions that "should never work" (the empty name).
+> >>
+> >> Think of it as an exception in say Python. Some failures during parsing
+> >> result in an exception (called error in R and implemented using a long
+> >> jump). Any time you are calling into R you can get an error; out of
+> memory
+> >> is also signalled as R error.
+> >>
+> >
+> >
+> > The surprising bit for me was that I had expected the function to solely
+> > perform parsing. I did expect an exception (and a jmp smashing the stack)
+> > when the function concerned is in the C-API, is parsing a string, and is
+> > using a parameter (pointer) to store whether parsing was a failure or a
+> > success.
+> >
+> > Since you are making a comparison with Python, the distinction I am
+> making
+> > between parsing and evaluation seem to apply there. For example:
+> >
+> > ```
+> >>>> import parser
+> >>>> parser.expr('1+')
+> >  Traceback (most recent call last):
+> >  File "<stdin>", line 1, in <module>
+> >  File "<string>", line 1
+> >    1+
+> >     ^
+> > SyntaxError: unexpected EOF while parsing
+> >>>> p = parser.expr('list(""=1)')
+> >>>> p
+> > <parser.st at 0x7f360e5329f0>
+> >>>> eval(p)
+> > Traceback (most recent call last):
+> >  File "<stdin>", line 1, in <module>
+> > TypeError: eval() arg 1 must be a string, bytes or code object
+> >
+> >>>> list(""=1)
+> >  File "<stdin>", line 1
+> > SyntaxError: keyword can't be an expression
+> > ```
+> >
+> >
+> >> There is probably some error in how the external code is handling R
+> >>> errors  (Fatal error: unable to initialize the JIT, stack smashing,
+> etc)
+> >>> and possibly also how R is initialized before calling ParseVector.
+> Probably
+> >>> you would get the same problem when running say "stop('myerror')".
+> Please
+> >>> note R errors are implemented as long-jumps, so care has to be taken
+> when
+> >>> calling into R, Writing R Extensions has more details (and section 8
+> >>> specifically about embedding R). This is unlike parse (syntax) errors
+> >>> signaled via return value to ParseVector()
+> >>>
+> >>
+> >> The issue is that the segfault (because of stack smashing, therefore
+> >> because of what also suspected to be an incontrolled jump) is happening
+> >> within the execution of R_ParseVector(). I would think that an issue
+> with
+> >> the initialization of R is less likely because the project is otherwise
+> >> used a fair bit and is well covered by automated continuous tests.
+> >>
+> >> After looking more into R's gram.c I suspect that an execution context
+> is
+> >> required for R_ParseVector() to know to properly work (know where to
+> jump
+> >> in case of error) when the parsing code decides to fail outside what it
+> >> thinks is a syntax error. If the case, this would make R_ParseVector()
+> >> function well when called from say, a C-extension to an R package, but
+> fail
+> >> the way I am seeing it fail when called from an embedded R.
+> >>
+> >> Yes, contexts are used internally to handle errors. For external use
+> >> please see Writing R Extensions, section 6.12.
+> >>
+> >
+> > I have wrapped my call to R_ParseVector() in a R_tryCatchError(), and
+> this
+> > is seems to help me overcome the issue. Thanks for the pointer.
+> >
+> > Best,
+> >
+> >
+> > Laurent
+> >
+> >
+> >> Best
+> >> Tomas
+> >>
+> >>
+> >> Best,
+> >>
+> >> Laurent
+> >>
+> >>> Best,
+> >>> Tomas
+> >>>
+> >>>
+> >>> We are otherwise aware that the error is not occurring in the R
+> console,
+> >>> but can be traced to a call to R_ParseVector() in R's C API:(
+> >>>
+> https://github.com/rpy2/rpy2/blob/master/rpy2/rinterface_lib/_rinterface_capi.py#L509
+> >>> ).
+> >>>
+> >>> Our specific setup is calling an embedded R from Python, using the cffi
+> >>> library. An error on end was the first possibility considered, but the
+> >>> puzzling specificity of the error (as shown below other parsing errors
+> are
+> >>> handled properly) and the difficulty tracing what is in happening in
+> >>> R_ParseVector() made me ask whether someone on this list had a
+> suggestion
+> >>> about the possible issue"
+> >>>
+> >>> ```
+> >>>
+> >>>>>> import rpy2.rinterface as ri>>> ri.initr()>>> e =
+> ri.parse("list(''=1+")
+> ---------------------------------------------------------------------------RParsingError
+>                            Traceback (most recent call last)>>> e =
+> ri.parse("list(''=123") R[write to console]: Error: attempt to use
+> zero-length variable name
+> >>> R[write to console]: Fatal error: unable to initialize the JIT
+> >>>
+> >>> *** stack smashing detected ***: <unknown> terminated
+> >>> ```
+> >>>
+> >>>
+> >>> Le lun. 2 d?c. 2019 ? 06:37, Tomas Kalibera <tomas.kalibera at gmail.com>
+> a
+> >>> ?crit :
+> >>>
+> >>>> Dear Laurent,
+> >>>>
+> >>>> could you please provide a complete reproducible example where parsing
+> >>>> results in a crash of R? Calling parse(text="list(''=123") from R
+> works
+> >>>> fine for me (gives Error: attempt to use zero-length variable name).
+> >>>>
+> >>>> I don't think the problem you observed could be related to the memory
+> >>>> leak. The leak is on the heap, not stack.
+> >>>>
+> >>>> Zero-length names of elements in a list are allowed. They are not the
+> >>>> same thing as zero-length variables in an environment. If you try to
+> >>>> convert "lst" from your example to an environment, you would get the
+> >>>> error (attempt to use zero-length variable name).
+> >>>>
+> >>>> Best
+> >>>> Tomas
+> >>>>
+> >>>>
+> >>>> On 11/30/19 11:55 PM, Laurent Gautier wrote:
+> >>>>> Hi again,
+> >>>>>
+> >>>>> Beside R_ParseVector()'s possible inconsistent behavior, R's handling
+> >>>> of
+> >>>>> zero-length named elements does not seem consistent either:
+> >>>>>
+> >>>>> ```
+> >>>>>> lst <- list()
+> >>>>>> lst[[""]] <- 1
+> >>>>>> names(lst)
+> >>>>> [1] ""
+> >>>>>> list("" = 1)
+> >>>>> Error: attempt to use zero-length variable name
+> >>>>> ```
+> >>>>>
+> >>>>> Should the parser be made to accept as valid what is otherwise
+> possible
+> >>>>> when using `[[<` ?
+> >>>>>
+> >>>>>
+> >>>>> Best,
+> >>>>>
+> >>>>> Laurent
+> >>>>>
+> >>>>>
+> >>>>>
+> >>>>> Le sam. 30 nov. 2019 ? 17:33, Laurent Gautier <lgautier at gmail.com> a
+> >>>> ?crit :
+> >>>>>
+> >>>>>> I found the following code comment in `src/main/gram.c`:
+> >>>>>>
+> >>>>>> ```
+> >>>>>>
+> >>>>>> /* Memory leak
+> >>>>>>
+> >>>>>> yyparse(), as generated by bison, allocates extra space for the
+> parser
+> >>>>>> stack using malloc(). Unfortunately this means that there is a
+> memory
+> >>>>>> leak in case of an R error (long-jump). In principle, we could
+> define
+> >>>>>> yyoverflow() to relocate the parser stacks for bison and allocate
+> say
+> >>>> on
+> >>>>>> the R heap, but yyoverflow() is undocumented and somewhat
+> complicated
+> >>>>>> (we would have to replicate some macros from the generated parser
+> >>>> here).
+> >>>>>> The same problem exists at least in the Rd and LaTeX parsers in
+> tools.
+> >>>>>> */
+> >>>>>>
+> >>>>>> ```
+> >>>>>>
+> >>>>>> Could this be related to be issue ?
+> >>>>>>
+> >>>>>> Le sam. 30 nov. 2019 ? 14:04, Laurent Gautier <lgautier at gmail.com>
+> a
+> >>>>>> ?crit :
+> >>>>>>
+> >>>>>>> Hi,
+> >>>>>>>
+> >>>>>>> The behavior of
+> >>>>>>> ```
+> >>>>>>> SEXP R_ParseVector(SEXP, int, ParseStatus *, SEXP);
+> >>>>>>> ```
+> >>>>>>> defined in `src/include/R_ext/Parse.h` appears to be inconsistent
+> >>>>>>> depending on the string to be parsed.
+> >>>>>>>
+> >>>>>>> Trying to parse a string such as `"list(''=1+"` sets the
+> >>>>>>> `ParseStatus` to incomplete parsing error but trying to parse
+> >>>>>>> `"list(''=123"` will result in R sending a message to the console
+> >>>> (followed but a crash):
+> >>>>>>>
+> >>>>>>> ```
+> >>>>>>> R[write to console]: Error: attempt to use zero-length variable
+> >>>> nameR[write to console]: Fatal error: unable to initialize the JIT***
+> stack
+> >>>> smashing detected ***: <unknown> terminated
+> >>>>>>> ```
+> >>>>>>>
+> >>>>>>> Is there a reason for the difference in behavior, and is there a
+> >>>> workaround ?
+> >>>>>>>
+> >>>>>>> Thanks,
+> >>>>>>>
+> >>>>>>>
+> >>>>>>> Laurent
+> >>>>>>>
+> >>>>>>>
+> >>>>>      [[alternative HTML version deleted]]
+> >>>>>
+> >>>>> ______________________________________________
+> >>>>> R-devel at r-project.org mailing list
+> >>>>> https://stat.ethz.ch/mailman/listinfo/r-devel
+> >>>>
+> >>>>
+> >>>>
+> >>>
+> >>
+> >
+> >       [[alternative HTML version deleted]]
+> >
+> > ______________________________________________
+> > R-devel at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-devel
+> >
+>
+>
+
+	[[alternative HTML version deleted]]
+
+
+From @|mon@urb@nek @end|ng |rom R-project@org  Sun Dec 15 01:56:53 2019
+From: @|mon@urb@nek @end|ng |rom R-project@org (Simon Urbanek)
+Date: Sat, 14 Dec 2019 19:56:53 -0500
+Subject: [Rd] Inconsistent behavior for the C AP's R_ParseVector() ?
+In-Reply-To: <CA+JCgN1GD1+7uRnurO_5XgDuTKbBe6V5ABi0DTaP48MDuTbmTw@mail.gmail.com>
+References: <CA+JCgN0vZ8O1ekweEgPqcH202PKU2dfMW959eF=Q2S8K1OSKeQ@mail.gmail.com>
+ <CA+JCgN05ZRAuWwMEKX77jcfOw7s3g=Sf+vxRjVrVQbUfEutmoA@mail.gmail.com>
+ <CA+JCgN3iocdn8xVxVuYcsqNSeQ3KQHg3P3FHBf=VV7=zDzxQaQ@mail.gmail.com>
+ <8b6673c4-c7a2-d186-61a6-2a92e7d0e0f5@gmail.com>
+ <CA+JCgN0Eu9gzwBipwR5XnWrboZXLGbjroPjuxjtHKiRETim6eA@mail.gmail.com>
+ <9c301815-c18f-38b9-d841-b7d35dc76ba6@gmail.com>
+ <CA+JCgN2Ckchvh3tbXEVk+EKt3d3enkD=MZPKYAJSd9G+oo1FrA@mail.gmail.com>
+ <a9e51e1e-feb2-4f56-3627-120d9c413f31@gmail.com>
+ <CA+JCgN1HjZY37k=2Rz885FEPp67YkHRf_Pc8TLQ-Pc=08ZREGw@mail.gmail.com>
+ <D785C6B8-2096-45BA-83BC-0CA037BF7718@R-project.org>
+ <CA+JCgN1GD1+7uRnurO_5XgDuTKbBe6V5ABi0DTaP48MDuTbmTw@mail.gmail.com>
+Message-ID: <E325C266-3ACB-4DDC-AAD5-C528BD1A506E@R-project.org>
+
+Laurent,
+
+
+> On Dec 14, 2019, at 5:29 PM, Laurent Gautier <lgautier at gmail.com> wrote:
+> 
+> Hi Simon,
+> 
+> Widespread errors would have caught my earlier as the way that code is
+> using only one initialization of the embedded R, is used quite a bit, and
+> is covered by quite a few unit tests. This is the only situation I am aware
+> of in which an error occurs.
+> 
+
+It may or may not be "widespread" - almost all R API functions can raise errors (e.g., unable to allocate). You'll only find out once they do and that's too late ;).
+
+
+> What is a "correct context", or initial context, the code should from ?
+> Searching for "context" in the R-exts manual does not return much.
+> 
+
+It depends which embedded API use - see R-ext 8.1 the two options are run_Rmainloop() and R_ReplDLLinit() which both setup the top-level context with SETJMP. If you don't use either then you have to use one of the advanced R APIs that do it such as R_ToplevelExec() or R_UnwindProtect(), otherwise your point to abort to on error doesn't exist. Embedding R is much more complex than many think ...
+
+Cheers,
+Simon
+
+
+
+> Best,
+> 
+> Laurent
+> 
+> 
+> Le sam. 14 d?c. 2019 ? 12:20, Simon Urbanek <simon.urbanek at r-project.org> a
+> ?crit :
+> 
+>> Laurent,
+>> 
+>> the main point here is that ParseVector() just like any other R API has to
+>> be called in a correct context since it can raise errors so the issue was
+>> that your C code has a bug of not setting R correctly (my guess would be
+>> your'e not creating the initial context necessary in embedded R). There are
+>> many different errors, your is just one of many that can occur - any R API
+>> call that does allocation (and parsing obviously does) can cause errors.
+>> Note that this is true for pretty much all R API functions.
+>> 
+>> Cheers,
+>> Simon
+>> 
+>> 
+>> 
+>>> On Dec 14, 2019, at 11:25 AM, Laurent Gautier <lgautier at gmail.com>
+>> wrote:
+>>> 
+>>> Le lun. 9 d?c. 2019 ? 09:57, Tomas Kalibera <tomas.kalibera at gmail.com> a
+>>> ?crit :
+>>> 
+>>>> On 12/9/19 2:54 PM, Laurent Gautier wrote:
+>>>> 
+>>>> 
+>>>> 
+>>>> Le lun. 9 d?c. 2019 ? 05:43, Tomas Kalibera <tomas.kalibera at gmail.com>
+>> a
+>>>> ?crit :
+>>>> 
+>>>>> On 12/7/19 10:32 PM, Laurent Gautier wrote:
+>>>>> 
+>>>>> Thanks for the quick response Tomas.
+>>>>> 
+>>>>> The same error is indeed happening when trying to have a zero-length
+>>>>> variable name in an environment. The surprising bit is then "why is
+>> this
+>>>>> happening during parsing" (that is why are variables assigned to an
+>>>>> environment) ?
+>>>>> 
+>>>>> The emitted R error (in the R console) is not a parse (syntax) error,
+>> but
+>>>>> an error emitted during parsing when the parser tries to intern a name
+>> -
+>>>>> look it up in a symbol table. Empty string is not allowed as a symbol
+>> name,
+>>>>> and hence the error. In the call "list(''=1)" , the empty name is what
+>>>>> could eventually become a name of a local variable inside list(), even
+>>>>> though not yet during parsing.
+>>>>> 
+>>>> 
+>>>> Thanks Tomas.
+>>>> 
+>>>> I guess this has do with R expressions being lazily evaluated, and names
+>>>> of arguments in a call are also part of the expression. Now the puzzling
+>>>> part is why is that at all part of the parsing: I would have expected
+>>>> R_ParseVector() to be restricted to parsing... Now it feels like
+>>>> R_ParseVector() is performing parsing, and a first level of evalution
+>> for
+>>>> expressions that "should never work" (the empty name).
+>>>> 
+>>>> Think of it as an exception in say Python. Some failures during parsing
+>>>> result in an exception (called error in R and implemented using a long
+>>>> jump). Any time you are calling into R you can get an error; out of
+>> memory
+>>>> is also signalled as R error.
+>>>> 
+>>> 
+>>> 
+>>> The surprising bit for me was that I had expected the function to solely
+>>> perform parsing. I did expect an exception (and a jmp smashing the stack)
+>>> when the function concerned is in the C-API, is parsing a string, and is
+>>> using a parameter (pointer) to store whether parsing was a failure or a
+>>> success.
+>>> 
+>>> Since you are making a comparison with Python, the distinction I am
+>> making
+>>> between parsing and evaluation seem to apply there. For example:
+>>> 
+>>> ```
+>>>>>> import parser
+>>>>>> parser.expr('1+')
+>>> Traceback (most recent call last):
+>>> File "<stdin>", line 1, in <module>
+>>> File "<string>", line 1
+>>>   1+
+>>>    ^
+>>> SyntaxError: unexpected EOF while parsing
+>>>>>> p = parser.expr('list(""=1)')
+>>>>>> p
+>>> <parser.st at 0x7f360e5329f0>
+>>>>>> eval(p)
+>>> Traceback (most recent call last):
+>>> File "<stdin>", line 1, in <module>
+>>> TypeError: eval() arg 1 must be a string, bytes or code object
+>>> 
+>>>>>> list(""=1)
+>>> File "<stdin>", line 1
+>>> SyntaxError: keyword can't be an expression
+>>> ```
+>>> 
+>>> 
+>>>> There is probably some error in how the external code is handling R
+>>>>> errors  (Fatal error: unable to initialize the JIT, stack smashing,
+>> etc)
+>>>>> and possibly also how R is initialized before calling ParseVector.
+>> Probably
+>>>>> you would get the same problem when running say "stop('myerror')".
+>> Please
+>>>>> note R errors are implemented as long-jumps, so care has to be taken
+>> when
+>>>>> calling into R, Writing R Extensions has more details (and section 8
+>>>>> specifically about embedding R). This is unlike parse (syntax) errors
+>>>>> signaled via return value to ParseVector()
+>>>>> 
+>>>> 
+>>>> The issue is that the segfault (because of stack smashing, therefore
+>>>> because of what also suspected to be an incontrolled jump) is happening
+>>>> within the execution of R_ParseVector(). I would think that an issue
+>> with
+>>>> the initialization of R is less likely because the project is otherwise
+>>>> used a fair bit and is well covered by automated continuous tests.
+>>>> 
+>>>> After looking more into R's gram.c I suspect that an execution context
+>> is
+>>>> required for R_ParseVector() to know to properly work (know where to
+>> jump
+>>>> in case of error) when the parsing code decides to fail outside what it
+>>>> thinks is a syntax error. If the case, this would make R_ParseVector()
+>>>> function well when called from say, a C-extension to an R package, but
+>> fail
+>>>> the way I am seeing it fail when called from an embedded R.
+>>>> 
+>>>> Yes, contexts are used internally to handle errors. For external use
+>>>> please see Writing R Extensions, section 6.12.
+>>>> 
+>>> 
+>>> I have wrapped my call to R_ParseVector() in a R_tryCatchError(), and
+>> this
+>>> is seems to help me overcome the issue. Thanks for the pointer.
+>>> 
+>>> Best,
+>>> 
+>>> 
+>>> Laurent
+>>> 
+>>> 
+>>>> Best
+>>>> Tomas
+>>>> 
+>>>> 
+>>>> Best,
+>>>> 
+>>>> Laurent
+>>>> 
+>>>>> Best,
+>>>>> Tomas
+>>>>> 
+>>>>> 
+>>>>> We are otherwise aware that the error is not occurring in the R
+>> console,
+>>>>> but can be traced to a call to R_ParseVector() in R's C API:(
+>>>>> 
+>> https://github.com/rpy2/rpy2/blob/master/rpy2/rinterface_lib/_rinterface_capi.py#L509
+>>>>> ).
+>>>>> 
+>>>>> Our specific setup is calling an embedded R from Python, using the cffi
+>>>>> library. An error on end was the first possibility considered, but the
+>>>>> puzzling specificity of the error (as shown below other parsing errors
+>> are
+>>>>> handled properly) and the difficulty tracing what is in happening in
+>>>>> R_ParseVector() made me ask whether someone on this list had a
+>> suggestion
+>>>>> about the possible issue"
+>>>>> 
+>>>>> ```
+>>>>> 
+>>>>>>>> import rpy2.rinterface as ri>>> ri.initr()>>> e =
+>> ri.parse("list(''=1+")
+>> ---------------------------------------------------------------------------RParsingError
+>>                           Traceback (most recent call last)>>> e =
+>> ri.parse("list(''=123") R[write to console]: Error: attempt to use
+>> zero-length variable name
+>>>>> R[write to console]: Fatal error: unable to initialize the JIT
+>>>>> 
+>>>>> *** stack smashing detected ***: <unknown> terminated
+>>>>> ```
+>>>>> 
+>>>>> 
+>>>>> Le lun. 2 d?c. 2019 ? 06:37, Tomas Kalibera <tomas.kalibera at gmail.com>
+>> a
+>>>>> ?crit :
+>>>>> 
+>>>>>> Dear Laurent,
+>>>>>> 
+>>>>>> could you please provide a complete reproducible example where parsing
+>>>>>> results in a crash of R? Calling parse(text="list(''=123") from R
+>> works
+>>>>>> fine for me (gives Error: attempt to use zero-length variable name).
+>>>>>> 
+>>>>>> I don't think the problem you observed could be related to the memory
+>>>>>> leak. The leak is on the heap, not stack.
+>>>>>> 
+>>>>>> Zero-length names of elements in a list are allowed. They are not the
+>>>>>> same thing as zero-length variables in an environment. If you try to
+>>>>>> convert "lst" from your example to an environment, you would get the
+>>>>>> error (attempt to use zero-length variable name).
+>>>>>> 
+>>>>>> Best
+>>>>>> Tomas
+>>>>>> 
+>>>>>> 
+>>>>>> On 11/30/19 11:55 PM, Laurent Gautier wrote:
+>>>>>>> Hi again,
+>>>>>>> 
+>>>>>>> Beside R_ParseVector()'s possible inconsistent behavior, R's handling
+>>>>>> of
+>>>>>>> zero-length named elements does not seem consistent either:
+>>>>>>> 
+>>>>>>> ```
+>>>>>>>> lst <- list()
+>>>>>>>> lst[[""]] <- 1
+>>>>>>>> names(lst)
+>>>>>>> [1] ""
+>>>>>>>> list("" = 1)
+>>>>>>> Error: attempt to use zero-length variable name
+>>>>>>> ```
+>>>>>>> 
+>>>>>>> Should the parser be made to accept as valid what is otherwise
+>> possible
+>>>>>>> when using `[[<` ?
+>>>>>>> 
+>>>>>>> 
+>>>>>>> Best,
+>>>>>>> 
+>>>>>>> Laurent
+>>>>>>> 
+>>>>>>> 
+>>>>>>> 
+>>>>>>> Le sam. 30 nov. 2019 ? 17:33, Laurent Gautier <lgautier at gmail.com> a
+>>>>>> ?crit :
+>>>>>>> 
+>>>>>>>> I found the following code comment in `src/main/gram.c`:
+>>>>>>>> 
+>>>>>>>> ```
+>>>>>>>> 
+>>>>>>>> /* Memory leak
+>>>>>>>> 
+>>>>>>>> yyparse(), as generated by bison, allocates extra space for the
+>> parser
+>>>>>>>> stack using malloc(). Unfortunately this means that there is a
+>> memory
+>>>>>>>> leak in case of an R error (long-jump). In principle, we could
+>> define
+>>>>>>>> yyoverflow() to relocate the parser stacks for bison and allocate
+>> say
+>>>>>> on
+>>>>>>>> the R heap, but yyoverflow() is undocumented and somewhat
+>> complicated
+>>>>>>>> (we would have to replicate some macros from the generated parser
+>>>>>> here).
+>>>>>>>> The same problem exists at least in the Rd and LaTeX parsers in
+>> tools.
+>>>>>>>> */
+>>>>>>>> 
+>>>>>>>> ```
+>>>>>>>> 
+>>>>>>>> Could this be related to be issue ?
+>>>>>>>> 
+>>>>>>>> Le sam. 30 nov. 2019 ? 14:04, Laurent Gautier <lgautier at gmail.com>
+>> a
+>>>>>>>> ?crit :
+>>>>>>>> 
+>>>>>>>>> Hi,
+>>>>>>>>> 
+>>>>>>>>> The behavior of
+>>>>>>>>> ```
+>>>>>>>>> SEXP R_ParseVector(SEXP, int, ParseStatus *, SEXP);
+>>>>>>>>> ```
+>>>>>>>>> defined in `src/include/R_ext/Parse.h` appears to be inconsistent
+>>>>>>>>> depending on the string to be parsed.
+>>>>>>>>> 
+>>>>>>>>> Trying to parse a string such as `"list(''=1+"` sets the
+>>>>>>>>> `ParseStatus` to incomplete parsing error but trying to parse
+>>>>>>>>> `"list(''=123"` will result in R sending a message to the console
+>>>>>> (followed but a crash):
+>>>>>>>>> 
+>>>>>>>>> ```
+>>>>>>>>> R[write to console]: Error: attempt to use zero-length variable
+>>>>>> nameR[write to console]: Fatal error: unable to initialize the JIT***
+>> stack
+>>>>>> smashing detected ***: <unknown> terminated
+>>>>>>>>> ```
+>>>>>>>>> 
+>>>>>>>>> Is there a reason for the difference in behavior, and is there a
+>>>>>> workaround ?
+>>>>>>>>> 
+>>>>>>>>> Thanks,
+>>>>>>>>> 
+>>>>>>>>> 
+>>>>>>>>> Laurent
+>>>>>>>>> 
+>>>>>>>>> 
+>>>>>>>     [[alternative HTML version deleted]]
+>>>>>>> 
+>>>>>>> ______________________________________________
+>>>>>>> R-devel at r-project.org mailing list
+>>>>>>> https://stat.ethz.ch/mailman/listinfo/r-devel
+>>>>>> 
+>>>>>> 
+>>>>>> 
+>>>>> 
+>>>> 
+>>> 
+>>>      [[alternative HTML version deleted]]
+>>> 
+>>> ______________________________________________
+>>> R-devel at r-project.org mailing list
+>>> https://stat.ethz.ch/mailman/listinfo/r-devel
+>>> 
+>> 
+>> 
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+> 
+
+
+From k@ro||@@koncev|c|u@ @end|ng |rom gm@||@com  Sun Dec 15 13:57:39 2019
+From: k@ro||@@koncev|c|u@ @end|ng |rom gm@||@com (Karolis =?utf-8?Q?Koncevi=C4=8Dius?=)
+Date: Sun, 15 Dec 2019 14:57:39 +0200
+Subject: [Rd] Inconsistencies in wilcox.test
+In-Reply-To: <24053.22799.647150.274364@stat.math.ethz.ch>
+References: <20191207185536.b6cmmkzywwyuateq@PMW>
+ <20191207205901.4265F22877@v-lynne.math.ethz.ch>
+ <20191207211858.dpnqeslbln5caz2v@PMW>
+ <20191209214336.iy66s5q4nzawdfch@PMW>
+ <24050.26847.78668.28633@stat.math.ethz.ch>
+ <24053.22799.647150.274364@stat.math.ethz.ch>
+Message-ID: <20191215125739.kg7rscy33ugwdage@PMW>
+
+I see I am too late to comment :)
+
+But commenting after the fact, just wish to say that I like the changes. 
+Specially the mentioning of "exact" in the test name.
+
+Floating point prevision is very nicely implemented too.
+My only worry is that it will not serve new/lay users that may be in the 
+biggest need for protections like these.
+
+Do you think it would make sense to do it a bit differently? i.e.
+setting digits.rank=7 by default, and including a message in the warning 
+i.e. "ties present, if you are working with small digits consider 
+adjusting digits.rank".
+
+But, on the other hand, I understand that this would be a breaking 
+change. A non breaking change might be to leave digits.rank as NA or 
+NULL by default, which would act as infinity but also would do a test 
+within wilcox.test() that checks for ties with digits.rank=7. Then a 
+warning will say "possibly missed ties due to machine precision, if you 
+are sure these are not ties - set digits.rank to Inf to get rid of this 
+warning". This would be a non-breaking change, except for a warning. 
+Would be interesting to hear your thoughts about this.
+
+I will pull your changes and try to play with the code a bit later 
+today. Thanks a lot for, Martin!
+
+Also I have an unrelated question - I mainly find these discrepancies in 
+"stats" because I am working on my little package related to hypothesis 
+tests. And I have found a few more of them in other tests. One that I 
+reported long time ago, regarding flinger.test(), which is also related 
+to machine precision.
+
+In terms of the etiquette of this list - should I mention them in this 
+same thread or is it better to create a new one?
+
+Kind regards,
+Karolis K.
+
+On 2019-12-14 22:50, Martin Maechler wrote:
+>>>>>> Martin Maechler
+>>>>>>     on Thu, 12 Dec 2019 17:20:47 +0100 writes:
+>
+>>>>>> Karolis Koncevi?ius
+>>>>>>     on Mon, 9 Dec 2019 23:43:36 +0200 writes:
+>
+>    >> So I tried adding Infinity support for all cases.  And it
+>    >> is (as could be expected) more complicated than I
+>    >> thought.
+>
+>    > "Of course !"  Thank you, Karolis, in any case!
+>
+>    >> It is easy to add Inf support for the test. The problems
+>    >> start with conf.int=TRUE.
+>
+>    >> Currently confidence intervals are computed via
+>    >> `uniroot()` and, in the case of infinities, we are
+>    >> computationally looking for roots over infinite interval
+>    >> which results in an error. I suspect this is the reason
+>    >> Inf values were removed in the first place.
+>
+>    > Maybe. It's still wrong to be done "up front".  I'm sure
+>    > 98% (or so ;-) of all calls to wilcox.test() do *not* use
+>    > conf.int = TRUE
+>
+>
+>    >> Just a note, I found a few more errors/inconsistencies
+>    >> when requesting confidence intervals with paired=TRUE
+>    >> (due to Infinities being left in).
+>
+>    >> Current error in Inf-Inf scenario:
+>
+>    >> wilcox.test(c(1,2,Inf), c(4,8,Inf), paired=TRUE,
+>    >> conf.int=TRUE) Error in if (ZEROES) x <- x[x != 0] :
+>    >> missing value where TRUE/FALSE needed
+>
+>    > Good catch .. notably as it also happens when
+>    > conf.int=FALSE as by default.  My version of wilcox.test()
+>    > now does give the same as when the to 'Inf' are left away.
+>
+>    >> NaN confidence intervals:
+>
+>    >> wilcox.test(c(1:9,Inf), c(21:28,Inf,30), paired=TRUE,
+>    >> conf.int=TRUE)
+>
+>    >> Wilcoxon signed rank test with continuity correction
+>
+>    >> data: c(1:9, Inf) and c(21:28, Inf, 30) V = 9.5, p-value
+>    >> = 0.0586 alternative hypothesis: true location shift is
+>    >> not equal to 0 0 percent confidence interval: NaN NaN
+>    >> sample estimates: midrange NaN
+>
+>    > I don't see a big problem here. The NaN's in some sense
+>    > show the best that can be computed with this data.
+>    > Statistic and P-value, but no conf.int.
+>
+>
+>    >> The easiest "fix" for consistency would be to simply
+>    >> remove Infinity support from the paired=TRUE case.
+>
+>    > I strongly disagree.  We are not pruning good
+>    > functionality just for some definition of consistency.
+>
+>    >> But going with the more desirable approach of adding
+>    >> Infinity support for non-paired cases - it is currently
+>    >> not clear to me what confidence intervals and
+>    >> pseudomedian should be. Specially when Infinities are on
+>    >> both sides.
+>
+>    > I deem that not to be a big deal.  They are not defined
+>    > given the default formulas and that is reflected by NA /
+>    > NaN in those parts of the result.
+>
+>    >> Regards, Karolis Koncevi?ius.
+>
+>    > But I have also spent a few hours now on
+>    > wilcox.test.default() behavior notably also looking at the
+>    > "rounding" / "machine precision" situation, and also on
+>    > your remark that the 'method: ...' does not indicate well
+>    > enough what was computed.
+>
+>    > In my (not yet committed) but hereby proposed enhancement
+>    > of wilcox.test(), I have a new argument, 'digits.rank =
+>    > Inf' (the default 'Inf' corresponding to the current
+>    > behavior) with help page documentation:
+>
+>    > digits.rank: a number; if finite, ?rank(signif(r,
+>    > digits.rank))? will be used to compute ranks for the test
+>    > statistic instead of (the default) ?rank(r)?.
+>
+>    > and then in 'Details :'
+>
+>    >      For stability reasons, it may be advisable to use
+>    > rounded data or to set ?digits.rank = 7?, say, such that
+>    > determination of ties does not depend on very small
+>    > numeric differences (see the example).
+>
+>    > and then in 'Examples: '
+>
+>    >      ## accuracy in ties determination via 'digits.rank':
+>    > wilcox.test( 4:2, 3:1, paired=TRUE) # Warning: cannot
+>    > compute exact p-value with ties wilcox.test((4:2)/10,
+>    > (3:1)/10, paired=TRUE) # no ties => *no* warning
+>    > wilcox.test((4:2)/10, (3:1)/10, paired=TRUE, digits.rank =
+>    > 9) # same ties as (4:2, 3:1)
+>
+>    > ----------------------
+>
+>    > Lastly, I propose to replace "test" by "exact test" in the
+>    > 'method' component (and print out) in case exact
+>    > computations were used.  This information should be part
+>    > of the returned "htest" object, and not only visible from
+>    > the arguments and warnings that are printed during the
+>    > computations.  This last change is in some sense the "most
+>    > back-incompatible" change of these, because many
+>    > wilcox.test() printouts would slightly change, e.g.,
+>
+>    >> w0 <- wilcox.test( 1:5, 4*(0:4), paired=TRUE)
+>
+>    > 	  Wilcoxon signed rank exact test
+>
+>    >   data: 1:5 and 4 * (0:4) V = 1, p-value = 0.125
+>    > alternative hypothesis: true location shift is not equal
+>    > to 0
+>
+>    > where before (in R <= 3.6.x) it is just
+>
+>    > 	  Wilcoxon signed rank test
+>
+>    >   data: .........  ...............  ...............
+>
+>    > but I think R 4.0.0 is a good occasion for such a change.
+>
+>    > Constructive feedback on all this is very welcome!  Martin
+>
+>... none  ...  I "assume" this means everybody likes the idea ;-)
+>
+>Anyway, now comitted to R-devel (for R 4.0.0), svn rev 77569
+>(in 'NEW FEATURES').
+>
+>Martin
+>
+>
+>
+>    >> On 2019-12-07 23:18, Karolis Koncevi?ius wrote:
+>    >>> Thank you for a fast response. Nice to see this mailing
+>    >>> list being so alive.
+>    >>>
+>    >>> Regarding Inf issue: I agree with your assessment that
+>    >>> Inf should not be removed. The code gave me an
+>    >>> impression that Inf values were intentionally removed
+>    >>> (since is.finite() was used everywhere, except for
+>    >>> paired case). I will try to adjust my patch according to
+>    >>> your feedback.
+>    >>>
+>    >>> One more thing: it seems like you assumed that issues
+>    >>> 2:4 are all related to machine precision, which is not
+>    >>> the case - only 2nd issue is.  Just wanted to draw this
+>    >>> to your attention, in case you might have some feedback
+>    >>> and guidelines about issues 3 and 4 as well.
+>    >>>
+>    >>>
+>    >>>
+>    >>> On 2019-12-07 21:59, Martin Maechler wrote:
+>    >>>>>>>>> Karolis Koncevi?ius on Sat, 7 Dec 2019 20:55:36
+>    >>>>>>>>> +0200 writes:
+>    >>>>
+>    >>>> > Hello, > Writing to share some things I've found
+>    >>>> about wilcox.test() that seem a > a bit inconsistent.
+>    >>>>
+>    >>>> > 1. Inf values are not removed if paired=TRUE
+>    >>>>
+>    >>>> > # returns different results (Inf is removed): >
+>    >>>> wilcox.test(c(1,2,3,4), c(0,9,8,7)) >
+>    >>>> wilcox.test(c(1,2,3,4), c(0,9,8,Inf))
+>    >>>>
+>    >>>> > # returns the same result (Inf is left as value with
+>    >>>> highest rank): > wilcox.test(c(1,2,3,4), c(0,9,8,7),
+>    >>>> paired=TRUE) > wilcox.test(c(1,2,3,4), c(0,9,8,Inf),
+>    >>>> paired=TRUE)
+>    >>>>
+>    >>>> Now which of the two cases do you consider correct ?
+>    >>>>
+>    >>>> IHMO, the 2nd one is correct: it is exactly one
+>    >>>> property of the *robustness* of the wilcoxon test and
+>    >>>> very desirable that any (positive) outlier is treated
+>    >>>> the same as just "the largest value" and the test
+>    >>>> statistic (and hence the p-value) should not change.
+>    >>>>
+>    >>>> So I think the first case is wrong, notably if
+>    >>>> modified, (such that the last y is the overall maximal
+>    >>>> value (slightly larger sample):
+>    >>>>
+>    >>>>> wilcox.test(1:7, 1/8+ c(9:4, 12))
+>    >>>>
+>    >>>> Wilcoxon rank sum test
+>    >>>>
+>    >>>> data: 1:7 and 1/8 + c(9:4, 12) W = 6, p-value = 0.01748
+>    >>>> alternative hypothesis: true location shift is not
+>    >>>> equal to 0
+>    >>>>
+>    >>>>> wilcox.test(1:7, 1/8+ c(9:4, 10000))
+>    >>>>
+>    >>>> Wilcoxon rank sum test
+>    >>>>
+>    >>>> data: 1:7 and 1/8 + c(9:4, 10000) W = 6, p-value =
+>    >>>> 0.01748 alternative hypothesis: true location shift is
+>    >>>> not equal to 0
+>    >>>>
+>    >>>>> wilcox.test(1:7, 1/8+ c(9:4, Inf))
+>    >>>>
+>    >>>> Wilcoxon rank sum test
+>    >>>>
+>    >>>> data: 1:7 and 1/8 + c(9:4, Inf) W = 6, p-value =
+>    >>>> 0.03497 alternative hypothesis: true location shift is
+>    >>>> not equal to 0
+>    >>>>
+>    >>>> The Inf case should definitely give the same as the
+>    >>>> 10'000 case.  That's exactly one property of a robust
+>    >>>> statistic.
+>    >>>>
+>    >>>> Thank you, Karolis, this is pretty embarrassing to only
+>    >>>> be detected now after 25+ years of R in use ...
+>    >>>>
+>    >>>> The correct fix starts with replacing the is.finite()
+>    >>>> by !is.na() and keep the 'Inf' in the rank
+>    >>>> computations...  (but then probably also deal with the
+>    >>>> case of more than one Inf, notably the Inf - Inf
+>    >>>> "exception" which is not triggered by your example...)
+>    >>>>
+>    >>>>
+>    >>>> ---
+>    >>>>
+>    >>>> Ben addressed the "rounding" / numerical issues
+>    >>>> unavoidable for the other problems.
+>    >>>>
+>    >>>> > 2. tolerance issues with paired=TRUE.
+>    >>>>
+>    >>>> > wilcox.test(c(4, 3, 2), c(3, 2, 1), paired=TRUE) > #
+>    >>>> ...  > # Warning: cannot compute exact p-value with
+>    >>>> ties
+>    >>>>
+>    >>>> > wilcox.test(c(0.4,0.3,0.2), c(0.3,0.2,0.1),
+>    >>>> paired=TRUE) > # ...  > # no warning
+>    >>>>
+>    >>>> > 3. Always 'x observations are missing' when
+>    >>>> paired=TRUE
+>    >>>>
+>    >>>> > wilcox.test(c(1,2), c(NA_integer_,NA_integer_),
+>    >>>> paired=TRUE) > # ...  > # Error: not enough (finite)
+>    >>>> 'x' observations
+>    >>>>
+>    >>>> > 4. No indication if normal approximation was used:
+>    >>>>
+>    >>>> > # different numbers, but same "method" name >
+>    >>>> wilcox.test(rnorm(10), exact=FALSE, correct=FALSE) >
+>    >>>> wilcox.test(rnorm(10), exact=TRUE, correct=FALSE)
+>    >>>>
+>    >>>>
+>    >>>> > From all of these I am pretty sure the 1st one is
+>    >>>> likely unintended, > so attaching a small patch to
+>    >>>> adjust it. Can also try patching others if > consensus
+>    >>>> is reached that the behavioiur has to be modified.
+>    >>>>
+>    >>>> > Kind regards, > Karolis Koncevi?ius.
+>    >>>>
+
+
+From kry|ov@r00t @end|ng |rom gm@||@com  Sun Dec 15 17:41:17 2019
+From: kry|ov@r00t @end|ng |rom gm@||@com (Ivan Krylov)
+Date: Sun, 15 Dec 2019 19:41:17 +0300
+Subject: [Rd] system2 doesn't quote stdin on unix, unlike stdout,
+ stderr & input and on Windows
+Message-ID: <20191215194117.425711bf@Tarkus>
+
+Hi again!
+
+While investigating the bug report [*] I found out that on unix, system2
+does not quote its `stdin` argument while preparing the command line to launch.
+
+It does shQuote the `stdout` and `stderr` arguments, and also the `f <-
+tmpfile()` variable (which is used if `input` argument is provided),
+which seems to set a precedent. On Windows, stdin, stdout, and stderr are handled independently of the shell, so it also just works without the use of shQuote by the caller.
+
+Have people been relying on system2 not quoting the `stdin` argument, but
+quoting `stdout` and `stderr`? For what it's worth, neither R_runR in
+src/library/tools/R/check.R, nor .system_with_capture in
+src/library/tools/R/utils.R (the only callers of system2(..., stdin = ...)),
+nor their callers seem to be shQuote'ing the `stdin` argument.
+
+Nor the rare system2(..., stdin = ...) callers (or their callers) on CRAN
+seem to be quoting the `stdin` argument (I did find one exception [**]), it usually being "" or tmpfile() passed across a few function calls.
+
+Given the considerations above, would the following patch be a good idea?
+
+Index: src/library/base/R/unix/system.unix.R
+===================================================================
+--- src/library/base/R/unix/system.unix.R	(revision 77566)
++++ src/library/base/R/unix/system.unix.R	(working copy)
+@@ -102,7 +102,7 @@
+         writeLines(input, f)
+         ## here 'command' is a single command, unlike system()
+         command <- paste(command, "<", shQuote(f))
+-    } else if (nzchar(stdin)) command <- paste(command, "<", stdin)
++    } else if (nzchar(stdin)) command <- paste(command, "<", shQuote(stdin))
+     if(!wait && !intern) command <- paste(command, "&")
+     .Internal(system(command, intern, timeout))
+ }
+
+-- 
+Best regards,
+Ivan
+
+[*] https://bugs.r-project.org/bugzilla/show_bug.cgi?id=17673
+
+[**] https://github.com/search?q=org%3Acran+system2%28+stdin&type=Code
+The search is probably computationally expensive and thus might only be available to GitHub account holders. The results are:
+
+ - BatchJobs: R/WorkerLinux.R; stdin is "" by default, filenames generated by
+   cfBrewTemplate aren't quoted
+ - batchtools: callers of runOSCommand actually quote the stdin argument!
+   https://github.com/mllg/batchtools/commit/4a5818d70c82c8842c0b8bded224dbb423b79f33
+ - nat: R/cmtk.R, R/xformpoints.R; stdin is tempfile(...)
+ - credentials: R/credential-api.R; stdin is passed as-is, tempfile() or
+   "" in default arguments
+ - runjags: R/setup.jags.jagsfile.R; stdin is constant "script.cmd"
+ - m2r: R/m2.R; stdin is constant ""
+ - scriptexec: R/scriptexec.R; stdin is passed as-is or default value retained
+ - BioInstaller: inst/extdata/shiny/global_var.R; stdin is "" by default and
+   passed as-is, callers of the sql2sqlite function don't quote the sql.file
+   argument
+ - annovarR: R/build.R: same sql2sqlite function as above
+
+
+From d@n@kort@ch@k @end|ng |rom @de|@|de@edu@@u  Sun Dec 15 11:47:11 2019
+From: d@n@kort@ch@k @end|ng |rom @de|@|de@edu@@u (Dan Kortschak)
+Date: Sun, 15 Dec 2019 10:47:11 +0000
+Subject: [Rd] source definition for R_NilValue/return from TYPEOF(R_NilValue)
+Message-ID: <daf586e7f4804036b8bb135226140bf0b77e2872.camel@adelaide.edu.au>
+
+Hello,
+
+for reasons I want to know the return value of TYPEOF(R_NilValue), I
+expect it to be NILSXP, but I can't find this documented anywhere.
+Ideally, I'd like to see the source definition of R_NilValue, but after
+fair bit of searching I cannot find an obviously location for this.
+
+Would someone please point me in the right direction?
+
+thanks
+--
+CRICOS provider code 00123M
+
+
+From c@@rd|@g@bor @end|ng |rom gm@||@com  Mon Dec 16 11:02:36 2019
+From: c@@rd|@g@bor @end|ng |rom gm@||@com (=?UTF-8?B?R8OhYm9yIENzw6FyZGk=?=)
+Date: Mon, 16 Dec 2019 10:02:36 +0000
+Subject: [Rd] source definition for R_NilValue/return from
+ TYPEOF(R_NilValue)
+In-Reply-To: <daf586e7f4804036b8bb135226140bf0b77e2872.camel@adelaide.edu.au>
+References: <daf586e7f4804036b8bb135226140bf0b77e2872.camel@adelaide.edu.au>
+Message-ID: <CABtg=KnOY2udg76DgVht6keiP_=45tw3J9=r_fnj1uFA+2v15g@mail.gmail.com>
+
+It is in the source:
+https://github.com/wch/r-source/blob/ea8c13aef93058c71d647619583b561567856584/src/include/Rinternals.h#L110
+https://github.com/wch/r-source/blob/ea8c13aef93058c71d647619583b561567856584/src/include/Rinternals.h#L1798
+
+It could probably be in
+https://cran.r-project.org/doc/manuals/r-devel/R-lang.html#NULL-object
+
+Gabor
+
+On Mon, Dec 16, 2019 at 9:59 AM Dan Kortschak
+<dan.kortschak at adelaide.edu.au> wrote:
+>
+> Hello,
+>
+> for reasons I want to know the return value of TYPEOF(R_NilValue), I
+> expect it to be NILSXP, but I can't find this documented anywhere.
+> Ideally, I'd like to see the source definition of R_NilValue, but after
+> fair bit of searching I cannot find an obviously location for this.
+>
+> Would someone please point me in the right direction?
+>
+> thanks
+> --
+> CRICOS provider code 00123M
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From kry|ov@r00t @end|ng |rom gm@||@com  Mon Dec 16 11:33:34 2019
+From: kry|ov@r00t @end|ng |rom gm@||@com (Ivan Krylov)
+Date: Mon, 16 Dec 2019 13:33:34 +0300
+Subject: [Rd] source definition for R_NilValue/return from
+ TYPEOF(R_NilValue)
+In-Reply-To: <daf586e7f4804036b8bb135226140bf0b77e2872.camel@adelaide.edu.au>
+References: <daf586e7f4804036b8bb135226140bf0b77e2872.camel@adelaide.edu.au>
+Message-ID: <20191216133334.582b290d@trisector>
+
+On Sun, 15 Dec 2019 10:47:11 +0000
+Dan Kortschak <dan.kortschak at adelaide.edu.au> wrote:
+
+> I'd like to see the source definition of R_NilValue, but after
+> fair bit of searching I cannot find an obviously location for this.
+> 
+> Would someone please point me in the right direction?
+
+As far as I understand, the assignment to R_NilValue happens in
+src/main/memory.c:
+
+https://github.com/wch/r-source/blob/776929704cb4f9398f52805f48f2c93582ec3d38/src/main/memory.c#L2186
+
+(see the definition of GET_FREE_NODE(s) in the same file)
+
+Besides declaring R_NulValue as "extern" and assignments in void
+InitMemory(), there doesn't seem to be anything else.
+
+-- 
+Best regards,
+Ivan
+
+
+From tom@@@k@||ber@ @end|ng |rom gm@||@com  Mon Dec 16 12:32:45 2019
+From: tom@@@k@||ber@ @end|ng |rom gm@||@com (Tomas Kalibera)
+Date: Mon, 16 Dec 2019 12:32:45 +0100
+Subject: [Rd] Windows check problems.
+In-Reply-To: <72f873b4-0d5c-18ef-1c9b-3495b1d37d81@gmail.com>
+References: <72f873b4-0d5c-18ef-1c9b-3495b1d37d81@gmail.com>
+Message-ID: <6f7a58a7-afac-fa4a-4b0d-2f9f7aa6eb95@gmail.com>
+
+For reference, this has been addressed in R-devel, R now falls back to 
+copy when symlinking of the package directory silently fails.
+
+Thanks to Duncan for his analysis and a patch that fixed this.
+Tomas
+
+On 12/11/19 5:22 PM, Duncan Murdoch wrote:
+> The thread starting with this message:
+>
+> https://stat.ethz.ch/pipermail/r-package-devel/2019q4/004745.html
+>
+> described problems Rich Heiberger was having with package checking on 
+> Windows.? It appeared that during the tests of examples, an old 
+> version of the package was loaded but the new tests were being run, 
+> causing lots of confusion and trouble.
+>
+> I reproduced the error, and I think I've found the cause.? I had his 
+> package tarball on a network drive, with a local drive being used for 
+> the session temporary directory.? The check code needs a copy of the 
+> package installed in the temporary directory, and already has one in 
+> the pkg.Rcheck directory where the check is taking place, so it tries 
+> to create a junction linking them.? (On non-Windows systems it uses a 
+> symlink.)
+>
+> Apparently the junction creation silently fails:? an empty directory 
+> appears on the temp dir.? When R loads the package code, it doesn't 
+> find it in the temp dir, and goes looking in other libraries, where it 
+> found an older versions of the package.
+>
+> A workaround for this issue is to set the environment variable
+>
+> ? R_WIN_NO_JUNCTIONS=yes
+>
+> before doing the check.? This causes the check code to copy all the 
+> files into the temp dir and things are fine.
+>
+> I don't know whether the junction creation should have succeeded, or 
+> whether it should have signalled an error when it didn't, but it might 
+> make sense for R to do a simple sanity check after trying to create 
+> the junction (e.g. test for the presence of DESCRIPTION in the newly 
+> created location), falling back to a copy if things didn't succeed.
+>
+> Duncan Murdoch
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
