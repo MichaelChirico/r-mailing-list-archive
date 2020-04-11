@@ -3,7 +3,7 @@ library(rvest)
 
 URL = 'https://stat.ethz.ch/pipermail/r-devel/'
 
-outdir = 'txt'
+outdir = 'r-devel'
 dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
 
 # If current month exists in the archive, overwrite it (it shouldn't exist)
