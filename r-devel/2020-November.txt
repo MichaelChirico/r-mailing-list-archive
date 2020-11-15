@@ -1,0 +1,2908 @@
+From je|| @end|ng |rom vtke||er@@com  Sun Nov  1 15:39:55 2020
+From: je|| @end|ng |rom vtke||er@@com (Jeff)
+Date: Sun, 01 Nov 2020 09:39:55 -0500
+Subject: [Rd] parallel PSOCK connection latency is greater on Linux?
+Message-ID: <JQG4JQ.RSMMA5AL6E0M3@vtkellers.com>
+
+I'm exploring latency overhead of parallel PSOCK workers and noticed 
+that serializing/unserializing data back to the main R session is 
+significantly slower on Linux than it is on Windows/MacOS with similar 
+hardware. Is there a reason for this difference and is there a way to 
+avoid the apparent additional Linux overhead?
+
+I attempted to isolate the behavior with a test that simply returns an 
+existing object from the worker back to the main R session.
+
+library(parallel)
+library(microbenchmark)
+gcinfo(TRUE)
+cl <- makeCluster(1)
+(x <- microbenchmark(clusterEvalQ(cl, iris), times = 1000, unit = "us"))
+plot(x$time, ylab = "microseconds")
+head(x$time, n = 10)
+
+On Windows/MacOS, the test runs in 300-500 microseconds depending on 
+hardware. A few of the 1000 runs are an order of magnitude slower but 
+this can probably be attributed to garbage collection on the worker.
+
+On Linux, the first 5 or so executions run at comparable speeds but all 
+subsequent executions are two orders of magnitude slower (~40 
+milliseconds).
+
+I see this behavior across various platforms and hardware combinations:
+
+Ubuntu 18.04 (Intel Xeon Platinum 8259CL)
+Linux Mint 19.3 (AMD Ryzen 7 1800X)
+Linux Mint 20 (AMD Ryzen 7 3700X)
+Windows 10 (AMD Ryzen 7 4800H)
+MacOS 10.15.7 (Intel Core i7-8850H)
+
+
+From @|ex@ndre@court|o| @end|ng |rom gm@||@com  Sun Nov  1 17:22:22 2020
+From: @|ex@ndre@court|o| @end|ng |rom gm@||@com (Alexandre Courtiol)
+Date: Sun, 1 Nov 2020 17:22:22 +0100
+Subject: [Rd] vignettes present in 2 folders or won't work
+Message-ID: <CAERMt4eKagsBYjGRbJOJugWgB03b0QeenJMSdRwbXcy0qqxCMA@mail.gmail.com>
+
+Dear all,
+
+I am struggling with an issue related to static vignettes: they work, but
+only when present in double in the tarball -- in the folder inst/doc and
+vignettes; see below for details.
+
+Details:
+
+I am pre-compiling heavy vignettes thanks to the vignette builder R.rsp.
+So basically, I have PDF files which I want the package to use as Vignettes.
+
+For this, I have the following in my Description file:
+VignetteBuilder: R.rsp
+
+I am organising the vignette by hand using a Makefile (because this is the
+only way that has proven 100% reliable to me, across a variety of
+situations).
+
+In my Makefile, I have something like:
+
+build: clean
+  mkdir -p inst/doc
+  mkdir vignettes
+  -cp sources_vignettes/*/*.pdf* vignettes
+  Rscript -e "tools::compactPDF(paths = 'vignettes', gs_quality =
+'printer')"
+  cp vignettes/*.pdf* inst/doc
+  Rscript -e "devtools::document()"
+  mkdir inst/extdata/sources_vignettes
+  cp sources_vignettes/*/*.Rnw inst/extdata/sources_vignettes
+  Rscript -e "devtools::build(vignettes = FALSE)"
+
+That works fine, the vignettes show up using browseVignettes() after
+installing the package the normal way.
+
+However, after building, the tar.gz contains each pdf corresponding to a
+vignette twice: once in vignettes and once in inst/doc (which is obvious,
+when reading the Makefile).
+
+>From the reading of "Writing R Extensions" and other material, I cannot
+tell if that is a must or not, but I hope it is not since I wish to avoid
+that (my pdfs are large even once compressed).
+
+My problem is that when I delete either inst/doc or vignette just before
+calling the last command of the Makefile (Rscript -e
+"devtools::build(vignettes = FALSE)"), then browseVignettes() does not find
+the vignettes after a normal installation.
+
+If anyone knows of some _complete_ documentation about the ever troublesome
+topic of vignettes building in R, I would be very grateful too...
+
+Many thanks!
+
+Alex
+
+-- 
+Alexandre Courtiol
+
+http://sites.google.com/site/alexandrecourtiol/home
+
+*"Science is the belief in the ignorance of experts"*, R. Feynman
+
+	[[alternative HTML version deleted]]
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Sun Nov  1 18:19:09 2020
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Sun, 1 Nov 2020 12:19:09 -0500
+Subject: [Rd] vignettes present in 2 folders or won't work
+In-Reply-To: <CAERMt4eKagsBYjGRbJOJugWgB03b0QeenJMSdRwbXcy0qqxCMA@mail.gmail.com>
+References: <CAERMt4eKagsBYjGRbJOJugWgB03b0QeenJMSdRwbXcy0qqxCMA@mail.gmail.com>
+Message-ID: <aed3b504-93f0-fc77-3bc3-5c7b7286286b@gmail.com>
+
+You are doing a lot of things that are non-standard, so I doubt if 
+anyone is going to be able to help you without access to a simple 
+reproducible example of a package that does what you do.  Try to cut out 
+as much as you can to make it minimal.  For example, 
+devtools::document() (indeed, most of your code) is probably irrelevant 
+to your problem with vignettes, but things like your .Rbuildignore file 
+are not.
+
+Duncan Murdoch
+
+On 01/11/2020 11:22 a.m., Alexandre Courtiol wrote:
+> Dear all,
+> 
+> I am struggling with an issue related to static vignettes: they work, but
+> only when present in double in the tarball -- in the folder inst/doc and
+> vignettes; see below for details.
+> 
+> Details:
+> 
+> I am pre-compiling heavy vignettes thanks to the vignette builder R.rsp.
+> So basically, I have PDF files which I want the package to use as Vignettes.
+> 
+> For this, I have the following in my Description file:
+> VignetteBuilder: R.rsp
+> 
+> I am organising the vignette by hand using a Makefile (because this is the
+> only way that has proven 100% reliable to me, across a variety of
+> situations).
+> 
+> In my Makefile, I have something like:
+> 
+> build: clean
+>    mkdir -p inst/doc
+>    mkdir vignettes
+>    -cp sources_vignettes/*/*.pdf* vignettes
+>    Rscript -e "tools::compactPDF(paths = 'vignettes', gs_quality =
+> 'printer')"
+>    cp vignettes/*.pdf* inst/doc
+>    Rscript -e "devtools::document()"
+>    mkdir inst/extdata/sources_vignettes
+>    cp sources_vignettes/*/*.Rnw inst/extdata/sources_vignettes
+>    Rscript -e "devtools::build(vignettes = FALSE)"
+> 
+> That works fine, the vignettes show up using browseVignettes() after
+> installing the package the normal way.
+> 
+> However, after building, the tar.gz contains each pdf corresponding to a
+> vignette twice: once in vignettes and once in inst/doc (which is obvious,
+> when reading the Makefile).
+> 
+>  From the reading of "Writing R Extensions" and other material, I cannot
+> tell if that is a must or not, but I hope it is not since I wish to avoid
+> that (my pdfs are large even once compressed).
+> 
+> My problem is that when I delete either inst/doc or vignette just before
+> calling the last command of the Makefile (Rscript -e
+> "devtools::build(vignettes = FALSE)"), then browseVignettes() does not find
+> the vignettes after a normal installation.
+> 
+> If anyone knows of some _complete_ documentation about the ever troublesome
+> topic of vignettes building in R, I would be very grateful too...
+> 
+> Many thanks!
+> 
+> Alex
+>
+
+
+From @|ex@ndre@court|o| @end|ng |rom gm@||@com  Sun Nov  1 19:02:26 2020
+From: @|ex@ndre@court|o| @end|ng |rom gm@||@com (Alexandre Courtiol)
+Date: Sun, 1 Nov 2020 19:02:26 +0100
+Subject: [Rd] vignettes present in 2 folders or won't work
+In-Reply-To: <aed3b504-93f0-fc77-3bc3-5c7b7286286b@gmail.com>
+References: <CAERMt4eKagsBYjGRbJOJugWgB03b0QeenJMSdRwbXcy0qqxCMA@mail.gmail.com>
+ <aed3b504-93f0-fc77-3bc3-5c7b7286286b@gmail.com>
+Message-ID: <CAERMt4eknfdoHjgxN9gCbHeQ=odtO_YargCWNK=Ntsuv5HbyhQ@mail.gmail.com>
+
+Noted Duncan and TRUE...
+
+I cannot do more immediately unfortunately, that is always the issue of
+asking a last minute panic attack question before teaching a course
+involving the package...
+I do have /doc in my .Rbuildignore for reasons I can no longer remember...
+I will dig and create a MRE/reprex.
+The students will download heavy packages, but they probably won't notice.
+*Apologies*
+
+In the meantime, perhaps my question was clear enough to get clarity on:
+1) whether having vignettes twice in foders inst/doc and vignettes is
+normal or not when vignettes are static.
+2) where could anyone find a complete documentation on R vignettes since it
+is a recurring issue in this list and elsewhere.
+
+Many thanks
+
+On Sun, 1 Nov 2020 at 18:19, Duncan Murdoch <murdoch.duncan at gmail.com>
+wrote:
+
+> You are doing a lot of things that are non-standard, so I doubt if
+> anyone is going to be able to help you without access to a simple
+> reproducible example of a package that does what you do.  Try to cut out
+> as much as you can to make it minimal.  For example,
+> devtools::document() (indeed, most of your code) is probably irrelevant
+> to your problem with vignettes, but things like your .Rbuildignore file
+> are not.
+>
+> Duncan Murdoch
+>
+> On 01/11/2020 11:22 a.m., Alexandre Courtiol wrote:
+> > Dear all,
+> >
+> > I am struggling with an issue related to static vignettes: they work, but
+> > only when present in double in the tarball -- in the folder inst/doc and
+> > vignettes; see below for details.
+> >
+> > Details:
+> >
+> > I am pre-compiling heavy vignettes thanks to the vignette builder R.rsp.
+> > So basically, I have PDF files which I want the package to use as
+> Vignettes.
+> >
+> > For this, I have the following in my Description file:
+> > VignetteBuilder: R.rsp
+> >
+> > I am organising the vignette by hand using a Makefile (because this is
+> the
+> > only way that has proven 100% reliable to me, across a variety of
+> > situations).
+> >
+> > In my Makefile, I have something like:
+> >
+> > build: clean
+> >    mkdir -p inst/doc
+> >    mkdir vignettes
+> >    -cp sources_vignettes/*/*.pdf* vignettes
+> >    Rscript -e "tools::compactPDF(paths = 'vignettes', gs_quality =
+> > 'printer')"
+> >    cp vignettes/*.pdf* inst/doc
+> >    Rscript -e "devtools::document()"
+> >    mkdir inst/extdata/sources_vignettes
+> >    cp sources_vignettes/*/*.Rnw inst/extdata/sources_vignettes
+> >    Rscript -e "devtools::build(vignettes = FALSE)"
+> >
+> > That works fine, the vignettes show up using browseVignettes() after
+> > installing the package the normal way.
+> >
+> > However, after building, the tar.gz contains each pdf corresponding to a
+> > vignette twice: once in vignettes and once in inst/doc (which is obvious,
+> > when reading the Makefile).
+> >
+> >  From the reading of "Writing R Extensions" and other material, I cannot
+> > tell if that is a must or not, but I hope it is not since I wish to avoid
+> > that (my pdfs are large even once compressed).
+> >
+> > My problem is that when I delete either inst/doc or vignette just before
+> > calling the last command of the Makefile (Rscript -e
+> > "devtools::build(vignettes = FALSE)"), then browseVignettes() does not
+> find
+> > the vignettes after a normal installation.
+> >
+> > If anyone knows of some _complete_ documentation about the ever
+> troublesome
+> > topic of vignettes building in R, I would be very grateful too...
+> >
+> > Many thanks!
+> >
+> > Alex
+> >
+>
+>
+
+-- 
+Alexandre Courtiol
+
+http://sites.google.com/site/alexandrecourtiol/home
+
+*"Science is the belief in the ignorance of experts"*, R. Feynman
+
+	[[alternative HTML version deleted]]
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Sun Nov  1 20:29:50 2020
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Sun, 1 Nov 2020 14:29:50 -0500
+Subject: [Rd] vignettes present in 2 folders or won't work
+In-Reply-To: <CAERMt4eknfdoHjgxN9gCbHeQ=odtO_YargCWNK=Ntsuv5HbyhQ@mail.gmail.com>
+References: <CAERMt4eKagsBYjGRbJOJugWgB03b0QeenJMSdRwbXcy0qqxCMA@mail.gmail.com>
+ <aed3b504-93f0-fc77-3bc3-5c7b7286286b@gmail.com>
+ <CAERMt4eknfdoHjgxN9gCbHeQ=odtO_YargCWNK=Ntsuv5HbyhQ@mail.gmail.com>
+Message-ID: <6c01a1ec-9846-e906-d46f-1175c866c4f1@gmail.com>
+
+On 01/11/2020 1:02 p.m., Alexandre Courtiol wrote:
+> Noted Duncan and TRUE...
+> 
+> I cannot do more immediately unfortunately, that is always the issue of 
+> asking a last minute panic attack question before teaching a course 
+> involving the package...
+> I do have /doc in my .Rbuildignore for reasons I can no longer 
+> remember... I will dig and create a MRE/reprex.
+> The students will download heavy packages, but they probably won't notice.
+> *Apologies*
+> 
+> In the meantime, perhaps my question was clear enough to get clarity on:
+> 1) whether having vignettes twice in foders inst/doc and vignettes is 
+> normal or not when vignettes are static.
+> 2) where could anyone find a complete documentation on R vignettes since 
+> it is a recurring issue in this list and elsewhere.
+
+The Writing R Extensions manual describes vignette support in R, but R 
+allows contributed packages (like knitr, rmarkdown, R.rsp) to handle 
+vignettes.  WRE explains enough to write such a package, but it's up to 
+their authors to document how to use them, so "complete documentation" 
+is spread out all over the place.  As with any documentation, there are 
+probably errors and omissions.
+
+Duncan Murdoch
+
+
+From bbo|ker @end|ng |rom gm@||@com  Sun Nov  1 20:35:55 2020
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Sun, 1 Nov 2020 14:35:55 -0500
+Subject: [Rd] vignettes present in 2 folders or won't work
+In-Reply-To: <6c01a1ec-9846-e906-d46f-1175c866c4f1@gmail.com>
+References: <CAERMt4eKagsBYjGRbJOJugWgB03b0QeenJMSdRwbXcy0qqxCMA@mail.gmail.com>
+ <aed3b504-93f0-fc77-3bc3-5c7b7286286b@gmail.com>
+ <CAERMt4eknfdoHjgxN9gCbHeQ=odtO_YargCWNK=Ntsuv5HbyhQ@mail.gmail.com>
+ <6c01a1ec-9846-e906-d46f-1175c866c4f1@gmail.com>
+Message-ID: <18624aa0-215e-3afe-28bd-d450a3bae725@gmail.com>
+
+   I take Duncan's point but would second the motion to have WRE clarify 
+how static vignettes are supposed to work; it's a topic I am repeatedly 
+confused about despite being an experienced package maintainer. If 
+knowledgeable outsiders compiled a documentation patch would it be 
+likely to be considered ...??
+
+On 11/1/20 2:29 PM, Duncan Murdoch wrote:
+> On 01/11/2020 1:02 p.m., Alexandre Courtiol wrote:
+>> Noted Duncan and TRUE...
+>>
+>> I cannot do more immediately unfortunately, that is always the issue 
+>> of asking a last minute panic attack question before teaching a course 
+>> involving the package...
+>> I do have /doc in my .Rbuildignore for reasons I can no longer 
+>> remember... I will dig and create a MRE/reprex.
+>> The students will download heavy packages, but they probably won't 
+>> notice.
+>> *Apologies*
+>>
+>> In the meantime, perhaps my question was clear enough to get clarity on:
+>> 1) whether having vignettes twice in foders inst/doc and vignettes is 
+>> normal or not when vignettes are static.
+>> 2) where could anyone find a complete documentation on R vignettes 
+>> since it is a recurring issue in this list and elsewhere.
+> 
+> The Writing R Extensions manual describes vignette support in R, but R 
+> allows contributed packages (like knitr, rmarkdown, R.rsp) to handle 
+> vignettes.? WRE explains enough to write such a package, but it's up to 
+> their authors to document how to use them, so "complete documentation" 
+> is spread out all over the place.? As with any documentation, there are 
+> probably errors and omissions.
+> 
+> Duncan Murdoch
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From edd @end|ng |rom deb|@n@org  Sun Nov  1 20:57:32 2020
+From: edd @end|ng |rom deb|@n@org (Dirk Eddelbuettel)
+Date: Sun, 1 Nov 2020 13:57:32 -0600
+Subject: [Rd] vignettes present in 2 folders or won't work
+In-Reply-To: <18624aa0-215e-3afe-28bd-d450a3bae725@gmail.com>
+References: <CAERMt4eKagsBYjGRbJOJugWgB03b0QeenJMSdRwbXcy0qqxCMA@mail.gmail.com>
+ <aed3b504-93f0-fc77-3bc3-5c7b7286286b@gmail.com>
+ <CAERMt4eknfdoHjgxN9gCbHeQ=odtO_YargCWNK=Ntsuv5HbyhQ@mail.gmail.com>
+ <6c01a1ec-9846-e906-d46f-1175c866c4f1@gmail.com>
+ <18624aa0-215e-3afe-28bd-d450a3bae725@gmail.com>
+Message-ID: <24479.4908.672903.801397@rob.eddelbuettel.com>
+
+
+The closest to a canonical reference for a static vignette is the basic blog
+post by Mark at
+
+ https://www.markvanderloo.eu/yaRb/2019/01/11/add-a-static-pdf-vignette-to-an-r-package/
+
+which I follow in a number of packages.
+
+Back to the original point by Alexandre: No, I do _not_ think we can do
+without a double copy of the _pre-made_ pdf ("input") and the _resulting_ pdf
+("output").
+
+That bugs me a little too but I take it as a given as static / pre-made
+vignettes are non-standard (given lack of any mention in WRE, and the pretty
+obvious violation of the "spirit of the law" of vignette which is after all
+made to run code, not to avoid it). Yet uses for static vignettes are pretty
+valid and here we are with another clear as mud situation.
+
+Dirk
+
+-- 
+https://dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From @pencer@gr@ve@ @end|ng |rom prod@y@e@com  Sun Nov  1 20:58:06 2020
+From: @pencer@gr@ve@ @end|ng |rom prod@y@e@com (Spencer Graves)
+Date: Sun, 1 Nov 2020 13:58:06 -0600
+Subject: [Rd] vignettes present in 2 folders or won't work
+In-Reply-To: <18624aa0-215e-3afe-28bd-d450a3bae725@gmail.com>
+References: <CAERMt4eKagsBYjGRbJOJugWgB03b0QeenJMSdRwbXcy0qqxCMA@mail.gmail.com>
+ <aed3b504-93f0-fc77-3bc3-5c7b7286286b@gmail.com>
+ <CAERMt4eknfdoHjgxN9gCbHeQ=odtO_YargCWNK=Ntsuv5HbyhQ@mail.gmail.com>
+ <6c01a1ec-9846-e906-d46f-1175c866c4f1@gmail.com>
+ <18624aa0-215e-3afe-28bd-d450a3bae725@gmail.com>
+Message-ID: <62244686-9417-9715-07ed-f4b66950dc3d@prodsyse.com>
+
+	  CRAN policies say, "neither data nor documentation should exceed 5MB 
+(which covers several books). A CRAN package is not an appropriate way 
+to distribute course notes, and authors will be asked to trim their 
+documentation to a maximum of 5MB."[1]
+
+
+	  I post R Markdown vignettes as companions to Wikiversity articles. 
+For example, the Wikiversity article on "Forecasting nuclear 
+proliferation" is a tech report on the indicated topic with two R 
+Markdown vignettes as part of an appendix.[2]
+
+
+	  Wikiversity is similar to Wikipedia but supports teaching materials 
+and original research, which are forbidden on Wikipedia.  Both are 
+projects of the Wikimedia Foundation and have very similar rules and 
+management.  For both, almost anybody can change almost anything.  What 
+stays tends to be written from a neutral point of view citing credible 
+sources.  If you don't do that, your work may be speedily deleted or 
+reverted.  Shi et al (2017) "The wisdom of polarized crowds" did a 
+content analysis of all edits to English Wikipedia articles relating to 
+politics, social issues and science from its start to December 1, 2016. 
+This included almost 233,000 articles representing approximately 5 
+percent of the English Wikipedia.  They found that the best articles had 
+a large number of editors with a very diverse views.  They said that 95% 
+of articles could benefit from greater conflict;  the conflict became 
+counterproductive in only about 5% of articles.[3]
+
+
+	  Spencer Graves
+
+
+[1]
+https://cran.r-project.org/web/packages/policies.html
+
+
+[2]
+https://en.wikiversity.org/wiki/Forecasting_nuclear_proliferation#Appendix._Companion_R_Markdown_vignettes
+
+
+[3]
+https://en.wikipedia.org/wiki/Reliability_of_Wikipedia#Articles_on_contentious_issue
+
+
+On 2020-11-01 13:35, Ben Bolker wrote:
+>  ? I take Duncan's point but would second the motion to have WRE clarify 
+> how static vignettes are supposed to work; it's a topic I am repeatedly 
+> confused about despite being an experienced package maintainer. If 
+> knowledgeable outsiders compiled a documentation patch would it be 
+> likely to be considered ...??
+> 
+> On 11/1/20 2:29 PM, Duncan Murdoch wrote:
+>> On 01/11/2020 1:02 p.m., Alexandre Courtiol wrote:
+>>> Noted Duncan and TRUE...
+>>>
+>>> I cannot do more immediately unfortunately, that is always the issue 
+>>> of asking a last minute panic attack question before teaching a 
+>>> course involving the package...
+>>> I do have /doc in my .Rbuildignore for reasons I can no longer 
+>>> remember... I will dig and create a MRE/reprex.
+>>> The students will download heavy packages, but they probably won't 
+>>> notice.
+>>> *Apologies*
+>>>
+>>> In the meantime, perhaps my question was clear enough to get clarity on:
+>>> 1) whether having vignettes twice in foders inst/doc and vignettes is 
+>>> normal or not when vignettes are static.
+>>> 2) where could anyone find a complete documentation on R vignettes 
+>>> since it is a recurring issue in this list and elsewhere.
+>>
+>> The Writing R Extensions manual describes vignette support in R, but R 
+>> allows contributed packages (like knitr, rmarkdown, R.rsp) to handle 
+>> vignettes.? WRE explains enough to write such a package, but it's up 
+>> to their authors to document how to use them, so "complete 
+>> documentation" is spread out all over the place.? As with any 
+>> documentation, there are probably errors and omissions.
+>>
+>> Duncan Murdoch
+>>
+>> ______________________________________________
+>> R-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-devel
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Sun Nov  1 22:38:53 2020
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Sun, 1 Nov 2020 16:38:53 -0500
+Subject: [Rd] vignettes present in 2 folders or won't work
+In-Reply-To: <24479.4908.672903.801397@rob.eddelbuettel.com>
+References: <CAERMt4eKagsBYjGRbJOJugWgB03b0QeenJMSdRwbXcy0qqxCMA@mail.gmail.com>
+ <aed3b504-93f0-fc77-3bc3-5c7b7286286b@gmail.com>
+ <CAERMt4eknfdoHjgxN9gCbHeQ=odtO_YargCWNK=Ntsuv5HbyhQ@mail.gmail.com>
+ <6c01a1ec-9846-e906-d46f-1175c866c4f1@gmail.com>
+ <18624aa0-215e-3afe-28bd-d450a3bae725@gmail.com>
+ <24479.4908.672903.801397@rob.eddelbuettel.com>
+Message-ID: <e271b365-a2cf-488a-b316-f89e7b46e885@gmail.com>
+
+On 01/11/2020 2:57 p.m., Dirk Eddelbuettel wrote:
+> 
+> The closest to a canonical reference for a static vignette is the basic blog
+> post by Mark at
+> 
+>   https://www.markvanderloo.eu/yaRb/2019/01/11/add-a-static-pdf-vignette-to-an-r-package/
+> 
+> which I follow in a number of packages.
+> 
+> Back to the original point by Alexandre: No, I do _not_ think we can do
+> without a double copy of the _pre-made_ pdf ("input") and the _resulting_ pdf
+> ("output").
+> 
+> That bugs me a little too but I take it as a given as static / pre-made
+> vignettes are non-standard (given lack of any mention in WRE, and the pretty
+> obvious violation of the "spirit of the law" of vignette which is after all
+> made to run code, not to avoid it). Yet uses for static vignettes are pretty
+> valid and here we are with another clear as mud situation.
+> 
+
+In many cases such files aren't vignettes.
+
+By definition, packages should contain plain text source code for 
+vignettes.  They can contain other PDF files in inst/doc, but if you 
+don't include the plain text source, those aren't vignettes.
+
+An exception would be a package that contains the source code but 
+doesn't want to require CRAN or other users to run it, because it's too 
+time-consuming, or needs obscure resources.  The CRAN policy discusses this.
+
+Duncan Murdoch
+
+
+From @|mon@urb@nek @end|ng |rom R-project@org  Mon Nov  2 02:21:15 2020
+From: @|mon@urb@nek @end|ng |rom R-project@org (Simon Urbanek)
+Date: Mon, 2 Nov 2020 14:21:15 +1300
+Subject: [Rd] parallel PSOCK connection latency is greater on Linux?
+In-Reply-To: <JQG4JQ.RSMMA5AL6E0M3@vtkellers.com>
+References: <JQG4JQ.RSMMA5AL6E0M3@vtkellers.com>
+Message-ID: <6B25B60C-EF8D-4CAF-856F-E948C27BD5CA@R-project.org>
+
+It looks like R sockets on Linux could do with TCP_NODELAY -- without (status quo):
+
+Unit: microseconds
+                   expr      min       lq     mean  median       uq      max
+ clusterEvalQ(cl, iris) 1449.997 43991.99 43975.21 43997.1 44001.91 48027.83
+ neval
+  1000
+
+exactly the same machine + R but with TCP_NODELAY enabled in R_SockConnect():
+
+Unit: microseconds
+                   expr     min     lq     mean  median      uq      max neval
+ clusterEvalQ(cl, iris) 156.125 166.41 180.8806 170.247 174.298 5322.234  1000
+
+Cheers,
+Simon
+
+
+> On 2/11/2020, at 3:39 AM, Jeff <jeff at vtkellers.com> wrote:
+> 
+> I'm exploring latency overhead of parallel PSOCK workers and noticed that serializing/unserializing data back to the main R session is significantly slower on Linux than it is on Windows/MacOS with similar hardware. Is there a reason for this difference and is there a way to avoid the apparent additional Linux overhead?
+> 
+> I attempted to isolate the behavior with a test that simply returns an existing object from the worker back to the main R session.
+> 
+> library(parallel)
+> library(microbenchmark)
+> gcinfo(TRUE)
+> cl <- makeCluster(1)
+> (x <- microbenchmark(clusterEvalQ(cl, iris), times = 1000, unit = "us"))
+> plot(x$time, ylab = "microseconds")
+> head(x$time, n = 10)
+> 
+> On Windows/MacOS, the test runs in 300-500 microseconds depending on hardware. A few of the 1000 runs are an order of magnitude slower but this can probably be attributed to garbage collection on the worker.
+> 
+> On Linux, the first 5 or so executions run at comparable speeds but all subsequent executions are two orders of magnitude slower (~40 milliseconds).
+> 
+> I see this behavior across various platforms and hardware combinations:
+> 
+> Ubuntu 18.04 (Intel Xeon Platinum 8259CL)
+> Linux Mint 19.3 (AMD Ryzen 7 1800X)
+> Linux Mint 20 (AMD Ryzen 7 3700X)
+> Windows 10 (AMD Ryzen 7 4800H)
+> MacOS 10.15.7 (Intel Core i7-8850H)
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+> 
+
+
+From m@rk@v@nder|oo @end|ng |rom gm@||@com  Mon Nov  2 10:07:48 2020
+From: m@rk@v@nder|oo @end|ng |rom gm@||@com (Mark van der Loo)
+Date: Mon, 2 Nov 2020 10:07:48 +0100
+Subject: [Rd] vignettes present in 2 folders or won't work
+In-Reply-To: <e271b365-a2cf-488a-b316-f89e7b46e885@gmail.com>
+References: <CAERMt4eKagsBYjGRbJOJugWgB03b0QeenJMSdRwbXcy0qqxCMA@mail.gmail.com>
+ <aed3b504-93f0-fc77-3bc3-5c7b7286286b@gmail.com>
+ <CAERMt4eknfdoHjgxN9gCbHeQ=odtO_YargCWNK=Ntsuv5HbyhQ@mail.gmail.com>
+ <6c01a1ec-9846-e906-d46f-1175c866c4f1@gmail.com>
+ <18624aa0-215e-3afe-28bd-d450a3bae725@gmail.com>
+ <24479.4908.672903.801397@rob.eddelbuettel.com>
+ <e271b365-a2cf-488a-b316-f89e7b46e885@gmail.com>
+Message-ID: <CAOKDuOjXytZnPFbrsq_P-z61e3uZPTRG=JDHi1p7WWoxbpH=AQ@mail.gmail.com>
+
+On Sun, Nov 1, 2020 at 10:39 PM Duncan Murdoch <murdoch.duncan at gmail.com>
+wrote:
+
+> On 01/11/2020 2:57 p.m., Dirk Eddelbuettel wrote:
+> >
+> > The closest to a canonical reference for a static vignette is the basic
+> blog
+> > post by Mark at
+> >
+> >
+> https://www.markvanderloo.eu/yaRb/2019/01/11/add-a-static-pdf-vignette-to-an-r-package/
+> >
+> > which I follow in a number of packages.
+> >
+> > Back to the original point by Alexandre: No, I do _not_ think we can do
+> > without a double copy of the _pre-made_ pdf ("input") and the
+> _resulting_ pdf
+> > ("output").
+> >
+> > That bugs me a little too but I take it as a given as static / pre-made
+> > vignettes are non-standard (given lack of any mention in WRE, and the
+> pretty
+> > obvious violation of the "spirit of the law" of vignette which is after
+> all
+> > made to run code, not to avoid it). Yet uses for static vignettes are
+> pretty
+> > valid and here we are with another clear as mud situation.
+> >
+>
+> In many cases such files aren't vignettes.
+>
+> By definition, packages should contain plain text source code for
+> vignettes.  They can contain other PDF files in inst/doc, but if you
+> don't include the plain text source, those aren't vignettes.
+>
+> An exception would be a package that contains the source code but
+> doesn't want to require CRAN or other users to run it, because it's too
+> time-consuming, or needs obscure resources.  The CRAN policy discusses
+> this.
+>
+> Duncan Murdoch
+>
+>
+It would be nice if the documents in inst/doc were linked to on the CRAN
+landing page of a package. I think that documents under inst/doc are a bit
+hard to find if package authors do not create (possibly many) links to them
+in Rd files or vignettes.
+
+Cheers,
+Mark
+
+	[[alternative HTML version deleted]]
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Mon Nov  2 11:22:02 2020
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Mon, 2 Nov 2020 05:22:02 -0500
+Subject: [Rd] vignettes present in 2 folders or won't work
+In-Reply-To: <CAOKDuOjXytZnPFbrsq_P-z61e3uZPTRG=JDHi1p7WWoxbpH=AQ@mail.gmail.com>
+References: <CAERMt4eKagsBYjGRbJOJugWgB03b0QeenJMSdRwbXcy0qqxCMA@mail.gmail.com>
+ <aed3b504-93f0-fc77-3bc3-5c7b7286286b@gmail.com>
+ <CAERMt4eknfdoHjgxN9gCbHeQ=odtO_YargCWNK=Ntsuv5HbyhQ@mail.gmail.com>
+ <6c01a1ec-9846-e906-d46f-1175c866c4f1@gmail.com>
+ <18624aa0-215e-3afe-28bd-d450a3bae725@gmail.com>
+ <24479.4908.672903.801397@rob.eddelbuettel.com>
+ <e271b365-a2cf-488a-b316-f89e7b46e885@gmail.com>
+ <CAOKDuOjXytZnPFbrsq_P-z61e3uZPTRG=JDHi1p7WWoxbpH=AQ@mail.gmail.com>
+Message-ID: <92e51613-b647-5d72-793a-dd64e0edac3c@gmail.com>
+
+On 02/11/2020 4:07 a.m., Mark van der Loo wrote:
+> 
+> 
+> On Sun, Nov 1, 2020 at 10:39 PM Duncan Murdoch <murdoch.duncan at gmail.com 
+> <mailto:murdoch.duncan at gmail.com>> wrote:
+> 
+>     On 01/11/2020 2:57 p.m., Dirk Eddelbuettel wrote:
+>      >
+>      > The closest to a canonical reference for a static vignette is the
+>     basic blog
+>      > post by Mark at
+>      >
+>      >
+>     https://www.markvanderloo.eu/yaRb/2019/01/11/add-a-static-pdf-vignette-to-an-r-package/
+>      >
+>      > which I follow in a number of packages.
+>      >
+>      > Back to the original point by Alexandre: No, I do _not_ think we
+>     can do
+>      > without a double copy of the _pre-made_ pdf ("input") and the
+>     _resulting_ pdf
+>      > ("output").
+>      >
+>      > That bugs me a little too but I take it as a given as static /
+>     pre-made
+>      > vignettes are non-standard (given lack of any mention in WRE, and
+>     the pretty
+>      > obvious violation of the "spirit of the law" of vignette which is
+>     after all
+>      > made to run code, not to avoid it). Yet uses for static vignettes
+>     are pretty
+>      > valid and here we are with another clear as mud situation.
+>      >
+> 
+>     In many cases such files aren't vignettes.
+> 
+>     By definition, packages should contain plain text source code for
+>     vignettes.? They can contain other PDF files in inst/doc, but if you
+>     don't include the plain text source, those aren't vignettes.
+> 
+>     An exception would be a package that contains the source code but
+>     doesn't want to require CRAN or other users to run it, because it's too
+>     time-consuming, or needs obscure resources.? The CRAN policy
+>     discusses this.
+> 
+>     Duncan Murdoch
+> 
+> 
+> It would be nice if the documents in inst/doc were linked to on the CRAN 
+> landing page of a package. I think that documents under inst/doc are a 
+> bit hard to find if package authors do not create (possibly many) links 
+> to them in Rd files or vignettes.
+
+What I'd suggest is that you write a "browseDocs" function that displays 
+them in some nice format (similar to "browseVignettes").  Maybe CRAN 
+would choose to add a new category listing its results, but at a 
+minimum, you could very easily add a vignette called "Other documents" 
+that contains a list of links.   It wouldn't be as prominent as 
+"Vignettes" on CRAN, but you could make the display as prominent as you 
+want on your own web page.
+
+Duncan Murdoch
+
+
+From |uc@r @end|ng |rom |edor@project@org  Mon Nov  2 14:05:25 2020
+From: |uc@r @end|ng |rom |edor@project@org (=?UTF-8?Q?I=C3=B1aki_Ucar?=)
+Date: Mon, 2 Nov 2020 14:05:25 +0100
+Subject: [Rd] parallel PSOCK connection latency is greater on Linux?
+In-Reply-To: <6B25B60C-EF8D-4CAF-856F-E948C27BD5CA@R-project.org>
+References: <JQG4JQ.RSMMA5AL6E0M3@vtkellers.com>
+ <6B25B60C-EF8D-4CAF-856F-E948C27BD5CA@R-project.org>
+Message-ID: <CALEXWq3SXK5_=JTQ3ZfXN+upU=NLrMaqZdzzCuXBumMmyvVDMg@mail.gmail.com>
+
+On Mon, 2 Nov 2020 at 02:22, Simon Urbanek <simon.urbanek at r-project.org> wrote:
+>
+> It looks like R sockets on Linux could do with TCP_NODELAY -- without (status quo):
+
+How many network packets are generated with and without it? If there
+are many small writes and thus setting TCP_NODELAY causes many small
+packets to be sent, it might make more sense to set TCP_QUICKACK
+instead.
+
+I?aki
+
+> Unit: microseconds
+>                    expr      min       lq     mean  median       uq      max
+>  clusterEvalQ(cl, iris) 1449.997 43991.99 43975.21 43997.1 44001.91 48027.83
+>  neval
+>   1000
+>
+> exactly the same machine + R but with TCP_NODELAY enabled in R_SockConnect():
+>
+> Unit: microseconds
+>                    expr     min     lq     mean  median      uq      max neval
+>  clusterEvalQ(cl, iris) 156.125 166.41 180.8806 170.247 174.298 5322.234  1000
+>
+> Cheers,
+> Simon
+>
+>
+> > On 2/11/2020, at 3:39 AM, Jeff <jeff at vtkellers.com> wrote:
+> >
+> > I'm exploring latency overhead of parallel PSOCK workers and noticed that serializing/unserializing data back to the main R session is significantly slower on Linux than it is on Windows/MacOS with similar hardware. Is there a reason for this difference and is there a way to avoid the apparent additional Linux overhead?
+> >
+> > I attempted to isolate the behavior with a test that simply returns an existing object from the worker back to the main R session.
+> >
+> > library(parallel)
+> > library(microbenchmark)
+> > gcinfo(TRUE)
+> > cl <- makeCluster(1)
+> > (x <- microbenchmark(clusterEvalQ(cl, iris), times = 1000, unit = "us"))
+> > plot(x$time, ylab = "microseconds")
+> > head(x$time, n = 10)
+> >
+> > On Windows/MacOS, the test runs in 300-500 microseconds depending on hardware. A few of the 1000 runs are an order of magnitude slower but this can probably be attributed to garbage collection on the worker.
+> >
+> > On Linux, the first 5 or so executions run at comparable speeds but all subsequent executions are two orders of magnitude slower (~40 milliseconds).
+> >
+> > I see this behavior across various platforms and hardware combinations:
+> >
+> > Ubuntu 18.04 (Intel Xeon Platinum 8259CL)
+> > Linux Mint 19.3 (AMD Ryzen 7 1800X)
+> > Linux Mint 20 (AMD Ryzen 7 3700X)
+> > Windows 10 (AMD Ryzen 7 4800H)
+> > MacOS 10.15.7 (Intel Core i7-8850H)
+> >
+> > ______________________________________________
+> > R-devel at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-devel
+> >
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+
+-- 
+I?aki ?car
+
+
+From georg|@bo@hn@kov @end|ng |rom m@nche@ter@@c@uk  Mon Nov  2 14:42:13 2020
+From: georg|@bo@hn@kov @end|ng |rom m@nche@ter@@c@uk (Georgi Boshnakov)
+Date: Mon, 2 Nov 2020 13:42:13 +0000
+Subject: [Rd] vignettes present in 2 folders or won't work
+Message-ID: <AM0PR0102MB3443DE5699D01FF88C644A0CAE100@AM0PR0102MB3443.eurprd01.prod.exchangelabs.com>
+
+From: Duncan Murdoch <murdoch.duncan at gmail.com>
+To: Mark van der Loo <mark.vanderloo at gmail.com>
+Cc: Dirk Eddelbuettel <edd at debian.org>, r-devel
+	<r-devel at r-project.org>
+
+
+Further to Duncan's comments:
+
+> It would be nice if the documents in inst/doc were linked to on the CRAN 
+> landing page of a package. I think that documents under inst/doc are a 
+> bit hard to find if package authors do not create (possibly many) links 
+> to them in Rd files or vignettes.
+
+There is the seemingly underused option "package" of help():
+
+help(package = "pkgname", help_type = "html")
+
+The vignettes and other documents (including sources of vignettes, etc) are at the top of the html page (help_type is used in case the default for help is text format, when the output is less convenient in this case). 
+
+What is shown can be customised by a custom index.tml under inst/doc (described in WRE).  An inconvenience for users of devtools::check()  is that it wipes out inst/doc (but it does ask for confirmation).
+
+
+Georgi Boshnakov
+
+
+
+------------------------------
+
+Message: 12
+Date: Mon, 2 Nov 2020 05:22:02 -0500
+From: Duncan Murdoch <murdoch.duncan at gmail.com>
+To: Mark van der Loo <mark.vanderloo at gmail.com>
+Cc: Dirk Eddelbuettel <edd at debian.org>, r-devel
+	<r-devel at r-project.org>
+Subject: Re: [Rd] vignettes present in 2 folders or won't work
+Message-ID: <92e51613-b647-5d72-793a-dd64e0edac3c at gmail.com>
+Content-Type: text/plain; charset="utf-8"; Format="flowed"
+
+On 02/11/2020 4:07 a.m., Mark van der Loo wrote:
+> 
+> 
+> On Sun, Nov 1, 2020 at 10:39 PM Duncan Murdoch <murdoch.duncan at gmail.com 
+> <mailto:murdoch.duncan at gmail.com>> wrote:
+> 
+>     On 01/11/2020 2:57 p.m., Dirk Eddelbuettel wrote:
+>      >
+>      > The closest to a canonical reference for a static vignette is the
+>     basic blog
+>      > post by Mark at
+>      >
+>      >
+>     https://www.markvanderloo.eu/yaRb/2019/01/11/add-a-static-pdf-vignette-to-an-r-package/
+>      >
+>      > which I follow in a number of packages.
+>      >
+>      > Back to the original point by Alexandre: No, I do _not_ think we
+>     can do
+>      > without a double copy of the _pre-made_ pdf ("input") and the
+>     _resulting_ pdf
+>      > ("output").
+>      >
+>      > That bugs me a little too but I take it as a given as static /
+>     pre-made
+>      > vignettes are non-standard (given lack of any mention in WRE, and
+>     the pretty
+>      > obvious violation of the "spirit of the law" of vignette which is
+>     after all
+>      > made to run code, not to avoid it). Yet uses for static vignettes
+>     are pretty
+>      > valid and here we are with another clear as mud situation.
+>      >
+> 
+>     In many cases such files aren't vignettes.
+> 
+>     By definition, packages should contain plain text source code for
+>     vignettes.? They can contain other PDF files in inst/doc, but if you
+>     don't include the plain text source, those aren't vignettes.
+> 
+>     An exception would be a package that contains the source code but
+>     doesn't want to require CRAN or other users to run it, because it's too
+>     time-consuming, or needs obscure resources.? The CRAN policy
+>     discusses this.
+> 
+>     Duncan Murdoch
+> 
+> 
+> It would be nice if the documents in inst/doc were linked to on the CRAN 
+> landing page of a package. I think that documents under inst/doc are a 
+> bit hard to find if package authors do not create (possibly many) links 
+> to them in Rd files or vignettes.
+
+What I'd suggest is that you write a "browseDocs" function that displays 
+them in some nice format (similar to "browseVignettes").  Maybe CRAN 
+would choose to add a new category listing its results, but at a 
+minimum, you could very easily add a vignette called "Other documents" 
+that contains a list of links.   It wouldn't be as prominent as 
+"Vignettes" on CRAN, but you could make the display as prominent as you 
+want on your own web page.
+
+Duncan Murdoch
+
+
+
+
+------------------------------
+
+Subject: Digest Footer
+
+_______________________________________________
+R-devel at r-project.org mailing list  DIGESTED
+https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+------------------------------
+
+End of R-devel Digest, Vol 213, Issue 1
+***************************************
+
+From je|| @end|ng |rom vtke||er@@com  Mon Nov  2 14:28:55 2020
+From: je|| @end|ng |rom vtke||er@@com (Jeff)
+Date: Mon, 02 Nov 2020 08:28:55 -0500
+Subject: [Rd] parallel PSOCK connection latency is greater on Linux?
+In-Reply-To: <CALEXWq3SXK5_=JTQ3ZfXN+upU=NLrMaqZdzzCuXBumMmyvVDMg@mail.gmail.com>
+References: <JQG4JQ.RSMMA5AL6E0M3@vtkellers.com>
+ <6B25B60C-EF8D-4CAF-856F-E948C27BD5CA@R-project.org>
+ <CALEXWq3SXK5_=JTQ3ZfXN+upU=NLrMaqZdzzCuXBumMmyvVDMg@mail.gmail.com>
+Message-ID: <7486JQ.F60K6EHKGCP02@vtkellers.com>
+
+Could TCP_NODELAY and TCP_QUICKACK be exposed to the R user so that 
+they might determine what is best for their potentially latency- or 
+throughput-sensitive application?
+
+Best,
+Jeff
+
+On Mon, Nov 2, 2020 at 14:05, I?aki Ucar <iucar at fedoraproject.org> 
+wrote:
+> On Mon, 2 Nov 2020 at 02:22, Simon Urbanek 
+> <simon.urbanek at r-project.org> wrote:
+>> 
+>>  It looks like R sockets on Linux could do with TCP_NODELAY -- 
+>> without (status quo):
+> 
+> How many network packets are generated with and without it? If there
+> are many small writes and thus setting TCP_NODELAY causes many small
+> packets to be sent, it might make more sense to set TCP_QUICKACK
+> instead.
+> 
+> I?aki
+> 
+>>  Unit: microseconds
+>>                     expr      min       lq     mean  median       uq 
+>>      max
+>>   clusterEvalQ(cl, iris) 1449.997 43991.99 43975.21 43997.1 44001.91 
+>> 48027.83
+>>   neval
+>>    1000
+>> 
+>>  exactly the same machine + R but with TCP_NODELAY enabled in 
+>> R_SockConnect():
+>> 
+>>  Unit: microseconds
+>>                     expr     min     lq     mean  median      uq     
+>>  max neval
+>>   clusterEvalQ(cl, iris) 156.125 166.41 180.8806 170.247 174.298 
+>> 5322.234  1000
+>> 
+>>  Cheers,
+>>  Simon
+>> 
+>> 
+>>  > On 2/11/2020, at 3:39 AM, Jeff <jeff at vtkellers.com> wrote:
+>>  >
+>>  > I'm exploring latency overhead of parallel PSOCK workers and 
+>> noticed that serializing/unserializing data back to the main R 
+>> session is significantly slower on Linux than it is on Windows/MacOS 
+>> with similar hardware. Is there a reason for this difference and is 
+>> there a way to avoid the apparent additional Linux overhead?
+>>  >
+>>  > I attempted to isolate the behavior with a test that simply 
+>> returns an existing object from the worker back to the main R 
+>> session.
+>>  >
+>>  > library(parallel)
+>>  > library(microbenchmark)
+>>  > gcinfo(TRUE)
+>>  > cl <- makeCluster(1)
+>>  > (x <- microbenchmark(clusterEvalQ(cl, iris), times = 1000, unit = 
+>> "us"))
+>>  > plot(x$time, ylab = "microseconds")
+>>  > head(x$time, n = 10)
+>>  >
+>>  > On Windows/MacOS, the test runs in 300-500 microseconds depending 
+>> on hardware. A few of the 1000 runs are an order of magnitude slower 
+>> but this can probably be attributed to garbage collection on the 
+>> worker.
+>>  >
+>>  > On Linux, the first 5 or so executions run at comparable speeds 
+>> but all subsequent executions are two orders of magnitude slower 
+>> (~40 milliseconds).
+>>  >
+>>  > I see this behavior across various platforms and hardware 
+>> combinations:
+>>  >
+>>  > Ubuntu 18.04 (Intel Xeon Platinum 8259CL)
+>>  > Linux Mint 19.3 (AMD Ryzen 7 1800X)
+>>  > Linux Mint 20 (AMD Ryzen 7 3700X)
+>>  > Windows 10 (AMD Ryzen 7 4800H)
+>>  > MacOS 10.15.7 (Intel Core i7-8850H)
+>>  >
+>>  > ______________________________________________
+>>  > R-devel at r-project.org mailing list
+>>  > https://stat.ethz.ch/mailman/listinfo/r-devel
+>>  >
+>> 
+>>  ______________________________________________
+>>  R-devel at r-project.org mailing list
+>>  https://stat.ethz.ch/mailman/listinfo/r-devel
+> 
+> 
+> 
+> --
+> I?aki ?car
+
+
+From |uc@r @end|ng |rom |edor@project@org  Mon Nov  2 14:47:36 2020
+From: |uc@r @end|ng |rom |edor@project@org (=?UTF-8?Q?I=C3=B1aki_Ucar?=)
+Date: Mon, 2 Nov 2020 14:47:36 +0100
+Subject: [Rd] parallel PSOCK connection latency is greater on Linux?
+In-Reply-To: <7486JQ.F60K6EHKGCP02@vtkellers.com>
+References: <JQG4JQ.RSMMA5AL6E0M3@vtkellers.com>
+ <6B25B60C-EF8D-4CAF-856F-E948C27BD5CA@R-project.org>
+ <CALEXWq3SXK5_=JTQ3ZfXN+upU=NLrMaqZdzzCuXBumMmyvVDMg@mail.gmail.com>
+ <7486JQ.F60K6EHKGCP02@vtkellers.com>
+Message-ID: <CALEXWq36bnR-+Gv8XU2U1BwaaM12V381fTCRUaN72dO2NKbmLg@mail.gmail.com>
+
+On Mon, 2 Nov 2020 at 14:29, Jeff <jeff at vtkellers.com> wrote:
+>
+> Could TCP_NODELAY and TCP_QUICKACK be exposed to the R user so that
+> they might determine what is best for their potentially latency- or
+> throughput-sensitive application?
+
+I think it makes sense (with a sensible default). E.g., Julia does this [1-2].
+
+[1] https://docs.julialang.org/en/v1/stdlib/Sockets/#Sockets.nagle
+[2] https://docs.julialang.org/en/v1/stdlib/Sockets/#Sockets.quickack
+
+-- 
+I?aki ?car
+
+
+From tom@@@k@||ber@ @end|ng |rom gm@||@com  Mon Nov  2 20:46:27 2020
+From: tom@@@k@||ber@ @end|ng |rom gm@||@com (Tomas Kalibera)
+Date: Mon, 2 Nov 2020 20:46:27 +0100
+Subject: [Rd] bug report for make check
+In-Reply-To: <CAC2h7uvO5dYdLf6G+FaM8x0bhp6MuduprQExKL2TB3SwN5E-nw@mail.gmail.com>
+References: <CAC2h7uvMt+Eyd7=ppR2HtZgpCeVyBc6ufJG2ghYK6HaL-RyDgw@mail.gmail.com>
+ <bee4b0dc-58e8-137c-5e27-0719bffaee1d@gmail.com>
+ <CAC2h7uvO5dYdLf6G+FaM8x0bhp6MuduprQExKL2TB3SwN5E-nw@mail.gmail.com>
+Message-ID: <e276dd4c-6532-31bb-9178-30869823e370@gmail.com>
+
+We've fixed the test to allow the current behavior of all.equal.POSIXt 
+for now. It became clear that figuring out how to best improve 
+all.equal.POSIXt would take much longer.
+
+Best
+Tomas
+
+On 10/30/20 12:00 PM, Kasper Daniel Hansen wrote:
+> Thanks, I'm going to shut up then.
+>
+> Despite having been reported multiple times, it was not at all clear 
+> to me that this was being worked on with the intention of addressing 
+> make check - that is one of the limitations of the communication 
+> system we use.
+>
+> Best,
+> Kasper
+>
+> On Fri, Oct 30, 2020 at 11:38 AM Tomas Kalibera 
+> <tomas.kalibera at gmail.com <mailto:tomas.kalibera at gmail.com>> wrote:
+>
+>     Dear Kasper,
+>
+>     if you want to submit a bug via bugzilla, please first read
+>
+>     https://www.r-project.org/bugs.html
+>
+>     and you will learn there that there is an email address to use when
+>     asking for an account, not all R-devel mailing list readers need
+>     to read
+>     that.
+>
+>     Moreover, I can see you already have an account in R bugzilla.
+>
+>     Moreover, bugs can be reported also on R-devel mailing list and
+>     this has
+>     been reported already several times, we are working on it, it is not
+>     clear what is the right way to fix this.
+>
+>     Thanks for your patience,
+>     Tomas
+>
+>     On 10/30/20 11:24 AM, Kasper Daniel Hansen wrote:
+>     > I would like to request access to bugzilla to file a bug report
+>     on make
+>     > check for R-devel.
+>     >
+>     > Following changes to all.equal.POSIXt,
+>     >? ? make check
+>     > now reports an error if the environment variable TZ is set to
+>     >? ? TZ="US/Eastern"
+>     > (and likely other values). This can be addressed by using the
+>     argument
+>     > check.tzone=FALSE in the call to all.equal.POSIXt in
+>     reg-tests-2.R. A patch
+>     > has been posted by Sebastian Meyer in the R-devel thread
+>     "timezone tests
+>     > and R-devel".
+>     >
+>
+>
+>
+> -- 
+> Best,
+> Kasper
+
+
+
+	[[alternative HTML version deleted]]
+
+
+From @|mon@urb@nek @end|ng |rom r-project@org  Wed Nov  4 02:06:37 2020
+From: @|mon@urb@nek @end|ng |rom r-project@org (Simon Urbanek)
+Date: Wed, 4 Nov 2020 14:06:37 +1300
+Subject: [Rd] parallel PSOCK connection latency is greater on Linux?
+In-Reply-To: <7486JQ.F60K6EHKGCP02@vtkellers.com>
+References: <JQG4JQ.RSMMA5AL6E0M3@vtkellers.com>
+ <6B25B60C-EF8D-4CAF-856F-E948C27BD5CA@R-project.org>
+ <CALEXWq3SXK5_=JTQ3ZfXN+upU=NLrMaqZdzzCuXBumMmyvVDMg@mail.gmail.com>
+ <7486JQ.F60K6EHKGCP02@vtkellers.com>
+Message-ID: <6867535C-28A7-4F14-A703-6028EC46513F@r-project.org>
+
+I'm not sure the user would know ;). This is very system-specific issue just because the Linux network stack behaves so differently from other OSes (for purely historical reasons). That makes it hard to abstract as a "feature" for the R sockets that are supposed to be platform-independent. At least TCP_NODELAY is actually part of POSIX so it is on better footing, and disabling delayed ACK is practically only useful to work around the other side having Nagle on, so I would expect it to be rarely used.
+
+This is essentially RFC since we don't have a mechanism for socket options (well, almost, there is timeout and blocking already...) and I don't think we want to expose low-level details so perhaps one idea would be to add something like delay=NA to socketConnection() in order to not touch (NA), enable (TRUE) or disable (FALSE) TCP_NODELAY. I wonder if there is any other way we could infer the intention of the user to try to choose the right approach...
+
+Cheers,
+Simon
+
+
+> On Nov 3, 2020, at 02:28, Jeff <jeff at vtkellers.com> wrote:
+> 
+> Could TCP_NODELAY and TCP_QUICKACK be exposed to the R user so that they might determine what is best for their potentially latency- or throughput-sensitive application?
+> 
+> Best,
+> Jeff
+> 
+> On Mon, Nov 2, 2020 at 14:05, I?aki Ucar <iucar at fedoraproject.org> wrote:
+>> On Mon, 2 Nov 2020 at 02:22, Simon Urbanek <simon.urbanek at r-project.org> wrote:
+>>> It looks like R sockets on Linux could do with TCP_NODELAY -- without (status quo):
+>> How many network packets are generated with and without it? If there
+>> are many small writes and thus setting TCP_NODELAY causes many small
+>> packets to be sent, it might make more sense to set TCP_QUICKACK
+>> instead.
+>> I?aki
+>>> Unit: microseconds
+>>>                    expr      min       lq     mean  median       uq      max
+>>>  clusterEvalQ(cl, iris) 1449.997 43991.99 43975.21 43997.1 44001.91 48027.83
+>>>  neval
+>>>   1000
+>>> exactly the same machine + R but with TCP_NODELAY enabled in R_SockConnect():
+>>> Unit: microseconds
+>>>                    expr     min     lq     mean  median      uq      max neval
+>>>  clusterEvalQ(cl, iris) 156.125 166.41 180.8806 170.247 174.298 5322.234  1000
+>>> Cheers,
+>>> Simon
+>>> > On 2/11/2020, at 3:39 AM, Jeff <jeff at vtkellers.com> wrote:
+>>> >
+>>> > I'm exploring latency overhead of parallel PSOCK workers and noticed that serializing/unserializing data back to the main R session is significantly slower on Linux than it is on Windows/MacOS with similar hardware. Is there a reason for this difference and is there a way to avoid the apparent additional Linux overhead?
+>>> >
+>>> > I attempted to isolate the behavior with a test that simply returns an existing object from the worker back to the main R session.
+>>> >
+>>> > library(parallel)
+>>> > library(microbenchmark)
+>>> > gcinfo(TRUE)
+>>> > cl <- makeCluster(1)
+>>> > (x <- microbenchmark(clusterEvalQ(cl, iris), times = 1000, unit = "us"))
+>>> > plot(x$time, ylab = "microseconds")
+>>> > head(x$time, n = 10)
+>>> >
+>>> > On Windows/MacOS, the test runs in 300-500 microseconds depending on hardware. A few of the 1000 runs are an order of magnitude slower but this can probably be attributed to garbage collection on the worker.
+>>> >
+>>> > On Linux, the first 5 or so executions run at comparable speeds but all subsequent executions are two orders of magnitude slower (~40 milliseconds).
+>>> >
+>>> > I see this behavior across various platforms and hardware combinations:
+>>> >
+>>> > Ubuntu 18.04 (Intel Xeon Platinum 8259CL)
+>>> > Linux Mint 19.3 (AMD Ryzen 7 1800X)
+>>> > Linux Mint 20 (AMD Ryzen 7 3700X)
+>>> > Windows 10 (AMD Ryzen 7 4800H)
+>>> > MacOS 10.15.7 (Intel Core i7-8850H)
+>>> >
+>>> > ______________________________________________
+>>> > R-devel at r-project.org mailing list
+>>> > https://stat.ethz.ch/mailman/listinfo/r-devel
+>>> >
+>>> ______________________________________________
+>>> R-devel at r-project.org mailing list
+>>> https://stat.ethz.ch/mailman/listinfo/r-devel
+>> --
+>> I?aki ?car
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+> 
+
+
+From |uc@r @end|ng |rom |edor@project@org  Wed Nov  4 11:41:24 2020
+From: |uc@r @end|ng |rom |edor@project@org (=?UTF-8?Q?I=C3=B1aki_Ucar?=)
+Date: Wed, 4 Nov 2020 11:41:24 +0100
+Subject: [Rd] parallel PSOCK connection latency is greater on Linux?
+In-Reply-To: <6867535C-28A7-4F14-A703-6028EC46513F@r-project.org>
+References: <JQG4JQ.RSMMA5AL6E0M3@vtkellers.com>
+ <6B25B60C-EF8D-4CAF-856F-E948C27BD5CA@R-project.org>
+ <CALEXWq3SXK5_=JTQ3ZfXN+upU=NLrMaqZdzzCuXBumMmyvVDMg@mail.gmail.com>
+ <7486JQ.F60K6EHKGCP02@vtkellers.com>
+ <6867535C-28A7-4F14-A703-6028EC46513F@r-project.org>
+Message-ID: <CALEXWq0QnKiKyVNqfx9zCtpVLRomrygFcEDPvaOaQNnx-8jBsQ@mail.gmail.com>
+
+Please, check a tcpdump session on localhost while running the following script:
+
+library(parallel)
+library(tictoc)
+cl <- makeCluster(1)
+Sys.sleep(1)
+
+for (i in 1:10) {
+  tic()
+  x <- clusterEvalQ(cl, iris)
+  toc()
+}
+
+The initialization phase comprises 7 packets. Then, the 1-second sleep
+will help you see where the evaluation starts. Each clusterEvalQ
+generates 6 packets:
+
+1. main -> worker PSH, ACK 1026 bytes
+2. worker -> main ACK 66 bytes
+3. worker -> main PSH, ACK 3758 bytes
+4. main -> worker ACK 66 bytes
+5. worker -> main PSH, ACK 2484 bytes
+6. main -> worker ACK 66 bytes
+
+The first two are the command and its ACK, the following are the data
+back and their ACKs. In the first 4-5 iterations, I see no delay at
+all. Then, in the following iterations, a 40 ms delay starts to happen
+between packets 3 and 4, that is: the main process delays the ACK to
+the first packet of the incoming result.
+
+So I'd say Nagle is hardly to blame for this. It would be interesting
+to see how many packets are generated with TCP_NODELAY on. If there
+are still 6 packets, then we are fine. If we suddenly see a gazillion
+packets, then TCP_NODELAY does more harm than good. On the other hand,
+TCP_QUICKACK would surely solve the issue without any drawback. As
+Nagle himself put it once, "set TCP_QUICKACK. If you find a case where
+that makes things worse, let me know."
+
+I?aki
+
+On Wed, 4 Nov 2020 at 04:34, Simon Urbanek <simon.urbanek at r-project.org> wrote:
+>
+> I'm not sure the user would know ;). This is very system-specific issue just because the Linux network stack behaves so differently from other OSes (for purely historical reasons). That makes it hard to abstract as a "feature" for the R sockets that are supposed to be platform-independent. At least TCP_NODELAY is actually part of POSIX so it is on better footing, and disabling delayed ACK is practically only useful to work around the other side having Nagle on, so I would expect it to be rarely used.
+>
+> This is essentially RFC since we don't have a mechanism for socket options (well, almost, there is timeout and blocking already...) and I don't think we want to expose low-level details so perhaps one idea would be to add something like delay=NA to socketConnection() in order to not touch (NA), enable (TRUE) or disable (FALSE) TCP_NODELAY. I wonder if there is any other way we could infer the intention of the user to try to choose the right approach...
+>
+> Cheers,
+> Simon
+>
+>
+> > On Nov 3, 2020, at 02:28, Jeff <jeff at vtkellers.com> wrote:
+> >
+> > Could TCP_NODELAY and TCP_QUICKACK be exposed to the R user so that they might determine what is best for their potentially latency- or throughput-sensitive application?
+> >
+> > Best,
+> > Jeff
+> >
+> > On Mon, Nov 2, 2020 at 14:05, I?aki Ucar <iucar at fedoraproject.org> wrote:
+> >> On Mon, 2 Nov 2020 at 02:22, Simon Urbanek <simon.urbanek at r-project.org> wrote:
+> >>> It looks like R sockets on Linux could do with TCP_NODELAY -- without (status quo):
+> >> How many network packets are generated with and without it? If there
+> >> are many small writes and thus setting TCP_NODELAY causes many small
+> >> packets to be sent, it might make more sense to set TCP_QUICKACK
+> >> instead.
+> >> I?aki
+> >>> Unit: microseconds
+> >>>                    expr      min       lq     mean  median       uq      max
+> >>>  clusterEvalQ(cl, iris) 1449.997 43991.99 43975.21 43997.1 44001.91 48027.83
+> >>>  neval
+> >>>   1000
+> >>> exactly the same machine + R but with TCP_NODELAY enabled in R_SockConnect():
+> >>> Unit: microseconds
+> >>>                    expr     min     lq     mean  median      uq      max neval
+> >>>  clusterEvalQ(cl, iris) 156.125 166.41 180.8806 170.247 174.298 5322.234  1000
+> >>> Cheers,
+> >>> Simon
+> >>> > On 2/11/2020, at 3:39 AM, Jeff <jeff at vtkellers.com> wrote:
+> >>> >
+> >>> > I'm exploring latency overhead of parallel PSOCK workers and noticed that serializing/unserializing data back to the main R session is significantly slower on Linux than it is on Windows/MacOS with similar hardware. Is there a reason for this difference and is there a way to avoid the apparent additional Linux overhead?
+> >>> >
+> >>> > I attempted to isolate the behavior with a test that simply returns an existing object from the worker back to the main R session.
+> >>> >
+> >>> > library(parallel)
+> >>> > library(microbenchmark)
+> >>> > gcinfo(TRUE)
+> >>> > cl <- makeCluster(1)
+> >>> > (x <- microbenchmark(clusterEvalQ(cl, iris), times = 1000, unit = "us"))
+> >>> > plot(x$time, ylab = "microseconds")
+> >>> > head(x$time, n = 10)
+> >>> >
+> >>> > On Windows/MacOS, the test runs in 300-500 microseconds depending on hardware. A few of the 1000 runs are an order of magnitude slower but this can probably be attributed to garbage collection on the worker.
+> >>> >
+> >>> > On Linux, the first 5 or so executions run at comparable speeds but all subsequent executions are two orders of magnitude slower (~40 milliseconds).
+> >>> >
+> >>> > I see this behavior across various platforms and hardware combinations:
+> >>> >
+> >>> > Ubuntu 18.04 (Intel Xeon Platinum 8259CL)
+> >>> > Linux Mint 19.3 (AMD Ryzen 7 1800X)
+> >>> > Linux Mint 20 (AMD Ryzen 7 3700X)
+> >>> > Windows 10 (AMD Ryzen 7 4800H)
+> >>> > MacOS 10.15.7 (Intel Core i7-8850H)
+> >>> >
+> >>> > ______________________________________________
+> >>> > R-devel at r-project.org mailing list
+> >>> > https://stat.ethz.ch/mailman/listinfo/r-devel
+> >>> >
+> >>> ______________________________________________
+> >>> R-devel at r-project.org mailing list
+> >>> https://stat.ethz.ch/mailman/listinfo/r-devel
+> >> --
+> >> I?aki ?car
+> >
+> > ______________________________________________
+> > R-devel at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-devel
+> >
+>
+
+
+-- 
+I?aki ?car
+
+
+From tom@@@k@||ber@ @end|ng |rom gm@||@com  Wed Nov  4 15:43:41 2020
+From: tom@@@k@||ber@ @end|ng |rom gm@||@com (Tomas Kalibera)
+Date: Wed, 4 Nov 2020 15:43:41 +0100
+Subject: [Rd] sprintf, check number of parameters
+In-Reply-To: <1N8GMk-1kXJ7R1NuC-0148bP@mail.gmx.com>
+References: <1N8GMk-1kXJ7R1NuC-0148bP@mail.gmx.com>
+Message-ID: <3547d606-810e-6d6c-df92-d05a0d3b8f68@gmail.com>
+
+Dear Matthias,
+
+thanks for the suggestion, R-devel now warns on unused arguments by 
+format (both numbered and un-numbered). It seems that the new warning is 
+useful, often it finds cases when arguments were accidentally passed to 
+sprintf but had been meant for a different function.
+
+R allows combining both numbered and un-numbered references in a single 
+format, even though it may be better to avoid and POSIX does not allow 
+that.
+
+Best
+Tomas
+
+On 9/20/20 1:03 PM, Matthias Gondan wrote:
+> Dear R developers,
+>
+> I am wondering if this should raise an error or a warning.
+>
+>> sprintf('%.f, %.f', 1, 2, 3)
+> [1] "1, 2"
+>
+> I am aware that R has ?numbered? sprintf arguments (sprintf('%1$.f', ?), and in that case, omissing of specific arguments may be intended. But in the usual syntax, omission of an argument is probably a mistake.
+>
+> Thank you for your consideration.
+>
+> Best wishes,
+>
+> Matthias
+>
+>
+> 	[[alternative HTML version deleted]]
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From m@tth|@@-gond@n @end|ng |rom gmx@de  Wed Nov  4 16:01:59 2020
+From: m@tth|@@-gond@n @end|ng |rom gmx@de (matthias-gondan)
+Date: Wed, 04 Nov 2020 16:01:59 +0100
+Subject: [Rd] sprintf, check number of parameters
+In-Reply-To: <3547d606-810e-6d6c-df92-d05a0d3b8f68@gmail.com>
+Message-ID: <1MyKDU-1kQFdI0KZI-00yjJP@mail.gmx.com>
+
+
+Dear Tomas,Thank you.Regarding the "unnumbered" arguments, i.e. sprintf('%f %f', 1, 2, 3). This was the case I wanted to report, here a warning can be very useful.Regarding the "numbered" arguments, that is, sprintf('%$1f %$3f', 1, 2, 3). Here, omission of an argument might be intended, for example, in an application with support for multiple languages. Therefore, I am wondering if a warning should be raised.Regarding the mixture: never heard that this works, and I would probably not want to use it...Your work is much appreciated, thanks again.Best regards,Matthias
+-------- Urspr?ngliche Nachricht --------Von: Tomas Kalibera <tomas.kalibera at gmail.com> Datum: 04.11.20  15:43  (GMT+01:00) An: Matthias Gondan <matthias-gondan at gmx.de>, r-devel at r-project.org Betreff: Re: [Rd] sprintf, check number of parameters Dear Matthias,thanks for the suggestion, R-devel now warns on unused arguments by format (both numbered and un-numbered). It seems that the new warning is useful, often it finds cases when arguments were accidentally passed to sprintf but had been meant for a different function.R allows combining both numbered and un-numbered references in a single format, even though it may be better to avoid and POSIX does not allow that.BestTomasOn 9/20/20 1:03 PM, Matthias Gondan wrote:> Dear R developers,>> I am wondering if this should raise an error or a warning.>>> sprintf('%.f, %.f', 1, 2, 3)> [1] "1, 2">> I am aware that R has ?numbered? sprintf arguments (sprintf('%1$.f', ?), and in that case, omissing of specific arguments may be intended. But in the usual syntax, omission of an argument is probably a mistake.>> Thank you for your consideration.>> Best wishes,>> Matthias>>> 	[[alternative HTML version deleted]]>> ______________________________________________> R-devel at r-project.org mailing list> https://stat.ethz.ch/mailman/listinfo/r-devel
+	[[alternative HTML version deleted]]
+
+
+From tom@@@k@||ber@ @end|ng |rom gm@||@com  Wed Nov  4 16:26:12 2020
+From: tom@@@k@||ber@ @end|ng |rom gm@||@com (Tomas Kalibera)
+Date: Wed, 4 Nov 2020 16:26:12 +0100
+Subject: [Rd] sprintf, check number of parameters
+In-Reply-To: <1MyKDU-1kQFdI0KZI-00yjJP@mail.gmx.com>
+References: <1MyKDU-1kQFdI0KZI-00yjJP@mail.gmx.com>
+Message-ID: <cd471ca4-2322-95f1-7975-a71594cf8df2@gmail.com>
+
+
+Dear Matthias,
+
+On 11/4/20 4:01 PM, matthias-gondan wrote:
+> Dear Tomas,
+>
+> Thank you.
+>
+> Regarding the "unnumbered" arguments, i.e. sprintf('%f %f', 1, 2, 3). 
+> This was the case I wanted to report, here a warning can be very useful.
+>
+> Regarding the "numbered" arguments, that is, sprintf('%$1f %$3f', 1, 
+> 2, 3). Here, omission of an argument might be intended, for example, 
+> in an application with support for multiple languages. Therefore, I am 
+> wondering if a warning should be raised.
+
+It is rather "%$1f", etc.
+
+Say GCC warns also on unused arguments with numbered references ("unused 
+arguments in $-style format"). I have not yet received any feedback from 
+package maintainers who would have found a problem with the new warning 
+for message translation. Would you have an example pattern that should 
+be supported? Shouldn't all arguments be used, anyway, just possibly in 
+different order?
+
+Unless there is a strong reason to do otherwise, I would rather not 
+introduce more deviations from the C behavior. Of course, technically it 
+would be simple: not print a warning when there is at least one numbered 
+reference.
+
+Best
+Tomas
+
+> Regarding the mixture: never heard that this works, and I would 
+> probably not want to use it...
+>
+> Your work is much appreciated, thanks again.
+>
+> Best regards,
+>
+> Matthias
+>
+>
+> -------- Urspr?ngliche Nachricht --------
+> Von: Tomas Kalibera <tomas.kalibera at gmail.com>
+> Datum: 04.11.20 15:43 (GMT+01:00)
+> An: Matthias Gondan <matthias-gondan at gmx.de>, r-devel at r-project.org
+> Betreff: Re: [Rd] sprintf, check number of parameters
+>
+> Dear Matthias,
+>
+> thanks for the suggestion, R-devel now warns on unused arguments by
+> format (both numbered and un-numbered). It seems that the new warning is
+> useful, often it finds cases when arguments were accidentally passed to
+> sprintf but had been meant for a different function.
+>
+> R allows combining both numbered and un-numbered references in a single
+> format, even though it may be better to avoid and POSIX does not allow
+> that.
+>
+> Best
+> Tomas
+>
+> On 9/20/20 1:03 PM, Matthias Gondan wrote:
+> > Dear R developers,
+> >
+> > I am wondering if this should raise an error or a warning.
+> >
+> >> sprintf('%.f, %.f', 1, 2, 3)
+> > [1] "1, 2"
+> >
+> > I am aware that R has ?numbered? sprintf arguments (sprintf('%1$.f', 
+> ?), and in that case, omissing of specific arguments may be intended. 
+> But in the usual syntax, omission of an argument is probably a mistake.
+> >
+> > Thank you for your consideration.
+> >
+> > Best wishes,
+> >
+> > Matthias
+> >
+> >
+> > [[alternative HTML version deleted]]
+> >
+> > ______________________________________________
+> > R-devel at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+>
+
+
+	[[alternative HTML version deleted]]
+
+
+From m@tth|@@-gond@n @end|ng |rom gmx@de  Wed Nov  4 17:32:51 2020
+From: m@tth|@@-gond@n @end|ng |rom gmx@de (matthias-gondan)
+Date: Wed, 04 Nov 2020 17:32:51 +0100
+Subject: [Rd] sprintf, check number of parameters
+In-Reply-To: <cd471ca4-2322-95f1-7975-a71594cf8df2@gmail.com>
+Message-ID: <1N6bk4-1kGufu45vy-0182SI@mail.gmx.com>
+
+Now that you ask, no real use case comes to my mind in which an argument is skipped in one language but not another.?Thank you for implementing the warning, I guess it will be useful on the long run.Best wishesMatthias
+-------- Urspr?ngliche Nachricht --------Von: Tomas Kalibera <tomas.kalibera at gmail.com> Datum: 04.11.20  16:26  (GMT+01:00) An: matthias-gondan <matthias-gondan at gmx.de>, r-devel at r-project.org Betreff: Re: [Rd] sprintf, check number of parameters 
+    
+    
+    Dear Matthias,
+    
+    
+    On 11/4/20 4:01 PM, matthias-gondan
+      wrote:
+    
+    
+      
+      Dear Tomas,
+      
+      
+      Thank you.
+      
+      
+      Regarding the "unnumbered" arguments, i.e.
+        sprintf('%f %f', 1, 2, 3). This was the case I wanted to report,
+        here a warning can be very useful.
+      
+      
+      Regarding the "numbered" arguments, that is,
+        sprintf('%$1f %$3f', 1, 2, 3). Here, omission of an argument
+        might be intended, for example, in an application with support
+        for multiple languages. Therefore, I am wondering if a warning
+        should be raised.
+    
+    It is rather "%$1f", etc.
+    Say GCC warns also on unused arguments with numbered references
+      ("unused arguments in $-style format"). I have not yet received
+      any feedback from package maintainers who would have found a
+      problem with the new warning for message translation. Would you
+      have an example pattern that should be supported? Shouldn't all
+      arguments be used, anyway, just possibly in different order?
+    Unless there is a strong reason to do otherwise, I would rather
+      not introduce more deviations from the C behavior. Of course,
+      technically it would be simple: not print a warning when there is
+      at least one numbered reference.
+    
+    Best
+      Tomas
+    
+    
+      Regarding the mixture: never heard that this
+        works, and I would probably not want to use it...
+      
+      
+      Your work is much appreciated, thanks again.
+      
+      
+      Best regards,
+      
+      
+      
+        
+        Matthias
+      
+      
+      
+      
+      
+        -------- Urspr?ngliche Nachricht --------
+        Von: Tomas Kalibera <tomas.kalibera at gmail.com> 
+        Datum: 04.11.20 15:43 (GMT+01:00) 
+        An: Matthias Gondan <matthias-gondan at gmx.de>,
+          r-devel at r-project.org 
+        Betreff: Re: [Rd] sprintf, check number of parameters 
+        
+        
+      
+      Dear Matthias,
+      
+      thanks for the suggestion, R-devel now warns on unused arguments
+      by 
+      format (both numbered and un-numbered). It seems that the new
+      warning is 
+      useful, often it finds cases when arguments were accidentally
+      passed to 
+      sprintf but had been meant for a different function.
+      
+      R allows combining both numbered and un-numbered references in a
+      single 
+      format, even though it may be better to avoid and POSIX does not
+      allow 
+      that.
+      
+      Best
+      Tomas
+      
+      On 9/20/20 1:03 PM, Matthias Gondan wrote:
+      > Dear R developers,
+      >
+      > I am wondering if this should raise an error or a warning.
+      >
+      >> sprintf('%.f, %.f', 1, 2, 3)
+      > [1] "1, 2"
+      >
+      > I am aware that R has ?numbered? sprintf arguments
+      (sprintf('%1$.f', ?), and in that case, omissing of specific
+      arguments may be intended. But in the usual syntax, omission of an
+      argument is probably a mistake.
+      >
+      > Thank you for your consideration.
+      >
+      > Best wishes,
+      >
+      > Matthias
+      >
+      >
+      > [[alternative HTML version deleted]]
+      >
+      > ______________________________________________
+      > R-devel at r-project.org mailing list
+      > https://stat.ethz.ch/mailman/listinfo/r-devel
+      
+      
+    
+    
+    
+  
+
+
+	[[alternative HTML version deleted]]
+
+
+From w||||@mwdun|@p @end|ng |rom gm@||@com  Thu Nov  5 03:36:27 2020
+From: w||||@mwdun|@p @end|ng |rom gm@||@com (Bill Dunlap)
+Date: Wed, 4 Nov 2020 18:36:27 -0800
+Subject: [Rd] (no subject)
+Message-ID: <CAHqSRuRHKo95y_Tt6GysYtUumxcUZRUbxQHaVfiBq7jLi2zwkA@mail.gmail.com>
+
+Hi All,
+
+I am no longer with TIBCO and hope to be able to contribute more directly
+to R now.  It will take a little while to set up a build environment and to
+start working on some bugzilla issues.
+
+-Bill Dunlap
+williamwdunlap at gmail.com
+
+	[[alternative HTML version deleted]]
+
+
+From I@J@Kocken @end|ng |rom uu@n|  Thu Nov  5 11:15:50 2020
+From: I@J@Kocken @end|ng |rom uu@n| (Kocken, I.J. (Ilja))
+Date: Thu, 5 Nov 2020 10:15:50 +0000
+Subject: [Rd] Some packages have non-POSIX-compliant shell scripts.
+ Implement a CRAN check for bashisms?
+Message-ID: <AM6PR05MB4360AE234461D3DF8B659F16D2EE0@AM6PR05MB4360.eurprd05.prod.outlook.com>
+
+Dear R-devel,
+
+Recently I ran into trouble installing two separate packages, nloptr and ncdf4, both due to the same issue: they have scripts that have the shebang `#! /bin/sh', but have bashisms in them, i.e. non-POSIX-compliant bash scripts.
+
+I use dash [1] as my shell environment, since it's about 4x as fast as bash. It looks like it's recently also become the default shell for Debian (and thus Ubuntu).
+
+It took quite a while to figure out what the issue was in great collaboration with the author of ncdf4 (CC).
+
+Perhaps it would be good to implement the utility checkbashisms [2] into the CRAN make pipeline to help discover these kinds of issues? Running `checkbashisms -f pkg/configure` on files that have the `#! /bin/sh` shebang gives useful information about which lines of code are secretly bash code, with some hints on how to make them POSIX-compliant. The alternative would of course be to change the shebang into `#! /bin/bash`.
+
+Kind regards,
+
+Ilja Kocken
+
+
+
+[1]: http://gondor.apana.org.au/~herbert/dash/
+[2]: https://packages.qa.debian.org/d/devscripts.html
+
+From @eb@meyer @end|ng |rom |@u@de  Thu Nov  5 14:38:50 2020
+From: @eb@meyer @end|ng |rom |@u@de (Sebastian Meyer)
+Date: Thu, 5 Nov 2020 14:38:50 +0100
+Subject: [Rd] Some packages have non-POSIX-compliant shell scripts.
+ Implement a CRAN check for bashisms?
+In-Reply-To: <AM6PR05MB4360AE234461D3DF8B659F16D2EE0@AM6PR05MB4360.eurprd05.prod.outlook.com>
+References: <AM6PR05MB4360AE234461D3DF8B659F16D2EE0@AM6PR05MB4360.eurprd05.prod.outlook.com>
+Message-ID: <9252cc81-c549-ec90-4689-370734af82be@fau.de>
+
+Your report underlines the importance of the checks implemented by CRAN.
+
+In fact, checkbashisms has become an optional part of R CMD check in R
+4.0.0, whose NEWS say
+
+> R CMD check now optionally checks configure and cleanup scripts for non-Bourne-shell code ('bashisms').
+
+The R Internals manual at
+https://cran.r-project.org/doc/manuals/r-devel/R-ints.html reveals that
+the corresponding environment variable is called "_R_CHECK_BASHISMS_".
+It is false by default but true for CRAN submission checks (--as-cran),
+except on Windows. The check is probably not enabled for the routine
+checks on the CRAN check farm.
+
+
+Am 05.11.20 um 11:15 schrieb Kocken, I.J. (Ilja):
+> Dear R-devel,
+> 
+> Recently I ran into trouble installing two separate packages, nloptr and ncdf4, both due to the same issue: they have scripts that have the shebang `#! /bin/sh', but have bashisms in them, i.e. non-POSIX-compliant bash scripts.
+> 
+> I use dash [1] as my shell environment, since it's about 4x as fast as bash. It looks like it's recently also become the default shell for Debian (and thus Ubuntu).
+> 
+> It took quite a while to figure out what the issue was in great collaboration with the author of ncdf4 (CC).
+> 
+> Perhaps it would be good to implement the utility checkbashisms [2] into the CRAN make pipeline to help discover these kinds of issues? Running `checkbashisms -f pkg/configure` on files that have the `#! /bin/sh` shebang gives useful information about which lines of code are secretly bash code, with some hints on how to make them POSIX-compliant. The alternative would of course be to change the shebang into `#! /bin/bash`.
+> 
+> Kind regards,
+> 
+> Ilja Kocken
+> 
+> 
+> 
+> [1]: http://gondor.apana.org.au/~herbert/dash/
+> [2]: https://packages.qa.debian.org/d/devscripts.html
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Thu Nov  5 15:00:40 2020
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Thu, 5 Nov 2020 09:00:40 -0500
+Subject: [Rd] Named class vector
+Message-ID: <fc627157-1e84-31d2-18d4-c8105ac05e42@gmail.com>
+
+The source to the noquote() function looks like this:
+
+noquote <- function(obj, right = FALSE) {
+     ## constructor for a useful "minor" class
+     if(!inherits(obj,"noquote"))
+         class(obj) <- c(attr(obj, "class"),
+                         if(right) c(right = "noquote") else "noquote")
+     obj
+}
+
+Notice what happens with right = TRUE:
+
+ > x <- noquote("a", right = TRUE)
+ > x
+[1] a
+ > class(x)
+     right
+"noquote"
+
+The class vector for x is named.  The print method pays attention to the 
+name, so we get different behaviour for a class of "noquote" and a class 
+of c(right = "noquote").
+
+I had never noticed a named class vector before, and it raised some 
+questions for me:
+
+- Is this used anywhere else?
+- Are names preserved in all the operations normally done on a class 
+vector?  (As far as I can see they are, but maybe I've missed something.)
+- Is it a good idea to encode a string value worth of information in the 
+name, rather than setting the class to something like c("noquote", 
+"right") instead?
+
+Comments would be welcome.
+
+Duncan Murdoch
+
+
+From Kurt@Horn|k @end|ng |rom wu@@c@@t  Thu Nov  5 15:40:50 2020
+From: Kurt@Horn|k @end|ng |rom wu@@c@@t (Kurt Hornik)
+Date: Thu, 5 Nov 2020 15:40:50 +0100
+Subject: [Rd] Named class vector
+In-Reply-To: <fc627157-1e84-31d2-18d4-c8105ac05e42@gmail.com>
+References: <fc627157-1e84-31d2-18d4-c8105ac05e42@gmail.com>
+Message-ID: <24484.3826.756259.583705@hornik.net>
+
+>>>>> Duncan Murdoch writes:
+
+> The source to the noquote() function looks like this:
+> noquote <- function(obj, right = FALSE) {
+>      ## constructor for a useful "minor" class
+>      if(!inherits(obj,"noquote"))
+>          class(obj) <- c(attr(obj, "class"),
+>                          if(right) c(right = "noquote") else "noquote")
+>      obj
+> }
+
+> Notice what happens with right = TRUE:
+
+>> x <- noquote("a", right = TRUE)
+>> x
+> [1] a
+>> class(x)
+>      right
+> "noquote"
+
+> The class vector for x is named.  The print method pays attention to the 
+> name, so we get different behaviour for a class of "noquote" and a class 
+> of c(right = "noquote").
+
+> I had never noticed a named class vector before, and it raised some 
+> questions for me:
+
+> - Is this used anywhere else?
+
+Not that I'd be aware of: I think MMae is the expert here.
+
+> - Are names preserved in all the operations normally done on a class 
+> vector?  (As far as I can see they are, but maybe I've missed something.)
+> - Is it a good idea to encode a string value worth of information in the 
+> name, rather than setting the class to something like c("noquote", 
+> "right") instead?
+
+My preference would be to have unnamed class vectors, so that the names
+could perhaps eventually be used to store the name of the package which
+owns the class.  For noquote, I guess you'd want something like
+
+  c("noquote_right", "noquote")
+
+Best
+-k
+
+> Comments would be welcome.
+
+> Duncan Murdoch
+
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From b@|@mut2 @end|ng |rom ||||no|@@edu  Fri Nov  6 22:47:45 2020
+From: b@|@mut2 @end|ng |rom ||||no|@@edu (Balamuta, James Joseph)
+Date: Fri, 6 Nov 2020 21:47:45 +0000
+Subject: [Rd] Process to Incorporate Functions from {parallely} into base
+ R's {parallel} package
+Message-ID: <F71707B2-61E9-4757-8B53-9F73886BE01D@illinois.edu>
+
+Hi all,
+
+Henrik Bengtsson has done some fantastic work with {future} and, more importantly, greatly improved constructing and deconstructing a parallelized environment within R. It was with great joy that I saw Henrik slowly split off some functionality of {future} into {parallelly} package. Reading over the package?s README, he states:
+
+> The functions and features added to this package are written to be backward compatible with the parallel package, such that they may be incorporated there later.
+> The parallelly package comes with an open invitation for the R Core Team to adopt all or parts of its code into the parallel package.
+
+https://github.com/HenrikBengtsson/parallelly
+
+I?m wondering what the appropriate process would be to slowly merge some functions from {parallelly} into the base R {parallel} package. Should this be done with targeted issues on Bugzilla for different fields Henrik has identified? Or would an omnibus patch bringing in all suggested modifications be preferred? Or is it best to discuss via the list-serv appropriate contributions?
+
+Best,
+
+JJB
+
+	[[alternative HTML version deleted]]
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Sat Nov  7 01:37:11 2020
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Fri, 6 Nov 2020 19:37:11 -0500
+Subject: [Rd] 
+ Process to Incorporate Functions from {parallely} into base
+ R's {parallel} package
+In-Reply-To: <F71707B2-61E9-4757-8B53-9F73886BE01D@illinois.edu>
+References: <F71707B2-61E9-4757-8B53-9F73886BE01D@illinois.edu>
+Message-ID: <aa91f7bc-37be-73b8-cb99-f9e0223225f5@gmail.com>
+
+On 06/11/2020 4:47 p.m., Balamuta, James Joseph wrote:
+> Hi all,
+> 
+> Henrik Bengtsson has done some fantastic work with {future} and, more importantly, greatly improved constructing and deconstructing a parallelized environment within R. It was with great joy that I saw Henrik slowly split off some functionality of {future} into {parallelly} package. Reading over the package?s README, he states:
+> 
+>> The functions and features added to this package are written to be backward compatible with the parallel package, such that they may be incorporated there later.
+>> The parallelly package comes with an open invitation for the R Core Team to adopt all or parts of its code into the parallel package.
+> 
+> https://github.com/HenrikBengtsson/parallelly
+> 
+> I?m wondering what the appropriate process would be to slowly merge some functions from {parallelly} into the base R {parallel} package. Should this be done with targeted issues on Bugzilla for different fields Henrik has identified? Or would an omnibus patch bringing in all suggested modifications be preferred? Or is it best to discuss via the list-serv appropriate contributions?
+
+One way is to convince R Core that incorporating this into the parallel 
+package would
+
+  - make less work for them, or
+  - add a lot to R that couldn't happen if it was a contributed package.
+
+The fact that it's good isn't a good reason to put it into a base 
+package, which would largely mean transferring Henrik's workload to R 
+Core.  There are lots of good packages, and their maintainers should 
+continue to maintain them.
+
+Duncan Murdoch
+
+
+From ru|pb@rr@d@@ @end|ng |rom @@po@pt  Sat Nov  7 16:57:44 2020
+From: ru|pb@rr@d@@ @end|ng |rom @@po@pt (Rui Barradas)
+Date: Sat, 7 Nov 2020 15:57:44 +0000
+Subject: [Rd] [R] Data Table not rendering properly using R shiny
+In-Reply-To: <CCD71CB9-FF37-4621-AB4F-74C8720350B3@dcn.davis.ca.us>
+References: <CAGY2U92qYgz1bNR4qRufB1AebgK4SiRRhXF6Wgk_haZowHR9aw@mail.gmail.com>
+ <CCD71CB9-FF37-4621-AB4F-74C8720350B3@dcn.davis.ca.us>
+Message-ID: <b5a292d0-b467-05ab-f00f-4273448e1dc7@sapo.pt>
+
+Hello,
+
+Or maybe
+
+
+logical_idx <- max_usage_hours_per_region$Region %in% input$Region
+
+
+Another option is ?match
+
+
+Hope this helps,
+
+Rui Barradas
+
+
+?s 15:41 de 07/11/20, Jeff Newmiller escreveu:
+> This looks odd...
+> 
+> max_usage_hours_per_region[input$Region,]
+> 
+> This would only work if you had rownames on that data frame corresponding to the names of the Regions. This is a common R mistake... you probably need
+> 
+> logical_idx <- max_usage_hours_per_region$Region == input$Region
+> max_usage_hours_per_region[  logical_idx,]
+> 
+> That said, it is very difficult to separate out R questions when mixed into shiny code, so you would help yourself and this list to work on minimal reproducible examples that focus on the R syntax if possible for posts here. Read the Posting Guide.
+> 
+> On November 7, 2020 2:42:58 AM PST, Ritwik Mohapatra <ritm84 at gmail.com> wrote:
+>> Hi All,
+>>
+>> I have a data output as below.I want to display them in an interactive
+>> html
+>> report using shiny but the data table is not rendering properly and
+>> instead
+>> giving NA values.
+>>
+>> max_usage_hours_per_region<-setNames(aggregate(df3_machine_region$sum_as_hours~df3_machine_region$Region,df3_machine_region,max),c("Region","Sum_as_Hours"))
+>>
+>> Region Sum_as_Hours
+>> 1 Africa 1156.0833
+>> 2 Americas 740.1667
+>> 3 APAC 740.2833
+>> 4 Europe 1895.2000
+>> 5 PDO 1053.3500
+>> 6 UK 0.0000
+>>
+>>
+>> Rshiny code:
+>>
+>> library(shiny)
+>>
+>> ui <- fluidPage(
+>> selectInput("Region","Select
+>> Region",max_usage_hours_per_region$Region,selected = TRUE),
+>> tableOutput("table")
+>> )
+>> server <- function(input, output) {
+>> output$table <- renderTable(
+>> max_usage_hours_per_region[input$Region,])
+>> }
+>> shinyApp(ui = ui, server = server)
+>>
+>> 	[[alternative HTML version deleted]]
+>>
+>> ______________________________________________
+>> R-help at r-project.org mailing list -- To UNSUBSCRIBE and more, see
+>> https://stat.ethz.ch/mailman/listinfo/r-help
+>> PLEASE do read the posting guide
+>> http://www.R-project.org/posting-guide.html
+>> and provide commented, minimal, self-contained, reproducible code.
+>
+
+
+From henr|k@bengt@@on @end|ng |rom gm@||@com  Sat Nov  7 19:39:48 2020
+From: henr|k@bengt@@on @end|ng |rom gm@||@com (Henrik Bengtsson)
+Date: Sat, 7 Nov 2020 10:39:48 -0800
+Subject: [Rd] 
+ Process to Incorporate Functions from {parallely} into base
+ R's {parallel} package
+In-Reply-To: <aa91f7bc-37be-73b8-cb99-f9e0223225f5@gmail.com>
+References: <F71707B2-61E9-4757-8B53-9F73886BE01D@illinois.edu>
+ <aa91f7bc-37be-73b8-cb99-f9e0223225f5@gmail.com>
+Message-ID: <CAFDcVCQ7Q1Wu7a7k2Rx41vMGqGJLhm_=OE6Sq35yZxmmBH6P-g@mail.gmail.com>
+
+FWIW, there are indeed a few low hanging bug fixes in 'parallelly'
+that should be easy to incorporate into 'parallel' without adding
+extra maintenance.  For example, in parallel::makePSOCKcluster(), it
+is not possible to disable SSH option '-l USER' so that it can be set
+in ~/.ssh/config.  The remote user name will be the user name of your
+local machine and if you try to set user=NULL, you'll end up with an
+invalid SSH call.   The current behavior means that you are forced to
+specify the remote user name in your R code.  All that it takes is to
+fix this is to update:
+
+  cmd <- paste(rshcmd, "-l", user, machine, cmd)
+
+to something like:
+
+  cmd <- paste(rshcmd, if (length(user) == 1L) paste("-l", user), machine, cmd)
+
+This is one example of what I've patched in
+parallelly::makeClusterPSOCK() over the years.  Another is the use of
+reverse tunneling in SSH - that completely avoids the need to know and
+specify your public IP and reconfiguring the firewalls from the remote
+server back to your local machine so that the worker can connect back
+to your local machine.  Not many users have the permission to
+reconfigure firewalls and it's also extremely tedious.  Reverse SSH
+tunneling is super simply; all you need to to is something like:
+
+rshopts <- c(sprintf("-R %d:%s:%d", rscript_port, master, port), rshopts)
+
+/Henrik
+
+On Fri, Nov 6, 2020 at 4:37 PM Duncan Murdoch <murdoch.duncan at gmail.com> wrote:
+>
+> On 06/11/2020 4:47 p.m., Balamuta, James Joseph wrote:
+> > Hi all,
+> >
+> > Henrik Bengtsson has done some fantastic work with {future} and, more importantly, greatly improved constructing and deconstructing a parallelized environment within R. It was with great joy that I saw Henrik slowly split off some functionality of {future} into {parallelly} package. Reading over the package?s README, he states:
+> >
+> >> The functions and features added to this package are written to be backward compatible with the parallel package, such that they may be incorporated there later.
+> >> The parallelly package comes with an open invitation for the R Core Team to adopt all or parts of its code into the parallel package.
+> >
+> > https://github.com/HenrikBengtsson/parallelly
+> >
+> > I?m wondering what the appropriate process would be to slowly merge some functions from {parallelly} into the base R {parallel} package. Should this be done with targeted issues on Bugzilla for different fields Henrik has identified? Or would an omnibus patch bringing in all suggested modifications be preferred? Or is it best to discuss via the list-serv appropriate contributions?
+>
+> One way is to convince R Core that incorporating this into the parallel
+> package would
+>
+>   - make less work for them, or
+>   - add a lot to R that couldn't happen if it was a contributed package.
+>
+> The fact that it's good isn't a good reason to put it into a base
+> package, which would largely mean transferring Henrik's workload to R
+> Core.  There are lots of good packages, and their maintainers should
+> continue to maintain them.
+>
+> Duncan Murdoch
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Sat Nov  7 21:44:32 2020
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Sat, 7 Nov 2020 15:44:32 -0500
+Subject: [Rd] 
+ Process to Incorporate Functions from {parallely} into base
+ R's {parallel} package
+In-Reply-To: <CAFDcVCQ7Q1Wu7a7k2Rx41vMGqGJLhm_=OE6Sq35yZxmmBH6P-g@mail.gmail.com>
+References: <F71707B2-61E9-4757-8B53-9F73886BE01D@illinois.edu>
+ <aa91f7bc-37be-73b8-cb99-f9e0223225f5@gmail.com>
+ <CAFDcVCQ7Q1Wu7a7k2Rx41vMGqGJLhm_=OE6Sq35yZxmmBH6P-g@mail.gmail.com>
+Message-ID: <5ce800c3-34a3-3dd8-ce4f-8afb6638fb7a@gmail.com>
+
+If these are easy changes, maybe someone will incorporate them.  You'll 
+make the argument stronger for doing that if you can explain why it's 
+better to do that than to keep them in parallely.
+
+Duncan Murdoch
+
+On 07/11/2020 1:39 p.m., Henrik Bengtsson wrote:
+> FWIW, there are indeed a few low hanging bug fixes in 'parallelly'
+> that should be easy to incorporate into 'parallel' without adding
+> extra maintenance.  For example, in parallel::makePSOCKcluster(), it
+> is not possible to disable SSH option '-l USER' so that it can be set
+> in ~/.ssh/config.  The remote user name will be the user name of your
+> local machine and if you try to set user=NULL, you'll end up with an
+> invalid SSH call.   The current behavior means that you are forced to
+> specify the remote user name in your R code.  All that it takes is to
+> fix this is to update:
+> 
+>    cmd <- paste(rshcmd, "-l", user, machine, cmd)
+> 
+> to something like:
+> 
+>    cmd <- paste(rshcmd, if (length(user) == 1L) paste("-l", user), machine, cmd)
+> 
+> This is one example of what I've patched in
+> parallelly::makeClusterPSOCK() over the years.  Another is the use of
+> reverse tunneling in SSH - that completely avoids the need to know and
+> specify your public IP and reconfiguring the firewalls from the remote
+> server back to your local machine so that the worker can connect back
+> to your local machine.  Not many users have the permission to
+> reconfigure firewalls and it's also extremely tedious.  Reverse SSH
+> tunneling is super simply; all you need to to is something like:
+> 
+> rshopts <- c(sprintf("-R %d:%s:%d", rscript_port, master, port), rshopts)
+> 
+> /Henrik
+> 
+> On Fri, Nov 6, 2020 at 4:37 PM Duncan Murdoch <murdoch.duncan at gmail.com> wrote:
+>>
+>> On 06/11/2020 4:47 p.m., Balamuta, James Joseph wrote:
+>>> Hi all,
+>>>
+>>> Henrik Bengtsson has done some fantastic work with {future} and, more importantly, greatly improved constructing and deconstructing a parallelized environment within R. It was with great joy that I saw Henrik slowly split off some functionality of {future} into {parallelly} package. Reading over the package?s README, he states:
+>>>
+>>>> The functions and features added to this package are written to be backward compatible with the parallel package, such that they may be incorporated there later.
+>>>> The parallelly package comes with an open invitation for the R Core Team to adopt all or parts of its code into the parallel package.
+>>>
+>>> https://github.com/HenrikBengtsson/parallelly
+>>>
+>>> I?m wondering what the appropriate process would be to slowly merge some functions from {parallelly} into the base R {parallel} package. Should this be done with targeted issues on Bugzilla for different fields Henrik has identified? Or would an omnibus patch bringing in all suggested modifications be preferred? Or is it best to discuss via the list-serv appropriate contributions?
+>>
+>> One way is to convince R Core that incorporating this into the parallel
+>> package would
+>>
+>>    - make less work for them, or
+>>    - add a lot to R that couldn't happen if it was a contributed package.
+>>
+>> The fact that it's good isn't a good reason to put it into a base
+>> package, which would largely mean transferring Henrik's workload to R
+>> Core.  There are lots of good packages, and their maintainers should
+>> continue to maintain them.
+>>
+>> Duncan Murdoch
+>>
+>> ______________________________________________
+>> R-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From je|| @end|ng |rom vtke||er@@com  Tue Nov 10 01:38:51 2020
+From: je|| @end|ng |rom vtke||er@@com (Jeff)
+Date: Mon, 09 Nov 2020 19:38:51 -0500
+Subject: [Rd] parallel PSOCK connection latency is greater on Linux?
+In-Reply-To: <CALEXWq0QnKiKyVNqfx9zCtpVLRomrygFcEDPvaOaQNnx-8jBsQ@mail.gmail.com>
+References: <JQG4JQ.RSMMA5AL6E0M3@vtkellers.com>
+ <6B25B60C-EF8D-4CAF-856F-E948C27BD5CA@R-project.org>
+ <CALEXWq3SXK5_=JTQ3ZfXN+upU=NLrMaqZdzzCuXBumMmyvVDMg@mail.gmail.com>
+ <7486JQ.F60K6EHKGCP02@vtkellers.com>
+ <6867535C-28A7-4F14-A703-6028EC46513F@r-project.org>
+ <CALEXWq0QnKiKyVNqfx9zCtpVLRomrygFcEDPvaOaQNnx-8jBsQ@mail.gmail.com>
+Message-ID: <RS1KJQ.D5FP8XHL2VCZ2@vtkellers.com>
+
+I do enjoy free lunch solutions if they exist.
+
+That said, I think the abstraction proposed by Simon is reasonable. 
+Whether it should be applied to TCP_NODELAY or TCP_QUICKACK is 
+unfortunately beyond my Linux/networking knowledge.
+
+Jeff Keller
+
+On Wed, Nov 4, 2020 at 11:41, I?aki Ucar <iucar at fedoraproject.org> 
+wrote:
+> Please, check a tcpdump session on localhost while running the 
+> following script:
+> 
+> library(parallel)
+> library(tictoc)
+> cl <- makeCluster(1)
+> Sys.sleep(1)
+> 
+> for (i in 1:10) {
+>   tic()
+>   x <- clusterEvalQ(cl, iris)
+>   toc()
+> }
+> 
+> The initialization phase comprises 7 packets. Then, the 1-second sleep
+> will help you see where the evaluation starts. Each clusterEvalQ
+> generates 6 packets:
+> 
+> 1. main -> worker PSH, ACK 1026 bytes
+> 2. worker -> main ACK 66 bytes
+> 3. worker -> main PSH, ACK 3758 bytes
+> 4. main -> worker ACK 66 bytes
+> 5. worker -> main PSH, ACK 2484 bytes
+> 6. main -> worker ACK 66 bytes
+> 
+> The first two are the command and its ACK, the following are the data
+> back and their ACKs. In the first 4-5 iterations, I see no delay at
+> all. Then, in the following iterations, a 40 ms delay starts to happen
+> between packets 3 and 4, that is: the main process delays the ACK to
+> the first packet of the incoming result.
+> 
+> So I'd say Nagle is hardly to blame for this. It would be interesting
+> to see how many packets are generated with TCP_NODELAY on. If there
+> are still 6 packets, then we are fine. If we suddenly see a gazillion
+> packets, then TCP_NODELAY does more harm than good. On the other hand,
+> TCP_QUICKACK would surely solve the issue without any drawback. As
+> Nagle himself put it once, "set TCP_QUICKACK. If you find a case where
+> that makes things worse, let me know."
+> 
+> I?aki
+> 
+> On Wed, 4 Nov 2020 at 04:34, Simon Urbanek 
+> <simon.urbanek at r-project.org <mailto:simon.urbanek at r-project.org>> 
+> wrote:
+>> 
+>>  I'm not sure the user would know ;). This is very system-specific 
+>> issue just because the Linux network stack behaves so differently 
+>> from other OSes (for purely historical reasons). That makes it hard 
+>> to abstract as a "feature" for the R sockets that are supposed to be 
+>> platform-independent. At least TCP_NODELAY is actually part of POSIX 
+>> so it is on better footing, and disabling delayed ACK is practically 
+>> only useful to work around the other side having Nagle on, so I 
+>> would expect it to be rarely used.
+>> 
+>>  This is essentially RFC since we don't have a mechanism for socket 
+>> options (well, almost, there is timeout and blocking already...) and 
+>> I don't think we want to expose low-level details so perhaps one 
+>> idea would be to add something like delay=NA to socketConnection() 
+>> in order to not touch (NA), enable (TRUE) or disable (FALSE) 
+>> TCP_NODELAY. I wonder if there is any other way we could infer the 
+>> intention of the user to try to choose the right approach...
+>> 
+>>  Cheers,
+>>  Simon
+>> 
+>> 
+>>  > On Nov 3, 2020, at 02:28, Jeff <jeff at vtkellers.com 
+>> <mailto:jeff at vtkellers.com>> wrote:
+>>  >
+>>  > Could TCP_NODELAY and TCP_QUICKACK be exposed to the R user so 
+>> that they might determine what is best for their potentially 
+>> latency- or throughput-sensitive application?
+>>  >
+>>  > Best,
+>>  > Jeff
+>>  >
+>>  > On Mon, Nov 2, 2020 at 14:05, I?aki Ucar 
+>> <iucar at fedoraproject.org <mailto:iucar at fedoraproject.org>> wrote:
+>>  >> On Mon, 2 Nov 2020 at 02:22, Simon Urbanek 
+>> <simon.urbanek at r-project.org <mailto:simon.urbanek at r-project.org>> 
+>> wrote:
+>>  >>> It looks like R sockets on Linux could do with TCP_NODELAY -- 
+>> without (status quo):
+>>  >> How many network packets are generated with and without it? If 
+>> there
+>>  >> are many small writes and thus setting TCP_NODELAY causes many 
+>> small
+>>  >> packets to be sent, it might make more sense to set TCP_QUICKACK
+>>  >> instead.
+>>  >> I?aki
+>>  >>> Unit: microseconds
+>>  >>>                    expr      min       lq     mean  median      
+>>  uq      max
+>>  >>>  clusterEvalQ(cl, iris) 1449.997 43991.99 43975.21 43997.1 
+>> 44001.91 48027.83
+>>  >>>  neval
+>>  >>>   1000
+>>  >>> exactly the same machine + R but with TCP_NODELAY enabled in 
+>> R_SockConnect():
+>>  >>> Unit: microseconds
+>>  >>>                    expr     min     lq     mean  median      uq 
+>>      max neval
+>>  >>>  clusterEvalQ(cl, iris) 156.125 166.41 180.8806 170.247 174.298 
+>> 5322.234  1000
+>>  >>> Cheers,
+>>  >>> Simon
+>>  >>> > On 2/11/2020, at 3:39 AM, Jeff <jeff at vtkellers.com 
+>> <mailto:jeff at vtkellers.com>> wrote:
+>>  >>> >
+>>  >>> > I'm exploring latency overhead of parallel PSOCK workers and 
+>> noticed that serializing/unserializing data back to the main R 
+>> session is significantly slower on Linux than it is on Windows/MacOS 
+>> with similar hardware. Is there a reason for this difference and is 
+>> there a way to avoid the apparent additional Linux overhead?
+>>  >>> >
+>>  >>> > I attempted to isolate the behavior with a test that simply 
+>> returns an existing object from the worker back to the main R 
+>> session.
+>>  >>> >
+>>  >>> > library(parallel)
+>>  >>> > library(microbenchmark)
+>>  >>> > gcinfo(TRUE)
+>>  >>> > cl <- makeCluster(1)
+>>  >>> > (x <- microbenchmark(clusterEvalQ(cl, iris), times = 1000, 
+>> unit = "us"))
+>>  >>> > plot(x$time, ylab = "microseconds")
+>>  >>> > head(x$time, n = 10)
+>>  >>> >
+>>  >>> > On Windows/MacOS, the test runs in 300-500 microseconds 
+>> depending on hardware. A few of the 1000 runs are an order of 
+>> magnitude slower but this can probably be attributed to garbage 
+>> collection on the worker.
+>>  >>> >
+>>  >>> > On Linux, the first 5 or so executions run at comparable 
+>> speeds but all subsequent executions are two orders of magnitude 
+>> slower (~40 milliseconds).
+>>  >>> >
+>>  >>> > I see this behavior across various platforms and hardware 
+>> combinations:
+>>  >>> >
+>>  >>> > Ubuntu 18.04 (Intel Xeon Platinum 8259CL)
+>>  >>> > Linux Mint 19.3 (AMD Ryzen 7 1800X)
+>>  >>> > Linux Mint 20 (AMD Ryzen 7 3700X)
+>>  >>> > Windows 10 (AMD Ryzen 7 4800H)
+>>  >>> > MacOS 10.15.7 (Intel Core i7-8850H)
+>>  >>> >
+>>  >>> > ______________________________________________
+>>  >>> > R-devel at r-project.org <mailto:R-devel at r-project.org> mailing 
+>> list
+>>  >>> > <https://stat.ethz.ch/mailman/listinfo/r-devel>
+>>  >>> >
+>>  >>> ______________________________________________
+>>  >>> R-devel at r-project.org <mailto:R-devel at r-project.org> mailing 
+>> list
+>>  >>> <https://stat.ethz.ch/mailman/listinfo/r-devel>
+>>  >> --
+>>  >> I?aki ?car
+>>  >
+>>  > ______________________________________________
+>>  > R-devel at r-project.org <mailto:R-devel at r-project.org> mailing list
+>>  > <https://stat.ethz.ch/mailman/listinfo/r-devel>
+>>  >
+>> 
+> 
+> 
+> --
+> I?aki ?car
+
+
+	[[alternative HTML version deleted]]
+
+
+From j|nghu@zh@o @end|ng |rom hotm@||@com  Tue Nov 10 11:39:28 2020
+From: j|nghu@zh@o @end|ng |rom hotm@||@com (jing hua zhao)
+Date: Tue, 10 Nov 2020 10:39:28 +0000
+Subject: [Rd] Help on mapping memory
+Message-ID: <DB8P189MB07163CE1FEDC5888FE959606A5E90@DB8P189MB0716.EURP189.PROD.OUTLOOK.COM>
+
+Dear everyone,
+
+I have maintained JL Schafer's package 'pan' for a while and recently been contacted for the possibility to fix a crash but it turned to be elusive -- I am wondering what is the best to resolve this.
+
+First, the error message is as follows,
+
+*** caught segfault ***
+address 0x1b0000001b3, cause 'memory not mapped'
+Traceback:
+1: pan(test$Y1, test$ID, X, 1:4, 4, prior, seed = m, iter = 100)
+An irrecoverable exception occurred. R is aborting now ...
+
+and I gather this is to do with R/fortran mismatch nevertheless the tricky thing is that it works fine with the documentation data and even with this data there were times it could be tweaked to work (therefore PAN.txt, test.rda and test.log were as intended there). I have extracted the pan.f, pan.R from the package and leave the Bash/R scripts all here, https://github.com/jinghuazhao/R/tree/master/tests, short of adding a driver program to pan.f and debug without R but before doing that any idea/insight would be greatly appreciated.
+
+Thank you so much,
+
+
+Jing Hua Zhao
+
+
+
+	[[alternative HTML version deleted]]
+
+
+From @pencer@gr@ve@ @end|ng |rom e||ect|vede|en@e@org  Tue Nov 10 14:58:31 2020
+From: @pencer@gr@ve@ @end|ng |rom e||ect|vede|en@e@org (Spencer Graves)
+Date: Tue, 10 Nov 2020 07:58:31 -0600
+Subject: [Rd] one thing to check
+In-Reply-To: <6F12BE7A-447F-48C2-BD8B-373EA350B5F1@mcgill.ca>
+References: <6F12BE7A-447F-48C2-BD8B-373EA350B5F1@mcgill.ca>
+Message-ID: <f90e075a-80e0-42ea-e9aa-47099512465c@effectivedefense.org>
+
+Hi, Jim:
+
+
+	  Could you please look at svd2.Rd and see what it says?  It may give 
+an example, where it gave a better answer than svd -- i.e., a marginal 
+case, where svd2 honestly gave a better answer than svd.
+
+
+	  If we find -- either in svd2.Rd or in one of the revdepchecks -- an 
+example where svd2 gives a demonstrably different answer, we need to 
+consider what to do about that.
+
+
+		    1.  Is the different answer demonstrably better?  If yes, can we 
+fix it without LINPACK?  If yes, do that.  If no, we document those 
+concerns, send them to R-Devel <r-devel at r-project.org>, and retain svd2 
+in fda and keep its use as it was.  Then R-Devel can deal with the 
+problem however they want, and it won't affect fda -- at least not right 
+now.
+
+
+		    2.  Does the different answer break something in revdepcheck 
+because of a cosmetic problem?  If yes, try to communicate that issue 
+with the maintainer(s) of the package(s) that would be affected by such 
+a change.  I suggest you send them tell then that svd2 is now deprecated 
+-- AND mark svd2.Rd with such a message -- while also sending them code 
+for the function(s) they call that give them an error message, and tell 
+them that you plan to remove svd2 from the next release, and ask them to 
+fix that so a revdepcheck with that new code won't be flagged as an 
+error.  AND ask them to notify you when they have a version on CRAN that 
+works with your new code.
+
+
+		    3.  If the new code gives a different answer that doesn't seem 
+better in at least one example AND deleting svd2 doesn't break anything 
+in revdepcheck, then delete it.
+
+
+		    4.  If you still need to retain svd2 because of a revdepcheck 
+problem, I'd also document that in "cran-comments.md".
+
+
+	  What do you think?
+	  spencer
+
+
+On 2020-11-10 07:10, James Ramsay wrote:
+> Hi Spencer,
+> 
+> One thing I?d like check with you:
+> 
+> I removed svd2 because CRAN indicated that LINPACK had been deprecated.  I replaced calls to svd2 with svd in geigen and CSTRfn.
+> 
+> This could be the issue with the two broken codes ? or not.  But what is your view about using svd instead of svd2, and do you have an idea of what to do about the LINPACK calls?
+> 
+> Best,
+> 
+> Jim
+>
+
+
+From @pencer@gr@ve@ @end|ng |rom prod@y@e@com  Tue Nov 10 15:36:43 2020
+From: @pencer@gr@ve@ @end|ng |rom prod@y@e@com (Spencer Graves)
+Date: Tue, 10 Nov 2020 08:36:43 -0600
+Subject: [Rd] one thing to check
+In-Reply-To: <f90e075a-80e0-42ea-e9aa-47099512465c@effectivedefense.org>
+References: <6F12BE7A-447F-48C2-BD8B-373EA350B5F1@mcgill.ca>
+ <f90e075a-80e0-42ea-e9aa-47099512465c@effectivedefense.org>
+Message-ID: <198cd211-5a6b-c920-a0c6-fd32fcba5798@prodsyse.com>
+
+	  Please excuse:  I did NOT intend to send this to R-Devel at this 
+time.  I was suggesting to Jim Ramsay a question we MIGHT want to pose 
+to R-Devel.  (I've since decided we probably won't need to.)
+
+
+	  Spencer
+
+
+On 2020-11-10 07:58, Spencer Graves wrote:
+> Hi, Jim:
+> 
+> 
+>  ????? Could you please look at svd2.Rd and see what it says?? It may 
+> give an example, where it gave a better answer than svd -- i.e., a 
+> marginal case, where svd2 honestly gave a better answer than svd.
+> 
+> 
+>  ????? If we find -- either in svd2.Rd or in one of the revdepchecks -- 
+> an example where svd2 gives a demonstrably different answer, we need to 
+> consider what to do about that.
+> 
+> 
+>  ??????????? 1.? Is the different answer demonstrably better?? If yes, 
+> can we fix it without LINPACK?? If yes, do that.? If no, we document 
+> those concerns, send them to R-Devel <r-devel at r-project.org>, and retain 
+> svd2 in fda and keep its use as it was.? Then R-Devel can deal with the 
+> problem however they want, and it won't affect fda -- at least not right 
+> now.
+> 
+> 
+>  ??????????? 2.? Does the different answer break something in 
+> revdepcheck because of a cosmetic problem?? If yes, try to communicate 
+> that issue with the maintainer(s) of the package(s) that would be 
+> affected by such a change.? I suggest you send them tell then that svd2 
+> is now deprecated -- AND mark svd2.Rd with such a message -- while also 
+> sending them code for the function(s) they call that give them an error 
+> message, and tell them that you plan to remove svd2 from the next 
+> release, and ask them to fix that so a revdepcheck with that new code 
+> won't be flagged as an error.? AND ask them to notify you when they have 
+> a version on CRAN that works with your new code.
+> 
+> 
+>  ??????????? 3.? If the new code gives a different answer that doesn't 
+> seem better in at least one example AND deleting svd2 doesn't break 
+> anything in revdepcheck, then delete it.
+> 
+> 
+>  ??????????? 4.? If you still need to retain svd2 because of a 
+> revdepcheck problem, I'd also document that in "cran-comments.md".
+> 
+> 
+>  ????? What do you think?
+>  ????? spencer
+> 
+> 
+> On 2020-11-10 07:10, James Ramsay wrote:
+>> Hi Spencer,
+>>
+>> One thing I?d like check with you:
+>>
+>> I removed svd2 because CRAN indicated that LINPACK had been 
+>> deprecated.? I replaced calls to svd2 with svd in geigen and CSTRfn.
+>>
+>> This could be the issue with the two broken codes ? or not.? But what 
+>> is your view about using svd instead of svd2, and do you have an idea 
+>> of what to do about the LINPACK calls?
+>>
+>> Best,
+>>
+>> Jim
+>>
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Wed Nov 11 11:02:47 2020
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Wed, 11 Nov 2020 11:02:47 +0100
+Subject: [Rd] 
+ Process to Incorporate Functions from {parallely} into base
+ R's {parallel} package
+In-Reply-To: <5ce800c3-34a3-3dd8-ce4f-8afb6638fb7a@gmail.com>
+References: <F71707B2-61E9-4757-8B53-9F73886BE01D@illinois.edu>
+ <aa91f7bc-37be-73b8-cb99-f9e0223225f5@gmail.com>
+ <CAFDcVCQ7Q1Wu7a7k2Rx41vMGqGJLhm_=OE6Sq35yZxmmBH6P-g@mail.gmail.com>
+ <5ce800c3-34a3-3dd8-ce4f-8afb6638fb7a@gmail.com>
+Message-ID: <24491.46791.296870.193670@stat.math.ethz.ch>
+
+>>>>> Duncan Murdoch 
+>>>>>     on Sat, 7 Nov 2020 15:44:32 -0500 writes:
+
+    > If these are easy changes, maybe someone will incorporate
+    > them.  You'll make the argument stronger for doing that if
+    > you can explain why it's better to do that than to keep
+    > them in parallely.
+
+    > Duncan Murdoch
+
+Thank you, Duncan, Henrik, and James Joseph.
+
+>From reading, I agree that this is something worth updating in
+R's own `parallel` (and I have tried and checked it does not
+break our own  'make check-all').
+
+Henrik (or anyone): Is there a small repr.ex. I could add to
+parallel/tests/*.R which will show the advantage of allowing an
+empty 'user'  here?
+
+Martin Maechler
+
+
+    > On 07/11/2020 1:39 p.m., Henrik Bengtsson wrote:
+    >> FWIW, there are indeed a few low hanging bug fixes in
+    >> 'parallelly' that should be easy to incorporate into
+    >> 'parallel' without adding extra maintenance.  For
+    >> example, in parallel::makePSOCKcluster(), it is not
+    >> possible to disable SSH option '-l USER' so that it can
+    >> be set in ~/.ssh/config.  The remote user name will be
+    >> the user name of your local machine and if you try to set
+    >> user=NULL, you'll end up with an invalid SSH call.  The
+    >> current behavior means that you are forced to specify the
+    >> remote user name in your R code.  All that it takes is to
+    >> fix this is to update:
+    >> 
+    >> cmd <- paste(rshcmd, "-l", user, machine, cmd)
+    >> 
+    >> to something like:
+    >> 
+    >> cmd <- paste(rshcmd, if (length(user) == 1L) paste("-l",
+    >> user), machine, cmd)
+    >> 
+    >> This is one example of what I've patched in
+    >> parallelly::makeClusterPSOCK() over the years.  Another
+    >> is the use of reverse tunneling in SSH - that completely
+    >> avoids the need to know and specify your public IP and
+    >> reconfiguring the firewalls from the remote server back
+    >> to your local machine so that the worker can connect back
+    >> to your local machine.  Not many users have the
+    >> permission to reconfigure firewalls and it's also
+    >> extremely tedious.  Reverse SSH tunneling is super
+    >> simply; all you need to to is something like:
+    >> 
+    >> rshopts <- c(sprintf("-R %d:%s:%d", rscript_port, master,
+    >> port), rshopts)
+    >> 
+    >> /Henrik
+    >> 
+    >> On Fri, Nov 6, 2020 at 4:37 PM Duncan Murdoch
+    >> <murdoch.duncan at gmail.com> wrote:
+    >>> 
+    >>> On 06/11/2020 4:47 p.m., Balamuta, James Joseph wrote:
+    >>>> Hi all,
+    >>>> 
+    >>>> Henrik Bengtsson has done some fantastic work with
+    >>>> {future} and, more importantly, greatly improved
+    >>>> constructing and deconstructing a parallelized
+    >>>> environment within R. It was with great joy that I saw
+    >>>> Henrik slowly split off some functionality of {future}
+    >>>> into {parallelly} package. Reading over the package?s
+    >>>> README, he states:
+    >>>> 
+    >>>>> The functions and features added to this package are
+    >>>>> written to be backward compatible with the parallel
+    >>>>> package, such that they may be incorporated there
+    >>>>> later.  The parallelly package comes with an open
+    >>>>> invitation for the R Core Team to adopt all or parts
+    >>>>> of its code into the parallel package.
+    >>>> 
+    >>>> https://github.com/HenrikBengtsson/parallelly
+    >>>> 
+    >>>> I?m wondering what the appropriate process would be to
+    >>>> slowly merge some functions from {parallelly} into the
+    >>>> base R {parallel} package. Should this be done with
+    >>>> targeted issues on Bugzilla for different fields Henrik
+    >>>> has identified? Or would an omnibus patch bringing in
+    >>>> all suggested modifications be preferred? Or is it best
+    >>>> to discuss via the list-serv appropriate contributions?
+    >>> 
+    >>> One way is to convince R Core that incorporating this
+    >>> into the parallel package would
+    >>> 
+    >>> - make less work for them, or - add a lot to R that
+    >>> couldn't happen if it was a contributed package.
+    >>> 
+    >>> The fact that it's good isn't a good reason to put it
+    >>> into a base package, which would largely mean
+    >>> transferring Henrik's workload to R Core.  There are
+    >>> lots of good packages, and their maintainers should
+    >>> continue to maintain them.
+    >>> 
+    >>> Duncan Murdoch
+    >>> 
+    >>> ______________________________________________
+    >>> R-devel at r-project.org mailing list
+    >>> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+    > ______________________________________________
+    > R-devel at r-project.org mailing list
+    > https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Thu Nov 12 22:17:02 2020
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Thu, 12 Nov 2020 16:17:02 -0500
+Subject: [Rd] Bug in R-devel R CMD check --as-cran (was: [R-pkg-devel]
+ Strange error from CRAN on package submission)
+In-Reply-To: <4e8f1ec8-d3a6-abb2-f81c-d33f8a708738@gmail.com>
+References: <4e8f1ec8-d3a6-abb2-f81c-d33f8a708738@gmail.com>
+Message-ID: <c403a9e8-3408-083a-2898-eb110300fd55@gmail.com>
+
+I believe the message below on the R-package-devel list is due to a bug 
+in R-devel.  The bug doesn't seem to be present in R 4.0.3.
+
+Here's the issue:
+
+The Mercator package Depends on Thresher, which Imports movMF, which 
+Suggests flexmix.  In the .onLoad code for movMF, it checks whether 
+flexmix is available, and if so, loads it.
+
+Since flexmix sets a method on plot(), its namespace is referred to from 
+the plot() method table.
+
+During R CMD check --as-cran Mercator.0.11.4, in the step
+
+* checking whether package ?Mercator? can be installed ...
+
+R prints this warning:
+
+    Warning: namespace 'flexmix'  is not available and has been replaced
+    by .GlobalEnv when processing  object '<unknown>'
+
+I believe this message happens when R CMD check is seeing whether the 
+package can be installed without undeclared recommended packages.  When 
+it tries to load the flexmix namespace in the movMF .onLoad() function, 
+it fails, because it can't see "nnet".  Normally it doesn't worry if a 
+dependency is declared, but it misses the flexmix declaration of a 
+dependency on nnet, presumably because flexmix got loaded in an unusual way.
+
+This is fairly old code, so I'm not sure what change triggered the 
+error.  I suppose I could bisect commits to find it, but not today.
+
+Duncan Murdoch
+
+
+On 11/11/2020 8:44 a.m., Kevin R. Coombes wrote:
+> Hi,
+> 
+> I am trying to figure out how to fix warnings from two of the CRAN
+> machines on the submission of an update to a package. The only change to
+> my package was to add a "show" method to one of the S4 classes, which
+> was requested by a reviewer of the paper we submitted. The inability to
+> get this updated package into CRAN? is the only thing holding up the
+> revision (and probable acceptance) of the manuscript.
+> 
+> The same "warnings"s were found in the previous version. The package is
+> called Mercator, and the CRAN check results from the? last version are here:
+>   ? https://cran.r-project.org/web/checks/check_results_Mercator.html
+> 
+> I get warnings from the two fedora machine instances (clang and gcc).
+> They both report
+> 
+>> Check: whether package can be  installed.
+>> Result: WARN
+>>  ? ?? Found the following significant  warnings:
+>>  ? ?? Warning: namespace ?flexmix? is  not available and has been replaced
+>   >
+>   > Check: data for non-ASCII characters
+>> Result: WARN
+>>  ? ??? Warning: namespace 'flexmix'  is not available and has been replaced
+>>  ? ??? by .GlobalEnv when processing  object '<unknown>'
+> 
+> The relationships in the DESCRIPTION files are:
+> 
+> 1. Mercator depends on Thresher
+> 2. Thresher imports moVMF
+> 3. moMVF suggests flexmix
+> 
+> On my Windows machine, the package builds and installs with no errors or
+> warnings even if flexmix is not available (which I believe to be the
+> correct behavior). On R-Forge, both the Windows and LINUX versions build
+> and install with no errors or warnings. On R-Hub, tested on multiple
+> LINUX versions, the package builds and installs with no errors or warnings.
+> 
+> And flexmix is still clearly available from CRAN:
+>   ? https://cran.r-project.org/web/packages/flexmix/index.html
+> 
+> In the latest attempt to get things to work, I added
+>   ? Suggests: flexmix
+> into the DESCRIPTION file for Mercator, but this didn't help fix the
+> problem on CRAN.
+> 
+> Is there anything I can do to fix this problem (other than moan here on
+> this list and hope that CRAN can just install flexmix on those machines)?
+> 
+> Thanks in advance for your help,
+>   ? Kevin
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+
+
+From @nto|ne@|@br| @end|ng |rom gm@||@com  Fri Nov 13 15:15:37 2020
+From: @nto|ne@|@br| @end|ng |rom gm@||@com (Antoine Fabri)
+Date: Fri, 13 Nov 2020 15:15:37 +0100
+Subject: [Rd] exists, get and get0 accept silently inputs of length > 1
+Message-ID: <CAEKh8uhYFh5J_m1UjU1jqqR=fsA-MeS+OYDHTbAJGRYk9mmdiA@mail.gmail.com>
+
+Dear R-devel,
+
+The doc of exists, get and get0 is unambiguous, x should be an object given
+as a character string. However these accept longer inputs. It can lead an
+uncareful user to think these functions are vectorized when they're not,
+and generally lets through bugs that one might have preferred to trigger
+earlier failure.
+
+``` r
+exists("d")
+#> [1] FALSE
+exists(c("c", "d"))
+#> [1] TRUE
+get(c("c", "d"))
+#> function (...)  .Primitive("c")
+get0(c("c", "d"))
+#> function (...)  .Primitive("c")
+```
+
+I believe these should either fail, or be vectorized, probably the former.
+
+Thanks,
+
+Antoine
+
+	[[alternative HTML version deleted]]
+
+
+From iuke-tier@ey m@iii@g oii uiow@@edu  Fri Nov 13 15:33:49 2020
+From: iuke-tier@ey m@iii@g oii uiow@@edu (iuke-tier@ey m@iii@g oii uiow@@edu)
+Date: Fri, 13 Nov 2020 08:33:49 -0600 (CST)
+Subject: [Rd] [External]  exists,
+ get and get0 accept silently inputs of length > 1
+In-Reply-To: <CAEKh8uhYFh5J_m1UjU1jqqR=fsA-MeS+OYDHTbAJGRYk9mmdiA@mail.gmail.com>
+References: <CAEKh8uhYFh5J_m1UjU1jqqR=fsA-MeS+OYDHTbAJGRYk9mmdiA@mail.gmail.com>
+Message-ID: <alpine.DEB.2.21.2011130830520.3311@luke-Latitude-7480>
+
+Worth looking into. It would probably cause some check failures, so
+would probably be a good idea to run a check across BIOC/CRAN.  At the
+same time it would be worth allowing name objects (type "symbol") so
+thee don't have to be converted to character for the call and then
+back to names internally for the environment lookup.
+
+Best,
+
+luke
+
+On Fri, 13 Nov 2020, Antoine Fabri wrote:
+
+> Dear R-devel,
+>
+> The doc of exists, get and get0 is unambiguous, x should be an object given
+> as a character string. However these accept longer inputs. It can lead an
+> uncareful user to think these functions are vectorized when they're not,
+> and generally lets through bugs that one might have preferred to trigger
+> earlier failure.
+>
+> ``` r
+> exists("d")
+> #> [1] FALSE
+> exists(c("c", "d"))
+> #> [1] TRUE
+> get(c("c", "d"))
+> #> function (...)  .Primitive("c")
+> get0(c("c", "d"))
+> #> function (...)  .Primitive("c")
+> ```
+>
+> I believe these should either fail, or be vectorized, probably the former.
+>
+> Thanks,
+>
+> Antoine
+>
+> 	[[alternative HTML version deleted]]
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+
+-- 
+Luke Tierney
+Ralph E. Wareham Professor of Mathematical Sciences
+University of Iowa                  Phone:             319-335-3386
+Department of Statistics and        Fax:               319-335-3017
+    Actuarial Science
+241 Schaeffer Hall                  email:   luke-tierney at uiowa.edu
+Iowa City, IA 52242                 WWW:  http://www.stat.uiowa.edu
+
+
