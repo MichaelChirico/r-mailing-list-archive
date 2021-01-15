@@ -1,0 +1,1484 @@
+From Seb@@t|en@B|hore| @end|ng |rom cogn|gencorp@com  Sun Jan  3 03:29:16 2021
+From: Seb@@t|en@B|hore| @end|ng |rom cogn|gencorp@com (Sebastien Bihorel)
+Date: Sun, 3 Jan 2021 02:29:16 +0000
+Subject: [R-pkg-devel] How to get rid of R CMD check warning/note for new S4
+ classes
+Message-ID: <MN2PR19MB411083912CB5DB155BBE592192D30@MN2PR19MB4110.namprd19.prod.outlook.com>
+
+Hi 
+
+I am creating a few S4 classes for a package. These classes include slots set to classes obtained using setClassUnion (some common across the new S4 classes). The code is functional but `R CMD check` keeps on reporting notes or warnings whatever I try. I am pulling my hair on this one and would really appreciate some insight on what I am doing wrong. 
+
+Below are some simplified versions of a real function, which each gives different note/warning:
+
+* Option 1 returns a note
+
+createyNewClass <- function(){
+? setClassUnion("character or NULL",c("character","NULL"),where = .GlobalEnv)
+? setClass('newS4Classe',
+? ??? where = .GlobalEnv, 
+? ??? slots = c(type = 'character or NULL'),
+? ? ? prototype = list(type = NULL)
+? )
+}
+
+R CMD check
+* checking whether the namespace can be loaded with stated dependencies ... NOTE
+Warning: class "NULL" is defined (with package slot "methods") but no metadata object found to revise superClass information---not exported?  Making a copy in package ".GlobalEnv"
+Warning: class "character" is defined (with package slot "methods") but no metadata object found to revise superClass information---not exported?  Making a copy in package ".GlobalEnv"
+
+
+* Option 2: returns a WARNING
+
+createyNewClass <- function(){
+  setClassUnion("character or NULL",c("character","NULL"))
+  setClass('newS4Classe',
+?   ? slots = c(type = 'character or NULL'),
+  ? ? prototype = list(type = NULL)
+  )
+}
+
+R CMD check:
+...
+* checking for missing documentation entries ... WARNING
+Undocumented S4 classes:? 
+? "character or numeric"
+All user-level objects in a package (including S4 classes and methods)
+should have documentation entries.
+...
+
+Thanks
+
+From o||ver@p@m@d@en @end|ng |rom gm@||@com  Tue Jan  5 22:39:32 2021
+From: o||ver@p@m@d@en @end|ng |rom gm@||@com (Oliver Madsen)
+Date: Tue, 5 Jan 2021 22:39:32 +0100
+Subject: [R-pkg-devel] accessing call constructors in Cpp
+Message-ID: <CAFL8AHoy8LO5h1YpchkrQOZj+FzjGsfcQrX_uOGLwvX4wXGx7A@mail.gmail.com>
+
+This is maybe better suited for Rcpp-devel or another mailing list. If so,
+I apologize. :-)
+
+In a pet project I've been implementing quite a bit of a package structure
+within Cpp, including classes to contain and manipulate structures. As a
+final part of the implementation a user provided R function is to be
+executed with some of the manipulated data. While my first intuition (and
+the smart option) was to implement a method in R for extracting the
+parameters and simply executing the call, I got curious as to how one could
+do this in Cpp.
+
+After researching I found myriad options, one simple method being
+1) Create a list of named and unnamed arguments
+2) Extract "do.call" as a Function,
+3) Test that the function provided is either a CLOSXP (function) or CHARSXP
+(or maybe STRSXP?) and then
+4) execute the function call.
+but while going further down and checking the source code for do_docall I
+was curious about trying to recreate the call "the old fashioned way", but
+in Cpp. After looking over how it was done in R-source and a few examples
+online I tried implementing a simple call creation and evaluating it with
+Rf_eval
+
+```cpp
+#include <R.h>
+#include <Rinternals.h>
+//[[Rcpp::export]]
+SEXP add_10_and_5(SEXP rho){ //rho is an environment (new.env() here)
+SEXP REALSXP_10 = PROTECT(ScalarReal(10));
+SEXP REALSXP_5 = PROTECT(ScalarReal(5));
+SEXP out = PROTECT(LCONS(install("+"), LCONS(
+  REALSXP_10, LCONS(
+      REALSXP_5, R_NilValue
+  )
+)));
+UNPROTECT(3);
+return eval(out, rho);
+}
+```
+(For those who read the old version of Advanced R, this is a very similar
+to the R's C interface section on "PairLists")
+
+Immediately intellisense warned me that "ScalarReal", "install", "lcons"
+and "eval" are all undefined. However, a quick look in
+src/include/Rinternals.h shows that they are forward-declared there, and
+should (in my understanding) be defined. For good measures I tried
+including every header iteratively to no avail.
+
+While it is likely recommended to not do this (and the final product likely
+will be implemented in R), I am curious why I seem unable to access these 4
+from Cpp. I can't seem to spot the reason in the header file itself.
+
+Best regards
+Oliver
+
+	[[alternative HTML version deleted]]
+
+
+From w||||@mwdun|@p @end|ng |rom gm@||@com  Wed Jan  6 00:00:48 2021
+From: w||||@mwdun|@p @end|ng |rom gm@||@com (Bill Dunlap)
+Date: Tue, 5 Jan 2021 15:00:48 -0800
+Subject: [R-pkg-devel] accessing call constructors in Cpp
+In-Reply-To: <CAFL8AHoy8LO5h1YpchkrQOZj+FzjGsfcQrX_uOGLwvX4wXGx7A@mail.gmail.com>
+References: <CAFL8AHoy8LO5h1YpchkrQOZj+FzjGsfcQrX_uOGLwvX4wXGx7A@mail.gmail.com>
+Message-ID: <CAHqSRuRSXPKZRWTSYB0rmkQbfuDGVC8UCpYbqtRfuH5_ZzP5HQ@mail.gmail.com>
+
+Try using their official names, Rf_ScalarReal, Rf_eval, Rf_install, etc.
+You may have #defined R_NO_REMAP in code that you did not show us.
+
+-Bill
+
+On Tue, Jan 5, 2021 at 1:42 PM Oliver Madsen <oliver.p.madsen at gmail.com>
+wrote:
+
+> This is maybe better suited for Rcpp-devel or another mailing list. If so,
+> I apologize. :-)
+>
+> In a pet project I've been implementing quite a bit of a package structure
+> within Cpp, including classes to contain and manipulate structures. As a
+> final part of the implementation a user provided R function is to be
+> executed with some of the manipulated data. While my first intuition (and
+> the smart option) was to implement a method in R for extracting the
+> parameters and simply executing the call, I got curious as to how one could
+> do this in Cpp.
+>
+> After researching I found myriad options, one simple method being
+> 1) Create a list of named and unnamed arguments
+> 2) Extract "do.call" as a Function,
+> 3) Test that the function provided is either a CLOSXP (function) or CHARSXP
+> (or maybe STRSXP?) and then
+> 4) execute the function call.
+> but while going further down and checking the source code for do_docall I
+> was curious about trying to recreate the call "the old fashioned way", but
+> in Cpp. After looking over how it was done in R-source and a few examples
+> online I tried implementing a simple call creation and evaluating it with
+> Rf_eval
+>
+> ```cpp
+> #include <R.h>
+> #include <Rinternals.h>
+> //[[Rcpp::export]]
+> SEXP add_10_and_5(SEXP rho){ //rho is an environment (new.env() here)
+> SEXP REALSXP_10 = PROTECT(ScalarReal(10));
+> SEXP REALSXP_5 = PROTECT(ScalarReal(5));
+> SEXP out = PROTECT(LCONS(install("+"), LCONS(
+>   REALSXP_10, LCONS(
+>       REALSXP_5, R_NilValue
+>   )
+> )));
+> UNPROTECT(3);
+> return eval(out, rho);
+> }
+> ```
+> (For those who read the old version of Advanced R, this is a very similar
+> to the R's C interface section on "PairLists")
+>
+> Immediately intellisense warned me that "ScalarReal", "install", "lcons"
+> and "eval" are all undefined. However, a quick look in
+> src/include/Rinternals.h shows that they are forward-declared there, and
+> should (in my understanding) be defined. For good measures I tried
+> including every header iteratively to no avail.
+>
+> While it is likely recommended to not do this (and the final product likely
+> will be implemented in R), I am curious why I seem unable to access these 4
+> from Cpp. I can't seem to spot the reason in the header file itself.
+>
+> Best regards
+> Oliver
+>
+>         [[alternative HTML version deleted]]
+>
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+
+	[[alternative HTML version deleted]]
+
+
+From o||ver@p@m@d@en @end|ng |rom gm@||@com  Wed Jan  6 09:51:34 2021
+From: o||ver@p@m@d@en @end|ng |rom gm@||@com (Oliver Madsen)
+Date: Wed, 6 Jan 2021 09:51:34 +0100
+Subject: [R-pkg-devel] accessing call constructors in Cpp
+In-Reply-To: <CAHqSRuRSXPKZRWTSYB0rmkQbfuDGVC8UCpYbqtRfuH5_ZzP5HQ@mail.gmail.com>
+References: <CAFL8AHoy8LO5h1YpchkrQOZj+FzjGsfcQrX_uOGLwvX4wXGx7A@mail.gmail.com>
+ <CAHqSRuRSXPKZRWTSYB0rmkQbfuDGVC8UCpYbqtRfuH5_ZzP5HQ@mail.gmail.com>
+Message-ID: <CAFL8AHphW7ZtuYutmdaN96xSkrGHJb3uG9o_0AQ_osDYx0CK4w@mail.gmail.com>
+
+Hi Bill thanks for your answer,
+
+The only part left out (which I only realized as I'm trying out your
+suggestion) is an #include Rcpp in order to remove 5 errors thrown when
+executing Rcpp::sourceCpp. I am guessing that the suggestion from RAPI to
+always work with R_NO_REMAP defined is taken literally and that it is
+defined in Rcpp.h or its dependencies.
+
+But it is working, thank you! :-)
+(continues to dive further down the rabbit hole)
+
+Best Regards
+Oliver
+
+On Wed, Jan 6, 2021 at 12:01 AM Bill Dunlap <williamwdunlap at gmail.com>
+wrote:
+
+> Try using their official names, Rf_ScalarReal, Rf_eval, Rf_install, etc.
+> You may have #defined R_NO_REMAP in code that you did not show us.
+>
+> -Bill
+>
+> On Tue, Jan 5, 2021 at 1:42 PM Oliver Madsen <oliver.p.madsen at gmail.com>
+> wrote:
+>
+>> This is maybe better suited for Rcpp-devel or another mailing list. If so,
+>> I apologize. :-)
+>>
+>> In a pet project I've been implementing quite a bit of a package structure
+>> within Cpp, including classes to contain and manipulate structures. As a
+>> final part of the implementation a user provided R function is to be
+>> executed with some of the manipulated data. While my first intuition (and
+>> the smart option) was to implement a method in R for extracting the
+>> parameters and simply executing the call, I got curious as to how one
+>> could
+>> do this in Cpp.
+>>
+>> After researching I found myriad options, one simple method being
+>> 1) Create a list of named and unnamed arguments
+>> 2) Extract "do.call" as a Function,
+>> 3) Test that the function provided is either a CLOSXP (function) or
+>> CHARSXP
+>> (or maybe STRSXP?) and then
+>> 4) execute the function call.
+>> but while going further down and checking the source code for do_docall I
+>> was curious about trying to recreate the call "the old fashioned way", but
+>> in Cpp. After looking over how it was done in R-source and a few examples
+>> online I tried implementing a simple call creation and evaluating it with
+>> Rf_eval
+>>
+>> ```cpp
+>> #include <R.h>
+>> #include <Rinternals.h>
+>> //[[Rcpp::export]]
+>> SEXP add_10_and_5(SEXP rho){ //rho is an environment (new.env() here)
+>> SEXP REALSXP_10 = PROTECT(ScalarReal(10));
+>> SEXP REALSXP_5 = PROTECT(ScalarReal(5));
+>> SEXP out = PROTECT(LCONS(install("+"), LCONS(
+>>   REALSXP_10, LCONS(
+>>       REALSXP_5, R_NilValue
+>>   )
+>> )));
+>> UNPROTECT(3);
+>> return eval(out, rho);
+>> }
+>> ```
+>> (For those who read the old version of Advanced R, this is a very similar
+>> to the R's C interface section on "PairLists")
+>>
+>> Immediately intellisense warned me that "ScalarReal", "install", "lcons"
+>> and "eval" are all undefined. However, a quick look in
+>> src/include/Rinternals.h shows that they are forward-declared there, and
+>> should (in my understanding) be defined. For good measures I tried
+>> including every header iteratively to no avail.
+>>
+>> While it is likely recommended to not do this (and the final product
+>> likely
+>> will be implemented in R), I am curious why I seem unable to access these
+>> 4
+>> from Cpp. I can't seem to spot the reason in the header file itself.
+>>
+>> Best regards
+>> Oliver
+>>
+>>         [[alternative HTML version deleted]]
+>>
+>> ______________________________________________
+>> R-package-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>>
+>
+
+	[[alternative HTML version deleted]]
+
+
+From j@h@d||e|d @end|ng |rom ed@@c@uk  Wed Jan  6 12:20:36 2021
+From: j@h@d||e|d @end|ng |rom ed@@c@uk (Jarrod Hadfield)
+Date: Wed, 6 Jan 2021 11:20:36 +0000
+Subject: [R-pkg-devel] Sweave vignette and bibtex
+Message-ID: <6528eec2-9079-df43-cf44-f3387010d3a7@ed.ac.uk>
+
+Hi,
+
+I have a Sweave vignette in a package I have written. When building, the
+citations are not put into the pdf - perhaps because two passes of the
+tex file are required but only one is executed. Is there a way to force
+two passes of the tex file?
+
+Kind Regards,
+
+Jarrod
+
+The University of Edinburgh is a charitable body, registered in Scotland, with registration number SC005336.
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Wed Jan  6 12:42:28 2021
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Wed, 6 Jan 2021 06:42:28 -0500
+Subject: [R-pkg-devel] Sweave vignette and bibtex
+In-Reply-To: <6528eec2-9079-df43-cf44-f3387010d3a7@ed.ac.uk>
+References: <6528eec2-9079-df43-cf44-f3387010d3a7@ed.ac.uk>
+Message-ID: <50f2a018-30f0-b11c-8e61-46896d884437@gmail.com>
+
+On 06/01/2021 6:20 a.m., Jarrod Hadfield wrote:
+> Hi,
+> 
+> I have a Sweave vignette in a package I have written. When building, the
+> citations are not put into the pdf - perhaps because two passes of the
+> tex file are required but only one is executed. Is there a way to force
+> two passes of the tex file?
+> 
+> Kind Regards,
+> 
+> Jarrod
+> 
+> The University of Edinburgh is a charitable body, registered in Scotland, with registration number SC005336.
+> 
+> _________________________________________
+
+
+You should give a bit more detail (what exactly do you have in your 
+vignettes directory? How are you processing it?), and maybe even a 
+reproducible example if you can extract a minimal amount from the 
+document and the .bib file.  I haven't used Sweave in a few years (I 
+recommend switching to knitr's implementation of .Rnw processing), but I 
+didn't have problems like yours in the past.
+
+Duncan Murdoch
+
+
+From ||@t@ @end|ng |rom dewey@myzen@co@uk  Wed Jan  6 18:06:43 2021
+From: ||@t@ @end|ng |rom dewey@myzen@co@uk (Michael Dewey)
+Date: Wed, 6 Jan 2021 17:06:43 +0000
+Subject: [R-pkg-devel] Sweave vignette and bibtex
+In-Reply-To: <6528eec2-9079-df43-cf44-f3387010d3a7@ed.ac.uk>
+References: <6528eec2-9079-df43-cf44-f3387010d3a7@ed.ac.uk>
+Message-ID: <71d81c3f-eee8-f393-1c39-bdf5ff861d5a@dewey.myzen.co.uk>
+
+Dear Jarrod
+
+It works for me with Sweave so perhaps we need some more details.
+
+Michael
+
+On 06/01/2021 11:20, Jarrod Hadfield wrote:
+> Hi,
+> 
+> I have a Sweave vignette in a package I have written. When building, the
+> citations are not put into the pdf - perhaps because two passes of the
+> tex file are required but only one is executed. Is there a way to force
+> two passes of the tex file?
+> 
+> Kind Regards,
+> 
+> Jarrod
+> 
+> The University of Edinburgh is a charitable body, registered in 
+> Scotland, with registration number SC005336.
+> 
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+> 
+
+-- 
+Michael
+http://www.dewey.myzen.co.uk/home.html
+
+
+From n@r@@ @end|ng |rom @t@n|ord@edu  Wed Jan  6 18:28:07 2021
+From: n@r@@ @end|ng |rom @t@n|ord@edu (Balasubramanian Narasimhan)
+Date: Wed, 6 Jan 2021 09:28:07 -0800
+Subject: [R-pkg-devel] Winbuilder seems stuck
+Message-ID: <de51b162-4251-fa9c-a19c-0a22a3ef6bb2@stanford.edu>
+
+This is just FYI to CRAN as no results came back from an upload over a 
+day and a half ago. A repeat upload gives:
+
+ERROR: Access to the path 'C:\Inetpub\ftproot\R-devel\...' is denied.
+
+-Naras
+
+
+
+	[[alternative HTML version deleted]]
+
+
+From j@h@d||e|d @end|ng |rom ed@@c@uk  Wed Jan  6 18:50:13 2021
+From: j@h@d||e|d @end|ng |rom ed@@c@uk (Jarrod Hadfield)
+Date: Wed, 6 Jan 2021 17:50:13 +0000
+Subject: [R-pkg-devel] Sweave vignette and bibtex
+In-Reply-To: <71d81c3f-eee8-f393-1c39-bdf5ff861d5a@dewey.myzen.co.uk>
+References: <6528eec2-9079-df43-cf44-f3387010d3a7@ed.ac.uk>
+ <71d81c3f-eee8-f393-1c39-bdf5ff861d5a@dewey.myzen.co.uk>
+Message-ID: <4d552ed6-da03-7049-266b-31cc9eaedce8@ed.ac.uk>
+
+Dear Duncan and Michael,
+
+Thank you for the quick replies. When trying to generate a reproducible 
+example I realised I'd done something embarassingly stupid and the 
+problem is now resolved.
+
+Kind Regards,
+
+Jarrod
+
+
+
+On 06/01/2021 17:06, Michael Dewey wrote:
+> This email was sent to you by someone outside the University.
+> You should only click on links or attachments if you are certain that 
+> the email is genuine and the content is safe.
+>
+> Dear Jarrod
+>
+> It works for me with Sweave so perhaps we need some more details.
+>
+> Michael
+>
+> On 06/01/2021 11:20, Jarrod Hadfield wrote:
+>> Hi,
+>>
+>> I have a Sweave vignette in a package I have written. When building, the
+>> citations are not put into the pdf - perhaps because two passes of the
+>> tex file are required but only one is executed. Is there a way to force
+>> two passes of the tex file?
+>>
+>> Kind Regards,
+>>
+>> Jarrod
+>>
+>> The University of Edinburgh is a charitable body, registered in
+>> Scotland, with registration number SC005336.
+>>
+>> ______________________________________________
+>> R-package-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>>
+>
+> -- 
+> Michael
+> http://www.dewey.myzen.co.uk/home.html
+
+
+From jdnewm|| @end|ng |rom dcn@d@v|@@c@@u@  Thu Jan  7 03:36:22 2021
+From: jdnewm|| @end|ng |rom dcn@d@v|@@c@@u@ (Jeff Newmiller)
+Date: Wed, 06 Jan 2021 18:36:22 -0800
+Subject: [R-pkg-devel] Sweave vignette and bibtex
+In-Reply-To: <4d552ed6-da03-7049-266b-31cc9eaedce8@ed.ac.uk>
+References: <6528eec2-9079-df43-cf44-f3387010d3a7@ed.ac.uk>
+ <71d81c3f-eee8-f393-1c39-bdf5ff861d5a@dewey.myzen.co.uk>
+ <4d552ed6-da03-7049-266b-31cc9eaedce8@ed.ac.uk>
+Message-ID: <6C873D64-7568-48B7-81E9-1879A6FF491B@dcn.davis.ca.us>
+
+Sheepish grins may be good for character building, but MREs are good for solving problems. You can choose which you want first!  ;-)
+
+On January 6, 2021 9:50:13 AM PST, Jarrod Hadfield <j.hadfield at ed.ac.uk> wrote:
+>Dear Duncan and Michael,
+>
+>Thank you for the quick replies. When trying to generate a reproducible
+>
+>example I realised I'd done something embarassingly stupid and the 
+>problem is now resolved.
+>
+>Kind Regards,
+>
+>Jarrod
+>
+>
+>
+>On 06/01/2021 17:06, Michael Dewey wrote:
+>> This email was sent to you by someone outside the University.
+>> You should only click on links or attachments if you are certain that
+>
+>> the email is genuine and the content is safe.
+>>
+>> Dear Jarrod
+>>
+>> It works for me with Sweave so perhaps we need some more details.
+>>
+>> Michael
+>>
+>> On 06/01/2021 11:20, Jarrod Hadfield wrote:
+>>> Hi,
+>>>
+>>> I have a Sweave vignette in a package I have written. When building,
+>the
+>>> citations are not put into the pdf - perhaps because two passes of
+>the
+>>> tex file are required but only one is executed. Is there a way to
+>force
+>>> two passes of the tex file?
+>>>
+>>> Kind Regards,
+>>>
+>>> Jarrod
+>>>
+>>> The University of Edinburgh is a charitable body, registered in
+>>> Scotland, with registration number SC005336.
+>>>
+>>> ______________________________________________
+>>> R-package-devel at r-project.org mailing list
+>>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>>>
+>>
+>> -- 
+>> Michael
+>> http://www.dewey.myzen.co.uk/home.html
+>
+>______________________________________________
+>R-package-devel at r-project.org mailing list
+>https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+-- 
+Sent from my phone. Please excuse my brevity.
+
+
+From gd|erm@|| @end|ng |rom gm@||@com  Fri Jan  8 15:17:58 2021
+From: gd|erm@|| @end|ng |rom gm@||@com (Greg Freedman Ellis)
+Date: Fri, 8 Jan 2021 09:17:58 -0500
+Subject: [R-pkg-devel] Package used unconditionally only in testing
+Message-ID: <CAJdmaqSGTWbz0xpiJa0ArAOiUiqG+929Bq+yEfSQoxj4payqPA@mail.gmail.com>
+
+Hi all,
+
+I'm trying to update a package to conform to pass tests given
+`_R_CHECK_DEPENDS_ONLY_=TRUE`.
+
+In this package, we only use the package `httptest` during testing, but the
+tests are (almost) meaningless if it is not installed, so I would like to
+indicate that it is a required package rather than skipping tests if it is
+not installed.
+
+If I move `httptest` to Depends, then I get the error CRAN check note:
+> Namespace in Imports field not imported from: ?httptest?
+>   All declared Imports should be used.
+
+I think this would best be solved by a DESCRIPTION field that indicates a
+package is required, but only for tests, but I do not see such a field. The
+only solution I can think of is to have a trivial import of `httptest` in
+the main package to silence the NOTE. Is there a better solution?
+
+Greg Freedman Ellis
+
+	[[alternative HTML version deleted]]
+
+
+From jdnewm|| @end|ng |rom dcn@d@v|@@c@@u@  Fri Jan  8 17:13:18 2021
+From: jdnewm|| @end|ng |rom dcn@d@v|@@c@@u@ (Jeff Newmiller)
+Date: Fri, 08 Jan 2021 08:13:18 -0800
+Subject: [R-pkg-devel] Package used unconditionally only in testing
+In-Reply-To: <CAJdmaqSGTWbz0xpiJa0ArAOiUiqG+929Bq+yEfSQoxj4payqPA@mail.gmail.com>
+References: <CAJdmaqSGTWbz0xpiJa0ArAOiUiqG+929Bq+yEfSQoxj4payqPA@mail.gmail.com>
+Message-ID: <A37ED58C-7414-4BE1-8A13-608BAC25B9A3@dcn.davis.ca.us>
+
+This is normally where the Suggests field is used.
+
+On January 8, 2021 6:17:58 AM PST, Greg Freedman Ellis <gdfermail at gmail.com> wrote:
+>Hi all,
+>
+>I'm trying to update a package to conform to pass tests given
+>`_R_CHECK_DEPENDS_ONLY_=TRUE`.
+>
+>In this package, we only use the package `httptest` during testing, but
+>the
+>tests are (almost) meaningless if it is not installed, so I would like
+>to
+>indicate that it is a required package rather than skipping tests if it
+>is
+>not installed.
+>
+>If I move `httptest` to Depends, then I get the error CRAN check note:
+>> Namespace in Imports field not imported from: ?httptest?
+>>   All declared Imports should be used.
+>
+>I think this would best be solved by a DESCRIPTION field that indicates
+>a
+>package is required, but only for tests, but I do not see such a field.
+>The
+>only solution I can think of is to have a trivial import of `httptest`
+>in
+>the main package to silence the NOTE. Is there a better solution?
+>
+>Greg Freedman Ellis
+>
+>	[[alternative HTML version deleted]]
+>
+>______________________________________________
+>R-package-devel at r-project.org mailing list
+>https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+-- 
+Sent from my phone. Please excuse my brevity.
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Fri Jan  8 17:15:20 2021
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Fri, 8 Jan 2021 11:15:20 -0500
+Subject: [R-pkg-devel] Package used unconditionally only in testing
+In-Reply-To: <CAJdmaqSGTWbz0xpiJa0ArAOiUiqG+929Bq+yEfSQoxj4payqPA@mail.gmail.com>
+References: <CAJdmaqSGTWbz0xpiJa0ArAOiUiqG+929Bq+yEfSQoxj4payqPA@mail.gmail.com>
+Message-ID: <baad805c-5463-38d5-4ad4-4d85bc2c6e41@gmail.com>
+
+On 08/01/2021 9:17 a.m., Greg Freedman Ellis wrote:
+> Hi all,
+> 
+> I'm trying to update a package to conform to pass tests given
+> `_R_CHECK_DEPENDS_ONLY_=TRUE`.
+> 
+> In this package, we only use the package `httptest` during testing, but the
+> tests are (almost) meaningless if it is not installed, so I would like to
+> indicate that it is a required package rather than skipping tests if it is
+> not installed.
+
+This sounds wrong.  I don't know the httptest package, but I assume that 
+since you were only using it for testing, I might be interested in using 
+your package even if I wasn't interested in installing httptest.  Making 
+it a hard requirement would force me to install httptest.
+
+> 
+> If I move `httptest` to Depends, then I get the error CRAN check note:
+>> Namespace in Imports field not imported from: ?httptest?
+>>    All declared Imports should be used.
+
+You *definitely* shouldn't include it in Depends:  that would force it 
+onto the search list, and potentially break other things that I'm 
+running, e.g. if they have name conflicts with it.
+
+You *probably* shouldn't include it in Imports.  Why force me to load 
+another package if I'll never use it?  There's a tiny chance that would 
+push my memory use over the edge, and my own code would fail.
+
+It should almost certainly be included in Suggests, and nowhere else.
+If that means your tests are skipped, you should feel free to warn the 
+user in your test messages:  but it shouldn't cause your tests to fail.
+
+> I think this would best be solved by a DESCRIPTION field that indicates a
+> package is required, but only for tests, but I do not see such a field. The
+> only solution I can think of is to have a trivial import of `httptest` in
+> the main package to silence the NOTE. Is there a better solution?
+
+Most users aren't going to run your tests, so they shouldn't be forced 
+to install software that would let them do so.
+
+Duncan Murdoch
+
+
+From gd|erm@|| @end|ng |rom gm@||@com  Fri Jan  8 20:24:37 2021
+From: gd|erm@|| @end|ng |rom gm@||@com (Greg Freedman Ellis)
+Date: Fri, 8 Jan 2021 14:24:37 -0500
+Subject: [R-pkg-devel] Package used unconditionally only in testing
+In-Reply-To: <02CF62C7-088D-466B-871F-2F6A30676654@hxcore.ol>
+References: <CAJdmaqSGTWbz0xpiJa0ArAOiUiqG+929Bq+yEfSQoxj4payqPA@mail.gmail.com>
+ <baad805c-5463-38d5-4ad4-4d85bc2c6e41@gmail.com>
+ <02CF62C7-088D-466B-871F-2F6A30676654@hxcore.ol>
+Message-ID: <CAJdmaqRHkcLvQB9981cbYmr_aceAhmuekJEU5BpP5FTqYi93ZQ@mail.gmail.com>
+
+> It should almost certainly be included in Suggests, and nowhere else.
+> If that means your tests are skipped, you should feel free to warn the
+> user in your test messages:  but it shouldn't cause your tests to fail.
+
+I guess my worry is that my upstream dependencies will break something
+without knowing it because the tests won't fail unless httptest is
+installed. I really wish there was a way to indicate dependencies for
+testing purposes only.
+
+(And, oops, you're right, I meant that I was considering including httptest
+in Imports not Depends)
+
+On Fri, Jan 8, 2021 at 12:04 PM David Bosak <dbosak01 at gmail.com> wrote:
+
+> >> Namespace in Imports field not imported from: ?httptest?
+>
+> >>    All declared Imports should be used.
+>
+>
+>
+> I?ve seen that note before when I forgot to remove a @import reference in
+> the Roxygen comments.  Or it is still in the NAMESPACE file when I don?t
+> want it to be.
+>
+>
+>
+> Sent from Mail <https://go.microsoft.com/fwlink/?LinkId=550986> for
+> Windows 10
+>
+>
+>
+> *From: *Duncan Murdoch <murdoch.duncan at gmail.com>
+> *Sent: *Friday, January 8, 2021 11:15 AM
+> *To: *Greg Freedman Ellis <gdfermail at gmail.com>;
+> r-package-devel at r-project.org
+> *Subject: *Re: [R-pkg-devel] Package used unconditionally only in testing
+>
+>
+>
+> On 08/01/2021 9:17 a.m., Greg Freedman Ellis wrote:
+>
+> > Hi all,
+>
+> >
+>
+> > I'm trying to update a package to conform to pass tests given
+>
+> > `_R_CHECK_DEPENDS_ONLY_=TRUE`.
+>
+> >
+>
+> > In this package, we only use the package `httptest` during testing, but
+> the
+>
+> > tests are (almost) meaningless if it is not installed, so I would like to
+>
+> > indicate that it is a required package rather than skipping tests if it
+> is
+>
+> > not installed.
+>
+>
+>
+> This sounds wrong.  I don't know the httptest package, but I assume that
+>
+> since you were only using it for testing, I might be interested in using
+>
+> your package even if I wasn't interested in installing httptest.  Making
+>
+> it a hard requirement would force me to install httptest.
+>
+>
+>
+> >
+>
+> > If I move `httptest` to Depends, then I get the error CRAN check note:
+>
+> >> Namespace in Imports field not imported from: ?httptest?
+>
+> >>    All declared Imports should be used.
+>
+>
+>
+> You *definitely* shouldn't include it in Depends:  that would force it
+>
+> onto the search list, and potentially break other things that I'm
+>
+> running, e.g. if they have name conflicts with it.
+>
+>
+>
+> You *probably* shouldn't include it in Imports.  Why force me to load
+>
+> another package if I'll never use it?  There's a tiny chance that would
+>
+> push my memory use over the edge, and my own code would fail.
+>
+>
+>
+> It should almost certainly be included in Suggests, and nowhere else.
+>
+> If that means your tests are skipped, you should feel free to warn the
+>
+> user in your test messages:  but it shouldn't cause your tests to fail.
+>
+>
+>
+> > I think this would best be solved by a DESCRIPTION field that indicates a
+>
+> > package is required, but only for tests, but I do not see such a field.
+> The
+>
+> > only solution I can think of is to have a trivial import of `httptest` in
+>
+> > the main package to silence the NOTE. Is there a better solution?
+>
+>
+>
+> Most users aren't going to run your tests, so they shouldn't be forced
+>
+> to install software that would let them do so.
+>
+>
+>
+> Duncan Murdoch
+>
+>
+>
+> ______________________________________________
+>
+> R-package-devel at r-project.org mailing list
+>
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+>
+>
+
+	[[alternative HTML version deleted]]
+
+
+From henr|k@bengt@@on @end|ng |rom gm@||@com  Fri Jan  8 20:32:54 2021
+From: henr|k@bengt@@on @end|ng |rom gm@||@com (Henrik Bengtsson)
+Date: Fri, 8 Jan 2021 11:32:54 -0800
+Subject: [R-pkg-devel] Package used unconditionally only in testing
+In-Reply-To: <CAJdmaqRHkcLvQB9981cbYmr_aceAhmuekJEU5BpP5FTqYi93ZQ@mail.gmail.com>
+References: <CAJdmaqSGTWbz0xpiJa0ArAOiUiqG+929Bq+yEfSQoxj4payqPA@mail.gmail.com>
+ <baad805c-5463-38d5-4ad4-4d85bc2c6e41@gmail.com>
+ <02CF62C7-088D-466B-871F-2F6A30676654@hxcore.ol>
+ <CAJdmaqRHkcLvQB9981cbYmr_aceAhmuekJEU5BpP5FTqYi93ZQ@mail.gmail.com>
+Message-ID: <CAFDcVCRtnBXGcES4oezQSxmfedjxEJTz5Sy8VyE+WpiV6hszMQ@mail.gmail.com>
+
+R CMD check --as-cran will give an ERROR if not all Suggest:ed
+packages are installed and available when it runs.
+
+/Henrik
+
+On Fri, Jan 8, 2021 at 11:25 AM Greg Freedman Ellis <gdfermail at gmail.com> wrote:
+>
+> > It should almost certainly be included in Suggests, and nowhere else.
+> > If that means your tests are skipped, you should feel free to warn the
+> > user in your test messages:  but it shouldn't cause your tests to fail.
+>
+> I guess my worry is that my upstream dependencies will break something
+> without knowing it because the tests won't fail unless httptest is
+> installed. I really wish there was a way to indicate dependencies for
+> testing purposes only.
+>
+> (And, oops, you're right, I meant that I was considering including httptest
+> in Imports not Depends)
+>
+> On Fri, Jan 8, 2021 at 12:04 PM David Bosak <dbosak01 at gmail.com> wrote:
+>
+> > >> Namespace in Imports field not imported from: ?httptest?
+> >
+> > >>    All declared Imports should be used.
+> >
+> >
+> >
+> > I?ve seen that note before when I forgot to remove a @import reference in
+> > the Roxygen comments.  Or it is still in the NAMESPACE file when I don?t
+> > want it to be.
+> >
+> >
+> >
+> > Sent from Mail <https://go.microsoft.com/fwlink/?LinkId=550986> for
+> > Windows 10
+> >
+> >
+> >
+> > *From: *Duncan Murdoch <murdoch.duncan at gmail.com>
+> > *Sent: *Friday, January 8, 2021 11:15 AM
+> > *To: *Greg Freedman Ellis <gdfermail at gmail.com>;
+> > r-package-devel at r-project.org
+> > *Subject: *Re: [R-pkg-devel] Package used unconditionally only in testing
+> >
+> >
+> >
+> > On 08/01/2021 9:17 a.m., Greg Freedman Ellis wrote:
+> >
+> > > Hi all,
+> >
+> > >
+> >
+> > > I'm trying to update a package to conform to pass tests given
+> >
+> > > `_R_CHECK_DEPENDS_ONLY_=TRUE`.
+> >
+> > >
+> >
+> > > In this package, we only use the package `httptest` during testing, but
+> > the
+> >
+> > > tests are (almost) meaningless if it is not installed, so I would like to
+> >
+> > > indicate that it is a required package rather than skipping tests if it
+> > is
+> >
+> > > not installed.
+> >
+> >
+> >
+> > This sounds wrong.  I don't know the httptest package, but I assume that
+> >
+> > since you were only using it for testing, I might be interested in using
+> >
+> > your package even if I wasn't interested in installing httptest.  Making
+> >
+> > it a hard requirement would force me to install httptest.
+> >
+> >
+> >
+> > >
+> >
+> > > If I move `httptest` to Depends, then I get the error CRAN check note:
+> >
+> > >> Namespace in Imports field not imported from: ?httptest?
+> >
+> > >>    All declared Imports should be used.
+> >
+> >
+> >
+> > You *definitely* shouldn't include it in Depends:  that would force it
+> >
+> > onto the search list, and potentially break other things that I'm
+> >
+> > running, e.g. if they have name conflicts with it.
+> >
+> >
+> >
+> > You *probably* shouldn't include it in Imports.  Why force me to load
+> >
+> > another package if I'll never use it?  There's a tiny chance that would
+> >
+> > push my memory use over the edge, and my own code would fail.
+> >
+> >
+> >
+> > It should almost certainly be included in Suggests, and nowhere else.
+> >
+> > If that means your tests are skipped, you should feel free to warn the
+> >
+> > user in your test messages:  but it shouldn't cause your tests to fail.
+> >
+> >
+> >
+> > > I think this would best be solved by a DESCRIPTION field that indicates a
+> >
+> > > package is required, but only for tests, but I do not see such a field.
+> > The
+> >
+> > > only solution I can think of is to have a trivial import of `httptest` in
+> >
+> > > the main package to silence the NOTE. Is there a better solution?
+> >
+> >
+> >
+> > Most users aren't going to run your tests, so they shouldn't be forced
+> >
+> > to install software that would let them do so.
+> >
+> >
+> >
+> > Duncan Murdoch
+> >
+> >
+> >
+> > ______________________________________________
+> >
+> > R-package-devel at r-project.org mailing list
+> >
+> > https://stat.ethz.ch/mailman/listinfo/r-package-devel
+> >
+> >
+> >
+>
+>         [[alternative HTML version deleted]]
+>
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+
+From edd @end|ng |rom deb|@n@org  Fri Jan  8 20:52:19 2021
+From: edd @end|ng |rom deb|@n@org (Dirk Eddelbuettel)
+Date: Fri, 8 Jan 2021 13:52:19 -0600
+Subject: [R-pkg-devel] Package used unconditionally only in testing
+In-Reply-To: <CAFDcVCRtnBXGcES4oezQSxmfedjxEJTz5Sy8VyE+WpiV6hszMQ@mail.gmail.com>
+References: <CAJdmaqSGTWbz0xpiJa0ArAOiUiqG+929Bq+yEfSQoxj4payqPA@mail.gmail.com>
+ <baad805c-5463-38d5-4ad4-4d85bc2c6e41@gmail.com>
+ <02CF62C7-088D-466B-871F-2F6A30676654@hxcore.ol>
+ <CAJdmaqRHkcLvQB9981cbYmr_aceAhmuekJEU5BpP5FTqYi93ZQ@mail.gmail.com>
+ <CAFDcVCRtnBXGcES4oezQSxmfedjxEJTz5Sy8VyE+WpiV6hszMQ@mail.gmail.com>
+Message-ID: <24568.47091.107870.600781@rob.eddelbuettel.com>
+
+
+On 8 January 2021 at 11:32, Henrik Bengtsson wrote:
+| R CMD check --as-cran will give an ERROR if not all Suggest:ed
+| packages are installed and available when it runs.
+
+This can be overridden with R_CHECK_FORCE_SUGGESTS_=false which may be
+helpful if Suggests: has a long tail of dependencies, or a shorter test run
+is desired.
+
+The R Internals manual describes the variable as 
+
+  '_R_CHECK_FORCE_SUGGESTS_'
+       If true, give an error if suggested packages are not available.
+       Default: true (but false for CRAN submission checks).
+
+which highlights the different behaviour under --as-cran and without.
+
+Dirk
+
+-- 
+https://dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From pg||bert902 @end|ng |rom gm@||@com  Sat Jan  9 22:43:53 2021
+From: pg||bert902 @end|ng |rom gm@||@com (Paul Gilbert)
+Date: Sat, 9 Jan 2021 16:43:53 -0500
+Subject: [R-pkg-devel] CRAN check texi2dvi failure
+Message-ID: <2d46e0d6-cf03-0d87-b183-ac09a311d623@gmail.com>
+
+I am trying to debug a problem that is appearing in the linux and 
+Solaris checks, but not Windows or Mac checks, of my package tsfa as 
+reported at
+https://cran.r-project.org/web/checks/check_results_tsfa.html
+
+The problem is with re-building the vignette
+   ...
+   this is package 'tsfa' version '2014.10-1'
+   ...
+  checking re-building of vignette outputs ... [6s/9s] WARNING
+  Error(s) in re-building vignettes:
+   ...
+     Running 'texi2dvi' on 'Guide.tex' failed.
+     LaTeX errors:
+     ! LaTeX Error: \verb ended by end of line.
+   ...
+
+In responding to the threat of removal I have also fixes some long 
+standing warnings about adding imports to the NAMESPACE. The new version 
+builds with --as-cran giving no errors or warnings with both R-devel on 
+win-builder (2021-01-07 r79806) and on my linux machine (R 2021-01-08 
+r79812 on Linux Mint 19.3 Tricia). When I submit it to CRAN the Windows 
+build is OK but the same error happens at the 'texi2dvi' step in the 
+debian vignette re-build.
+
+This seems to happens after an example that correctly has a warning 
+message (about Heywood cases). In my linux build the the warning happens 
+but the message does not appear in the pdf output, so one possibility is 
+that the handling of the warning on the CRAN Unix check machines fails 
+to produce clean tex or suppress output. Another possibility is that my 
+build using --as-cran is different from the actual CRAN build options. 
+For example, my 00check.log shows
+...
+* checking package vignettes in ?inst/doc? ... OK
+* checking re-building of vignette outputs ... OK
+* checking PDF version of manual ... OK
+* checking for non-standard things in the check directory ... OK
+...
+
+so I am not sure if it uses texi2dvi. (I haven't used dvi myself for a 
+long time.)
+
+I'm not sure how to debug this when I can't reproduce the error. 
+Suggestions would be appreciated.
+
+Paul Gilbert
+
+
+From e@ @end|ng |rom enr|co@chum@nn@net  Sat Jan  9 23:52:00 2021
+From: e@ @end|ng |rom enr|co@chum@nn@net (Enrico Schumann)
+Date: Sat, 09 Jan 2021 23:52:00 +0100
+Subject: [R-pkg-devel] CRAN check texi2dvi failure
+In-Reply-To: <2d46e0d6-cf03-0d87-b183-ac09a311d623@gmail.com> (Paul Gilbert's
+ message of "Sat, 9 Jan 2021 16:43:53 -0500")
+References: <2d46e0d6-cf03-0d87-b183-ac09a311d623@gmail.com>
+Message-ID: <87h7np67vz.fsf@enricoschumann.net>
+
+On Sat, 09 Jan 2021, Paul Gilbert writes:
+
+> I am trying to debug a problem that is appearing in the
+> linux and Solaris checks, but not Windows or Mac
+> checks, of my package tsfa as reported at
+> https://cran.r-project.org/web/checks/check_results_tsfa.html
+>
+> The problem is with re-building the vignette
+>   ...
+>   this is package 'tsfa' version '2014.10-1'
+>   ...
+>  checking re-building of vignette outputs ... [6s/9s] WARNING
+>  Error(s) in re-building vignettes:
+>   ...
+>     Running 'texi2dvi' on 'Guide.tex' failed.
+>     LaTeX errors:
+>     ! LaTeX Error: \verb ended by end of line.
+>   ...
+>
+> In responding to the threat of removal I have also
+> fixes some long standing warnings about adding imports
+> to the NAMESPACE. The new version builds with --as-cran
+> giving no errors or warnings with both R-devel on
+> win-builder (2021-01-07 r79806) and on my linux machine
+> (R 2021-01-08 r79812 on Linux Mint 19.3 Tricia). When I
+> submit it to CRAN the Windows build is OK but the same
+> error happens at the 'texi2dvi' step in the debian
+> vignette re-build.
+>
+> This seems to happens after an example that correctly
+> has a warning message (about Heywood cases). In my
+> linux build the the warning happens but the message
+> does not appear in the pdf output, so one possibility
+> is that the handling of the warning on the CRAN Unix
+> check machines fails to produce clean tex or suppress
+> output. Another possibility is that my build using
+> --as-cran is different from the actual CRAN build
+> options. For example, my 00check.log shows
+> ...
+> * checking package vignettes in ?inst/doc? ... OK
+> * checking re-building of vignette outputs ... OK
+> * checking PDF version of manual ... OK
+> * checking for non-standard things in the check directory ... OK
+> ...
+>
+> so I am not sure if it uses texi2dvi. (I haven't used
+> dvi myself for a long time.)
+>
+> I'm not sure how to debug this when I can't reproduce
+> the error. Suggestions would be appreciated.
+>
+> Paul Gilbert
+>
+
+When I run R CMD check on my Linux machine [*], I also
+do not get an error.  But here is a guess: The error
+mentions \verb, and the LaTeX manual says that \verb
+should be followed by nonspace character.  But in the
+vignette it is followed by a space.  Maybe using \url
+in the vignette could fix the error?
+
+kind regards
+    Enrico
+
+
+
+[*] R version 4.0.3 (2020-10-10)
+    Platform: x86_64-pc-linux-gnu (64-bit)
+    Running under: Ubuntu 20.10
+
+
+    
+-- 
+Enrico Schumann
+Lucerne, Switzerland
+http://enricoschumann.net
+
+
+From georg|@bo@hn@kov @end|ng |rom m@nche@ter@@c@uk  Sun Jan 10 13:04:29 2021
+From: georg|@bo@hn@kov @end|ng |rom m@nche@ter@@c@uk (Georgi Boshnakov)
+Date: Sun, 10 Jan 2021 12:04:29 +0000
+Subject: [R-pkg-devel] CRAN check texi2dvi failure
+In-Reply-To: <2d46e0d6-cf03-0d87-b183-ac09a311d623@gmail.com>
+References: <2d46e0d6-cf03-0d87-b183-ac09a311d623@gmail.com>
+Message-ID: <LOYP265MB201528DBCEFD78ED00191ECFAEAC0@LOYP265MB2015.GBRP265.PROD.OUTLOOK.COM>
+
+The problem is not in the Warning from the example but from the \verb commands in the references.
+You use space to delimit the argument of \verb and I was surprised that it worked since TeX ignores spaces after commands. 
+Apparently, this has been an exception for \verb but now this feature is considered a bug and hs been recently fixed, see the atacjexchange question below and the relevant paragraph from LaTeX News. Probably the linux machines have updated their TeX installations.
+
+In short, changing the space tp  say  +  delimiter for \verb command should fix the issue.
+
+Georgi Boshnakov
+
+ 
+https://tex.stackexchange.com/questions/566085/how-does-verb-detect-spaces-that-shouldnt-exist 
+
+Avoid problematic spaces after \verb
+If a user typed \verb?!~!?foo instead of \verb!~!?foo
+by mistake, then surprisingly the result was ?!~!foo?
+without any warning or error. What happened was that
+the ? became the argument delimiter due to the rather
+complex processing done by \verb to render verbatim.
+This has been fixed and spaces directly following the
+command \verb or \verb* are now ignored as elsewhere.
+(github issue 327)
+
+
+-----Original Message-----
+From: R-package-devel <r-package-devel-bounces at r-project.org> On Behalf Of Paul Gilbert
+Sent: 09 January 2021 21:44
+To: r-package-devel at r-project.org
+Subject: [R-pkg-devel] CRAN check texi2dvi failure
+
+I am trying to debug a problem that is appearing in the linux and Solaris checks, but not Windows or Mac checks, of my package tsfa as reported at https://cran.r-project.org/web/checks/check_results_tsfa.html
+
+The problem is with re-building the vignette
+   ...
+   this is package 'tsfa' version '2014.10-1'
+   ...
+  checking re-building of vignette outputs ... [6s/9s] WARNING
+  Error(s) in re-building vignettes:
+   ...
+     Running 'texi2dvi' on 'Guide.tex' failed.
+     LaTeX errors:
+     ! LaTeX Error: \verb ended by end of line.
+   ...
+
+In responding to the threat of removal I have also fixes some long standing warnings about adding imports to the NAMESPACE. The new version builds with --as-cran giving no errors or warnings with both R-devel on win-builder (2021-01-07 r79806) and on my linux machine (R 2021-01-08
+r79812 on Linux Mint 19.3 Tricia). When I submit it to CRAN the Windows build is OK but the same error happens at the 'texi2dvi' step in the debian vignette re-build.
+
+This seems to happens after an example that correctly has a warning message (about Heywood cases). In my linux build the the warning happens but the message does not appear in the pdf output, so one possibility is that the handling of the warning on the CRAN Unix check machines fails to produce clean tex or suppress output. Another possibility is that my build using --as-cran is different from the actual CRAN build options. 
+For example, my 00check.log shows
+...
+* checking package vignettes in ?inst/doc? ... OK
+* checking re-building of vignette outputs ... OK
+* checking PDF version of manual ... OK
+* checking for non-standard things in the check directory ... OK ...
+
+so I am not sure if it uses texi2dvi. (I haven't used dvi myself for a long time.)
+
+I'm not sure how to debug this when I can't reproduce the error. 
+Suggestions would be appreciated.
+
+Paul Gilbert
+
+______________________________________________
+R-package-devel at r-project.org mailing list https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+From pg||bert902 @end|ng |rom gm@||@com  Sun Jan 10 15:12:17 2021
+From: pg||bert902 @end|ng |rom gm@||@com (Paul Gilbert)
+Date: Sun, 10 Jan 2021 09:12:17 -0500
+Subject: [R-pkg-devel] CRAN check texi2dvi failure
+In-Reply-To: <87h7np67vz.fsf@enricoschumann.net>
+References: <2d46e0d6-cf03-0d87-b183-ac09a311d623@gmail.com>
+ <87h7np67vz.fsf@enricoschumann.net>
+Message-ID: <57699314-f453-70ce-f2c2-9d57279fe04d@gmail.com>
+
+Thanks Enrico for the great guess, and Georgi for the details.
+
+If I omit the space as seems to be implied in some documentation, changing
+   \verb <https://www.bankofcanada.ca/2006/03/working-paper-2006-3> .
+to
+   \verb<https://www.bankofcanada.ca/2006/03/working-paper-2006-3> .
+
+then the R CMD check error "\verb ended by end of line" happens on my 
+linux machine. I did not try replacing the space with another 
+deliminator, which I guess would now be the correct way to use \verb. 
+The solution of adding
+   \usepackage{url}
+
+and changing to
+   \url{https://www.bankofcanada.ca/2006/03/working-paper-2006-3}.
+
+does seem to work. (No "on CRAN" confirmation yet but I have not had the 
+immediate pre-test rejection that I got previously.)
+
+Paul
+
+On 2021-01-10 8:04 a.m., Georgi Boshnakov wrote:
+ > The problem is not in the Warning from the example but from
+ > the \verb commands in the references.
+ > You use space to delimit the argument of \verb and I was surprised
+ > that it worked since TeX ignores spaces after commands.
+ > Apparently, this has been an exception for \verb but now this feature
+ > is considered a bug and hs been recently fixed, see the atacjexchange
+ > question below and the relevant paragraph from LaTeX News. Probably
+ > the linux machines have updated their TeX installations.
+ >
+ > In short, changing the space tp  say  +  delimiter for \verb command 
+should fix the issue.
+ >
+ > Georgi Boshnakov
+ >
+
+On 2021-01-09 6:52 p.m., Enrico Schumann wrote:
+> When I run R CMD check on my Linux machine [*], I also
+> do not get an error.  But here is a guess: The error
+> mentions \verb, and the LaTeX manual says that \verb
+> should be followed by nonspace character.  But in the
+> vignette it is followed by a space.  Maybe using \url
+> in the vignette could fix the error?
+> 
+> kind regards
+>      Enrico
+> 
+> 
+> 
+> [*] R version 4.0.3 (2020-10-10)
+>      Platform: x86_64-pc-linux-gnu (64-bit)
+>      Running under: Ubuntu 20.10
+> 
+> > On Sat, 09 Jan 2021, Paul Gilbert writes:
+> 
+>> I am trying to debug a problem that is appearing in the
+>> linux and Solaris checks, but not Windows or Mac
+>> checks, of my package tsfa as reported at
+>> https://cran.r-project.org/web/checks/check_results_tsfa.html
+>>
+>> The problem is with re-building the vignette
+>>    ...
+>>    this is package 'tsfa' version '2014.10-1'
+>>    ...
+>>   checking re-building of vignette outputs ... [6s/9s] WARNING
+>>   Error(s) in re-building vignettes:
+>>    ...
+>>      Running 'texi2dvi' on 'Guide.tex' failed.
+>>      LaTeX errors:
+>>      ! LaTeX Error: \verb ended by end of line.
+>>    ...
+>>
+>> In responding to the threat of removal I have also
+>> fixes some long standing warnings about adding imports
+>> to the NAMESPACE. The new version builds with --as-cran
+>> giving no errors or warnings with both R-devel on
+>> win-builder (2021-01-07 r79806) and on my linux machine
+>> (R 2021-01-08 r79812 on Linux Mint 19.3 Tricia). When I
+>> submit it to CRAN the Windows build is OK but the same
+>> error happens at the 'texi2dvi' step in the debian
+>> vignette re-build.
+>>
+>> This seems to happens after an example that correctly
+>> has a warning message (about Heywood cases). In my
+>> linux build the the warning happens but the message
+>> does not appear in the pdf output, so one possibility
+>> is that the handling of the warning on the CRAN Unix
+>> check machines fails to produce clean tex or suppress
+>> output. Another possibility is that my build using
+>> --as-cran is different from the actual CRAN build
+>> options. For example, my 00check.log shows
+>> ...
+>> * checking package vignettes in ?inst/doc? ... OK
+>> * checking re-building of vignette outputs ... OK
+>> * checking PDF version of manual ... OK
+>> * checking for non-standard things in the check directory ... OK
+>> ...
+>>
+>> so I am not sure if it uses texi2dvi. (I haven't used
+>> dvi myself for a long time.)
+>>
+>> I'm not sure how to debug this when I can't reproduce
+>> the error. Suggestions would be appreciated.
+>>
+>> Paul Gilbert
+>>
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Sun Jan 10 17:43:49 2021
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Sun, 10 Jan 2021 11:43:49 -0500
+Subject: [R-pkg-devel] CRAN check texi2dvi failure
+In-Reply-To: <57699314-f453-70ce-f2c2-9d57279fe04d@gmail.com>
+References: <2d46e0d6-cf03-0d87-b183-ac09a311d623@gmail.com>
+ <87h7np67vz.fsf@enricoschumann.net>
+ <57699314-f453-70ce-f2c2-9d57279fe04d@gmail.com>
+Message-ID: <9e167f7f-1ed5-d9fd-2f46-5d07c7320f73@gmail.com>
+
+On 10/01/2021 9:12 a.m., Paul Gilbert wrote:
+> Thanks Enrico for the great guess, and Georgi for the details.
+> 
+> If I omit the space as seems to be implied in some documentation, changing
+>     \verb <https://www.bankofcanada.ca/2006/03/working-paper-2006-3> .
+> to
+>     \verb<https://www.bankofcanada.ca/2006/03/working-paper-2006-3> .
+> 
+> then the R CMD check error "\verb ended by end of line" happens on my
+> linux machine. I did not try replacing the space with another
+> deliminator, which I guess would now be the correct way to use \verb.
+
+Yes, you would need to do that.
+
+> The solution of adding
+>     \usepackage{url}
+> 
+> and changing to
+>     \url{https://www.bankofcanada.ca/2006/03/working-paper-2006-3}.
+> 
+> does seem to work. (No "on CRAN" confirmation yet but I have not had the
+> immediate pre-test rejection that I got previously.)
+
+The risk of this change is that the URL may fail in CRAN tests; see the 
+recent "URL checks" thread on R-devel for a discussion of ways in which 
+this can happen even when the URL works for you.
+
+Duncan Murdoch
+
+> 
+> Paul
+> 
+> On 2021-01-10 8:04 a.m., Georgi Boshnakov wrote:
+>   > The problem is not in the Warning from the example but from
+>   > the \verb commands in the references.
+>   > You use space to delimit the argument of \verb and I was surprised
+>   > that it worked since TeX ignores spaces after commands.
+>   > Apparently, this has been an exception for \verb but now this feature
+>   > is considered a bug and hs been recently fixed, see the atacjexchange
+>   > question below and the relevant paragraph from LaTeX News. Probably
+>   > the linux machines have updated their TeX installations.
+>   >
+>   > In short, changing the space tp  say  +  delimiter for \verb command
+> should fix the issue.
+>   >
+>   > Georgi Boshnakov
+>   >
+> 
+> On 2021-01-09 6:52 p.m., Enrico Schumann wrote:
+>> When I run R CMD check on my Linux machine [*], I also
+>> do not get an error.  But here is a guess: The error
+>> mentions \verb, and the LaTeX manual says that \verb
+>> should be followed by nonspace character.  But in the
+>> vignette it is followed by a space.  Maybe using \url
+>> in the vignette could fix the error?
+>>
+>> kind regards
+>>       Enrico
+>>
+>>
+>>
+>> [*] R version 4.0.3 (2020-10-10)
+>>       Platform: x86_64-pc-linux-gnu (64-bit)
+>>       Running under: Ubuntu 20.10
+>>
+>>> On Sat, 09 Jan 2021, Paul Gilbert writes:
+>>
+>>> I am trying to debug a problem that is appearing in the
+>>> linux and Solaris checks, but not Windows or Mac
+>>> checks, of my package tsfa as reported at
+>>> https://cran.r-project.org/web/checks/check_results_tsfa.html
+>>>
+>>> The problem is with re-building the vignette
+>>>     ...
+>>>     this is package 'tsfa' version '2014.10-1'
+>>>     ...
+>>>    checking re-building of vignette outputs ... [6s/9s] WARNING
+>>>    Error(s) in re-building vignettes:
+>>>     ...
+>>>       Running 'texi2dvi' on 'Guide.tex' failed.
+>>>       LaTeX errors:
+>>>       ! LaTeX Error: \verb ended by end of line.
+>>>     ...
+>>>
+>>> In responding to the threat of removal I have also
+>>> fixes some long standing warnings about adding imports
+>>> to the NAMESPACE. The new version builds with --as-cran
+>>> giving no errors or warnings with both R-devel on
+>>> win-builder (2021-01-07 r79806) and on my linux machine
+>>> (R 2021-01-08 r79812 on Linux Mint 19.3 Tricia). When I
+>>> submit it to CRAN the Windows build is OK but the same
+>>> error happens at the 'texi2dvi' step in the debian
+>>> vignette re-build.
+>>>
+>>> This seems to happens after an example that correctly
+>>> has a warning message (about Heywood cases). In my
+>>> linux build the the warning happens but the message
+>>> does not appear in the pdf output, so one possibility
+>>> is that the handling of the warning on the CRAN Unix
+>>> check machines fails to produce clean tex or suppress
+>>> output. Another possibility is that my build using
+>>> --as-cran is different from the actual CRAN build
+>>> options. For example, my 00check.log shows
+>>> ...
+>>> * checking package vignettes in ?inst/doc? ... OK
+>>> * checking re-building of vignette outputs ... OK
+>>> * checking PDF version of manual ... OK
+>>> * checking for non-standard things in the check directory ... OK
+>>> ...
+>>>
+>>> so I am not sure if it uses texi2dvi. (I haven't used
+>>> dvi myself for a long time.)
+>>>
+>>> I'm not sure how to debug this when I can't reproduce
+>>> the error. Suggestions would be appreciated.
+>>>
+>>> Paul Gilbert
+>>>
+> 
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+
+
