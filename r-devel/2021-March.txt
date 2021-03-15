@@ -1,0 +1,670 @@
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Mon Mar  1 20:13:37 2021
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Mon, 1 Mar 2021 20:13:37 +0100
+Subject: [Rd] Corrupt internal row names when creating a data.frame with
+ `attributes<-`
+In-Reply-To: <CABzLhzyfq9DR7iHLFGRscfXVkYwX-YDTFtB09peKH_CAtr7Srw@mail.gmail.com>
+References: <CABzLhzyY3uMhRuGZmQvHmx9Ua-9a8Ne3sB_BBBV-_40kOECszA@mail.gmail.com>
+ <CAJXgQP2zfZ6Z13-K8HsHsYwEfwzTaX71HEs0a1hioB=mcS1a=w@mail.gmail.com>
+ <CAHqSRuSDwDHpWOrM=1bmv5ZM8T5LunMvppqfF+fYFgwLqDrkhw@mail.gmail.com>
+ <CABzLhzyfq9DR7iHLFGRscfXVkYwX-YDTFtB09peKH_CAtr7Srw@mail.gmail.com>
+Message-ID: <24637.15585.614246.762771@stat.math.ethz.ch>
+
+>>>>> Davis Vaughan 
+>>>>>     on Tue, 16 Feb 2021 14:50:33 -0500 writes:
+
+    > This originally came up in this dplyr issue:
+    > https://github.com/tidyverse/dplyr/issues/5745
+
+    > Where `tibble::column_to_rownames()` failed because it
+    > eventually checks `.row_names_info(.data) > 0L` to see if
+    > there are automatic row names, which is in line with the
+    > documentation that Kevin pointed out: "type = 1 the latter
+    > with a negative sign for ?automatic? row names."
+
+    > Davis
+
+
+    > On Tue, Feb 16, 2021 at 2:29 PM Bill Dunlap
+    > <williamwdunlap at gmail.com> wrote:
+
+    >> as.matrix.data.frame does not take the absolute value of
+    >> that number:
+
+slightly changed and extended by MM {and as R script} :
+
+------------------------------------------------------------------------
+
+dPos <- structure(list(X=11:14, 1:4), class="data.frame", row.names=c(NA, +4L))
+dNeg <- structure(list(X=11:14, 1:4), class="data.frame", row.names=c(NA, -4L))
+##
+all_rn_info <- function(x) lapply(setNames(,0:2),
+                               function(tp) .row_names_info(x, type=tp))
+str(all_rn_info(dPos))
+## List of 3
+##  $ 0: int [1:2] NA 4
+##  $ 1: int 4
+##  $ 2: int 4
+str(all_rn_info(dNeg))
+## List of 3
+##  $ 0: int [1:2] NA -4
+##  $ 1: int -4
+##  $ 2: int 4
+stopifnot(exprs = {
+    identical(rownames(dPos), as.character(1:4))
+    identical(rownames(dPos), rownames(dNeg))
+    ## using as.matrix.data.frame() which differentiates, too :
+    identical(rownames(as.matrix(dPos)), as.character(1:4))
+    is.null  (rownames(as.matrix(dNeg)))
+    ## BTW, also :
+    identical(attributes(dPos), attributes(dNeg)) ## and hence also
+    identical(dPos, dNeg) # another case where identical() is possibly too "tolerant"
+})
+
+## and for your interest, these *also* have both 'c(NA, +|n|)'  ==> give '+4'
+.row_names_info(dInt1 <- structure(list(X=11:14, 1:4), class="data.frame", row.names=1:4))
+.row_names_info(dInt2 <- local({ dd <- data.frame(X=11:14, 1:4, fix.empty.names = FALSE)
+                                 attr(dd, "row.names") <- 1:4; dd }))
+stopifnot(exprs = {
+    identical(dInt1, dInt2)
+    identical(all_rn_info(dInt1),
+              all_rn_info(dInt2))
+    identical(all_rn_info(dPos),
+              all_rn_info(dInt1))
+})
+
+------------------------------------------------------------------------
+
+There never was a conclusion here
+(and the above is not the full context of the thread) .. 
+but if I understand Bill and his example (extended above) correctly,
+he's indirectly hinting toward that there is **no bug** here :
+
+1) You can use structure() well to get "truly automatic" row
+   names by setting the row.names correctly to  c(NA, -3L)
+   {yes, which is  c(NA_integer_, -3L) }
+
+2) There's a subtle difference between *two* kinds of automatic
+   row names, on purpose, notably used in  as.matrix.data.frame():
+   c(NA, +3)  are automatic row names, too, but which translate also to
+   matrix row names hence are somewhat slightly less automatic ... 
+
+   Note that you may see this documented by careful reading of
+   the 'Note' in  help(row.names) *and* the 'Examples' section
+   of that help page....
+
+Last but not least:  We (R Core) did not document the nitty
+gritty details here partly on purpose, because they should've
+been subject to change, see e.g. the word "currently" in the
+?row.names help page.
+
+Notably with ALTREP objects, we could use "regular"  1:n
+integer row names which would be ALTREP compacted automatically
+for non-small 'n'.
+
+Last but not least, the check in tibble that was mentioned in
+this thread, should almost surely be fixed, if gives a problem
+for these example, and I claim it has been *that* code that has
+buggy rather than base R's one. 
+
+Martin
+
+
+From c@@rd|@g@bor @end|ng |rom gm@||@com  Fri Mar  5 14:52:51 2021
+From: c@@rd|@g@bor @end|ng |rom gm@||@com (=?UTF-8?B?R8OhYm9yIENzw6FyZGk=?=)
+Date: Fri, 5 Mar 2021 14:52:51 +0100
+Subject: [Rd] encodeString converts to UTF-8 on Windows R-devel
+Message-ID: <CABtg=KkwGA+V81-Z+1LBi69N7cYoRmpbmY4OWYunWh9GM98MOg@mail.gmail.com>
+
+Which is not necessarily bad news. :)
+
+I wonder if this was intended, because I did not find anything about
+it in the news file. It also breaks a couple of R packages, e.g. desc,
+probably more.
+
+Is this intended?
+
+Thanks!
+
+This is R-devel from yesterday:
+
+> x <- "\xfc"
+> Encoding(x) <- "latin1"
+> charToRaw(encodeString(x))
+[1] c3 bc
+>
+> l10n_info()
+$MBCS
+[1] FALSE
+
+$`UTF-8`
+[1] FALSE
+
+$`Latin-1`
+[1] TRUE
+
+$codepage
+[1] 1252
+
+$system.codepage
+[1] 1252
+
+and this is R-4.0.4:
+
+> x <- "\xfc"
+> Encoding(x) <- "latin1"
+> charToRaw(encodeString(x))
+[1] fc
+>
+> l10n_info()
+$MBCS
+[1] FALSE
+
+$`UTF-8`
+[1] FALSE
+
+$`Latin-1`
+[1] TRUE
+
+$codepage
+[1] 1252
+
+$system.codepage
+[1] 1252
+
+
+From t@r@@@z@kh@rko @end|ng |rom uzh@ch  Sun Mar  7 11:12:48 2021
+From: t@r@@@z@kh@rko @end|ng |rom uzh@ch (Taras Zakharko)
+Date: Sun, 7 Mar 2021 11:12:48 +0100
+Subject: [Rd] An argument promise containing bytecode?
+Message-ID: <7DD4C301-1849-4BAF-9C46-3256F09F79C9@uzh.ch>
+
+Dear all, 
+
+I was playing around with some C code that inspects argument promises and I noticed that forwarded arguments sometimes contain bytecode in the PRCODE component. E.g. if I have a nested call like this:
+
+  f <- function(x) x
+  g <- function(x) f(x)
+
+ g(1+1)
+
+and inspect the value of ?x? in g?s frame from within f?s frame (basically calling findVar(parent.frame(), x)), I would see a LANGSXP the first time g()  is invoked, but BCODESXP on every subsequent time.  Using PREXPR gets me the original LANGSXP in any case. 
+
+Now, this is curious behavior and I had a quick glance into R source code related to closure evaluation and argument matching, but I could not see anything that would generate bytecode for promises. Could someone with in-depth knowledge of R?s machinery explain what is going on? 
+
+Thanks, 
+
+Taras
+
+From @|mon@urb@nek @end|ng |rom R-project@org  Mon Mar  8 03:51:00 2021
+From: @|mon@urb@nek @end|ng |rom R-project@org (Simon Urbanek)
+Date: Mon, 8 Mar 2021 15:51:00 +1300
+Subject: [Rd] An argument promise containing bytecode?
+In-Reply-To: <7DD4C301-1849-4BAF-9C46-3256F09F79C9@uzh.ch>
+References: <7DD4C301-1849-4BAF-9C46-3256F09F79C9@uzh.ch>
+Message-ID: <E410AC79-00DF-456B-91F4-9AC0FFB135A6@R-project.org>
+
+Taras,
+
+I don't think this has anything to do with promises, rather it is called Just-In-Time (JIT) compilation - see ?enablleJIT in R, it is enabled by default, so the function will be compiled on second use.
+
+Cheers,
+Simon
+
+
+
+> On Mar 7, 2021, at 11:12 PM, Taras Zakharko <taras.zakharko at uzh.ch> wrote:
+> 
+> Dear all, 
+> 
+> I was playing around with some C code that inspects argument promises and I noticed that forwarded arguments sometimes contain bytecode in the PRCODE component. E.g. if I have a nested call like this:
+> 
+>  f <- function(x) x
+>  g <- function(x) f(x)
+> 
+> g(1+1)
+> 
+> and inspect the value of ?x? in g?s frame from within f?s frame (basically calling findVar(parent.frame(), x)), I would see a LANGSXP the first time g()  is invoked, but BCODESXP on every subsequent time.  Using PREXPR gets me the original LANGSXP in any case. 
+> 
+> Now, this is curious behavior and I had a quick glance into R source code related to closure evaluation and argument matching, but I could not see anything that would generate bytecode for promises. Could someone with in-depth knowledge of R?s machinery explain what is going on? 
+> 
+> Thanks, 
+> 
+> Taras
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+> 
+
+
+From t@r@@@z@kh@rko @end|ng |rom uzh@ch  Mon Mar  8 08:39:47 2021
+From: t@r@@@z@kh@rko @end|ng |rom uzh@ch (Taras Zakharko)
+Date: Mon, 8 Mar 2021 08:39:47 +0100
+Subject: [Rd] An argument promise containing bytecode?
+In-Reply-To: <E410AC79-00DF-456B-91F4-9AC0FFB135A6@R-project.org>
+References: <7DD4C301-1849-4BAF-9C46-3256F09F79C9@uzh.ch>
+ <E410AC79-00DF-456B-91F4-9AC0FFB135A6@R-project.org>
+Message-ID: <FEE47ABD-D827-4E98-81E6-1CE762D55318@uzh.ch>
+
+Thank you Simon! Such a trivial explanation? admittedly, I am a bit disappointed, I hoped there was more to the mystery :) 
+
+Best, 
+
+Taras
+
+> On 8 Mar 2021, at 03:51, Simon Urbanek <simon.urbanek at R-project.org> wrote:
+> 
+> Taras,
+> 
+> I don't think this has anything to do with promises, rather it is called Just-In-Time (JIT) compilation - see ?enablleJIT in R, it is enabled by default, so the function will be compiled on second use.
+> 
+> Cheers,
+> Simon
+> 
+> 
+> 
+>> On Mar 7, 2021, at 11:12 PM, Taras Zakharko <taras.zakharko at uzh.ch> wrote:
+>> 
+>> Dear all, 
+>> 
+>> I was playing around with some C code that inspects argument promises and I noticed that forwarded arguments sometimes contain bytecode in the PRCODE component. E.g. if I have a nested call like this:
+>> 
+>> f <- function(x) x
+>> g <- function(x) f(x)
+>> 
+>> g(1+1)
+>> 
+>> and inspect the value of ?x? in g?s frame from within f?s frame (basically calling findVar(parent.frame(), x)), I would see a LANGSXP the first time g()  is invoked, but BCODESXP on every subsequent time.  Using PREXPR gets me the original LANGSXP in any case. 
+>> 
+>> Now, this is curious behavior and I had a quick glance into R source code related to closure evaluation and argument matching, but I could not see anything that would generate bytecode for promises. Could someone with in-depth knowledge of R?s machinery explain what is going on? 
+>> 
+>> Thanks, 
+>> 
+>> Taras
+>> ______________________________________________
+>> R-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-devel
+>> 
+> 
+
+
+From edd @end|ng |rom deb|@n@org  Thu Mar 11 16:21:06 2021
+From: edd @end|ng |rom deb|@n@org (Dirk Eddelbuettel)
+Date: Thu, 11 Mar 2021 09:21:06 -0600
+Subject: [Rd] r-devel windows gcc10-UCRT machine questions
+Message-ID: <24650.13666.624648.18446@rob.eddelbuettel.com>
+
+
+I saw two (unchanged, long-existing) tests of main fail narrowly on this new
+platform (relative to the tolerance argument set).
+
+Attempting to change the tolerance if .Platform$OS.type == "windows" failed
+(any idea why that test would evaluate to FALSE?).  Could it be that
+capabilities("long.double") returns FALSE?
+
+As always, it is a little challenging to keep our stacks in order without
+access to the platforms added.  So with thanks in advance for any pointers.
+And of course for working towards utf8 on windows.
+
+Dirk
+
+-- 
+https://dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From tom@@@k@||ber@ @end|ng |rom gm@||@com  Thu Mar 11 16:46:23 2021
+From: tom@@@k@||ber@ @end|ng |rom gm@||@com (Tomas Kalibera)
+Date: Thu, 11 Mar 2021 16:46:23 +0100
+Subject: [Rd] r-devel windows gcc10-UCRT machine questions
+In-Reply-To: <24650.13666.624648.18446@rob.eddelbuettel.com>
+References: <24650.13666.624648.18446@rob.eddelbuettel.com>
+Message-ID: <40909adb-c61a-4e90-30fc-ba2337276501@gmail.com>
+
+On 3/11/21 4:21 PM, Dirk Eddelbuettel wrote:
+> I saw two (unchanged, long-existing) tests of main fail narrowly on this new
+> platform (relative to the tolerance argument set).
+Thanks for already looking at the results. I'd be happy to have a look 
+if you point me to the example.
+> Attempting to change the tolerance if .Platform$OS.type == "windows" failed
+> (any idea why that test would evaluate to FALSE?).  Could it be that
+> capabilities("long.double") returns FALSE?
+.Platform$OS.type == "windows" and capabilities("long.double") are both 
+true on the test system.
+> As always, it is a little challenging to keep our stacks in order without
+> access to the platforms added.  So with thanks in advance for any pointers.
+> And of course for working towards utf8 on windows.
+
+There is no checking service yet for this, but it should be simple to 
+install things to Windows 10 following documentation at
+
+https://svn.r-project.org/R-dev-web/trunk/WindowsBuilds/winutf8/ucrt3/howto.html
+
+If you just want to install a CRAN version of your package and run some 
+R code using it, you should only need to install R from the binary 
+installer, and from it install your package (there are binary builds of 
+packages).
+
+I'd recommend to do this in a fresh VM. One can get a free VM (time 
+limited) from Microsoft for testing and run it in say VirtualBox.
+
+If doing this on a system with the normal R-devel installed, it is 
+better to remove it first including the package library directory, and 
+vice-versa, remove the UCRT-based R-devel before installing the normal 
+one. Or use some other usual measures to make sure that each 
+installation has its own package library directory.
+
+Best
+Tomas
+>
+> Dirk
+>
+
+
+From x|@oy@n@yu @end|ng |rom gm@||@com  Fri Mar 12 19:43:17 2021
+From: x|@oy@n@yu @end|ng |rom gm@||@com (xiaoyan yu)
+Date: Fri, 12 Mar 2021 13:43:17 -0500
+Subject: [Rd] R extension memory leak detection question
+Message-ID: <CANjVfJ2xXfinnpYgEoH_0dwvG=29FFMinuV+1cOueSrRMNyq9A@mail.gmail.com>
+
+I am writing C++ program based on R extensions and also try to test the
+program with google address sanitizer.
+
+I thought if I don't protect the variable from the allocation API such as
+Rf_allocVector, there will be a memory leak. However, the address sanitizer
+didn't report it. Is my understanding correct? Or I will see the memory
+leak only if I compile R source code with the address sanitizer.
+
+ Please help!
+
+Thanks,
+Xiaoyan
+
+	[[alternative HTML version deleted]]
+
+
+From Thom@@@SOEIRO @end|ng |rom @p-hm@|r  Fri Mar 12 23:59:12 2021
+From: Thom@@@SOEIRO @end|ng |rom @p-hm@|r (SOEIRO Thomas)
+Date: Fri, 12 Mar 2021 22:59:12 +0000
+Subject: [Rd] Potential improvements of ave?
+Message-ID: <1615589952944.72119@ap-hm.fr>
+
+Dear all,
+
+I have two questions/suggestions about ave, but I am not sure if it's relevant for bug reports.
+
+
+
+1) I have performance issues with ave in a case where I didn't expect it. The following code runs as expected:
+
+set.seed(1)
+
+df1 <- data.frame(id1 = sample(1:1e2, 5e2, TRUE),
+                  id2 = sample(1:3, 5e2, TRUE),
+                  id3 = sample(1:5, 5e2, TRUE),
+                  val = sample(1:300, 5e2, TRUE))
+
+df1$diff <- ave(df1$val,
+                df1$id1,
+                df1$id2,
+                df1$id3,
+                FUN = function(i) c(diff(i), 0))
+
+head(df1[order(df1$id1,
+               df1$id2,
+               df1$id3), ])
+
+But when expanding the data.frame (* 1e4), ave fails (Error: cannot allocate vector of size 1110.0 Gb):
+
+df2 <- data.frame(id1 = sample(1:(1e2 * 1e4), 5e2 * 1e4, TRUE),
+                  id2 = sample(1:3, 5e2 * 1e4, TRUE),
+                  id3 = sample(1:(5 * 1e4), 5e2 * 1e4, TRUE),
+                  val = sample(1:300, 5e2 * 1e4, TRUE))
+
+df2$diff <- ave(df2$val,
+                df2$id1,
+                df2$id2,
+                df2$id3,
+                FUN = function(i) c(diff(i), 0))
+
+This use case does not seem extreme to me (e.g. aggregate et al work perfectly on this data.frame).
+So my question is: Is this expected/intended/reasonable? i.e. Does ave need to be optimized?
+
+
+
+2) Gabor Grothendieck pointed out in 2011 that drop = TRUE is needed to avoid warnings in case of unused levels (https://stat.ethz.ch/pipermail/r-devel/2011-February/059947.html).
+Is it relevant/possible to expose the drop argument explicitly?
+
+
+
+Thanks,
+
+Thomas
+
+From bbo|ker @end|ng |rom gm@||@com  Sat Mar 13 01:50:09 2021
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Fri, 12 Mar 2021 19:50:09 -0500
+Subject: [Rd] trivial typo in src/library/base/man/pmatch.Rd
+Message-ID: <fa8d9c8f-3c32-f1c9-39b3-735b6ebeadeb@gmail.com>
+
+ll. 17-18 of src/library/base/man/pmatch.Rd says "the value to be 
+returned at non-matching or multiply partially matching positions".
+
+   I think "multiply" should be "multiple" there?
+
+   Can submit an actual patch if that would be more useful.
+
+
+From pd@|gd @end|ng |rom gm@||@com  Sat Mar 13 09:44:38 2021
+From: pd@|gd @end|ng |rom gm@||@com (peter dalgaard)
+Date: Sat, 13 Mar 2021 09:44:38 +0100
+Subject: [Rd] trivial typo in src/library/base/man/pmatch.Rd
+In-Reply-To: <fa8d9c8f-3c32-f1c9-39b3-735b6ebeadeb@gmail.com>
+References: <fa8d9c8f-3c32-f1c9-39b3-735b6ebeadeb@gmail.com>
+Message-ID: <C683881A-CB14-4FC0-B141-48246D52A755@gmail.com>
+
+I suspect this is as meant, but it is "multiply", the adverb, not the verb. So it might be worth rephrasing, but "multiple" would be wrong (it is about cases where you at one position have several partial matches, not several positions where you have a partial match). "Non-uniquely partially matching", perhaps?
+
+-pd  
+
+> On 13 Mar 2021, at 01:50 , Ben Bolker <bbolker at gmail.com> wrote:
+> 
+> ll. 17-18 of src/library/base/man/pmatch.Rd says "the value to be returned at non-matching or multiply partially matching positions".
+> 
+>  I think "multiply" should be "multiple" there?
+> 
+>  Can submit an actual patch if that would be more useful.
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+-- 
+Peter Dalgaard, Professor,
+Center for Statistics, Copenhagen Business School
+Solbjerg Plads 3, 2000 Frederiksberg, Denmark
+Phone: (+45)38153501
+Office: A 4.23
+Email: pd.mes at cbs.dk  Priv: PDalgd at gmail.com
+
+
+From Thom@@@SOEIRO @end|ng |rom @p-hm@|r  Sat Mar 13 10:50:58 2021
+From: Thom@@@SOEIRO @end|ng |rom @p-hm@|r (SOEIRO Thomas)
+Date: Sat, 13 Mar 2021 09:50:58 +0000
+Subject: [Rd] reshape documentation
+Message-ID: <1615629058522.60204@ap-hm.fr>
+
+Dear list,
+
+I have some questions/suggestions about reshape.
+
+1) I think a good amount of the popularity of base::reshape alternative is due to the complexity of reshape documentation. It is quite hard (at least it is for me) to figure out what argument is needed for respectively "long to wide" and "wide to long", because reshapeWide and reshapeLong are documented together.
+- Do you agree with this?
+- Would you consider a proposal to modify the documentation?
+- If yes, what approach do you suggest? e.g. split in two pages?
+ 
+2) I do not think the documentation indicates that we can use varying argument to rename variables in reshapeWide.
+- Is this worth documenting?
+- Is the construct list(c()) really needed?
+
+reshape(Indometh,
+        v.names = "conc",
+        idvar = "Subject",
+        timevar = "time",
+        direction = "wide",
+        varying = list(c("conc_0.25hr",
+                         "conc_0.5hr",
+                         "conc.0.75hr",
+                         "conc_1hr",
+                         "conc_1.25hr",
+                         "conc_2hr",
+                         "conc_3hr",
+                         "conc_4hr",
+                         "conc_5hr",
+                         "conc_6hr",
+                         "conc_8hr")))
+
+Thanks,
+
+Thomas
+
+From bbo|ker @end|ng |rom gm@||@com  Sat Mar 13 22:20:32 2021
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Sat, 13 Mar 2021 16:20:32 -0500
+Subject: [Rd] trivial typo in src/library/base/man/pmatch.Rd
+In-Reply-To: <C683881A-CB14-4FC0-B141-48246D52A755@gmail.com>
+References: <fa8d9c8f-3c32-f1c9-39b3-735b6ebeadeb@gmail.com>
+ <C683881A-CB14-4FC0-B141-48246D52A755@gmail.com>
+Message-ID: <a9988134-4e0e-1b9a-9f08-8a1a48ba346c@gmail.com>
+
+   You're right.  But I guess my confusion is proof that it can be 
+confusing.
+
+What about "The value to be returned for positions where there are 
+either no partial matches or multiple partial matches" ?
+
+  ("positions where the number of partial matches is not exactly 1" :-))
+
+
+On 3/13/21 3:44 AM, peter dalgaard wrote:
+> I suspect this is as meant, but it is "multiply", the adverb, not the verb. So it might be worth rephrasing, but "multiple" would be wrong (it is about cases where you at one position have several partial matches, not several positions where you have a partial match). "Non-uniquely partially matching", perhaps?
+> 
+> -pd
+> 
+>> On 13 Mar 2021, at 01:50 , Ben Bolker <bbolker at gmail.com> wrote:
+>>
+>> ll. 17-18 of src/library/base/man/pmatch.Rd says "the value to be returned at non-matching or multiply partially matching positions".
+>>
+>>   I think "multiply" should be "multiple" there?
+>>
+>>   Can submit an actual patch if that would be more useful.
+>>
+>> ______________________________________________
+>> R-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+
+
+From Thom@@@SOEIRO @end|ng |rom @p-hm@|r  Sun Mar 14 00:05:43 2021
+From: Thom@@@SOEIRO @end|ng |rom @p-hm@|r (SOEIRO Thomas)
+Date: Sat, 13 Mar 2021 23:05:43 +0000
+Subject: [Rd] Potential improvements of ave?
+In-Reply-To: <1615589952944.72119@ap-hm.fr>
+References: <1615589952944.72119@ap-hm.fr>
+Message-ID: <1615676743538.4084@ap-hm.fr>
+
+The bottleneck of ave is the call to interaction (i.e. not the call to split/lapply).
+
+Therefore, the following code runs as expected (but I may miss something...):
+
+ave2 <- function (x, ..., FUN = mean)
+{
+    if(missing(...))
+	x[] <- FUN(x)
+    else {
+	#g <- interaction(...)
+	g <- paste0(...)
+	split(x,g) <- lapply(split(x, g), FUN)
+    }
+    x
+}
+
+df2$diff <- ave2(df2$val,
+                 df2$id1,
+                 df2$id2,
+                 df2$id3,
+                 FUN = function(i) c(diff(i), 0))
+
+
+
+Of course I can also simply solve my current issue with:
+
+df2$id123 <- paste0(df2$id1,
+                    df2$id2,
+                    df2$id3)
+
+df2$diff <- ave(df2$val,
+                df2$id123,
+                FUN = function(i) c(diff(i), 0))
+
+
+
+In addition, ave2 also avoid warnings in case of unused levels (see point 2) in my previous message).
+________________________________________
+De : SOEIRO Thomas
+Envoy? : vendredi 12 mars 2021 23:59
+? : r-devel at r-project.org
+Objet : Potential improvements of ave?
+
+Dear all,
+
+I have two questions/suggestions about ave, but I am not sure if it's relevant for bug reports.
+
+
+
+1) I have performance issues with ave in a case where I didn't expect it. The following code runs as expected:
+
+set.seed(1)
+
+df1 <- data.frame(id1 = sample(1:1e2, 5e2, TRUE),
+                  id2 = sample(1:3, 5e2, TRUE),
+                  id3 = sample(1:5, 5e2, TRUE),
+                  val = sample(1:300, 5e2, TRUE))
+
+df1$diff <- ave(df1$val,
+                df1$id1,
+                df1$id2,
+                df1$id3,
+                FUN = function(i) c(diff(i), 0))
+
+head(df1[order(df1$id1,
+               df1$id2,
+               df1$id3), ])
+
+But when expanding the data.frame (* 1e4), ave fails (Error: cannot allocate vector of size 1110.0 Gb):
+
+df2 <- data.frame(id1 = sample(1:(1e2 * 1e4), 5e2 * 1e4, TRUE),
+                  id2 = sample(1:3, 5e2 * 1e4, TRUE),
+                  id3 = sample(1:(5 * 1e4), 5e2 * 1e4, TRUE),
+                  val = sample(1:300, 5e2 * 1e4, TRUE))
+
+df2$diff <- ave(df2$val,
+                df2$id1,
+                df2$id2,
+                df2$id3,
+                FUN = function(i) c(diff(i), 0))
+
+This use case does not seem extreme to me (e.g. aggregate et al work perfectly on this data.frame).
+So my question is: Is this expected/intended/reasonable? i.e. Does ave need to be optimized?
+
+
+
+2) Gabor Grothendieck pointed out in 2011 that drop = TRUE is needed to avoid warnings in case of unused levels (https://stat.ethz.ch/pipermail/r-devel/2011-February/059947.html).
+Is it relevant/possible to expose the drop argument explicitly?
+
+
+
+Thanks,
+
+Thomas
+
+
