@@ -1,0 +1,1856 @@
+From jeroen @end|ng |rom berke|ey@edu  Tue Jun  1 14:38:11 2021
+From: jeroen @end|ng |rom berke|ey@edu (Jeroen Ooms)
+Date: Tue, 1 Jun 2021 14:38:11 +0200
+Subject: [Rd] Patch: port getbyhostname to getaddrinfo
+Message-ID: <CABFfbXu-0q6TOg=50B+qqPWF2TXNNOenyMgW72bjNTz8R739zQ@mail.gmail.com>
+
+Perhaps now that nanohttp has been removed, it is a good time to do
+some related cleanups.
+
+In both Linux and Windows, gethostbyname and gethostbyaddr are marked
+as obsolete. POSIX.1-2008 removes the specifications of
+gethostbyname(), gethostbyaddr(), and h_errno, recommending the use of
+getaddrinfo(3) and getnameinfo(3) instead.
+
+Webview: https://github.com/r-devel/r-svn/pull/42/files
+Patch: https://github.com/r-devel/r-svn/pull/42.diff
+
+
+From j@ke@e|m@tedt @end|ng |rom gm@||@com  Wed Jun  2 12:08:59 2021
+From: j@ke@e|m@tedt @end|ng |rom gm@||@com (Jake Elmstedt)
+Date: Wed, 2 Jun 2021 03:08:59 -0700
+Subject: [Rd] Feature Request with Proposed Solution: Update
+ utils:::format.object_size() and utils:::print.object_size() to Respect
+ Optional Formatting Arguments
+Message-ID: <CAPTrVR5UgG0W6Tx=8xFFAJNAbUu-fX35Nq7EKvFWcc4q3Qdrgw@mail.gmail.com>
+
+Problem:
+
+When running the following commands:
+x <- numeric(1e8)
+format(object.size(x), units = "kB", standard = "SI")
+#> [1] "8e+05 kB"
+The object size is returned in scientific notation.
+
+It is natural to assume we could use the argument 'scientific = FASLE'
+to solve this.
+format(object.size(x), units = "kB", standard = "SI", scientific = FALSE)
+#> [1] "8e+05 kB"
+But, the output is unchanged.
+
+We can change the global scipen option to fix this, but this is not
+ideal, nor does it address other potential optional arguments a user
+may want to pass to format()/print().
+
+
+Proposed Solution:
+File: src/library/utils/R/object.size.R
+Function:  format.object_size()
+
+ADD lines at top of function:
+    dots <- list(...)
+
+DELETE:
+    paste(round(x/base^power, digits = digits), unit)
+
+ADD lines at the end of the function:
+    value <- c(round(x/base^power, digits))
+    dots[["width"]] <- NULL
+    dots[["digits"]] <- max(ceiling(log10(value)), 0) + digits
+    dots[["x"]] <- value
+    format(paste(do.call(format, dots), unit), ...)
+
+By removing any potential 'width' argument and updating the 'digits'
+argument to reflect significant digits rather than decimal places in
+'dots', the initial value is formatted with any additional arguments
+included in the originating generic `format()` call, notably:
+digits, nsmall, scientific, big.mark, big.interval, small.mark,
+small.interval, decimal.mark, zero.print, and drop0trailing
+
+The outer call to format() will format the character result of paste()
+with arguments 'width' and 'justify'.
+
+
+Function:  print.object_size()
+
+DELETE:
+y <- format.object_size(x, units = units, standard = standard, digits = digits)
+
+ADD:
+y <- format.object_size(x, units, standard, digits, ...)
+
+This simply passes additional arguments to the above edited format.object_size()
+
+These changes have the effect of allowing all possible optional
+arguments to format() to be meaningfully used in format.object_size().
+
+Potential conflicts:
+Results of the updated function will be identical to the current
+results in all cases where no additional arguments have been passed to
+the function. So, code which does not rely on these arguments being
+ignored will be unaffected.
+
+However, existing code which passes additional formatting arguments
+for "object_size" class objects which are currently being ignored may
+result in different output. This could potentially cause errors if the
+end user is doing anything programmatic with the results, though this
+is only likely to cause problems if the code uses but ignores the
+'big.mark', 'small.mark', 'decimal.mark', or 'zero.print' arguments
+when formatting or printing "object_size" class objects. That said, it
+can probably be expected most programmatic work will be done directly
+on the "object_size" objects rather than the results of the format()
+or print() methods for them. So, I would expect nearly zero issues
+with existing code.
+
+
+From x|@oy@n@yu @end|ng |rom gm@||@com  Wed Jun  2 22:33:21 2021
+From: x|@oy@n@yu @end|ng |rom gm@||@com (xiaoyan yu)
+Date: Wed, 2 Jun 2021 16:33:21 -0400
+Subject: [Rd] How to get utf8 string using R externals
+Message-ID: <CANjVfJ0ciTGb9tR3bnYWGS4M=8uTGDsddSBx-4kxkULdyR1XxA@mail.gmail.com>
+
+I have a R Script Predict.R:
+    set.seed(42)
+    C <- seq(1:1000)
+    A <- rep(seq(1:200),5)
+    E <- (seq(1:1000) * (0.8 + (0.4*runif(50, 0, 1))))
+    L <- ifelse(runif(1000)>.5,1,0)
+    df <- data.frame(cbind(C, A, E, L))
+load("C:/Temp/tree.RData")                #  load the model for scoring
+
+  P <- as.character(predict(tree_model_1,df,type='class'))
+
+Then in a C++ program
+I call eval to evaluate the script and then findVar the P variable.
+After get each class label from P using string_elt and then
+Rf_translateChar, the characters are unicodes (<U+BD80><U+C2E4>) instead of
+utf8 encoding of the korean characters ??.
+Can I know how to get UTF8 by using R externals?
+
+I also found the same script giving utf8 characters in RGui but unicode in
+Rterm.
+I tried to attach a screenshot but got message "The message's content type
+was not explicitly allowed"
+In RGui, I saw the output ??, while in Rterm, <U+BD80><U+C2E4>.
+
+Please help.
+
+	[[alternative HTML version deleted]]
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Wed Jun  2 23:31:52 2021
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Wed, 2 Jun 2021 17:31:52 -0400
+Subject: [Rd] How to get utf8 string using R externals
+In-Reply-To: <CANjVfJ0ciTGb9tR3bnYWGS4M=8uTGDsddSBx-4kxkULdyR1XxA@mail.gmail.com>
+References: <CANjVfJ0ciTGb9tR3bnYWGS4M=8uTGDsddSBx-4kxkULdyR1XxA@mail.gmail.com>
+Message-ID: <a2b168a4-4fad-9b59-3f3f-083bd7598578@gmail.com>
+
+On 02/06/2021 4:33 p.m., xiaoyan yu wrote:
+> I have a R Script Predict.R:
+>      set.seed(42)
+>      C <- seq(1:1000)
+>      A <- rep(seq(1:200),5)
+>      E <- (seq(1:1000) * (0.8 + (0.4*runif(50, 0, 1))))
+>      L <- ifelse(runif(1000)>.5,1,0)
+>      df <- data.frame(cbind(C, A, E, L))
+> load("C:/Temp/tree.RData")                #  load the model for scoring
+> 
+>    P <- as.character(predict(tree_model_1,df,type='class'))
+> 
+> Then in a C++ program
+> I call eval to evaluate the script and then findVar the P variable.
+> After get each class label from P using string_elt and then
+> Rf_translateChar, the characters are unicodes (<U+BD80><U+C2E4>) instead of
+> utf8 encoding of the korean characters ??.
+> Can I know how to get UTF8 by using R externals?
+> 
+> I also found the same script giving utf8 characters in RGui but unicode in
+> Rterm.
+> I tried to attach a screenshot but got message "The message's content type
+> was not explicitly allowed"
+> In RGui, I saw the output ??, while in Rterm, <U+BD80><U+C2E4>.
+
+Sounds like you're using Windows.  Stop doing that.
+
+Duncan Murdoch
+
+
+From bbo|ker @end|ng |rom gm@||@com  Wed Jun  2 23:36:20 2021
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Wed, 2 Jun 2021 17:36:20 -0400
+Subject: [Rd] How to get utf8 string using R externals
+In-Reply-To: <a2b168a4-4fad-9b59-3f3f-083bd7598578@gmail.com>
+References: <CANjVfJ0ciTGb9tR3bnYWGS4M=8uTGDsddSBx-4kxkULdyR1XxA@mail.gmail.com>
+ <a2b168a4-4fad-9b59-3f3f-083bd7598578@gmail.com>
+Message-ID: <e9f78037-b51f-82f0-49b0-3a091c5704e8@gmail.com>
+
+
+
+On 6/2/21 5:31 PM, Duncan Murdoch wrote:
+> On 02/06/2021 4:33 p.m., xiaoyan yu wrote:
+>> I have a R Script Predict.R:
+>> ???? set.seed(42)
+>> ???? C <- seq(1:1000)
+>> ???? A <- rep(seq(1:200),5)
+>> ???? E <- (seq(1:1000) * (0.8 + (0.4*runif(50, 0, 1))))
+>> ???? L <- ifelse(runif(1000)>.5,1,0)
+>> ???? df <- data.frame(cbind(C, A, E, L))
+>> load("C:/Temp/tree.RData")??????????????? #? load the model for scoring
+>>
+>> ?? P <- as.character(predict(tree_model_1,df,type='class'))
+>>
+>> Then in a C++ program
+>> I call eval to evaluate the script and then findVar the P variable.
+>> After get each class label from P using string_elt and then
+>> Rf_translateChar, the characters are unicodes (<U+BD80><U+C2E4>) 
+>> instead of
+>> utf8 encoding of the korean characters ??.
+>> Can I know how to get UTF8 by using R externals?
+>>
+>> I also found the same script giving utf8 characters in RGui but 
+>> unicode in
+>> Rterm.
+>> I tried to attach a screenshot but got message "The message's content 
+>> type
+>> was not explicitly allowed"
+>> In RGui, I saw the output ??, while in Rterm, <U+BD80><U+C2E4>.
+> 
+> Sounds like you're using Windows.? Stop doing that.
+> 
+> Duncan Murdoch
+
+
+   Shouldn't there be a smiley there somewhere?
+
+
+From dw|n@em|u@ @end|ng |rom comc@@t@net  Thu Jun  3 00:09:14 2021
+From: dw|n@em|u@ @end|ng |rom comc@@t@net (David Winsemius)
+Date: Wed, 2 Jun 2021 15:09:14 -0700
+Subject: [Rd] How to get utf8 string using R externals
+In-Reply-To: <CANjVfJ0ciTGb9tR3bnYWGS4M=8uTGDsddSBx-4kxkULdyR1XxA@mail.gmail.com>
+References: <CANjVfJ0ciTGb9tR3bnYWGS4M=8uTGDsddSBx-4kxkULdyR1XxA@mail.gmail.com>
+Message-ID: <99d0c586-6341-554e-4bf8-5e4c9dc74c97@comcast.net>
+
+First; you should configure yopu mail client to send plain text.
+
+Can you explain what is meant by:
+
+the characters are unicodes (<U+BD80><U+C2E4>) instead of
+utf8 encoding of the korean characters ??.
+
+As far as I can tell those two unicodes _are_ the utf8 encodings of ??.
+
+You may need to consult a couple of R help pages. I suggest:
+
+?Quotes
+?points   # has examples of changing fonts used for display on console.
+
+Sorry if I've misunderstood. I'm not on a Windows device, so  posting the C++ program won't be helpful, but maybe it would for other prospective respondents.
+
+-- 
+David.
+
+On 6/2/21 1:33 PM, xiaoyan yu wrote:
+> I have a R Script Predict.R:
+>      set.seed(42)
+>      C <- seq(1:1000)
+>      A <- rep(seq(1:200),5)
+>      E <- (seq(1:1000) * (0.8 + (0.4*runif(50, 0, 1))))
+>      L <- ifelse(runif(1000)>.5,1,0)
+>      df <- data.frame(cbind(C, A, E, L))
+> load("C:/Temp/tree.RData")                #  load the model for scoring
+>
+>    P <- as.character(predict(tree_model_1,df,type='class'))
+>
+> Then in a C++ program
+> I call eval to evaluate the script and then findVar the P variable.
+> After get each class label from P using string_elt and then
+> Rf_translateChar, the characters are unicodes (<U+BD80><U+C2E4>) instead of
+> utf8 encoding of the korean characters ??.
+> Can I know how to get UTF8 by using R externals?
+>
+> I also found the same script giving utf8 characters in RGui but unicode in
+> Rterm.
+> I tried to attach a screenshot but got message "The message's content type
+> was not explicitly allowed"
+> In RGui, I saw the output ??, while in Rterm, <U+BD80><U+C2E4>.
+>
+> Please help.
+>
+> 	[[alternative HTML version deleted]]
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From morg@n@em@||box @end|ng |rom gm@||@com  Thu Jun  3 00:26:38 2021
+From: morg@n@em@||box @end|ng |rom gm@||@com (Morgan Morgan)
+Date: Wed, 2 Jun 2021 23:26:38 +0100
+Subject: [Rd] How to get utf8 string using R externals
+In-Reply-To: <a2b168a4-4fad-9b59-3f3f-083bd7598578@gmail.com>
+References: <CANjVfJ0ciTGb9tR3bnYWGS4M=8uTGDsddSBx-4kxkULdyR1XxA@mail.gmail.com>
+ <a2b168a4-4fad-9b59-3f3f-083bd7598578@gmail.com>
+Message-ID: <CAL0QV_PEFijWz0BnOhqYzSFxBubpLd-jMfY+G1WW+KYujuULVA@mail.gmail.com>
+
+On Wed, 2 Jun 2021, 22:31 Duncan Murdoch, <murdoch.duncan at gmail.com> wrote:
+
+> On 02/06/2021 4:33 p.m., xiaoyan yu wrote:
+> > I have a R Script Predict.R:
+> >      set.seed(42)
+> >      C <- seq(1:1000)
+> >      A <- rep(seq(1:200),5)
+> >      E <- (seq(1:1000) * (0.8 + (0.4*runif(50, 0, 1))))
+> >      L <- ifelse(runif(1000)>.5,1,0)
+> >      df <- data.frame(cbind(C, A, E, L))
+> > load("C:/Temp/tree.RData")                #  load the model for scoring
+> >
+> >    P <- as.character(predict(tree_model_1,df,type='class'))
+> >
+> > Then in a C++ program
+> > I call eval to evaluate the script and then findVar the P variable.
+> > After get each class label from P using string_elt and then
+> > Rf_translateChar, the characters are unicodes (<U+BD80><U+C2E4>) instead
+> of
+> > utf8 encoding of the korean characters ??.
+> > Can I know how to get UTF8 by using R externals?
+> >
+> > I also found the same script giving utf8 characters in RGui but unicode
+> in
+> > Rterm.
+> > I tried to attach a screenshot but got message "The message's content
+> type
+> > was not explicitly allowed"
+> > In RGui, I saw the output ??, while in Rterm, <U+BD80><U+C2E4>.
+>
+> Sounds like you're using Windows.  Stop doing that.
+>
+> Duncan Murdoch
+>
+
+Could as well say: "Sounds like you are using R. Stop doing that." Start
+using Julia. ;-)
+
+
+
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+
+	[[alternative HTML version deleted]]
+
+
+From bbo|ker @end|ng |rom gm@||@com  Thu Jun  3 01:00:50 2021
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Wed, 2 Jun 2021 19:00:50 -0400
+Subject: [Rd] How to get utf8 string using R externals
+In-Reply-To: <e9f78037-b51f-82f0-49b0-3a091c5704e8@gmail.com>
+References: <CANjVfJ0ciTGb9tR3bnYWGS4M=8uTGDsddSBx-4kxkULdyR1XxA@mail.gmail.com>
+ <a2b168a4-4fad-9b59-3f3f-083bd7598578@gmail.com>
+ <e9f78037-b51f-82f0-49b0-3a091c5704e8@gmail.com>
+Message-ID: <5f7db123-667c-908f-9f45-5a01a426bd39@gmail.com>
+
+   Might the new UCRT build help?
+
+https://developer.r-project.org/Blog/public/2021/03/12/windows/utf-8-toolchain-and-cran-package-checks/
+
+On 6/2/21 5:36 PM, Ben Bolker wrote:
+> 
+> 
+> On 6/2/21 5:31 PM, Duncan Murdoch wrote:
+>> On 02/06/2021 4:33 p.m., xiaoyan yu wrote:
+>>> I have a R Script Predict.R:
+>>> ???? set.seed(42)
+>>> ???? C <- seq(1:1000)
+>>> ???? A <- rep(seq(1:200),5)
+>>> ???? E <- (seq(1:1000) * (0.8 + (0.4*runif(50, 0, 1))))
+>>> ???? L <- ifelse(runif(1000)>.5,1,0)
+>>> ???? df <- data.frame(cbind(C, A, E, L))
+>>> load("C:/Temp/tree.RData")??????????????? #? load the model for scoring
+>>>
+>>> ?? P <- as.character(predict(tree_model_1,df,type='class'))
+>>>
+>>> Then in a C++ program
+>>> I call eval to evaluate the script and then findVar the P variable.
+>>> After get each class label from P using string_elt and then
+>>> Rf_translateChar, the characters are unicodes (<U+BD80><U+C2E4>) 
+>>> instead of
+>>> utf8 encoding of the korean characters ??.
+>>> Can I know how to get UTF8 by using R externals?
+>>>
+>>> I also found the same script giving utf8 characters in RGui but 
+>>> unicode in
+>>> Rterm.
+>>> I tried to attach a screenshot but got message "The message's content 
+>>> type
+>>> was not explicitly allowed"
+>>> In RGui, I saw the output ??, while in Rterm, <U+BD80><U+C2E4>.
+>>
+>> Sounds like you're using Windows.? Stop doing that.
+>>
+>> Duncan Murdoch
+> 
+> 
+>  ? Shouldn't there be a smiley there somewhere?
+>
+
+
+From x|@oy@n@yu @end|ng |rom gm@||@com  Thu Jun  3 01:58:19 2021
+From: x|@oy@n@yu @end|ng |rom gm@||@com (xiaoyan yu)
+Date: Wed, 2 Jun 2021 19:58:19 -0400
+Subject: [Rd] How to get utf8 string using R externals
+In-Reply-To: <99d0c586-6341-554e-4bf8-5e4c9dc74c97@comcast.net>
+References: <CANjVfJ0ciTGb9tR3bnYWGS4M=8uTGDsddSBx-4kxkULdyR1XxA@mail.gmail.com>
+ <99d0c586-6341-554e-4bf8-5e4c9dc74c97@comcast.net>
+Message-ID: <CANjVfJ3Z_kjy==g45PJW52VWXCqXh=SLE2Xvz58scRP=t06AiQ@mail.gmail.com>
+
+I am using gmail. Not sure of the configuration of plain text.
+The memory pointed by the char * as the output of Rf_translateChar() is
+actually the string "<U+BD80><U+C2E4>".
+
+
+
+On Wed, Jun 2, 2021 at 6:09 PM David Winsemius <dwinsemius at comcast.net>
+wrote:
+
+> First; you should configure yopu mail client to send plain text.
+>
+> Can you explain what is meant by:
+>
+> the characters are unicodes (<U+BD80><U+C2E4>) instead of
+> utf8 encoding of the korean characters ??.
+>
+> As far as I can tell those two unicodes _are_ the utf8 encodings of ??.
+>
+> You may need to consult a couple of R help pages. I suggest:
+>
+> ?Quotes
+> ?points   # has examples of changing fonts used for display on console.
+>
+> Sorry if I've misunderstood. I'm not on a Windows device, so  posting the
+> C++ program won't be helpful, but maybe it would for other prospective
+> respondents.
+>
+> --
+> David.
+>
+> On 6/2/21 1:33 PM, xiaoyan yu wrote:
+> > I have a R Script Predict.R:
+> >      set.seed(42)
+> >      C <- seq(1:1000)
+> >      A <- rep(seq(1:200),5)
+> >      E <- (seq(1:1000) * (0.8 + (0.4*runif(50, 0, 1))))
+> >      L <- ifelse(runif(1000)>.5,1,0)
+> >      df <- data.frame(cbind(C, A, E, L))
+> > load("C:/Temp/tree.RData")                #  load the model for scoring
+> >
+> >    P <- as.character(predict(tree_model_1,df,type='class'))
+> >
+> > Then in a C++ program
+> > I call eval to evaluate the script and then findVar the P variable.
+> > After get each class label from P using string_elt and then
+> > Rf_translateChar, the characters are unicodes (<U+BD80><U+C2E4>) instead
+> of
+> > utf8 encoding of the korean characters ??.
+> > Can I know how to get UTF8 by using R externals?
+> >
+> > I also found the same script giving utf8 characters in RGui but unicode
+> in
+> > Rterm.
+> > I tried to attach a screenshot but got message "The message's content
+> type
+> > was not explicitly allowed"
+> > In RGui, I saw the output ??, while in Rterm, <U+BD80><U+C2E4>.
+> >
+> > Please help.
+> >
+> >       [[alternative HTML version deleted]]
+> >
+> > ______________________________________________
+> > R-devel at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+
+	[[alternative HTML version deleted]]
+
+
+From brod|e@g@@|@m @end|ng |rom y@hoo@com  Thu Jun  3 03:08:05 2021
+From: brod|e@g@@|@m @end|ng |rom y@hoo@com (brodie gaslam)
+Date: Thu, 3 Jun 2021 01:08:05 +0000 (UTC)
+Subject: [Rd] How to get utf8 string using R externals
+In-Reply-To: <CANjVfJ3Z_kjy==g45PJW52VWXCqXh=SLE2Xvz58scRP=t06AiQ@mail.gmail.com>
+References: <CANjVfJ0ciTGb9tR3bnYWGS4M=8uTGDsddSBx-4kxkULdyR1XxA@mail.gmail.com>
+ <99d0c586-6341-554e-4bf8-5e4c9dc74c97@comcast.net>
+ <CANjVfJ3Z_kjy==g45PJW52VWXCqXh=SLE2Xvz58scRP=t06AiQ@mail.gmail.com>
+Message-ID: <1719007067.3024786.1622682485739@mail.yahoo.com>
+
+
+> On Wednesday, June 2, 2021, 7:58:54 PM EDT, xiaoyan yu <xiaoyan.yu at gmail.com> wrote:
+>
+> I am using gmail. Not sure of the configuration of plain text.
+> The memory pointed by the char * as the output of Rf_translateChar() is
+> actually the string "<U+BD80><U+C2E4>".
+
+Hi Xiaoyan,
+
+Unfortunately I'm not super familiar with R on Windows, but I think
+I can provide a simpler reproducible example.? In Rgui, if I type "\UBD80"
+at the prompt and hit enter, I see the desired glyph.? In Rterm I see the
+unicode escape.
+
+IIRC the capabilities of Rterm and Rgui are different, and UTF8 support
+in windows is limited.? Tomas Kalibera discusses this in some detail:
+
+https://developer.r-project.org/Blog/public/2020/05/02/utf-8-support-on-windows/index.html
+
+In terms of `Rf_translateChar()`, presumably the `Riconv` call is failing
+on Rterm, but not on Rgui:
+
+https://github.com/r-devel/r-svn/blob/master/src/main/sysutils.c#L924
+
+I'm guessing, but that would explain why the C level string is in that
+format.? I don't know why the string would translate in Rgui though.? My
+guess is that it did not as even in Rgui the following:
+
+??? enc2native("\uBD80")
+
+Produces the escaped version of the string.
+
+As others have suggested you could try the experimental UCRT Windows release:
+
+https://developer.r-project.org/Blog/public/2021/03/12/windows/utf-8-toolchain-and-cran-package-checks/index.html
+
+Install instructions (focus on Binary installer):
+
+https://svn.r-project.org/R-dev-web/trunk/WindowsBuilds/winutf8/ucrt3/howto.html
+
+If I try UCRT on my system this no longer produces the escape:
+
+??? enc2native("\uBD80")
+
+Although all I see is a question mark.? My guess is that my code page or
+something similar is not set right.? Examining with `charToRaw` reveals
+the string remains in UTF-8 encoding.
+
+Aside: it's not clear to me that you need to translate the string if your
+intent is for it to remain UTF-8.? You just don't seem to be set-up to
+interpret UTF-8 strings currently.
+
+Best,
+
+B
+
+> On Wed, Jun 2, 2021 at 6:09 PM David Winsemius <dwinsemius at comcast.net>
+> wrote:
+>
+>> First; you should configure yopu mail client to send plain text.
+>>
+>> Can you explain what is meant by:
+>>
+>> the characters are unicodes (<U+BD80><U+C2E4>) instead of
+>> utf8 encoding of the korean characters ??.
+>>
+>> As far as I can tell those two unicodes _are_ the utf8 encodings of ??.
+>>
+>> You may need to consult a couple of R help pages. I suggest:
+>>
+>> ?Quotes
+>> ?points? # has examples of changing fonts used for display on console.
+>>
+>> Sorry if I've misunderstood. I'm not on a Windows device, so? posting the
+>> C++ program won't be helpful, but maybe it would for other prospective
+>> respondents.
+>>
+>> --
+>> David.
+>>
+>> On 6/2/21 1:33 PM, xiaoyan yu wrote:
+>> > I have a R Script Predict.R:
+>> >????? set.seed(42)
+>> >????? C <- seq(1:1000)
+>> >????? A <- rep(seq(1:200),5)
+>> >????? E <- (seq(1:1000) * (0.8 + (0.4*runif(50, 0, 1))))
+>> >????? L <- ifelse(runif(1000)>.5,1,0)
+>> >????? df <- data.frame(cbind(C, A, E, L))
+>> > load("C:/Temp/tree.RData")??????????????? #? load the model for scoring
+>> >
+>> >??? P <- as.character(predict(tree_model_1,df,type='class'))
+>> >
+>> > Then in a C++ program
+>> > I call eval to evaluate the script and then findVar the P variable.
+>> > After get each class label from P using string_elt and then
+>> > Rf_translateChar, the characters are unicodes (<U+BD80><U+C2E4>) instead
+>> of
+>> > utf8 encoding of the korean characters ??.
+>> > Can I know how to get UTF8 by using R externals?
+>> >
+>> > I also found the same script giving utf8 characters in RGui but unicode
+>> in
+>> > Rterm.
+>> > I tried to attach a screenshot but got message "The message's content
+>> type
+>> > was not explicitly allowed"
+>> > In RGui, I saw the output ??, while in Rterm, <U+BD80><U+C2E4>.
+>> >
+>> > Please help.
+>> >
+>> >????? [[alternative HTML version deleted]]
+>> >
+>> > ______________________________________________
+>> > R-devel at r-project.org mailing list
+>> > https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+>>
+>
+>???? [[alternative HTML version deleted]]
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+>
+
+
+From x|@oy@n@yu @end|ng |rom gm@||@com  Thu Jun  3 17:39:36 2021
+From: x|@oy@n@yu @end|ng |rom gm@||@com (xiaoyan yu)
+Date: Thu, 3 Jun 2021 11:39:36 -0400
+Subject: [Rd] How to get utf8 string using R externals
+In-Reply-To: <1719007067.3024786.1622682485739@mail.yahoo.com>
+References: <CANjVfJ0ciTGb9tR3bnYWGS4M=8uTGDsddSBx-4kxkULdyR1XxA@mail.gmail.com>
+ <99d0c586-6341-554e-4bf8-5e4c9dc74c97@comcast.net>
+ <CANjVfJ3Z_kjy==g45PJW52VWXCqXh=SLE2Xvz58scRP=t06AiQ@mail.gmail.com>
+ <1719007067.3024786.1622682485739@mail.yahoo.com>
+Message-ID: <CANjVfJ3=nNpd=DY2maZVxKMv5qvrG7ExKA7GY=8yDdU-uhgevg@mail.gmail.com>
+
+Thanks! I tried my C++ program based on R externals and the same R script
+and found the results shown are the desired glyph.
+Hence this is R windows specific problem.
+
+
+On Wed, Jun 2, 2021 at 9:08 PM brodie gaslam <brodie.gaslam at yahoo.com>
+wrote:
+
+>
+> > On Wednesday, June 2, 2021, 7:58:54 PM EDT, xiaoyan yu <
+> xiaoyan.yu at gmail.com> wrote:
+> >
+> > I am using gmail. Not sure of the configuration of plain text.
+> > The memory pointed by the char * as the output of Rf_translateChar() is
+> > actually the string "<U+BD80><U+C2E4>".
+>
+> Hi Xiaoyan,
+>
+> Unfortunately I'm not super familiar with R on Windows, but I think
+> I can provide a simpler reproducible example.  In Rgui, if I type "\UBD80"
+> at the prompt and hit enter, I see the desired glyph.  In Rterm I see the
+> unicode escape.
+>
+> IIRC the capabilities of Rterm and Rgui are different, and UTF8 support
+> in windows is limited.  Tomas Kalibera discusses this in some detail:
+>
+>
+> https://developer.r-project.org/Blog/public/2020/05/02/utf-8-support-on-windows/index.html
+>
+> In terms of `Rf_translateChar()`, presumably the `Riconv` call is failing
+> on Rterm, but not on Rgui:
+>
+> https://github.com/r-devel/r-svn/blob/master/src/main/sysutils.c#L924
+>
+> I'm guessing, but that would explain why the C level string is in that
+> format.  I don't know why the string would translate in Rgui though.  My
+> guess is that it did not as even in Rgui the following:
+>
+>     enc2native("\uBD80")
+>
+> Produces the escaped version of the string.
+>
+> As others have suggested you could try the experimental UCRT Windows
+> release:
+>
+>
+> https://developer.r-project.org/Blog/public/2021/03/12/windows/utf-8-toolchain-and-cran-package-checks/index.html
+>
+> Install instructions (focus on Binary installer):
+>
+>
+> https://svn.r-project.org/R-dev-web/trunk/WindowsBuilds/winutf8/ucrt3/howto.html
+>
+> If I try UCRT on my system this no longer produces the escape:
+>
+>     enc2native("\uBD80")
+>
+> Although all I see is a question mark.  My guess is that my code page or
+> something similar is not set right.  Examining with `charToRaw` reveals
+> the string remains in UTF-8 encoding.
+>
+> Aside: it's not clear to me that you need to translate the string if your
+> intent is for it to remain UTF-8.  You just don't seem to be set-up to
+> interpret UTF-8 strings currently.
+>
+> Best,
+>
+> B
+>
+> > On Wed, Jun 2, 2021 at 6:09 PM David Winsemius <dwinsemius at comcast.net>
+> > wrote:
+> >
+> >> First; you should configure yopu mail client to send plain text.
+> >>
+> >> Can you explain what is meant by:
+> >>
+> >> the characters are unicodes (<U+BD80><U+C2E4>) instead of
+> >> utf8 encoding of the korean characters ??.
+> >>
+> >> As far as I can tell those two unicodes _are_ the utf8 encodings of ??.
+> >>
+> >> You may need to consult a couple of R help pages. I suggest:
+> >>
+> >> ?Quotes
+> >> ?points  # has examples of changing fonts used for display on console.
+> >>
+> >> Sorry if I've misunderstood. I'm not on a Windows device, so  posting
+> the
+> >> C++ program won't be helpful, but maybe it would for other prospective
+> >> respondents.
+> >>
+> >> --
+> >> David.
+> >>
+> >> On 6/2/21 1:33 PM, xiaoyan yu wrote:
+> >> > I have a R Script Predict.R:
+> >> >      set.seed(42)
+> >> >      C <- seq(1:1000)
+> >> >      A <- rep(seq(1:200),5)
+> >> >      E <- (seq(1:1000) * (0.8 + (0.4*runif(50, 0, 1))))
+> >> >      L <- ifelse(runif(1000)>.5,1,0)
+> >> >      df <- data.frame(cbind(C, A, E, L))
+> >> > load("C:/Temp/tree.RData")                #  load the model for
+> scoring
+> >> >
+> >> >    P <- as.character(predict(tree_model_1,df,type='class'))
+> >> >
+> >> > Then in a C++ program
+> >> > I call eval to evaluate the script and then findVar the P variable.
+> >> > After get each class label from P using string_elt and then
+> >> > Rf_translateChar, the characters are unicodes (<U+BD80><U+C2E4>)
+> instead
+> >> of
+> >> > utf8 encoding of the korean characters ??.
+> >> > Can I know how to get UTF8 by using R externals?
+> >> >
+> >> > I also found the same script giving utf8 characters in RGui but
+> unicode
+> >> in
+> >> > Rterm.
+> >> > I tried to attach a screenshot but got message "The message's content
+> >> type
+> >> > was not explicitly allowed"
+> >> > In RGui, I saw the output ??, while in Rterm, <U+BD80><U+C2E4>.
+> >> >
+> >> > Please help.
+> >> >
+> >> >      [[alternative HTML version deleted]]
+> >> >
+> >> > ______________________________________________
+> >> > R-devel at r-project.org mailing list
+> >> > https://stat.ethz.ch/mailman/listinfo/r-devel
+> >
+> >>
+> >
+> >     [[alternative HTML version deleted]]
+> >
+> > ______________________________________________
+> > R-devel at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-devel
+> >
+> >
+>
+
+	[[alternative HTML version deleted]]
+
+
+From greg @end|ng |rom w@rne@@net  Thu Jun  3 23:01:23 2021
+From: greg @end|ng |rom w@rne@@net (Greg Warnes)
+Date: Thu, 3 Jun 2021 17:01:23 -0400
+Subject: [Rd] [External] Re: 1954 from NA
+In-Reply-To: <CAJ=0CtAhJOwV-UjMBO-KTH2CeqGQvBLiEkRksYhYHVcuVv0CsQ@mail.gmail.com>
+References: <CAJ=0CtCfRMJM6wq1ggkSv2BNfX+CGnW2N-SZAN8poOG3ev=nUA@mail.gmail.com>
+ <3443246.1621854690@apollo2.minshall.org>
+ <CAJ=0CtDOuY+tVf+YxO0gdGY9XgaTv_Q4kMP2p_Z8CxrnHjT4-w@mail.gmail.com>
+ <alpine.DEB.2.21.2105240805580.3254@luke-Latitude-7480>
+ <016e01d7511b$29c3bea0$7d4b3be0$@verizon.net>
+ <CAJ=0CtDC4jEfa-9qqDhixqSbvh1528wD5QpObQuwqxRs1EfiEw@mail.gmail.com>
+ <01b201d75198$70f8a060$52e9e120$@verizon.net>
+ <CAJ=0CtBofw9JoCUAxDGueYHZs5NghJD6A7ND97nfpvm_0n6fMg@mail.gmail.com>
+ <7303ff84-bdf1-cc76-e9e2-e625e80a24ca@gmail.com>
+ <CAJ=0CtDbZQHC1Z4gLHpkVmh1vfuShYHGqgZg4dvUorhjh79rdA@mail.gmail.com>
+ <76bbec7f-4802-8903-9b3c-c215e4863ab4@gmail.com>
+ <1328c364-264a-ddc2-1e56-ee2b3fc6b732@gmail.com>
+ <CAJ=0CtAhJOwV-UjMBO-KTH2CeqGQvBLiEkRksYhYHVcuVv0CsQ@mail.gmail.com>
+Message-ID: <325D0B85-F90C-4A92-9689-4DF9D21A3567@warnes.net>
+
+I would be glad to add this to one of my R packages, probably `gdata`..
+
+-G
+
+Gregory R. Warnes, Ph.D.
+greg at warnes.net
+Eternity is a long time, take a friend!
+
+
+> On May 26, 2021, at 1:09 PM, Adrian Du?a <dusa.adrian at gmail.com> wrote:
+> 
+> Yes, that is even better.
+> Best,
+> Adrian
+> 
+> On Wed, May 26, 2021 at 7:05 PM Duncan Murdoch <murdoch.duncan at gmail.com <mailto:murdoch.duncan at gmail.com>>
+> wrote:
+> 
+>> After 5 minutes more thought:
+>> 
+>> - code non-missing as missingKind = NA, not 0, so that missingKind could
+>> be a character vector, or missingKind = 0 could be supported.
+>> 
+>> - print methods should return the main argument, so mine should be
+>> 
+>> print.MultiMissing <- function(x, ...) {
+>>   vals <- as.character(x)
+>>   if (!is.character(x) || inherits(x, "noquote"))
+>>     print(noquote(vals))
+>>   else
+>>     print(vals)
+>>   invisible(x)
+>> }
+>> 
+>> This still needs a lot of improvement to be a good print method, but
+>> I'll leave that to you.
+>> 
+>> Duncan Murdoch
+>> 
+>> On 26/05/2021 11:43 a.m., Duncan Murdoch wrote:
+>>> On 26/05/2021 10:22 a.m., Adrian Du?a wrote:
+>>>> Dear Duncan,
+>>>> 
+>>>> On Wed, May 26, 2021 at 2:27 AM Duncan Murdoch <
+>> murdoch.duncan at gmail.com
+>>>> <mailto:murdoch.duncan at gmail.com>> wrote:
+>>>> 
+>>>>     You've already been told how to solve this:  just add attributes
+>> to the
+>>>>     objects. Use the standard NA to indicate that there is some kind of
+>>>>     missingness, and the attribute to describe exactly what it is.
+>> Stick a
+>>>>     class on those objects and define methods so that subsetting and
+>>>>     arithmetic preserves the extra info you've added. If you do some
+>>>>     operation that turns those NAs into NaNs, big deal:  the attribute
+>> will
+>>>>     still be there, and is.na <http://is.na>(NaN) still returns TRUE.
+>>>> 
+>>>> 
+>>>> I've already tried the attributes way, it is not so easy.
+>>> 
+>>> If you have specific operations that are needed but that you can't get
+>>> to work, post the issue here.
+>>> 
+>>>> In the best case scenario, it unnecessarily triples the size of the
+>>>> data, but perhaps this is the only way forward.
+>>> 
+>>> I don't see how it could triple the size.  Surely an integer has enough
+>>> values to cover all possible kinds of missingness.  So on integer or
+>>> factor data you'd double the size, on real or character data you'd
+>>> increase it by 50%.  (This is assuming you're on a 64 bit platform with
+>>> 32 bit integers and 64 bit reals and pointers.)
+>>> 
+>>> Here's a tiny implementation to show what I'm talking about:
+>>> 
+>>> asMultiMissing <- function(x) {
+>>>    if (isMultiMissing(x))
+>>>      return(x)
+>>>    missingKind <- ifelse(is.na(x), 1, 0)
+>>>    structure(x,
+>>>              missingKind = missingKind,
+>>>              class = c("MultiMissing", class(x)))
+>>> }
+>>> 
+>>> isMultiMissing <- function(x)
+>>>    inherits(x, "MultiMissing")
+>>> 
+>>> missingKind <- function(x) {
+>>>    if (isMultiMissing(x))
+>>>      attr(x, "missingKind")
+>>>    else
+>>>      ifelse(is.na(x), 1, 0)
+>>> }
+>>> 
+>>> `missingKind<-` <- function(x, value) {
+>>>    class(x) <- setdiff(class(x), "MultiMissing")
+>>>    x[value != 0] <- NA
+>>>    x <- asMultiMissing(x)
+>>>    attr(x, "missingKind") <- value
+>>>    x
+>>> }
+>>> 
+>>> `[.MultiMissing` <- function(x, i, ...) {
+>>>    missings <- missingKind(x)
+>>>    x <- NextMethod()
+>>>    missings <- missings[i]
+>>>    missingKind(x) <- missings
+>>>    x
+>>> }
+>>> 
+>>> print.MultiMissing <- function(x, ...) {
+>>>    vals <- as.character(x)
+>>>    if (!is.character(x) || inherits(x, "noquote"))
+>>>      print(noquote(vals))
+>>>    else
+>>>      print(vals)
+>>> }
+>>> 
+>>> `[<-.MultiMissing` <- function(x, i, value, ...) {
+>>>    missings <- missingKind(x)
+>>>    class(x) <- setdiff(class(x), "MultiMissing")
+>>>    x[i] <- value
+>>>    missings[i] <- missingKind(value)
+>>>    missingKind(x) <- missings
+>>>    x
+>>> }
+>>> 
+>>> as.character.MultiMissing <- function(x, ...) {
+>>>    missings <- missingKind(x)
+>>>    result <- NextMethod()
+>>>    ifelse(missings != 0,
+>>>           paste0("NA.", missings), result)
+>>> 
+>>> }
+>>> 
+>>> This is incomplete.  It doesn't do printing very well, and it doesn't
+>>> handle the case of assigning a MultiMissing value to a regular vector at
+>>> all.  (I think you'd need an S4 implementation if you want to support
+>>> that.)  But it does the basics:
+>>> 
+>>>> x <- 1:10
+>>>> missingKind(x)[4] <- 23
+>>>> x
+>>>   [1] 1     2     3     NA.23 5     6     7     8     9
+>>> [10] 10
+>>>> is.na(x)
+>>>   [1] FALSE FALSE FALSE  TRUE FALSE FALSE FALSE FALSE FALSE
+>>> [10] FALSE
+>>>> missingKind(x)
+>>>   [1]  0  0  0 23  0  0  0  0  0  0
+>>>> 
+>>> 
+>>> Duncan Murdoch
+>>> 
+>>>> 
+>>>>     Base R doesn't need anything else.
+>>>> 
+>>>>     You complained that users shouldn't need to know about attributes,
+>> and
+>>>>     they won't:  you, as the author of the package that does this, will
+>>>>     handle all those details.  Working in your subject area you know
+>> all
+>>>>     the
+>>>>     different kinds of NAs that people care about, and how they code
+>>>>     them in
+>>>>     input data, so you can make it all totally transparent.  If you do
+>> it
+>>>>     well, someone in some other subject area with a completely
+>> different
+>>>>     set
+>>>>     of kinds of missingness will be able to adapt your code to their
+>> use.
+>>>> 
+>>>> 
+>>>> But that is the whole point: the package author does not define possible
+>>>> NAs (the possibilities are infinite), users do that.
+>>>> The package should only provide a simple method to achieve that.
+>>>> 
+>>>> 
+>>>>     I imagine this has all been done in one of the thousands of
+>> packages on
+>>>>     CRAN, but if it hasn't been done well enough for you, do it better.
+>>>> 
+>>>> 
+>>>> If it were, I would have found it by now...
+>>>> 
+>>>> Best wishes,
+>>>> Adrian
+>>> 
+>> 
+>> 
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> ______________________________________________
+> R-devel at r-project.org <mailto:R-devel at r-project.org> mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel <https://stat.ethz.ch/mailman/listinfo/r-devel>
+
+	[[alternative HTML version deleted]]
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Sat Jun  5 22:05:40 2021
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Sat, 5 Jun 2021 16:05:40 -0400
+Subject: [Rd] Remove env var with .Renviron?
+Message-ID: <0cee5c91-9d03-861c-3960-96b1503a2322@gmail.com>
+
+I have two .Renviron files:  one in my home directory, one in the 
+current directory.  From my reading of ?Startup, I thought the local one 
+would override the home dir one, and if I set a value, it does. 
+However, if the local .Renviron contains
+
+RGL_DEBUGGING=
+
+while the home one contains
+
+RGL_DEBUGGING=true
+
+I see that the env var is set to "true" when I start R.  I need to set 
+the local one to
+
+RGL_DEBUGGING=""
+
+to set a zero-length value. Is this expected?
+
+Duncan Murdoch
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Sat Jun  5 22:08:36 2021
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Sat, 5 Jun 2021 16:08:36 -0400
+Subject: [Rd] Remove env var with .Renviron?
+In-Reply-To: <0cee5c91-9d03-861c-3960-96b1503a2322@gmail.com>
+References: <0cee5c91-9d03-861c-3960-96b1503a2322@gmail.com>
+Message-ID: <69c3c633-786f-a432-1bd5-73ead5b0d177@gmail.com>
+
+On 05/06/2021 4:05 p.m., Duncan Murdoch wrote:
+> I have two .Renviron files:  one in my home directory, one in the
+> current directory.  From my reading of ?Startup, I thought the local one
+> would override the home dir one, and if I set a value, it does.
+> However, if the local .Renviron contains
+> 
+> RGL_DEBUGGING=
+> 
+> while the home one contains
+> 
+> RGL_DEBUGGING=true
+> 
+> I see that the env var is set to "true" when I start R.  I need to set
+> the local one to
+> 
+> RGL_DEBUGGING=""
+> 
+> to set a zero-length value. Is this expected?
+
+An update:  this looks like an RStudio bug; I'm not seeing the same 
+weird behaviour in command line R.  Sorry for the noise!
+
+Duncan Murdoch
+
+
+From d@tr7320 @end|ng |rom un|@@ydney@edu@@u  Mon Jun  7 09:00:04 2021
+From: d@tr7320 @end|ng |rom un|@@ydney@edu@@u (Dario Strbenac)
+Date: Mon, 7 Jun 2021 07:00:04 +0000
+Subject: [Rd] dgTMatrix Segmentation Fault
+Message-ID: <SYBPR01MB4761C684F1CA43CA4945FA25CD389@SYBPR01MB4761.ausprd01.prod.outlook.com>
+
+Good day,
+
+I notice that summing rows of a large dgTMatrix fails.
+
+library(Matrix)
+aMatrix <- new("dgTMatrix",
+                i = as.integer(sample(200000, 10000)-1), j = as.integer(sample(50000, 10000)-1), x = rnorm(10000),
+		Dim = c(200000L, 50000L)
+	      )
+totals <- rowSums(aMatrix == 0)  # Segmentation fault.
+
+The server has 768 GB of RAM and it was never close to being consumed by this. Converting it to an ordinary matrix works fine.
+
+big <- as.matrix(aMatrix)
+totals <- rowSums(big == 0)      # Uses more RAM but there is no segmentation fault and result is returned.
+
+May it be made more robust for dgTMatrix?
+
+--------------------------------------
+Dario Strbenac
+University of Sydney
+Camperdown NSW 2050
+Australia
+
+
+From @oko| @end|ng |rom |n@@-tou|ou@e@|r  Mon Jun  7 10:00:13 2021
+From: @oko| @end|ng |rom |n@@-tou|ou@e@|r (Sokol Serguei)
+Date: Mon, 7 Jun 2021 10:00:13 +0200
+Subject: [Rd] dgTMatrix Segmentation Fault
+In-Reply-To: <SYBPR01MB4761C684F1CA43CA4945FA25CD389@SYBPR01MB4761.ausprd01.prod.outlook.com>
+References: <SYBPR01MB4761C684F1CA43CA4945FA25CD389@SYBPR01MB4761.ausprd01.prod.outlook.com>
+Message-ID: <91d30364-998a-c783-b9c5-9b05405d30b2@insa-toulouse.fr>
+
+Le 07/06/2021 ? 09:00, Dario Strbenac a ?crit?:
+> Good day,
+>
+> I notice that summing rows of a large dgTMatrix fails.
+>
+> library(Matrix)
+> aMatrix <- new("dgTMatrix",
+>                  i = as.integer(sample(200000, 10000)-1), j = as.integer(sample(50000, 10000)-1), x = rnorm(10000),
+> 		Dim = c(200000L, 50000L)
+> 	      )
+> totals <- rowSums(aMatrix == 0)  # Segmentation fault.
+
+On my R v4.1 (Ubuntu 18), I don't have a segfault but I do have an error 
+message:
+
+Error in h(simpleError(msg, call)) :
+ ? error in evaluating the argument 'x' in selecting a method for 
+function 'rowSums': cannot allocate vector of size 372.5 Gb
+
+And the reason for this is quite clear: an intermediate logical matrix 
+'aMatrix == 0' is almost dense thus having 200000L*50000L - 10000L non 
+zero entries. It is a little bit too much ;) for my modest laptop. So I 
+can propose a workaround:
+
+ ??? totals <- 50000 - rowSums(aMatrix != 0)
+
+Hoping it helps.
+
+Best,
+Serguei.
+
+>
+> The server has 768 GB of RAM and it was never close to being consumed by this. Converting it to an ordinary matrix works fine.
+>
+> big <- as.matrix(aMatrix)
+> totals <- rowSums(big == 0)      # Uses more RAM but there is no segmentation fault and result is returned.
+>
+> May it be made more robust for dgTMatrix?
+>
+> --------------------------------------
+> Dario Strbenac
+> University of Sydney
+> Camperdown NSW 2050
+> Australia
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From d@tr7320 @end|ng |rom un|@@ydney@edu@@u  Tue Jun  8 11:00:04 2021
+From: d@tr7320 @end|ng |rom un|@@ydney@edu@@u (Dario Strbenac)
+Date: Tue, 8 Jun 2021 09:00:04 +0000
+Subject: [Rd] dgTMatrix Segmentation Fault
+In-Reply-To: <91d30364-998a-c783-b9c5-9b05405d30b2@insa-toulouse.fr>
+References: <SYBPR01MB4761C684F1CA43CA4945FA25CD389@SYBPR01MB4761.ausprd01.prod.outlook.com>,
+ <91d30364-998a-c783-b9c5-9b05405d30b2@insa-toulouse.fr>
+Message-ID: <SYBPR01MB4761A3436511885B1346831ACD379@SYBPR01MB4761.ausprd01.prod.outlook.com>
+
+Good day,
+
+Indeed, changing the logical test is a workaround to the problem. However, a segmentation fault means that the software tried to access an invalid memory location, so I think the original problem should be addressed in Matrix package, regardless.
+
+--------------------------------------
+Dario Strbenac
+University of Sydney
+Camperdown NSW 2050
+Australia
+
+From c@@rd|@g@bor @end|ng |rom gm@||@com  Tue Jun  8 11:59:11 2021
+From: c@@rd|@g@bor @end|ng |rom gm@||@com (=?UTF-8?B?R8OhYm9yIENzw6FyZGk=?=)
+Date: Tue, 8 Jun 2021 11:59:11 +0200
+Subject: [Rd] Non-mutable ALTREP objects
+Message-ID: <CABtg=K=Wru6wLn8J-BcZXYs0XiTj2yhXp-_6SV0XDpO20g8kEg@mail.gmail.com>
+
+Dear all,
+
+I have another ALTREP question. In the
+https://github.com/ALTREP-examples/Rpkg-simplemmap example, it is
+possible to mmap a file read-write with wrtOK = TRUE.
+
+This is a pretty cool use case, one can change the mapped vector (in
+C), and the change is synchronized with the file, and also other
+processes that map the same file.
+
+On the other hand, I wonder if it violates some contract, because it
+means that an R object might change without any code touching it, if
+the mapped file is updated from another R session or through another
+variable.
+
+Does this violate the pass by value semantics?
+
+Can this cause issues in the interpreter or the byte code compiler? Or
+is there some guarantee that evaluating these objects will always call
+their ALTREP methods?
+
+FWIW these objects are marked as non-mutable. Does that change anything?
+
+Thank you,
+Gabor
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Tue Jun  8 18:32:14 2021
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Tue, 8 Jun 2021 18:32:14 +0200
+Subject: [Rd] dgTMatrix Segmentation Fault
+In-Reply-To: <SYBPR01MB4761A3436511885B1346831ACD379@SYBPR01MB4761.ausprd01.prod.outlook.com>
+References: <SYBPR01MB4761C684F1CA43CA4945FA25CD389@SYBPR01MB4761.ausprd01.prod.outlook.com>
+ <91d30364-998a-c783-b9c5-9b05405d30b2@insa-toulouse.fr>
+ <SYBPR01MB4761A3436511885B1346831ACD379@SYBPR01MB4761.ausprd01.prod.outlook.com>
+Message-ID: <24767.39822.987117.724657@stat.math.ethz.ch>
+
+>>>>> Dario Strbenac 
+>>>>>     on Tue, 8 Jun 2021 09:00:04 +0000 writes:
+
+    > Good day, Indeed, changing the logical test is a
+    > workaround to the problem. However, a segmentation fault
+    > means that the software tried to access an invalid memory
+    > location, so I think the original problem should be
+    > addressed in Matrix package, regardless.
+
+Hmm, you maybe right or not ..
+
+Note we have the situation you (via R) ask your computer
+(i.e. the OS system memory allocation routines) to provide
+memory.
+
+In a reasonable setup, the OS routine returns, saying
+"I cannot provide the memory you asked for",
+and the R function stop() s. .. no segfault, all is fine.
+
+The problem that on some platforms that does not work, is a
+relatively deep problem  and also has happened in base R in some
+cases on some platforms (possibly never on Linux based ones
+(Ubuntu, Debian, Fedora, CentOS..),  but maybe I'm too
+optimistic there as well.
+
+Note: I now also tried on our oldish Windows (Terminal) Server,
+and it also just gave errors that it could not allocate so much
+memory but did not produce a seg.fault.
+
+
+Currently, I don't see what we should improve in the Matrix
+package here.
+
+Martin Maechler
+(co-maintainer of 'Matrix')
+
+    > --------------------------------------
+    > Dario Strbenac University of Sydney Camperdown NSW 2050
+    > Australia
+
+
+From @oko| @end|ng |rom |n@@-tou|ou@e@|r  Wed Jun  9 12:08:34 2021
+From: @oko| @end|ng |rom |n@@-tou|ou@e@|r (Serguei Sokol)
+Date: Wed, 9 Jun 2021 12:08:34 +0200
+Subject: [Rd] dgTMatrix Segmentation Fault
+In-Reply-To: <24767.39822.987117.724657@stat.math.ethz.ch>
+References: <SYBPR01MB4761C684F1CA43CA4945FA25CD389@SYBPR01MB4761.ausprd01.prod.outlook.com>
+ <91d30364-998a-c783-b9c5-9b05405d30b2@insa-toulouse.fr>
+ <SYBPR01MB4761A3436511885B1346831ACD379@SYBPR01MB4761.ausprd01.prod.outlook.com>
+ <24767.39822.987117.724657@stat.math.ethz.ch>
+Message-ID: <661d72aa-655e-68ac-edfe-e37e9d39c6b8@insa-toulouse.fr>
+
+Le 08/06/2021 ? 18:32, Martin Maechler a ?crit?:
+>>>>>> Dario Strbenac
+>>>>>>      on Tue, 8 Jun 2021 09:00:04 +0000 writes:
+>      > Good day, Indeed, changing the logical test is a
+>      > workaround to the problem. However, a segmentation fault
+>      > means that the software tried to access an invalid memory
+>      > location, so I think the original problem should be
+>      > addressed in Matrix package, regardless.
+>
+> Hmm, you maybe right or not ..
+>
+> Note we have the situation you (via R) ask your computer
+> (i.e. the OS system memory allocation routines) to provide
+> memory.
+>
+> In a reasonable setup, the OS routine returns, saying
+> "I cannot provide the memory you asked for",
+> and the R function stop() s. .. no segfault, all is fine.
+>
+> The problem that on some platforms that does not work, is a
+> relatively deep problem  and also has happened in base R in some
+> cases on some platforms (possibly never on Linux based ones
+> (Ubuntu, Debian, Fedora, CentOS..),  but maybe I'm too
+> optimistic there as well.
+>
+> Note: I now also tried on our oldish Windows (Terminal) Server,
+> and it also just gave errors that it could not allocate so much
+> memory but did not produce a seg.fault.
+>
+>
+> Currently, I don't see what we should improve in the Matrix
+> package here.
+Is it possible (pure hypothesis) that when such a big piece of memory is 
+available, some int32 counter is out of bounds?
+Here, we have almost 1.e10 non-zero elements. This number is greater 
+than 2**31-1 (int32 limit) and even greater than unit32 limit (2**32).
+Just a thought.
+
+Best,
+Serguei.
+
+>
+> Martin Maechler
+> (co-maintainer of 'Matrix')
+>
+>      > --------------------------------------
+>      > Dario Strbenac University of Sydney Camperdown NSW 2050
+>      > Australia
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From d@tr7320 @end|ng |rom un|@@ydney@edu@@u  Thu Jun 10 03:00:25 2021
+From: d@tr7320 @end|ng |rom un|@@ydney@edu@@u (Dario Strbenac)
+Date: Thu, 10 Jun 2021 01:00:25 +0000
+Subject: [Rd] dgTMatrix Segmentation Fault
+In-Reply-To: <661d72aa-655e-68ac-edfe-e37e9d39c6b8@insa-toulouse.fr>
+References: <SYBPR01MB4761C684F1CA43CA4945FA25CD389@SYBPR01MB4761.ausprd01.prod.outlook.com>
+ <91d30364-998a-c783-b9c5-9b05405d30b2@insa-toulouse.fr>
+ <SYBPR01MB4761A3436511885B1346831ACD379@SYBPR01MB4761.ausprd01.prod.outlook.com>
+ <24767.39822.987117.724657@stat.math.ethz.ch>,
+ <661d72aa-655e-68ac-edfe-e37e9d39c6b8@insa-toulouse.fr>
+Message-ID: <SYBPR01MB4761734287C9B00F00B2BD9ACD369@SYBPR01MB4761.ausprd01.prod.outlook.com>
+
+Good day,
+
+Thanks to handy hints from Martin Morgan, I ran R under gdb and checked for any numeric overflow. We pinpointed the cause:
+
+(gdb) info locals
+i = 0
+j = 10738
+m = 200000
+n = 50000
+ans = 0x55555b332790
+aa = 0x55555b3327c0
+
+There is a line of C code in dgeMatrix.c for (i = 0; i < m; i++) aa[i] += xx[i + j * m];
+
+i  + j * m are all int, and overflow
+(lldb) print 0 + 10738 * 200000
+(int) $5 = -2147367296
+
+So, either the code should check that this doesn't occur, or be adjusted to allow for large indexes.
+
+If anyone is interested, this is in the context of single-cell ATAC-seq data, which typically has about 200000 genomic regions (rows) and perhaps 100000 biological cells (columns).
+
+--------------------------------------
+Dario Strbenac
+University of Sydney
+Camperdown NSW 2050
+Australia
+
+From bbo|ker @end|ng |rom gm@||@com  Thu Jun 10 03:11:18 2021
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Wed, 9 Jun 2021 21:11:18 -0400
+Subject: [Rd] dgTMatrix Segmentation Fault
+In-Reply-To: <SYBPR01MB4761734287C9B00F00B2BD9ACD369@SYBPR01MB4761.ausprd01.prod.outlook.com>
+References: <SYBPR01MB4761C684F1CA43CA4945FA25CD389@SYBPR01MB4761.ausprd01.prod.outlook.com>
+ <91d30364-998a-c783-b9c5-9b05405d30b2@insa-toulouse.fr>
+ <SYBPR01MB4761A3436511885B1346831ACD379@SYBPR01MB4761.ausprd01.prod.outlook.com>
+ <24767.39822.987117.724657@stat.math.ethz.ch>
+ <661d72aa-655e-68ac-edfe-e37e9d39c6b8@insa-toulouse.fr>
+ <SYBPR01MB4761734287C9B00F00B2BD9ACD369@SYBPR01MB4761.ausprd01.prod.outlook.com>
+Message-ID: <d8ed920a-d993-eae0-8229-699846849b74@gmail.com>
+
+   Nice!
+
+On 6/9/21 9:00 PM, Dario Strbenac via R-devel wrote:
+> Good day,
+> 
+> Thanks to handy hints from Martin Morgan, I ran R under gdb and checked for any numeric overflow. We pinpointed the cause:
+> 
+> (gdb) info locals
+> i = 0
+> j = 10738
+> m = 200000
+> n = 50000
+> ans = 0x55555b332790
+> aa = 0x55555b3327c0
+> 
+> There is a line of C code in dgeMatrix.c for (i = 0; i < m; i++) aa[i] += xx[i + j * m];
+> 
+> i  + j * m are all int, and overflow
+> (lldb) print 0 + 10738 * 200000
+> (int) $5 = -2147367296
+> 
+> So, either the code should check that this doesn't occur, or be adjusted to allow for large indexes.
+> 
+> If anyone is interested, this is in the context of single-cell ATAC-seq data, which typically has about 200000 genomic regions (rows) and perhaps 100000 biological cells (columns).
+> 
+> --------------------------------------
+> Dario Strbenac
+> University of Sydney
+> Camperdown NSW 2050
+> Australia
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Thu Jun 10 09:13:09 2021
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Thu, 10 Jun 2021 09:13:09 +0200
+Subject: [Rd] dgTMatrix Segmentation Fault
+In-Reply-To: <d8ed920a-d993-eae0-8229-699846849b74@gmail.com>
+References: <SYBPR01MB4761C684F1CA43CA4945FA25CD389@SYBPR01MB4761.ausprd01.prod.outlook.com>
+ <91d30364-998a-c783-b9c5-9b05405d30b2@insa-toulouse.fr>
+ <SYBPR01MB4761A3436511885B1346831ACD379@SYBPR01MB4761.ausprd01.prod.outlook.com>
+ <24767.39822.987117.724657@stat.math.ethz.ch>
+ <661d72aa-655e-68ac-edfe-e37e9d39c6b8@insa-toulouse.fr>
+ <SYBPR01MB4761734287C9B00F00B2BD9ACD369@SYBPR01MB4761.ausprd01.prod.outlook.com>
+ <d8ed920a-d993-eae0-8229-699846849b74@gmail.com>
+Message-ID: <24769.48005.562512.857009@stat.math.ethz.ch>
+
+>>>>> Ben Bolker 
+>>>>>     on Wed, 9 Jun 2021 21:11:18 -0400 writes:
+
+    > Nice!
+
+Indeed -- and thanks a lot, Dario (and Martin Morgan !) for
+getting down to the root problem.
+
+so, indeed a bug in Matrix (though "far away" from 'dgTMatrix').
+
+Thank you once more!
+
+Martin Maechler
+
+    > On 6/9/21 9:00 PM, Dario Strbenac via R-devel wrote:
+    >> Good day,
+    >> 
+    >> Thanks to handy hints from Martin Morgan, I ran R under gdb and checked for any numeric overflow. We pinpointed the cause:
+    >> 
+    >> (gdb) info locals
+    >> i = 0
+    >> j = 10738
+    >> m = 200000
+    >> n = 50000
+    >> ans = 0x55555b332790
+    >> aa = 0x55555b3327c0
+    >> 
+    >> There is a line of C code in dgeMatrix.c for (i = 0; i < m; i++) aa[i] += xx[i + j * m];
+    >> 
+    >> i  + j * m are all int, and overflow
+    >> (lldb) print 0 + 10738 * 200000
+    >> (int) $5 = -2147367296
+    >> 
+    >> So, either the code should check that this doesn't occur, or be adjusted to allow for large indexes.
+    >> 
+    >> If anyone is interested, this is in the context of single-cell ATAC-seq data, which typically has about 200000 genomic regions (rows) and perhaps 100000 biological cells (columns).
+    >> 
+    >> --------------------------------------
+    >> Dario Strbenac
+    >> University of Sydney
+    >> Camperdown NSW 2050
+    >> Australia
+    >> ______________________________________________
+    >> R-devel at r-project.org mailing list
+    >> https://stat.ethz.ch/mailman/listinfo/r-devel
+    >> 
+
+    > ______________________________________________
+    > R-devel at r-project.org mailing list
+    > https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From c@c@voeten @end|ng |rom hum@|e|denun|v@n|  Sat Jun 12 15:44:20 2021
+From: c@c@voeten @end|ng |rom hum@|e|denun|v@n| (Cesko Voeten)
+Date: Sat, 12 Jun 2021 15:44:20 +0200
+Subject: [Rd] Bracketed paste issues on Linux
+Message-ID: <dd65989664c9bb33effa065e2dc594960ef46a8a.camel@hum.leidenuniv.nl>
+
+I am on an up-to-date Arch Linux system, using the GNOME desktop environment. By default, this turns on bracketed paste in terminal emulators; for those not familiar with this concept: it makes it so that if you paste in multiple lines of code, they are received in a single chunk. This works just fine with R, up to a certain amount of text: for chunks past a certain length, some amount of text in the middle of the chunk goes missing. For example, if I print the source of mgcv::gam into my R session and then attempt to copy and paste it back in, what I end up with is:
+
+<snip 53 perfectly good lines>
+            pmf$formula <- gp$pf
+            pmf <- eval(pmf, parent.frame())
+}   objectvironment(attr(object$pred.formula, "full")) <- .GlobalEnv<- environment(object$terms) <- environment(object$pterms) <- .GlobalEnv
+
+So:
+ - the first 55 lines in this example arrive perfectly fine
+ - then a bunch go completely missing
+ - then various parts of the last few lines are jumbled together into one line
+
+For reference on the third point, the actual last 10 lines of my version of mgcv::gam are:
+    if (is.null(object$deviance)) 
+        object$deviance <- sum(residuals(object, "deviance")^2)
+    names(object$gcv.ubre) <- method
+    environment(object$formula) <- environment(object$pred.formula) <- environment(object$terms) <- environment(object$pterms) <- .GlobalEnv
+    if (!is.null(object$model)) 
+        environment(attr(object$model, "terms")) <- .GlobalEnv
+    if (!is.null(attr(object$pred.formula, "full"))) 
+        environment(attr(object$pred.formula, "full")) <- .GlobalEnv
+    object
+}
+
+parts of which can be recognized in the last line of what was pasted.
+Naturally, the pasted function is not parsed properly: if I press return I get the expected "+" signaling that the REPL is expecting more input. So it is not merely a visual issue.
+
+I can reproduce this both in GNOME Terminal and in xterm, so it is not a bug specific to my terminal emulator. In addition, pasting the exact same code into either vim or nano running within the same terminal works fine. So I believe that this may be a bug in R itself. It's easy to work around by disabling bracketed paste in the terminal, but it would be great if this could actually be made to work, especially given that bracketed paste is the default on my desktop environment.
+
+If given an account, I would be happy to file this as a bug; let me know if that is desired. In the meantime, have others run into this and perhaps identified the root cause and/or a different workaround?
+
+Thanks,
+Cesko
+
+sessionInfo():
+
+R version 4.1.0 (2021-05-18)
+Platform: x86_64-pc-linux-gnu (64-bit)
+Running under: Arch Linux
+
+Matrix products: default
+BLAS/LAPACK: /opt/intel/mkl/lib/intel64/libmkl_gf_lp64.so
+
+locale:
+ [1] LC_CTYPE=nl_NL.UTF-8       LC_NUMERIC=C              
+ [3] LC_TIME=nl_NL.UTF-8        LC_COLLATE=nl_NL.UTF-8    
+ [5] LC_MONETARY=nl_NL.UTF-8    LC_MESSAGES=nl_NL.UTF-8   
+ [7] LC_PAPER=nl_NL.UTF-8       LC_NAME=C                 
+ [9] LC_ADDRESS=C               LC_TELEPHONE=C            
+[11] LC_MEASUREMENT=nl_NL.UTF-8 LC_IDENTIFICATION=C       
+
+attached base packages:
+[1] stats     graphics  grDevices utils     datasets  methods   base     
+
+loaded via a namespace (and not attached):
+[1] compiler_4.1.0  Matrix_1.3-4    mgcv_1.8-36     splines_4.1.0  
+[5] nlme_3.1-152    grid_4.1.0      lattice_0.20-44
+
+
+From v|ncent@gou|et @end|ng |rom me@com  Sat Jun 12 23:32:57 2021
+From: v|ncent@gou|et @end|ng |rom me@com (Vincent Goulet)
+Date: Sat, 12 Jun 2021 17:32:57 -0400
+Subject: [Rd] Small typo in ?NumericConstants
+Message-ID: <81047719-7ABF-4AAE-A076-EBC9B5A89359@me.com>
+
+Hi,
+
+I stumbled upon this small typo in ?base::NumericConstants:
+
+Index: library/base/man/NumericConstants.Rd
+===================================================================
+--- library/base/man/NumericConstants.Rd	(r?vision 80490)
++++ library/base/man/NumericConstants.Rd	(copie de travail)
+@@ -47,7 +47,7 @@
+   A numeric constant immediately followed by \code{i} is regarded as an
+   imaginary \link{complex} number.
+ 
+-  An numeric constant immediately followed by \code{L} is regarded as an
++  A numeric constant immediately followed by \code{L} is regarded as an
+   \code{\link{integer}} number when possible (and with a warning if it
+   contains a \code{"."}).
+
+Best,
+
+v.
+
+From kev|nu@hey @end|ng |rom gm@||@com  Sun Jun 13 01:39:24 2021
+From: kev|nu@hey @end|ng |rom gm@||@com (Kevin Ushey)
+Date: Sat, 12 Jun 2021 16:39:24 -0700
+Subject: [Rd] small typo in internet.c
+Message-ID: <CAJXgQP2goBgYaVO4-fm4740nE4C9nh_9by-bEDy0p+dys=Csvw@mail.gmail.com>
+
+Hello,
+
+I spotted a small typo recently in R-devel:
+
+$ rg "htto://"
+src/modules/internet/internet.c
+95:     warning(_("the 'wininet' method of url() is deprecated for
+htto:// and https:// URLs"));
+
+I suspect 'htto://' should read 'http://'.
+
+Thanks,
+Kevin
+
+
+From tom@@@k@||ber@ @end|ng |rom gm@||@com  Sun Jun 13 09:18:04 2021
+From: tom@@@k@||ber@ @end|ng |rom gm@||@com (Tomas Kalibera)
+Date: Sun, 13 Jun 2021 09:18:04 +0200
+Subject: [Rd] small typo in internet.c
+In-Reply-To: <CAJXgQP2goBgYaVO4-fm4740nE4C9nh_9by-bEDy0p+dys=Csvw@mail.gmail.com>
+References: <CAJXgQP2goBgYaVO4-fm4740nE4C9nh_9by-bEDy0p+dys=Csvw@mail.gmail.com>
+Message-ID: <924f31a8-ce4e-5ce3-73a7-69a9338d3bbf@gmail.com>
+
+Thanks, fixed now.
+Tomas
+
+On 6/13/21 1:39 AM, Kevin Ushey wrote:
+> Hello,
+>
+> I spotted a small typo recently in R-devel:
+>
+> $ rg "htto://"
+> src/modules/internet/internet.c
+> 95:     warning(_("the 'wininet' method of url() is deprecated for
+> htto:// and https:// URLs"));
+>
+> I suspect 'htto://' should read 'http://'.
+>
+> Thanks,
+> Kevin
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From tom@@@k@||ber@ @end|ng |rom gm@||@com  Sun Jun 13 09:28:40 2021
+From: tom@@@k@||ber@ @end|ng |rom gm@||@com (Tomas Kalibera)
+Date: Sun, 13 Jun 2021 09:28:40 +0200
+Subject: [Rd] Small typo in ?NumericConstants
+In-Reply-To: <81047719-7ABF-4AAE-A076-EBC9B5A89359@me.com>
+References: <81047719-7ABF-4AAE-A076-EBC9B5A89359@me.com>
+Message-ID: <bef3eb50-80d4-11b2-d199-fade189d23d8@gmail.com>
+
+Thanks, fixed now.
+Tomas
+
+On 6/12/21 11:32 PM, Vincent Goulet via R-devel wrote:
+> Hi,
+>
+> I stumbled upon this small typo in ?base::NumericConstants:
+>
+> Index: library/base/man/NumericConstants.Rd
+> ===================================================================
+> --- library/base/man/NumericConstants.Rd	(r?vision 80490)
+> +++ library/base/man/NumericConstants.Rd	(copie de travail)
+> @@ -47,7 +47,7 @@
+>     A numeric constant immediately followed by \code{i} is regarded as an
+>     imaginary \link{complex} number.
+>   
+> -  An numeric constant immediately followed by \code{L} is regarded as an
+> +  A numeric constant immediately followed by \code{L} is regarded as an
+>     \code{\link{integer}} number when possible (and with a warning if it
+>     contains a \code{"."}).
+>
+> Best,
+>
+> v.
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From tom@@@k@||ber@ @end|ng |rom gm@||@com  Sun Jun 13 10:00:27 2021
+From: tom@@@k@||ber@ @end|ng |rom gm@||@com (Tomas Kalibera)
+Date: Sun, 13 Jun 2021 10:00:27 +0200
+Subject: [Rd] Bracketed paste issues on Linux
+In-Reply-To: <dd65989664c9bb33effa065e2dc594960ef46a8a.camel@hum.leidenuniv.nl>
+References: <dd65989664c9bb33effa065e2dc594960ef46a8a.camel@hum.leidenuniv.nl>
+Message-ID: <233b12cc-5127-bde2-da5c-e347a525ea61@gmail.com>
+
+Thanks for the report. Could you please also post output from 
+extSoftVersion() ?
+
+What happens if you paste just a smaller part of the code before the 
+long line? Is the output still corrupted? If so, is it corrupted the 
+same way, at the same places?
+
+(It seems to be working on my Ubuntu 20.04, readline 8.0, R-devel)
+
+Thanks
+Tomas
+
+On 6/12/21 3:44 PM, Cesko Voeten wrote:
+> I am on an up-to-date Arch Linux system, using the GNOME desktop environment. By default, this turns on bracketed paste in terminal emulators; for those not familiar with this concept: it makes it so that if you paste in multiple lines of code, they are received in a single chunk. This works just fine with R, up to a certain amount of text: for chunks past a certain length, some amount of text in the middle of the chunk goes missing. For example, if I print the source of mgcv::gam into my R session and then attempt to copy and paste it back in, what I end up with is:
+>
+> <snip 53 perfectly good lines>
+>              pmf$formula <- gp$pf
+>              pmf <- eval(pmf, parent.frame())
+> }   objectvironment(attr(object$pred.formula, "full")) <- .GlobalEnv<- environment(object$terms) <- environment(object$pterms) <- .GlobalEnv
+>
+> So:
+>   - the first 55 lines in this example arrive perfectly fine
+>   - then a bunch go completely missing
+>   - then various parts of the last few lines are jumbled together into one line
+>
+> For reference on the third point, the actual last 10 lines of my version of mgcv::gam are:
+>      if (is.null(object$deviance))
+>          object$deviance <- sum(residuals(object, "deviance")^2)
+>      names(object$gcv.ubre) <- method
+>      environment(object$formula) <- environment(object$pred.formula) <- environment(object$terms) <- environment(object$pterms) <- .GlobalEnv
+>      if (!is.null(object$model))
+>          environment(attr(object$model, "terms")) <- .GlobalEnv
+>      if (!is.null(attr(object$pred.formula, "full")))
+>          environment(attr(object$pred.formula, "full")) <- .GlobalEnv
+>      object
+> }
+>
+> parts of which can be recognized in the last line of what was pasted.
+> Naturally, the pasted function is not parsed properly: if I press return I get the expected "+" signaling that the REPL is expecting more input. So it is not merely a visual issue.
+>
+> I can reproduce this both in GNOME Terminal and in xterm, so it is not a bug specific to my terminal emulator. In addition, pasting the exact same code into either vim or nano running within the same terminal works fine. So I believe that this may be a bug in R itself. It's easy to work around by disabling bracketed paste in the terminal, but it would be great if this could actually be made to work, especially given that bracketed paste is the default on my desktop environment.
+>
+> If given an account, I would be happy to file this as a bug; let me know if that is desired. In the meantime, have others run into this and perhaps identified the root cause and/or a different workaround?
+>
+> Thanks,
+> Cesko
+>
+> sessionInfo():
+>
+> R version 4.1.0 (2021-05-18)
+> Platform: x86_64-pc-linux-gnu (64-bit)
+> Running under: Arch Linux
+>
+> Matrix products: default
+> BLAS/LAPACK: /opt/intel/mkl/lib/intel64/libmkl_gf_lp64.so
+>
+> locale:
+>   [1] LC_CTYPE=nl_NL.UTF-8       LC_NUMERIC=C
+>   [3] LC_TIME=nl_NL.UTF-8        LC_COLLATE=nl_NL.UTF-8
+>   [5] LC_MONETARY=nl_NL.UTF-8    LC_MESSAGES=nl_NL.UTF-8
+>   [7] LC_PAPER=nl_NL.UTF-8       LC_NAME=C
+>   [9] LC_ADDRESS=C               LC_TELEPHONE=C
+> [11] LC_MEASUREMENT=nl_NL.UTF-8 LC_IDENTIFICATION=C
+>
+> attached base packages:
+> [1] stats     graphics  grDevices utils     datasets  methods   base
+>
+> loaded via a namespace (and not attached):
+> [1] compiler_4.1.0  Matrix_1.3-4    mgcv_1.8-36     splines_4.1.0
+> [5] nlme_3.1-152    grid_4.1.0      lattice_0.20-44
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From c@c@voeten @end|ng |rom hum@|e|denun|v@n|  Sun Jun 13 10:59:40 2021
+From: c@c@voeten @end|ng |rom hum@|e|denun|v@n| (Voeten, C.C.)
+Date: Sun, 13 Jun 2021 08:59:40 +0000
+Subject: [Rd] Bracketed paste issues on Linux
+In-Reply-To: <233b12cc-5127-bde2-da5c-e347a525ea61@gmail.com>
+References: <dd65989664c9bb33effa065e2dc594960ef46a8a.camel@hum.leidenuniv.nl>,
+ <233b12cc-5127-bde2-da5c-e347a525ea61@gmail.com>
+Message-ID: <e330a78ea0a2464285a56baf7dbd5bbe@hum.leidenuniv.nl>
+
+Thanks for looking into this! I've just compiled today's R-devel snapshot, and it shows the same issue. extSoftVersion() from that build:
+
+                                             zlib
+                                         "1.2.11"
+                                            bzlib
+                             "1.0.8, 13-Jul-2019"
+                                               xz
+                                          "5.2.5"
+                                             PCRE
+                               "10.37 2021-05-26"
+                                              ICU
+                                           "69.1"
+                                              TRE
+                        "TRE 0.8.0 R_fixes (BSD)"
+                                            iconv
+                                     "glibc 2.33"
+                                         readline
+                                            "8.1"
+                                             BLAS
+"/home/cesko/r-devel/usr/lib64/R/lib/libRblas.so"
+
+
+Thanks for your observation that it works on your system - that implicates my readline-8.1 as being the culprit. Unfortunately, I don't dare attempt to downgrade it on my system to test, and regardless we still don't know why other readline-using programs can paste in the same text with no issues.
+
+
+I've made some further progress on debugging: I noticed that text <4096 bytes in size arrives fine (although sometimes with visual corruption), but text >4096 bytes doesn't. Pasting in the result of perl -e 'print ("if(T)cat(\"a\")\n"x292)' works as expected, changing the 292 to 293 causes R to print a bunch of a's followed by the source code of the cat function.
+
+
+To still answer your question: with mgcv::gam, pasting in the first 94 lines (as printed by R with options(width=80)) produces a visual corruption of the prompt (it reads "G$family <- familyar.summaryintercept = drop.intercept)) control$scalePenalty,") but if I press return and type the closing "}" the code has actually arrived just fine. The text up to and including that line is 4023 bytes in size; when trying to add in more, it fails again.
+
+Cesko
+
+________________________________
+Van: Tomas Kalibera <tomas.kalibera at gmail.com>
+Verzonden: zondag 13 juni 2021 10:00:27
+Aan: Voeten, C.C.; r-devel at r-project.org
+Onderwerp: Re: [Rd] Bracketed paste issues on Linux
+
+Thanks for the report. Could you please also post output from
+extSoftVersion() ?
+
+What happens if you paste just a smaller part of the code before the
+long line? Is the output still corrupted? If so, is it corrupted the
+same way, at the same places?
+
+(It seems to be working on my Ubuntu 20.04, readline 8.0, R-devel)
+
+Thanks
+Tomas
+
+On 6/12/21 3:44 PM, Cesko Voeten wrote:
+> I am on an up-to-date Arch Linux system, using the GNOME desktop environment. By default, this turns on bracketed paste in terminal emulators; for those not familiar with this concept: it makes it so that if you paste in multiple lines of code, they are received in a single chunk. This works just fine with R, up to a certain amount of text: for chunks past a certain length, some amount of text in the middle of the chunk goes missing. For example, if I print the source of mgcv::gam into my R session and then attempt to copy and paste it back in, what I end up with is:
+>
+> <snip 53 perfectly good lines>
+>              pmf$formula <- gp$pf
+>              pmf <- eval(pmf, parent.frame())
+> }   objectvironment(attr(object$pred.formula, "full")) <- .GlobalEnv<- environment(object$terms) <- environment(object$pterms) <- .GlobalEnv
+>
+> So:
+>   - the first 55 lines in this example arrive perfectly fine
+>   - then a bunch go completely missing
+>   - then various parts of the last few lines are jumbled together into one line
+>
+> For reference on the third point, the actual last 10 lines of my version of mgcv::gam are:
+>      if (is.null(object$deviance))
+>          object$deviance <- sum(residuals(object, "deviance")^2)
+>      names(object$gcv.ubre) <- method
+>      environment(object$formula) <- environment(object$pred.formula) <- environment(object$terms) <- environment(object$pterms) <- .GlobalEnv
+>      if (!is.null(object$model))
+>          environment(attr(object$model, "terms")) <- .GlobalEnv
+>      if (!is.null(attr(object$pred.formula, "full")))
+>          environment(attr(object$pred.formula, "full")) <- .GlobalEnv
+>      object
+> }
+>
+> parts of which can be recognized in the last line of what was pasted.
+> Naturally, the pasted function is not parsed properly: if I press return I get the expected "+" signaling that the REPL is expecting more input. So it is not merely a visual issue.
+>
+> I can reproduce this both in GNOME Terminal and in xterm, so it is not a bug specific to my terminal emulator. In addition, pasting the exact same code into either vim or nano running within the same terminal works fine. So I believe that this may be a bug in R itself. It's easy to work around by disabling bracketed paste in the terminal, but it would be great if this could actually be made to work, especially given that bracketed paste is the default on my desktop environment.
+>
+> If given an account, I would be happy to file this as a bug; let me know if that is desired. In the meantime, have others run into this and perhaps identified the root cause and/or a different workaround?
+>
+> Thanks,
+> Cesko
+>
+> sessionInfo():
+>
+> R version 4.1.0 (2021-05-18)
+> Platform: x86_64-pc-linux-gnu (64-bit)
+> Running under: Arch Linux
+>
+> Matrix products: default
+> BLAS/LAPACK: /opt/intel/mkl/lib/intel64/libmkl_gf_lp64.so
+>
+> locale:
+>   [1] LC_CTYPE=nl_NL.UTF-8       LC_NUMERIC=C
+>   [3] LC_TIME=nl_NL.UTF-8        LC_COLLATE=nl_NL.UTF-8
+>   [5] LC_MONETARY=nl_NL.UTF-8    LC_MESSAGES=nl_NL.UTF-8
+>   [7] LC_PAPER=nl_NL.UTF-8       LC_NAME=C
+>   [9] LC_ADDRESS=C               LC_TELEPHONE=C
+> [11] LC_MEASUREMENT=nl_NL.UTF-8 LC_IDENTIFICATION=C
+>
+> attached base packages:
+> [1] stats     graphics  grDevices utils     datasets  methods   base
+>
+> loaded via a namespace (and not attached):
+> [1] compiler_4.1.0  Matrix_1.3-4    mgcv_1.8-36     splines_4.1.0
+> [5] nlme_3.1-152    grid_4.1.0      lattice_0.20-44
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+	[[alternative HTML version deleted]]
+
+
