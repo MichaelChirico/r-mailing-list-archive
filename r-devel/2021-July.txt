@@ -1,0 +1,2115 @@
+From g@bembecker @end|ng |rom gm@||@com  Thu Jul  1 01:02:53 2021
+From: g@bembecker @end|ng |rom gm@||@com (Gabriel Becker)
+Date: Wed, 30 Jun 2021 16:02:53 -0700
+Subject: [Rd] On read.csv and write.csv
+In-Reply-To: <CWXP265MB3208A3DC3EE8F8E8489E258B81019@CWXP265MB3208.GBRP265.PROD.OUTLOOK.COM>
+References: <CWXP265MB3208A3DC3EE8F8E8489E258B81019@CWXP265MB3208.GBRP265.PROD.OUTLOOK.COM>
+Message-ID: <CAD4oTHFdxdrbjmxYsy8_ZEvjkxPh5SdDGqhOJ2_-RiiYXt=Q5A@mail.gmail.com>
+
+Hi Stephen,
+
+Personally, I don't have super strong feelings about this, but
+https://datatracker.ietf.org/doc/html/rfc4180#section-2 does say that the
+optional header line should have the same number of fields as the data
+records, so in as much as that is the "CSV specification", R's read.csv
+behavior is supporting an extension, whereas its write.csv is
+outputting "standard" compliant csv.
+
+It is possible that one or a few of the mentioned multitude of independent
+specs do specify header can have one less, I don't know, but if so,
+according to the ietf, its not overly common.
+
+I can't even speak to whether that is why the behavior is as it is, but I
+figured it was worth mentioning.
+
+~G
+
+On Wed, Jun 30, 2021 at 2:15 PM Stephen Ellison <S.Ellison at lgcgroup.com>
+wrote:
+
+> Apologies if this is a well-worn question; I haven?t found it so far but
+> there's a lot of r-dev and I may have missed it in the archives. In the
+> mean time:
+>
+> I've managed to avoid writing csv files with R for a couple of decades but
+> we're swopping data with a collaborator and I've tripped over an
+> inconsistency between read.csv and write.csv that seems less than helpful.
+> The default line number behaviour for read.csv is to assume that, when the
+> number of items in the first row is one less than the number in the second,
+> that the first column contains row names. write.csv, however, includes an
+> empty string ("") as the first header entry over row names when writing. On
+> rereading, the original row names are then treated as data with unknown
+> name, replaced by "X".
+>
+> That means that, unlike read.table and write.table,  something written
+> with write.csv is not read back correctly by read.csv .
+>
+> Is that intentional?
+> And whether it is intentional or not, is it wise?
+>
+> Example:
+>
+> ( D1 <- data.frame(A=letters[1:5], N=1:5, Y=rnorm(5) ) )
+> write.csv(D1, "temp.csv")
+>
+> ( D1w <- read.csv("temp.csv") )
+>
+> # Note the unnecessary new X column ...
+> #Tidy up
+> unlink("temp.csv")
+>
+> This differs from the parent .table defaults; write.table doesn?t add the
+> extra "" column label, so the object read back with read.table does not
+> contain an unwanted extra column.
+>
+> Wouldn?t it be more sensible if write.csv() and read.csv() were consistent
+> in the same sense as read.table and write.table?
+> Or at least if there were a switch (as.read.csv=TRUE ?) to tell write.csv
+> to omit the initial "", or vice versa?
+>
+> Currently using R version 4.1.0 on Windows, but this reproduces at least
+> as far back as 3.6
+>
+> Steve E
+>
+>
+> *******************************************************************
+> This email and any attachments are confidential. Any u...{{dropped:15}}
+
+
+From bbo|ker @end|ng |rom gm@||@com  Thu Jul  1 02:23:27 2021
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Wed, 30 Jun 2021 20:23:27 -0400
+Subject: [Rd] undefined subclass warning
+Message-ID: <d8920721-4a4d-820e-ab1c-55b693b15496@gmail.com>
+
+
+   A colleague recently submitted a paper to JSS and was advised to 
+address the following warning which occurs when their package 
+(https://CRAN.R-project.org/package=pcoxtime) is loaded:
+
+Warning message:
+In .recacheSubclasses(def at className, def, env) :
+   undefined subclass "numericVector" of class "Mnumeric"; definition 
+not updated
+
+After much digging I *think* I've concluded that this comes from the 
+following import chain:
+
+pcoxtime -> riskRegression -> rms -> quantreg -> MatrixModels
+
+   that is, loading any of these packages throws the warning. 
+MatrixModels Imports: *only* {stats, methods, Matrix} and loading these 
+by themselves is warning-less.
+
+    I assume there is some mismatch/incompatibility between MatrixModels 
+(which was last updated 2021-03-01) and Matrix (2021-05-24), which has 
+this NEWS item in the most release 1.3-3 
+<https://cran.r-project.org/web/packages/Matrix/news.html>:
+
+* removed the nowhere used (and unexported but still active) class union 
+"Mnumeric" which actually trickled into many base classes properties. 
+Notably would it break validity of factor with a proposed change in 
+validity checking, as factors were also "Mnumeric" but did not fulfill 
+its validity method. Similarly removed (disabled) unused class union 
+"numericVector".
+
+    It seems that REINSTALLING the package from source solves the 
+problem, which is nice, but I don't fully understand why; I guess ???? 
+there are class structures that are evaluated at install time and stored 
+in the package environment ...
+
+   Any more explanations would be welcome.
+
+   cheers
+     Ben
+
+
+From @|mon@urb@nek @end|ng |rom R-project@org  Thu Jul  1 04:18:08 2021
+From: @|mon@urb@nek @end|ng |rom R-project@org (Simon Urbanek)
+Date: Thu, 1 Jul 2021 14:18:08 +1200
+Subject: [Rd] On read.csv and write.csv
+In-Reply-To: <CWXP265MB3208A3DC3EE8F8E8489E258B81019@CWXP265MB3208.GBRP265.PROD.OUTLOOK.COM>
+References: <CWXP265MB3208A3DC3EE8F8E8489E258B81019@CWXP265MB3208.GBRP265.PROD.OUTLOOK.COM>
+Message-ID: <029F6720-64AB-4F19-A823-8DB0768E153F@R-project.org>
+
+
+Stephen,
+
+the "unhelpful" column are the row names. They are considered an important part of a data frame and therefore the default (row.names = TRUE) is to not lose them (as there is no way back once you do). If you don't want to preserve the row names you can simply set row.names=FALSE.
+
+Cheers,
+Simon
+
+PS: this is likely a question for R-help rather than R-devel
+
+
+
+> On 1/07/2021, at 9:15 AM, Stephen Ellison <S.Ellison at LGCGroup.com> wrote:
+> 
+> Apologies if this is a well-worn question; I haven?t found it so far but there's a lot of r-dev and I may have missed it in the archives. In the mean time:
+> 
+> I've managed to avoid writing csv files with R for a couple of decades but we're swopping data with a collaborator and I've tripped over an inconsistency between read.csv and write.csv that seems less than helpful.
+> The default line number behaviour for read.csv is to assume that, when the number of items in the first row is one less than the number in the second, that the first column contains row names. write.csv, however, includes an empty string ("") as the first header entry over row names when writing. On rereading, the original row names are then treated as data with unknown name, replaced by "X".
+> 
+> That means that, unlike read.table and write.table,  something written with write.csv is not read back correctly by read.csv .
+> 
+> Is that intentional?
+> And whether it is intentional or not, is it wise?
+> 
+> Example:
+> 
+> ( D1 <- data.frame(A=letters[1:5], N=1:5, Y=rnorm(5) ) )
+> write.csv(D1, "temp.csv")
+> 
+> ( D1w <- read.csv("temp.csv") )
+> 
+> # Note the unnecessary new X column ...
+> #Tidy up
+> unlink("temp.csv")
+> 
+> This differs from the parent .table defaults; write.table doesn?t add the extra "" column label, so the object read back with read.table does not contain an unwanted extra column.
+> 
+> Wouldn?t it be more sensible if write.csv() and read.csv() were consistent in the same sense as read.table and write.table?
+> Or at least if there were a switch (as.read.csv=TRUE ?) to tell write.csv to omit the initial "", or vice versa?
+> 
+> Currently using R version 4.1.0 on Windows, but this reproduces at least as far back as 3.6 
+> 
+> Steve E
+> 
+> 
+> *******************************************************************
+> This email and any attachments are confidential. Any u...{{dropped:13}}
+
+
+From m|n@h@|| @end|ng |rom um|ch@edu  Thu Jul  1 05:55:32 2021
+From: m|n@h@|| @end|ng |rom um|ch@edu (Greg Minshall)
+Date: Thu, 01 Jul 2021 06:55:32 +0300
+Subject: [Rd] S3 dispatch does not work for generics defined inside an
+ environment
+In-Reply-To: Your message of "Wed, 30 Jun 2021 11:22:15 +0200."
+ <08D56DDA-856D-4F1F-A7DE-FA9EFDFFB9FC@uzh.ch>
+Message-ID: <3777905.1625111732@apollo2.minshall.org>
+
+Taras,
+
+> P.S. If you are wondering what I am trying to achieve here ? we have a
+> very large codebase and I am trying to use environments as a type of
+> ?poor man?s namespaces? to organize code in a modular fashion. But of
+> course it?s all pointless if I can?t get the generics to work
+> reliably.
+
+i'm not knowledgeable about S3.  but, a different way to try to
+modularize large code bases is to split them into separate packages.
+just in case you hadn't already thought about, and rejected, that idea.
+
+cheers, Greg
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Thu Jul  1 08:16:46 2021
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Thu, 1 Jul 2021 08:16:46 +0200
+Subject: [Rd] undefined subclass warning
+In-Reply-To: <d8920721-4a4d-820e-ab1c-55b693b15496@gmail.com>
+References: <d8920721-4a4d-820e-ab1c-55b693b15496@gmail.com>
+Message-ID: <24797.24014.946818.673060@stat.math.ethz.ch>
+
+>>>>> Ben Bolker 
+>>>>>     on Wed, 30 Jun 2021 20:23:27 -0400 writes:
+
+    >    A colleague recently submitted a paper to JSS and was
+    > advised to address the following warning which occurs when
+    > their package
+    > (https://CRAN.R-project.org/package=pcoxtime) is loaded:
+
+    > Warning message: In .recacheSubclasses(def at className, def,
+    > env) : undefined subclass "numericVector" of class
+    > "Mnumeric"; definition not updated
+
+    > After much digging I *think* I've concluded that this
+    > comes from the following import chain:
+
+    > pcoxtime -> riskRegression -> rms -> quantreg ->
+    > MatrixModels
+
+    >    that is, loading any of these packages throws the
+    > warning.  MatrixModels Imports: *only* {stats, methods,
+    > Matrix} and loading these by themselves is warning-less.
+
+    >     I assume there is some mismatch/incompatibility
+    > between MatrixModels (which was last updated 2021-03-01)
+    > and Matrix (2021-05-24), which has this NEWS item in the
+    > most release 1.3-3
+    > <https://cran.r-project.org/web/packages/Matrix/news.html>:
+
+    > * removed the nowhere used (and unexported but still
+    > active) class union "Mnumeric" which actually trickled
+    > into many base classes properties.  Notably would it break
+    > validity of factor with a proposed change in validity
+    > checking, as factors were also "Mnumeric" but did not
+    > fulfill its validity method. Similarly removed (disabled)
+    > unused class union "numericVector".
+
+    >     It seems that REINSTALLING the package from source
+    > solves the problem, which is nice, but I don't fully
+    > understand why; I guess ????  there are class structures
+    > that are evaluated at install time and stored in the
+    > package environment ...
+
+    >    Any more explanations would be welcome.
+    >    cheers Ben
+
+Yes, Ben,
+you are right on spot and very close with your final guess.
+
+Installation and even building of packages using S4 classes (their own *or* of
+other packages where they import from) does store the class
+definitions already in the binary "dump" of all the R code.
+
+So yes, Matrix cleanup (dropping unused classes actually
+helping/improving the class hiearchy by making it slightly
+simpler) does need to re-installation of direct Matrix
+dependencies in order to avoid the above warning --- which
+otherwise has zero consequences.
+
+So the referees of your colleague's paper / package should really learn
+that they are wrong in their requirement of getting rid of that
+warning.
+
+and as you've suggested in another thread, I should alleviate
+the problem by uploading a new version of 'MatrixModels' models
+to CRAN {solving another small unrelated buglet} so the warnings
+will go away for everyone who updates their installed packages.
+
+Martin
+
+
+From t@r@@@z@kh@rko @end|ng |rom uzh@ch  Thu Jul  1 09:27:13 2021
+From: t@r@@@z@kh@rko @end|ng |rom uzh@ch (Taras Zakharko)
+Date: Thu, 1 Jul 2021 09:27:13 +0200
+Subject: [Rd] S3 dispatch does not work for generics defined inside an
+ environment
+In-Reply-To: <3777905.1625111732@apollo2.minshall.org>
+References: <3777905.1625111732@apollo2.minshall.org>
+Message-ID: <5E29C4DA-197A-4C17-9E5D-9CD7E1EA8D48@uzh.ch>
+
+Hi Greg, 
+
+That was my original plan as well, but managing and deploying dozens of little packages that are all under active development is a nightmare even with devtools. Just too much overhead, not to mention that coming up with names that would not have namespace conflicts was getting silly. 
+
+In the end, I wrote a package that implements lightweight python-like modules for R and that has really improved my workflow. I hope to publish this package later this year after I have cleaned it up a bit. 
+
+Thanks, 
+
+Taras
+
+> On 1 Jul 2021, at 05:55, Greg Minshall <minshall at umich.edu> wrote:
+> 
+> Taras,
+> 
+>> P.S. If you are wondering what I am trying to achieve here ? we have a
+>> very large codebase and I am trying to use environments as a type of
+>> ?poor man?s namespaces? to organize code in a modular fashion. But of
+>> course it?s all pointless if I can?t get the generics to work
+>> reliably.
+> 
+> i'm not knowledgeable about S3.  but, a different way to try to
+> modularize large code bases is to split them into separate packages.
+> just in case you hadn't already thought about, and rejected, that idea.
+> 
+> cheers, Greg
+
+
+From t@r@@@z@kh@rko @end|ng |rom uzh@ch  Thu Jul  1 09:55:08 2021
+From: t@r@@@z@kh@rko @end|ng |rom uzh@ch (Taras Zakharko)
+Date: Thu, 1 Jul 2021 09:55:08 +0200
+Subject: [Rd] On read.csv and write.csv
+In-Reply-To: <CWXP265MB3208A3DC3EE8F8E8489E258B81019@CWXP265MB3208.GBRP265.PROD.OUTLOOK.COM>
+References: <CWXP265MB3208A3DC3EE8F8E8489E258B81019@CWXP265MB3208.GBRP265.PROD.OUTLOOK.COM>
+Message-ID: <273E35E6-67D9-41BD-8BAA-737FDF32D4CC@uzh.ch>
+
+Stephen, 
+
+I am sure one can find a lot of small issues and inconsistencies with R and it?s standard library. It has to support a lot of legacy cruft and the design process ? especially in the early days ? focused on getting things done rather than delivering a standard library of immaculate quality. And it is way too late to make dramatic changes lest you want to risk breaking existing software. That ship has sailed decades ago. 
+
+Personally, I have taught myself a while ago to always use explicit configuration when using built-in functions, and in the last couple of years I have completely replaced them in favor of other packages (such as readr) that come with (arguably) more sane defaults and better diagnostics. 
+
+Best, 
+
+Taras
+
+
+> On 30 Jun 2021, at 23:15, Stephen Ellison <S.Ellison at LGCGroup.com> wrote:
+> 
+> Apologies if this is a well-worn question; I haven?t found it so far but there's a lot of r-dev and I may have missed it in the archives. In the mean time:
+> 
+> I've managed to avoid writing csv files with R for a couple of decades but we're swopping data with a collaborator and I've tripped over an inconsistency between read.csv and write.csv that seems less than helpful.
+> The default line number behaviour for read.csv is to assume that, when the number of items in the first row is one less than the number in the second, that the first column contains row names. write.csv, however, includes an empty string ("") as the first header entry over row names when writing. On rereading, the original row names are then treated as data with unknown name, replaced by "X".
+> 
+> That means that, unlike read.table and write.table,  something written with write.csv is not read back correctly by read.csv .
+> 
+> Is that intentional?
+> And whether it is intentional or not, is it wise?
+> 
+> Example:
+> 
+> ( D1 <- data.frame(A=letters[1:5], N=1:5, Y=rnorm(5) ) )
+> write.csv(D1, "temp.csv")
+> 
+> ( D1w <- read.csv("temp.csv") )
+> 
+> # Note the unnecessary new X column ...
+> #Tidy up
+> unlink("temp.csv")
+> 
+> This differs from the parent .table defaults; write.table doesn?t add the extra "" column label, so the object read back with read.table does not contain an unwanted extra column.
+> 
+> Wouldn?t it be more sensible if write.csv() and read.csv() were consistent in the same sense as read.table and write.table?
+> Or at least if there were a switch (as.read.csv=TRUE ?) to tell write.csv to omit the initial "", or vice versa?
+> 
+> Currently using R version 4.1.0 on Windows, but this reproduces at least as far back as 3.6 
+> 
+> Steve E
+> 
+> 
+> *******************************************************************
+> This email and any attachments are confidential. Any u...{{dropped:13}}
+
+
+From m|n@h@|| @end|ng |rom um|ch@edu  Thu Jul  1 10:42:24 2021
+From: m|n@h@|| @end|ng |rom um|ch@edu (Greg Minshall)
+Date: Thu, 01 Jul 2021 11:42:24 +0300
+Subject: [Rd] S3 dispatch does not work for generics defined inside an
+ environment
+In-Reply-To: Your message of "Thu, 01 Jul 2021 09:27:13 +0200."
+ <5E29C4DA-197A-4C17-9E5D-9CD7E1EA8D48@uzh.ch>
+Message-ID: <3792700.1625128944@apollo2.minshall.org>
+
+Taras,
+> That was my original plan as well, but managing and deploying dozens
+> of little packages that are all under active development is a
+> nightmare even with devtools. Just too much overhead, not to mention
+> that coming up with names that would not have namespace conflicts was
+> getting silly.
+
+i can imagine.
+
+> In the end, I wrote a package that implements lightweight python-like
+> modules for R and that has really improved my workflow. I hope to
+> publish this package later this year after I have cleaned it up a bit.
+
+cool -- good luck with it.
+
+Greg
+
+
+From joh@nne@@r@nke @end|ng |rom jrwb@de  Thu Jul  1 11:42:50 2021
+From: joh@nne@@r@nke @end|ng |rom jrwb@de (Johannes Ranke)
+Date: Thu, 01 Jul 2021 11:42:50 +0200
+Subject: [Rd] S3 dispatch does not work for generics defined inside an
+ environment
+In-Reply-To: <5E29C4DA-197A-4C17-9E5D-9CD7E1EA8D48@uzh.ch>
+References: <3777905.1625111732@apollo2.minshall.org>
+ <5E29C4DA-197A-4C17-9E5D-9CD7E1EA8D48@uzh.ch>
+Message-ID: <2361425.tvUGSieqk4@ryz>
+
+> In the end, I wrote a package that implements lightweight python-like
+> modules for R and that has really improved my workflow. I hope to publish
+> this package later this year after I have cleaned it up a bit.
+
+Hi, are you aware of the previous work in this direction
+
+https://github.com/klmr/box
+
+and
+
+https://github.com/wahani/modules 
+
+Johannes
+
+
+	[[alternative HTML version deleted]]
+
+
+From t@r@@@z@kh@rko @end|ng |rom uzh@ch  Thu Jul  1 12:15:12 2021
+From: t@r@@@z@kh@rko @end|ng |rom uzh@ch (Taras Zakharko)
+Date: Thu, 1 Jul 2021 12:15:12 +0200
+Subject: [Rd] S3 dispatch does not work for generics defined inside an
+ environment
+In-Reply-To: <2361425.tvUGSieqk4@ryz>
+References: <3777905.1625111732@apollo2.minshall.org>
+ <5E29C4DA-197A-4C17-9E5D-9CD7E1EA8D48@uzh.ch> <2361425.tvUGSieqk4@ryz>
+Message-ID: <B4EDBB4C-F7AE-4E3B-A3BC-2677ED53A4C0@uzh.ch>
+
+Thanks Johannes, 
+
+I was aware of the modules package (it was not suitable for my needs unfortunately), but I did not know about box? somehow I managed to completely miss it in my search (embarrassing, really).  
+
+My own package offers similar functionality to box, but is designed to closely follow the behavior of regular R packages and heavily relies on Roxygen2 to manage imports and exports. The idea is that you can convert a module to an R package (or via versa) with no additional effort.  Basically, where box offers an opinionated implementation of modules, my design aims to be as ?boring? as possible. You just write the code as you usually would do for a package and then you use a single new function to load it in a modular fashion. 
+
+At any rate, I am exited that there is work in this area and I am looking forward to further exploring the design space. Maybe one day these efforts will culminate in an official R module system.  
+
+Thanks, 
+
+Taras
+
+> On 1 Jul 2021, at 11:42, Johannes Ranke <johannes.ranke at jrwb.de> wrote:
+> 
+>> In the end, I wrote a package that implements lightweight python-like
+>> modules for R and that has really improved my workflow. I hope to publish
+>> this package later this year after I have cleaned it up a bit.
+> 
+> Hi, are you aware of the previous work in this direction
+> 
+> https://github.com/klmr/box
+> 
+> and
+> 
+> https://github.com/wahani/modules 
+> 
+> Johannes
+> 
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From konr@d@@|ek @end|ng |rom gm@||@com  Thu Jul  1 12:16:08 2021
+From: konr@d@@|ek @end|ng |rom gm@||@com (Konrad Siek)
+Date: Thu, 1 Jul 2021 12:16:08 +0200
+Subject: [Rd] [External] SET_COMPLEX_ELT and SET_RAW_ELT missing from
+ Rinternals.h
+In-Reply-To: <335585-e80-509f-9598-4b737b5ccba9@uiowa.edu>
+References: <CAN6cAk1T4sQFMZXtNqjTKJCQyn_21ic1zAm6P=rQZxy4uAikfg@mail.gmail.com>
+ <335585-e80-509f-9598-4b737b5ccba9@uiowa.edu>
+Message-ID: <CAN6cAk0g9b8jfALE2TjnNv_F7WobMBEaAii5i1PzzdQKYAz5pw@mail.gmail.com>
+
+Thanks!
+
+So what would be the prescribed way of assigning elements to a CPLXSXP if I
+needed to?
+
+One way I see is to do what most of the code inside the interpreter does
+and grab the vector's data pointer:
+
+    COMPLEX(sexp)[index] = value;
+    COMPLEX0(sexp)[index] = value;
+
+This will materialize an ALTREP CPLXSXP though, so maybe the best way would
+be to mirror what SET_COMPLEX_ELT does in Rinlinedfuns.h?
+
+    if (ALTREP(sexp)) ALTCOMPLEX_SET_ELT(sexp, index, value); else
+COMPLEX0(sexp)[index] = vector;
+
+This seems better, but it's not used in the interpreter anywhere as far as
+I can tell, presumably because of the setter interface not being complete,
+as you point out. But should I be avoiding this second approach for some
+reaosn?
+
+k
+
+On Tue, Jun 29, 2021 at 4:06 AM <luke-tierney at uiowa.edu> wrote:
+
+> The setter interface for atomic types is not yer implemented. It may
+> be some day.
+>
+> Best,
+>
+> luke
+>
+> On Fri, 25 Jun 2021, Konrad Siek wrote:
+>
+> > Hello,
+> >
+> > I am working on a package that works with various types of R vectors,
+> > implemented in C. My code has a lot of SET_*_ELT operations in it for
+> > various types of vectors, including for CPLXSXPs and RAWSXPs.
+> >
+> > I noticed SET_COMPLEX_ELT and SET_RAW_ELT are defined in Rinlinedfuns.h
+> but
+> > not declared in Rinternals.h, so they cannot be used in packages. I was
+> > going to re-implement them or extern them in my package, however,
+> > interestingly, ALTCOMPLEX_SET_ELT and ALTRAW_SET_ELT  are both declared
+> in
+> > Rinternals.h, making me think SET_COMPLEX_ELT and SET_RAW_ELT could be
+> > purposefully obscured. Otherwise it may just be an oversight and I should
+> > bring it to someone's attention anyway.
+> >
+> > I have three questions that I hope R-devel could help me with.
+> >
+> > 1. Is this an oversight, or are SET_COMPLEX_ELT and SET_RAW_ELT not
+> exposed
+> > on purpose? 2. If they are not exposed on purpose, I was wondering why.
+> > 3. More importantly, what would be good ways to set elements of these
+> > vectors while playing nice with ALTREP and avoiding whatever pitfalls
+> > caused these functions to be obscured in the first place?
+> >
+> > Best regards,
+> > Konrad,
+> >
+> >       [[alternative HTML version deleted]]
+> >
+> > ______________________________________________
+> > R-devel at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-devel
+> >
+>
+> --
+> Luke Tierney
+> Ralph E. Wareham Professor of Mathematical Sciences
+> University of Iowa                  Phone:             319-335-3386
+> Department of Statistics and        Fax:               319-335-3017
+>     Actuarial Science
+> 241 Schaeffer Hall                  email:   luke-tierney at uiowa.edu
+> Iowa City, IA 52242                 WWW:  http://www.stat.uiowa.edu
+>
+
+	[[alternative HTML version deleted]]
+
+
+From S@E|||@on @end|ng |rom LGCGroup@com  Thu Jul  1 22:46:13 2021
+From: S@E|||@on @end|ng |rom LGCGroup@com (Stephen Ellison)
+Date: Thu, 1 Jul 2021 20:46:13 +0000
+Subject: [Rd] On read.csv and write.csv
+In-Reply-To: <029F6720-64AB-4F19-A823-8DB0768E153F@R-project.org>
+References: <CWXP265MB3208A3DC3EE8F8E8489E258B81019@CWXP265MB3208.GBRP265.PROD.OUTLOOK.COM>
+ <029F6720-64AB-4F19-A823-8DB0768E153F@R-project.org>
+Message-ID: <CWXP265MB32085A57128A1822E4A5C5BB81009@CWXP265MB3208.GBRP265.PROD.OUTLOOK.COM>
+
+> the "unhelpful" column are the row names. They are considered an
+> important part of a data frame and therefore the default (row.names =
+> TRUE) is to not lose them (as there is no way back once you do). If you don't
+> want to preserve the row names you can simply set row.names=FALSE.
+
+Please run the reproducible example provided. 
+When you do, you will see that write.csv writes an unnecessary empty header field ("") over the row names column. This makes the number of header fields equal to the number of columns _including_ row names. That causes the original row names to be read as data by read.csv, following the rule that the number of header fields determines whether row names are present. read.csv  accordingly assumes that the former row names are unnamed data, calls the unnamed row names column "X" (or X.1 etc if X exists) and then adds new, default, row names _instead of the original row names written by write.csv_. 
+That's not helpful.
+
+By contrast read.table correctly reads the first entry in each row as a row name when the number of header fields is one less than the number of data columns. write.table includes row names as row names _without a header field_, so a file written with write.table is correctly formatted for read.table to interpret the first data field as a row name.
+I think it would be more sensible if write.csv did the same as write.table when row.names=TRUE - as it is, by default.
+
+
+
+
+
+*******************************************************************
+This email and any attachments are confidential. Any use, copying or
+disclosure other than by the intended recipient is unauthorised. If 
+you have received this message in error, please notify the sender 
+immediately via +44(0)20 8943 7000 or notify postmaster at lgcgroup.com 
+and delete this message and any copies from your computer and network. 
+LGC Limited. Registered in England 2991879. 
+Registered office: Queens Road, Teddington, Middlesex, TW11 0LY, UK
+
+From g@bembecker @end|ng |rom gm@||@com  Fri Jul  2 00:29:40 2021
+From: g@bembecker @end|ng |rom gm@||@com (Gabriel Becker)
+Date: Thu, 1 Jul 2021 15:29:40 -0700
+Subject: [Rd] On read.csv and write.csv
+In-Reply-To: <CWXP265MB32085A57128A1822E4A5C5BB81009@CWXP265MB3208.GBRP265.PROD.OUTLOOK.COM>
+References: <CWXP265MB3208A3DC3EE8F8E8489E258B81019@CWXP265MB3208.GBRP265.PROD.OUTLOOK.COM>
+ <029F6720-64AB-4F19-A823-8DB0768E153F@R-project.org>
+ <CWXP265MB32085A57128A1822E4A5C5BB81009@CWXP265MB3208.GBRP265.PROD.OUTLOOK.COM>
+Message-ID: <CAD4oTHFjYycJzEtLMM3jJ8ZbZjUCY6-Vh_-zUvHin3L15iXS1g@mail.gmail.com>
+
+On Thu, Jul 1, 2021 at 1:46 PM Stephen Ellison <S.Ellison at lgcgroup.com>
+wrote:
+
+>
+> Please run the reproducible example provided.
+> When you do, you will see that write.csv writes an unnecessary empty
+> header field ("") over the row names column. This makes the number of
+> header fields equal to the number of columns _including_ row names. That
+> causes the original row names to be read as data by read.csv, following the
+> rule that the number of header fields determines whether row names are
+> present. read.csv  accordingly assumes that the former row names are
+> unnamed data, calls the unnamed row names column "X" (or X.1 etc if X
+> exists) and then adds new, default, row names _instead of the original row
+> names written by write.csv_.
+> That's not helpful.
+>
+
+This depends on if you are reading the csv via R or something else, I would
+imagine. It not being "valid" CSV at all would likely cause some programs
+to choke entirely, I expect. I admit that's conjecture though, I don't have
+data on that one way or another.
+
+~G
+
+	[[alternative HTML version deleted]]
+
+
+From j|ox @end|ng |rom mcm@@ter@c@  Fri Jul  2 00:47:09 2021
+From: j|ox @end|ng |rom mcm@@ter@c@ (John Fox)
+Date: Thu, 1 Jul 2021 18:47:09 -0400
+Subject: [Rd] On read.csv and write.csv
+In-Reply-To: <23268_1625178608_161MU7RV006249_CAD4oTHFjYycJzEtLMM3jJ8ZbZjUCY6-Vh_-zUvHin3L15iXS1g@mail.gmail.com>
+References: <CWXP265MB3208A3DC3EE8F8E8489E258B81019@CWXP265MB3208.GBRP265.PROD.OUTLOOK.COM>
+ <029F6720-64AB-4F19-A823-8DB0768E153F@R-project.org>
+ <CWXP265MB32085A57128A1822E4A5C5BB81009@CWXP265MB3208.GBRP265.PROD.OUTLOOK.COM>
+ <23268_1625178608_161MU7RV006249_CAD4oTHFjYycJzEtLMM3jJ8ZbZjUCY6-Vh_-zUvHin3L15iXS1g@mail.gmail.com>
+Message-ID: <b913f9ae-66d3-bd33-791f-9d971b2a1cfc@mcmaster.ca>
+
+Dear Gabriel,
+
+On 2021-07-01 6:29 p.m., Gabriel Becker wrote:
+> On Thu, Jul 1, 2021 at 1:46 PM Stephen Ellison <S.Ellison at lgcgroup.com>
+> wrote:
+> 
+>>
+>> Please run the reproducible example provided.
+>> When you do, you will see that write.csv writes an unnecessary empty
+>> header field ("") over the row names column. This makes the number of
+>> header fields equal to the number of columns _including_ row names. That
+>> causes the original row names to be read as data by read.csv, following the
+>> rule that the number of header fields determines whether row names are
+>> present. read.csv  accordingly assumes that the former row names are
+>> unnamed data, calls the unnamed row names column "X" (or X.1 etc if X
+>> exists) and then adds new, default, row names _instead of the original row
+>> names written by write.csv_.
+>> That's not helpful.
+>>
+> 
+> This depends on if you are reading the csv via R or something else, I would
+> imagine. It not being "valid" CSV at all would likely cause some programs
+> to choke entirely, I expect. I admit that's conjecture though, I don't have
+> data on that one way or another.
+
+On Excel, for example, opening a .csv file without the empty initial 
+field in the first line will cause the column names to be misaligned.
+
+As others have pointed out, .csv files are meant as a sort of 
+least-common-denominator of data exchange, and so following the standard 
+is probably a good idea.
+
+Best,
+  John
+
+John Fox, Professor Emeritus
+McMaster University
+Hamilton, Ontario, Canada
+web: https://socialsciences.mcmaster.ca/jfox/
+
+> 
+> ~G
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+
+
+From @|mon@urb@nek @end|ng |rom R-project@org  Fri Jul  2 01:00:33 2021
+From: @|mon@urb@nek @end|ng |rom R-project@org (Simon Urbanek)
+Date: Fri, 2 Jul 2021 11:00:33 +1200
+Subject: [Rd] On read.csv and write.csv
+In-Reply-To: <CAD4oTHFjYycJzEtLMM3jJ8ZbZjUCY6-Vh_-zUvHin3L15iXS1g@mail.gmail.com>
+References: <CWXP265MB3208A3DC3EE8F8E8489E258B81019@CWXP265MB3208.GBRP265.PROD.OUTLOOK.COM>
+ <029F6720-64AB-4F19-A823-8DB0768E153F@R-project.org>
+ <CWXP265MB32085A57128A1822E4A5C5BB81009@CWXP265MB3208.GBRP265.PROD.OUTLOOK.COM>
+ <CAD4oTHFjYycJzEtLMM3jJ8ZbZjUCY6-Vh_-zUvHin3L15iXS1g@mail.gmail.com>
+Message-ID: <784D9F39-4215-4FC2-BCE4-FBEF52DCDB59@R-project.org>
+
+
+Just for completeness, all this is well documented:
+
+CSV files:
+
+     By default there is no column name for a column of row names.  If
+     ?col.names = NA? and ?row.names = TRUE? a blank column name is
+     added, which is the convention used for CSV files to be read by
+     spreadsheets.  Note that such CSV files can be read in R by
+
+       read.csv(file = "<filename>", row.names = 1)
+
+Cheers,
+Simon
+
+
+
+> On 2/07/2021, at 10:29 AM, Gabriel Becker <gabembecker at gmail.com> wrote:
+> 
+> 
+> 
+> On Thu, Jul 1, 2021 at 1:46 PM Stephen Ellison <S.Ellison at lgcgroup.com> wrote:
+> 
+> Please run the reproducible example provided. 
+> When you do, you will see that write.csv writes an unnecessary empty header field ("") over the row names column. This makes the number of header fields equal to the number of columns _including_ row names. That causes the original row names to be read as data by read.csv, following the rule that the number of header fields determines whether row names are present. read.csv  accordingly assumes that the former row names are unnamed data, calls the unnamed row names column "X" (or X.1 etc if X exists) and then adds new, default, row names _instead of the original row names written by write.csv_. 
+> That's not helpful.
+> 
+> This depends on if you are reading the csv via R or something else, I would imagine. It not being "valid" CSV at all would likely cause some programs to choke entirely, I expect. I admit that's conjecture though, I don't have data on that one way or another.
+> 
+> ~G
+
+
+From iuke-tier@ey m@iii@g oii uiow@@edu  Sat Jul  3 02:37:40 2021
+From: iuke-tier@ey m@iii@g oii uiow@@edu (iuke-tier@ey m@iii@g oii uiow@@edu)
+Date: Fri, 2 Jul 2021 19:37:40 -0500 (CDT)
+Subject: [Rd] [External] SET_COMPLEX_ELT and SET_RAW_ELT missing from
+ Rinternals.h
+In-Reply-To: <CAN6cAk0g9b8jfALE2TjnNv_F7WobMBEaAii5i1PzzdQKYAz5pw@mail.gmail.com>
+References: <CAN6cAk1T4sQFMZXtNqjTKJCQyn_21ic1zAm6P=rQZxy4uAikfg@mail.gmail.com>
+ <335585-e80-509f-9598-4b737b5ccba9@uiowa.edu>
+ <CAN6cAk0g9b8jfALE2TjnNv_F7WobMBEaAii5i1PzzdQKYAz5pw@mail.gmail.com>
+Message-ID: <alpine.DEB.2.21.2107021929220.3252@luke-Latitude-7480>
+
+On Thu, 1 Jul 2021, Konrad Siek wrote:
+
+> Thanks!
+> 
+> So what would be the prescribed way of assigning elements to a CPLXSXP if I
+> needed to?
+
+The first question is whether you need to do this. Or, more to the
+point, whether it is safe to do this. In R objects should behave as if
+they are not mutable. Mutation in C code may be OK if the objects are
+not reachable from any R variables, but that almost always means they
+are private to your code so yo can use what you know about internal
+structure.
+
+If it is legitimate to mutate you can use SET_COMPLEX_ELT. I've added
+the declaration to Rinternals in R-devel and R-patched.
+
+For SET_COMPLEX_ELT(x, in v) is equivalent to COMPLEX(sexp)[index] = value,
+but that could change in the future it Set methods are supported.
+
+This does materialize a potentially compact object, but again the most
+important question is whether mutation is legitimate at all.
+
+> One way I see is to do what most of the code inside the interpreter does and
+> grab the vector's data pointer:
+> 
+> ??? COMPLEX(sexp)[index] = value;
+> ??? COMPLEX0(sexp)[index] = value;
+>
+
+COMPLEX0 is not in the API; it will probably be removed from the
+installed header files as we clean these up.
+
+> This will materialize an ALTREP CPLXSXP though, so maybe the best way would
+> be to mirror what SET_COMPLEX_ELT does in Rinlinedfuns.h?
+> 
+> ??? if (ALTREP(sexp)) ALTCOMPLEX_SET_ELT(sexp, index, value); else
+> COMPLEX0(sexp)[index] = vector;
+
+ALTCOMPLEX_SET_ELT is an internal implementation feature and not in the API.
+Again, it will probably be removed from the installed headers.
+
+Best,
+
+luke
+
+> This seems better, but it's not used in the interpreter anywhere as far as I
+> can tell, presumably because of the setter interface not being complete, as
+> you point out. But should I be avoiding this second approach for some
+> reaosn?
+> 
+> k
+> 
+> On Tue, Jun 29, 2021 at 4:06 AM <luke-tierney at uiowa.edu> wrote:
+>       The setter interface for atomic types is not yer implemented. It
+>       may
+>       be some day.
+>
+>       Best,
+>
+>       luke
+>
+>       On Fri, 25 Jun 2021, Konrad Siek wrote:
+>
+>       > Hello,
+>       >
+>       > I am working on a package that works with various types of R
+>       vectors,
+>       > implemented in C. My code has a lot of SET_*_ELT operations in
+>       it for
+>       > various types of vectors, including for CPLXSXPs and RAWSXPs.
+>       >
+>       > I noticed SET_COMPLEX_ELT and SET_RAW_ELT are defined in
+>       Rinlinedfuns.h but
+>       > not declared in Rinternals.h, so they cannot be used in
+>       packages. I was
+>       > going to re-implement them or extern them in my package,
+>       however,
+>       > interestingly, ALTCOMPLEX_SET_ELT and ALTRAW_SET_ELT? are both
+>       declared in
+>       > Rinternals.h, making me think SET_COMPLEX_ELT and SET_RAW_ELT
+>       could be
+>       > purposefully obscured. Otherwise it may just be an oversight
+>       and I should
+>       > bring it to someone's attention anyway.
+>       >
+>       > I have three questions that I hope R-devel could help me with.
+>       >
+>       > 1. Is this an oversight, or are SET_COMPLEX_ELT and
+>       SET_RAW_ELT not exposed
+>       > on purpose? 2. If they are not exposed on purpose, I was
+>       wondering why.
+>       > 3. More importantly, what would be good ways to set elements
+>       of these
+>       > vectors while playing nice with ALTREP and avoiding whatever
+>       pitfalls
+>       > caused these functions to be obscured in the first place?
+>       >
+>       > Best regards,
+>       > Konrad,
+>       >
+>       >? ? ? ?[[alternative HTML version deleted]]
+>       >
+>       > ______________________________________________
+>       > R-devel at r-project.org mailing list
+>       > https://stat.ethz.ch/mailman/listinfo/r-devel
+>       >
+>
+>       --
+>       Luke Tierney
+>       Ralph E. Wareham Professor of Mathematical Sciences
+>       University of Iowa? ? ? ? ? ? ? ? ? Phone:? ? ? ? ? ?
+>       ?319-335-3386
+>       Department of Statistics and? ? ? ? Fax:? ? ? ? ? ? ?
+>       ?319-335-3017
+>       ? ? Actuarial Science
+>       241 Schaeffer Hall? ? ? ? ? ? ? ? ? email:?
+>       ?luke-tierney at uiowa.edu
+>       Iowa City, IA 52242? ? ? ? ? ? ? ? ?WWW:?
+>       http://www.stat.uiowa.edu
+> 
+> 
+>
+
+-- 
+Luke Tierney
+Ralph E. Wareham Professor of Mathematical Sciences
+University of Iowa                  Phone:             319-335-3386
+Department of Statistics and        Fax:               319-335-3017
+    Actuarial Science
+241 Schaeffer Hall                  email:   luke-tierney at uiowa.edu
+Iowa City, IA 52242                 WWW:  http://www.stat.uiowa.edu
+
+From z@|er@b@rutcuog|u @end|ng |rom gm@||@com  Sat Jul  3 05:35:16 2021
+From: z@|er@b@rutcuog|u @end|ng |rom gm@||@com (Zafer Barutcuoglu)
+Date: Fri, 2 Jul 2021 23:35:16 -0400
+Subject: [Rd] Clearing attributes returns ALTREP, serialize still saves them
+Message-ID: <66D25FB4-C12C-4448-A9FE-3152E5D61A1A@gmail.com>
+
+Hi all,
+
+Setting names/dimnames on vectors/matrices of length>=64 returns an ALTREP wrapper which internally still contains the names/dimnames, and calling base::serialize on the result writes them out. They are unserialized in the same way, with the names/dimnames hidden in the ALTREP wrapper, so the problem is not obvious except in wasted time, bandwidth, or disk space.
+
+Example:
+   v1 <- setNames(rnorm(64), paste("element name", 1:64))
+   v2 <- unname(v1)
+   names(v2)
+   # NULL
+   length(serialize(v1, NULL))
+   # [1] 2039
+   length(serialize(v2, NULL))
+   # [1] 2132
+   length(serialize(v2[TRUE], NULL))
+   # [1] 543
+
+   con <- rawConnection(raw(), "w")
+   serialize(v2, con)
+   v3 <- unserialize(rawConnectionValue(con))
+   names(v3)
+   # NULL
+   length(serialize(v3, NULL))
+   # 2132
+
+   # Similarly for matrices:
+   m1 <- matrix(rnorm(64), 8, 8, dimnames=list(paste("row name", 1:8), paste("col name", 1:8)))
+   m2 <- unname(m1)
+   dimnames(m2)
+   # NULL
+   length(serialize(m1, NULL))
+   # [1] 918
+   length(serialize(m2, NULL))
+   # [1] 1035
+   length(serialize(m2[TRUE, TRUE], NULL))
+   # 582
+
+Previously discussed here, too:
+https://r.789695.n4.nabble.com/Invisible-names-problem-td4764688.html
+
+This happens with other attributes as well, but less predictably:
+   x1 <- structure(rnorm(100), data=rnorm(1000000))
+   x2 <- structure(x1, data=NULL)
+   length(serialize(x1, NULL))
+   # [1] 8000952
+   length(serialize(x2, NULL))
+   # [1] 924
+
+   x1b <- rnorm(100)
+   attr(x1b, "data") <- rnorm(1000000)
+   x2b <- x1b
+   attr(x2b, "data") <- NULL
+   length(serialize(x1b, NULL))
+   # [1] 8000863
+   length(serialize(x2b, NULL))
+   # [1] 8000956
+
+This is pretty severe, trying to track down why serializing a small object kills the network, because of which large attributes it may have once had during its lifetime around the codebase that are still secretly tagging along.
+
+Is there a plan to resolve this? Any suggestions for maybe a C++ workaround until then? Or an alternative performant serialization solution?
+
+Best,
+--
+Zafer
+
+
+	[[alternative HTML version deleted]]
+
+
+From g@bembecker @end|ng |rom gm@||@com  Sat Jul  3 07:18:34 2021
+From: g@bembecker @end|ng |rom gm@||@com (Gabriel Becker)
+Date: Fri, 2 Jul 2021 22:18:34 -0700
+Subject: [Rd] 
+ Clearing attributes returns ALTREP, serialize still saves them
+In-Reply-To: <66D25FB4-C12C-4448-A9FE-3152E5D61A1A@gmail.com>
+References: <66D25FB4-C12C-4448-A9FE-3152E5D61A1A@gmail.com>
+Message-ID: <CAD4oTHG5M__A0JuF+qDr9x00OWw3LU+o1=57ufMtuetBJaQM_Q@mail.gmail.com>
+
+Hi all,
+
+I don't have a solution yet, but a bit more here:
+
+> .Internal(inspect(x2b))
+
+@7f913826d590 14 REALSXP g0c0 [REF(1)]  wrapper [srt=-2147483648,no_na=0]
+
+  @7f9137500320 14 REALSXP g0c7 [REF(2),ATT] (len=100, tl=0)
+0.45384,0.926371,0.838637,-1.71485,-0.719073,...
+
+  ATTRIB:
+
+    @7f913826dc20 02 LISTSXP g0c0 [REF(1)]
+
+      TAG: @7f91378538d0 01 SYMSXP g0c0 [MARK,REF(460)] "data"
+
+      @7f9118310000 14 REALSXP g0c7 [REF(2)] (len=1000000, tl=0)
+0.66682,0.480576,-1.13229,0.453313,-0.819498,...
+
+> attr(x2b, "data") <- "small"
+
+> .Internal(inspect(x2b))
+
+@7f913826d590 14 REALSXP g0c0 [REF(1),ATT]  wrapper
+[srt=-2147483648,no_na=0]
+
+  @7f9137500320 14 REALSXP g0c7 [REF(2),ATT] (len=100, tl=0)
+0.45384,0.926371,0.838637,-1.71485,-0.719073,...
+
+  ATTRIB:
+
+    @7f913826dc20 02 LISTSXP g0c0 [REF(1)]
+
+      TAG: @7f91378538d0 01 SYMSXP g0c0 [MARK,REF(461)] "data"
+
+      @7f9118310000 14 REALSXP g0c7 [REF(2)] (len=1000000, tl=0)
+0.66682,0.480576,-1.13229,0.453313,-0.819498,...
+
+ATTRIB:
+
+  @7f913826c870 02 LISTSXP g0c0 [REF(1)]
+
+    TAG: @7f91378538d0 01 SYMSXP g0c0 [MARK,REF(461)] "data"
+
+    @7f9120580850 16 STRSXP g0c1 [REF(3)] (len=1, tl=0)
+
+      @7f91205808c0 09 CHARSXP g0c1 [REF(3),gp=0x60] [ASCII] [cached]
+"small"
+
+
+So we can see that the assignment of attr(x2b, "data") IS doing something,
+but it isn't doing the right thing. The fact that the above code assigned
+null instead of a value was hiding this.
+
+
+I will dig into this more if someone doesn't get it fixed before me, but it
+won't be until after useR, because I'm preparing multiple talks for that
+and it is this coming week.
+
+
+Best,
+
+~G
+
+On Fri, Jul 2, 2021 at 9:15 PM Zafer Barutcuoglu <
+zafer.barutcuoglu at gmail.com> wrote:
+
+> Hi all,
+>
+> Setting names/dimnames on vectors/matrices of length>=64 returns an ALTREP
+> wrapper which internally still contains the names/dimnames, and calling
+> base::serialize on the result writes them out. They are unserialized in the
+> same way, with the names/dimnames hidden in the ALTREP wrapper, so the
+> problem is not obvious except in wasted time, bandwidth, or disk space.
+>
+> Example:
+>    v1 <- setNames(rnorm(64), paste("element name", 1:64))
+>    v2 <- unname(v1)
+>    names(v2)
+>    # NULL
+>    length(serialize(v1, NULL))
+>    # [1] 2039
+>    length(serialize(v2, NULL))
+>    # [1] 2132
+>    length(serialize(v2[TRUE], NULL))
+>    # [1] 543
+>
+>    con <- rawConnection(raw(), "w")
+>    serialize(v2, con)
+>    v3 <- unserialize(rawConnectionValue(con))
+>    names(v3)
+>    # NULL
+>    length(serialize(v3, NULL))
+>    # 2132
+>
+>    # Similarly for matrices:
+>    m1 <- matrix(rnorm(64), 8, 8, dimnames=list(paste("row name", 1:8),
+> paste("col name", 1:8)))
+>    m2 <- unname(m1)
+>    dimnames(m2)
+>    # NULL
+>    length(serialize(m1, NULL))
+>    # [1] 918
+>    length(serialize(m2, NULL))
+>    # [1] 1035
+>    length(serialize(m2[TRUE, TRUE], NULL))
+>    # 582
+>
+> Previously discussed here, too:
+> https://r.789695.n4.nabble.com/Invisible-names-problem-td4764688.html
+>
+> This happens with other attributes as well, but less predictably:
+>    x1 <- structure(rnorm(100), data=rnorm(1000000))
+>    x2 <- structure(x1, data=NULL)
+>    length(serialize(x1, NULL))
+>    # [1] 8000952
+>    length(serialize(x2, NULL))
+>    # [1] 924
+>
+>    x1b <- rnorm(100)
+>    attr(x1b, "data") <- rnorm(1000000)
+>    x2b <- x1b
+>    attr(x2b, "data") <- NULL
+>    length(serialize(x1b, NULL))
+>    # [1] 8000863
+>    length(serialize(x2b, NULL))
+>    # [1] 8000956
+>
+> This is pretty severe, trying to track down why serializing a small object
+> kills the network, because of which large attributes it may have once had
+> during its lifetime around the codebase that are still secretly tagging
+> along.
+>
+> Is there a plan to resolve this? Any suggestions for maybe a C++
+> workaround until then? Or an alternative performant serialization solution?
+>
+> Best,
+> --
+> Zafer
+>
+>
+>         [[alternative HTML version deleted]]
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+
+	[[alternative HTML version deleted]]
+
+
+From g@bembecker @end|ng |rom gm@||@com  Sat Jul  3 08:22:16 2021
+From: g@bembecker @end|ng |rom gm@||@com (Gabriel Becker)
+Date: Fri, 2 Jul 2021 23:22:16 -0700
+Subject: [Rd] 
+ Clearing attributes returns ALTREP, serialize still saves them
+In-Reply-To: <CAD4oTHG5M__A0JuF+qDr9x00OWw3LU+o1=57ufMtuetBJaQM_Q@mail.gmail.com>
+References: <66D25FB4-C12C-4448-A9FE-3152E5D61A1A@gmail.com>
+ <CAD4oTHG5M__A0JuF+qDr9x00OWw3LU+o1=57ufMtuetBJaQM_Q@mail.gmail.com>
+Message-ID: <CAD4oTHHrVtcodL7BXwC7YhjLn0vknc5Zc0T7WEQ61FFQGtqwcQ@mail.gmail.com>
+
+Ok, a bit more:
+
+The relevant bit in serialize.c that I can see is:
+
+
+if (ALTREP(s) && stream->version >= 3) {
+
+SEXP info = ALTREP_SERIALIZED_CLASS(s);
+
+SEXP state = ALTREP_SERIALIZED_STATE(s);
+
+if (info != NULL && state != NULL) {
+
+   int flags = PackFlags(ALTREP_SXP, LEVELS(s), OBJECT(s), 0, 0);
+
+   PROTECT(state);
+
+   PROTECT(info);
+
+   OutInteger(stream, flags);
+
+   WriteItem(info, ref_table, stream);
+
+  * WriteItem(state, ref_table, stream);*
+
+   WriteItem(ATTRIB(s), ref_table, stream);
+
+   UNPROTECT(2); /* state, info */
+
+   return;
+
+}
+/* else fall through to standard processing */
+    }
+
+And in the wrapper altclass, we have:
+
+*static SEXP wrapper_Serialized_state(SEXP x)*
+{
+    return CONS(*WRAPPER_WRAPPED(x)*, WRAPPER_METADATA(x));
+}
+
+So whats happening, is that the data isn't being written out during the
+WriteItem(ATTRIB(s)), that actually has the correct attribute value. Its
+being written out in the bolden line above that, the state, which has the
+wrapped SEXP, which ITSELF has the attributes on it, but is not an ALTREP,
+so that goes through standard processing, which writes out the attributes
+as normal.
+
+So that, I believe, is what needs to change. One possibility is that
+wrapper_Serialized_state can be made smarter so that the inner attributes
+are duplicated and then wiped clean for any that are overridden by the
+attributes on the wrapper.  Another option is that the ALTREP WriteItem
+section could be made smarter, but that seems less robust.
+
+Finally, the wrapper might be able to be modified in such a way that
+setting the attribute on the wrapper clears taht attribute on the wrapped
+value, if present. .
+
+I think making wrapper_Serialized_state smarter is the right way to attack
+this, and thats the first thing I'll try when I get to it, but if someone
+tackles it before me hopefully this digging helped some.
+
+Best,
+~G
+
+On Fri, Jul 2, 2021 at 10:18 PM Gabriel Becker <gabembecker at gmail.com>
+wrote:
+
+> Hi all,
+>
+> I don't have a solution yet, but a bit more here:
+>
+> > .Internal(inspect(x2b))
+>
+> @7f913826d590 14 REALSXP g0c0 [REF(1)]  wrapper [srt=-2147483648,no_na=0]
+>
+>   @7f9137500320 14 REALSXP g0c7 [REF(2),ATT] (len=100, tl=0)
+> 0.45384,0.926371,0.838637,-1.71485,-0.719073,...
+>
+>   ATTRIB:
+>
+>     @7f913826dc20 02 LISTSXP g0c0 [REF(1)]
+>
+>       TAG: @7f91378538d0 01 SYMSXP g0c0 [MARK,REF(460)] "data"
+>
+>       @7f9118310000 14 REALSXP g0c7 [REF(2)] (len=1000000, tl=0)
+> 0.66682,0.480576,-1.13229,0.453313,-0.819498,...
+>
+> > attr(x2b, "data") <- "small"
+>
+> > .Internal(inspect(x2b))
+>
+> @7f913826d590 14 REALSXP g0c0 [REF(1),ATT]  wrapper
+> [srt=-2147483648,no_na=0]
+>
+>   @7f9137500320 14 REALSXP g0c7 [REF(2),ATT] (len=100, tl=0)
+> 0.45384,0.926371,0.838637,-1.71485,-0.719073,...
+>
+>   ATTRIB:
+>
+>     @7f913826dc20 02 LISTSXP g0c0 [REF(1)]
+>
+>       TAG: @7f91378538d0 01 SYMSXP g0c0 [MARK,REF(461)] "data"
+>
+>       @7f9118310000 14 REALSXP g0c7 [REF(2)] (len=1000000, tl=0)
+> 0.66682,0.480576,-1.13229,0.453313,-0.819498,...
+>
+> ATTRIB:
+>
+>   @7f913826c870 02 LISTSXP g0c0 [REF(1)]
+>
+>     TAG: @7f91378538d0 01 SYMSXP g0c0 [MARK,REF(461)] "data"
+>
+>     @7f9120580850 16 STRSXP g0c1 [REF(3)] (len=1, tl=0)
+>
+>       @7f91205808c0 09 CHARSXP g0c1 [REF(3),gp=0x60] [ASCII] [cached]
+> "small"
+>
+>
+> So we can see that the assignment of attr(x2b, "data") IS doing something,
+> but it isn't doing the right thing. The fact that the above code assigned
+> null instead of a value was hiding this.
+>
+>
+> I will dig into this more if someone doesn't get it fixed before me, but
+> it won't be until after useR, because I'm preparing multiple talks for that
+> and it is this coming week.
+>
+>
+> Best,
+>
+> ~G
+>
+> On Fri, Jul 2, 2021 at 9:15 PM Zafer Barutcuoglu <
+> zafer.barutcuoglu at gmail.com> wrote:
+>
+>> Hi all,
+>>
+>> Setting names/dimnames on vectors/matrices of length>=64 returns an
+>> ALTREP wrapper which internally still contains the names/dimnames, and
+>> calling base::serialize on the result writes them out. They are
+>> unserialized in the same way, with the names/dimnames hidden in the ALTREP
+>> wrapper, so the problem is not obvious except in wasted time, bandwidth, or
+>> disk space.
+>>
+>> Example:
+>>    v1 <- setNames(rnorm(64), paste("element name", 1:64))
+>>    v2 <- unname(v1)
+>>    names(v2)
+>>    # NULL
+>>    length(serialize(v1, NULL))
+>>    # [1] 2039
+>>    length(serialize(v2, NULL))
+>>    # [1] 2132
+>>    length(serialize(v2[TRUE], NULL))
+>>    # [1] 543
+>>
+>>    con <- rawConnection(raw(), "w")
+>>    serialize(v2, con)
+>>    v3 <- unserialize(rawConnectionValue(con))
+>>    names(v3)
+>>    # NULL
+>>    length(serialize(v3, NULL))
+>>    # 2132
+>>
+>>    # Similarly for matrices:
+>>    m1 <- matrix(rnorm(64), 8, 8, dimnames=list(paste("row name", 1:8),
+>> paste("col name", 1:8)))
+>>    m2 <- unname(m1)
+>>    dimnames(m2)
+>>    # NULL
+>>    length(serialize(m1, NULL))
+>>    # [1] 918
+>>    length(serialize(m2, NULL))
+>>    # [1] 1035
+>>    length(serialize(m2[TRUE, TRUE], NULL))
+>>    # 582
+>>
+>> Previously discussed here, too:
+>> https://r.789695.n4.nabble.com/Invisible-names-problem-td4764688.html
+>>
+>> This happens with other attributes as well, but less predictably:
+>>    x1 <- structure(rnorm(100), data=rnorm(1000000))
+>>    x2 <- structure(x1, data=NULL)
+>>    length(serialize(x1, NULL))
+>>    # [1] 8000952
+>>    length(serialize(x2, NULL))
+>>    # [1] 924
+>>
+>>    x1b <- rnorm(100)
+>>    attr(x1b, "data") <- rnorm(1000000)
+>>    x2b <- x1b
+>>    attr(x2b, "data") <- NULL
+>>    length(serialize(x1b, NULL))
+>>    # [1] 8000863
+>>    length(serialize(x2b, NULL))
+>>    # [1] 8000956
+>>
+>> This is pretty severe, trying to track down why serializing a small
+>> object kills the network, because of which large attributes it may have
+>> once had during its lifetime around the codebase that are still secretly
+>> tagging along.
+>>
+>> Is there a plan to resolve this? Any suggestions for maybe a C++
+>> workaround until then? Or an alternative performant serialization solution?
+>>
+>> Best,
+>> --
+>> Zafer
+>>
+>>
+>>         [[alternative HTML version deleted]]
+>>
+>> ______________________________________________
+>> R-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-devel
+>>
+>
+
+	[[alternative HTML version deleted]]
+
+
+From iuke-tier@ey m@iii@g oii uiow@@edu  Sat Jul  3 15:40:41 2021
+From: iuke-tier@ey m@iii@g oii uiow@@edu (iuke-tier@ey m@iii@g oii uiow@@edu)
+Date: Sat, 3 Jul 2021 08:40:41 -0500 (CDT)
+Subject: [Rd] [External]  Clearing attributes returns ALTREP,
+ serialize still saves them
+In-Reply-To: <66D25FB4-C12C-4448-A9FE-3152E5D61A1A@gmail.com>
+References: <66D25FB4-C12C-4448-A9FE-3152E5D61A1A@gmail.com>
+Message-ID: <alpine.DEB.2.21.2107030839400.3252@luke-Latitude-7480>
+
+Please do not cross post. You have already rased this on bugzilla. I
+will follow up there later today.
+
+luke
+
+On Sat, 3 Jul 2021, Zafer Barutcuoglu wrote:
+
+> Hi all,
+>
+> Setting names/dimnames on vectors/matrices of length>=64 returns an ALTREP wrapper which internally still contains the names/dimnames, and calling base::serialize on the result writes them out. They are unserialized in the same way, with the names/dimnames hidden in the ALTREP wrapper, so the problem is not obvious except in wasted time, bandwidth, or disk space.
+>
+> Example:
+>   v1 <- setNames(rnorm(64), paste("element name", 1:64))
+>   v2 <- unname(v1)
+>   names(v2)
+>   # NULL
+>   length(serialize(v1, NULL))
+>   # [1] 2039
+>   length(serialize(v2, NULL))
+>   # [1] 2132
+>   length(serialize(v2[TRUE], NULL))
+>   # [1] 543
+>
+>   con <- rawConnection(raw(), "w")
+>   serialize(v2, con)
+>   v3 <- unserialize(rawConnectionValue(con))
+>   names(v3)
+>   # NULL
+>   length(serialize(v3, NULL))
+>   # 2132
+>
+>   # Similarly for matrices:
+>   m1 <- matrix(rnorm(64), 8, 8, dimnames=list(paste("row name", 1:8), paste("col name", 1:8)))
+>   m2 <- unname(m1)
+>   dimnames(m2)
+>   # NULL
+>   length(serialize(m1, NULL))
+>   # [1] 918
+>   length(serialize(m2, NULL))
+>   # [1] 1035
+>   length(serialize(m2[TRUE, TRUE], NULL))
+>   # 582
+>
+> Previously discussed here, too:
+> https://r.789695.n4.nabble.com/Invisible-names-problem-td4764688.html
+>
+> This happens with other attributes as well, but less predictably:
+>   x1 <- structure(rnorm(100), data=rnorm(1000000))
+>   x2 <- structure(x1, data=NULL)
+>   length(serialize(x1, NULL))
+>   # [1] 8000952
+>   length(serialize(x2, NULL))
+>   # [1] 924
+>
+>   x1b <- rnorm(100)
+>   attr(x1b, "data") <- rnorm(1000000)
+>   x2b <- x1b
+>   attr(x2b, "data") <- NULL
+>   length(serialize(x1b, NULL))
+>   # [1] 8000863
+>   length(serialize(x2b, NULL))
+>   # [1] 8000956
+>
+> This is pretty severe, trying to track down why serializing a small object kills the network, because of which large attributes it may have once had during its lifetime around the codebase that are still secretly tagging along.
+>
+> Is there a plan to resolve this? Any suggestions for maybe a C++ workaround until then? Or an alternative performant serialization solution?
+>
+> Best,
+> --
+> Zafer
+>
+>
+> 	[[alternative HTML version deleted]]
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+
+-- 
+Luke Tierney
+Ralph E. Wareham Professor of Mathematical Sciences
+University of Iowa                  Phone:             319-335-3386
+Department of Statistics and        Fax:               319-335-3017
+    Actuarial Science
+241 Schaeffer Hall                  email:   luke-tierney at uiowa.edu
+Iowa City, IA 52242                 WWW:  http://www.stat.uiowa.edu
+
+
+From konr@d@@|ek @end|ng |rom gm@||@com  Sat Jul  3 17:49:38 2021
+From: konr@d@@|ek @end|ng |rom gm@||@com (Konrad Siek)
+Date: Sat, 3 Jul 2021 17:49:38 +0200
+Subject: [Rd] [External] SET_COMPLEX_ELT and SET_RAW_ELT missing from
+ Rinternals.h
+In-Reply-To: <alpine.DEB.2.21.2107021929220.3252@luke-Latitude-7480>
+References: <CAN6cAk1T4sQFMZXtNqjTKJCQyn_21ic1zAm6P=rQZxy4uAikfg@mail.gmail.com>
+ <335585-e80-509f-9598-4b737b5ccba9@uiowa.edu>
+ <CAN6cAk0g9b8jfALE2TjnNv_F7WobMBEaAii5i1PzzdQKYAz5pw@mail.gmail.com>
+ <alpine.DEB.2.21.2107021929220.3252@luke-Latitude-7480>
+Message-ID: <CAN6cAk2=cyCoViW=WoSAAFQGTnqN1xTJZCR3TCrq=WqmgGX7Qg@mail.gmail.com>
+
+I think all of my questions are answered. Thank you for your attention and
+assistance.
+
+The first question is whether you need to do this. Or, more to the
+> point, whether it is safe to do this. In R objects should behave as if
+> they are not mutable. Mutation in C code may be OK if the objects are
+> not reachable from any R variables, but that almost always means they
+> are private to your code so yo can use what you know about internal
+> structure.
+>
+>
+Thank you for the warning. I believe it's a legitimate use. In extremely
+rough summary: A C function is called via .Call. Inside it, I create the
+vector and use SET_*_ELT to populate it. I then return the vector. There is
+some amount of complexity between creation and population, and the vector
+can potentially be ALTREP.
+
+I don't use SET_*_ELT on any vector I have not created.
+
+COMPLEX0 is not in the API; it will probably be removed from the
+> installed header files as we clean these up.
+>
+
+My mistake, thank you.
+
+ALTCOMPLEX_SET_ELT is an internal implementation feature and not in the API.
+> Again, it will probably be removed from the installed headers.
+>
+>
+Thanks for the warning. I'll make sure to avoid it.
+
+k
+
+On Sat, Jul 3, 2021 at 2:37 AM <luke-tierney at uiowa.edu> wrote:
+
+> On Thu, 1 Jul 2021, Konrad Siek wrote:
+>
+> > Thanks!
+> >
+> > So what would be the prescribed way of assigning elements to a CPLXSXP
+> if I
+> > needed to?
+>
+> The first question is whether you need to do this. Or, more to the
+> point, whether it is safe to do this. In R objects should behave as if
+> they are not mutable. Mutation in C code may be OK if the objects are
+> not reachable from any R variables, but that almost always means they
+> are private to your code so yo can use what you know about internal
+> structure.
+>
+
+> If it is legitimate to mutate you can use SET_COMPLEX_ELT. I've added
+> the declaration to Rinternals in R-devel and R-patched.
+>
+> For SET_COMPLEX_ELT(x, in v) is equivalent to COMPLEX(sexp)[index] = value,
+> but that could change in the future it Set methods are supported.
+>
+> This does materialize a potentially compact object, but again the most
+> important question is whether mutation is legitimate at all.
+>
+> > One way I see is to do what most of the code inside the interpreter does
+> and
+> > grab the vector's data pointer:
+> >
+> >     COMPLEX(sexp)[index] = value;
+> >     COMPLEX0(sexp)[index] = value;
+> >
+>
+> COMPLEX0 is not in the API; it will probably be removed from the
+> installed header files as we clean these up.
+>
+
+> > This will materialize an ALTREP CPLXSXP though, so maybe the best way
+> would
+> > be to mirror what SET_COMPLEX_ELT does in Rinlinedfuns.h?
+> >
+> >     if (ALTREP(sexp)) ALTCOMPLEX_SET_ELT(sexp, index, value); else
+> > COMPLEX0(sexp)[index] = vector;
+>
+> ALTCOMPLEX_SET_ELT is an internal implementation feature and not in the
+> API.
+> Again, it will probably be removed from the installed headers.
+>
+> Best,
+>
+> luke
+>
+> > This seems better, but it's not used in the interpreter anywhere as far
+> as I
+> > can tell, presumably because of the setter interface not being complete,
+> as
+> > you point out. But should I be avoiding this second approach for some
+> > reaosn?
+> >
+> > k
+> >
+> > On Tue, Jun 29, 2021 at 4:06 AM <luke-tierney at uiowa.edu> wrote:
+> >       The setter interface for atomic types is not yer implemented. It
+> >       may
+> >       be some day.
+> >
+> >       Best,
+> >
+> >       luke
+> >
+> >       On Fri, 25 Jun 2021, Konrad Siek wrote:
+> >
+> >       > Hello,
+> >       >
+> >       > I am working on a package that works with various types of R
+> >       vectors,
+> >       > implemented in C. My code has a lot of SET_*_ELT operations in
+> >       it for
+> >       > various types of vectors, including for CPLXSXPs and RAWSXPs.
+> >       >
+> >       > I noticed SET_COMPLEX_ELT and SET_RAW_ELT are defined in
+> >       Rinlinedfuns.h but
+> >       > not declared in Rinternals.h, so they cannot be used in
+> >       packages. I was
+> >       > going to re-implement them or extern them in my package,
+> >       however,
+> >       > interestingly, ALTCOMPLEX_SET_ELT and ALTRAW_SET_ELT  are both
+> >       declared in
+> >       > Rinternals.h, making me think SET_COMPLEX_ELT and SET_RAW_ELT
+> >       could be
+> >       > purposefully obscured. Otherwise it may just be an oversight
+> >       and I should
+> >       > bring it to someone's attention anyway.
+> >       >
+> >       > I have three questions that I hope R-devel could help me with.
+> >       >
+> >       > 1. Is this an oversight, or are SET_COMPLEX_ELT and
+> >       SET_RAW_ELT not exposed
+> >       > on purpose? 2. If they are not exposed on purpose, I was
+> >       wondering why.
+> >       > 3. More importantly, what would be good ways to set elements
+> >       of these
+> >       > vectors while playing nice with ALTREP and avoiding whatever
+> >       pitfalls
+> >       > caused these functions to be obscured in the first place?
+> >       >
+> >       > Best regards,
+> >       > Konrad,
+> >       >
+> >       >       [[alternative HTML version deleted]]
+> >       >
+> >       > ______________________________________________
+> >       > R-devel at r-project.org mailing list
+> >       > https://stat.ethz.ch/mailman/listinfo/r-devel
+> >       >
+> >
+> >       --
+> >       Luke Tierney
+> >       Ralph E. Wareham Professor of Mathematical Sciences
+> >       University of Iowa                  Phone:
+> >        319-335-3386
+> >       Department of Statistics and        Fax:
+> >        319-335-3017
+> >           Actuarial Science
+> >       241 Schaeffer Hall                  email:
+> >        luke-tierney at uiowa.edu
+> >       Iowa City, IA 52242                 WWW:
+> >       http://www.stat.uiowa.edu
+> >
+> >
+> >
+>
+> --
+> Luke Tierney
+> Ralph E. Wareham Professor of Mathematical Sciences
+> University of Iowa                  Phone:             319-335-3386
+> Department of Statistics and        Fax:               319-335-3017
+>     Actuarial Science
+> 241 Schaeffer Hall                  email:   luke-tierney at uiowa.edu
+> Iowa City, IA 52242                 WWW:  http://www.stat.uiowa.edu
+>
+
+	[[alternative HTML version deleted]]
+
+
+From S@E|||@on @end|ng |rom LGCGroup@com  Mon Jul  5 12:37:11 2021
+From: S@E|||@on @end|ng |rom LGCGroup@com (Stephen Ellison)
+Date: Mon, 5 Jul 2021 10:37:11 +0000
+Subject: [Rd] On read.csv and write.csv
+In-Reply-To: <784D9F39-4215-4FC2-BCE4-FBEF52DCDB59@R-project.org>
+References: <CWXP265MB3208A3DC3EE8F8E8489E258B81019@CWXP265MB3208.GBRP265.PROD.OUTLOOK.COM>
+ <029F6720-64AB-4F19-A823-8DB0768E153F@R-project.org>
+ <CWXP265MB32085A57128A1822E4A5C5BB81009@CWXP265MB3208.GBRP265.PROD.OUTLOOK.COM>
+ <CAD4oTHFjYycJzEtLMM3jJ8ZbZjUCY6-Vh_-zUvHin3L15iXS1g@mail.gmail.com>
+ <784D9F39-4215-4FC2-BCE4-FBEF52DCDB59@R-project.org>
+Message-ID: <CWXP265MB32080AF023D38026656FB6AB811C9@CWXP265MB3208.GBRP265.PROD.OUTLOOK.COM>
+
+> From: Simon Urbanek <simon.urbanek at R-project.org>
+>      By default there is no column name for a column of row names.  
+<snip> 
+>      spreadsheets.  Note that such CSV files can be read in R by
+> 
+>        read.csv(file = "<filename>", row.names = 1)
+AHA!! Many thanks. 
+I see this clue is in ?write.table, though; I was looking for help on reading CSVs in ?read.csv etc. 
+<sigh>
+
+Thanks to all for your time answering this; much appreciated.
+
+S
+
+
+*******************************************************************
+This email and any attachments are confidential. Any use, copying or
+disclosure other than by the intended recipient is unauthorised. If 
+you have received this message in error, please notify the sender 
+immediately via +44(0)20 8943 7000 or notify postmaster at lgcgroup.com 
+and delete this message and any copies from your computer and network. 
+LGC Limited. Registered in England 2991879. 
+Registered office: Queens Road, Teddington, Middlesex, TW11 0LY, UK
+
+From k@ro||@@koncev|c|u@ @end|ng |rom gm@||@com  Mon Jul  5 18:17:37 2021
+From: k@ro||@@koncev|c|u@ @end|ng |rom gm@||@com (Karolis K)
+Date: Mon, 5 Jul 2021 19:17:37 +0300
+Subject: [Rd] speed of cor(...,
+ use="pairwise.complete.obs") when no NAs are present.
+Message-ID: <14B9D50C-D6E5-498D-924C-5F9E886E7880@gmail.com>
+
+Hello,
+
+I was iterating over some matrices with cor(x, use=?pairwise.complete.obs?) to handle cases with NA values and noticed that such ?use=? setting had a big influence on speed even for matrices that had no NAs. Given that anyNA(x) is so quick, maybe in the case of use=?pairwise.complete.obs? it would make sense to first check if the arguments have any NAs, and switch to use=?everything? in such cases?
+
+Below are my quick benchmarks.
+
+x <- matrix(rnorm(1e6), ncol=1e3)
+
+system.time(cor(x))                                                                                                                                 
+#    user  system elapsed                                                                                                                               
+ #  0.636   0.003   0.641
+
+system.time(cor(x, use="pair"))                                                                                                                     
+#    user  system elapsed                                                                                                                               
+#   3.509   0.013   3.538
+
+system.time(anyNA(x))                                                                                                                               
+#    user  system elapsed                                                                                                                               
+#  0.001   0.000   0.001
+
+
+Warm regards,
+Karolis K.
+
+From pd@|gd @end|ng |rom gm@||@com  Fri Jul  9 10:00:56 2021
+From: pd@|gd @end|ng |rom gm@||@com (peter dalgaard)
+Date: Fri, 9 Jul 2021 10:00:56 +0200
+Subject: [Rd] On read.csv and write.csv
+In-Reply-To: <CWXP265MB32080AF023D38026656FB6AB811C9@CWXP265MB3208.GBRP265.PROD.OUTLOOK.COM>
+References: <CWXP265MB3208A3DC3EE8F8E8489E258B81019@CWXP265MB3208.GBRP265.PROD.OUTLOOK.COM>
+ <029F6720-64AB-4F19-A823-8DB0768E153F@R-project.org>
+ <CWXP265MB32085A57128A1822E4A5C5BB81009@CWXP265MB3208.GBRP265.PROD.OUTLOOK.COM>
+ <CAD4oTHFjYycJzEtLMM3jJ8ZbZjUCY6-Vh_-zUvHin3L15iXS1g@mail.gmail.com>
+ <784D9F39-4215-4FC2-BCE4-FBEF52DCDB59@R-project.org>
+ <CWXP265MB32080AF023D38026656FB6AB811C9@CWXP265MB3208.GBRP265.PROD.OUTLOOK.COM>
+Message-ID: <44E757A8-CA4E-49D6-8C6F-12138531FC36@gmail.com>
+
+?read.csv does actually have
+
+row.names: a vector of row names.  This can be a vector giving the
+          actual row names, or a single number giving the column of the
+          table which contains the row names, or character string
+          giving the name of the table column containing the row names.
+
+-pd
+
+> On 5 Jul 2021, at 12:37 , Stephen Ellison <S.Ellison at LGCGroup.com> wrote:
+> 
+>> From: Simon Urbanek <simon.urbanek at R-project.org>
+>>     By default there is no column name for a column of row names.  
+> <snip> 
+>>     spreadsheets.  Note that such CSV files can be read in R by
+>> 
+>>       read.csv(file = "<filename>", row.names = 1)
+> AHA!! Many thanks. 
+> I see this clue is in ?write.table, though; I was looking for help on reading CSVs in ?read.csv etc. 
+> <sigh>
+> 
+> Thanks to all for your time answering this; much appreciated.
+> 
+> S
+> 
+> 
+> *******************************************************************
+> This email and any attachments are confidential. Any u...{{dropped:21}}
+
+
+From pd@me@ @end|ng |rom cb@@dk  Sat Jul 10 11:51:41 2021
+From: pd@me@ @end|ng |rom cb@@dk (Peter Dalgaard)
+Date: Sat, 10 Jul 2021 09:51:41 +0000
+Subject: [Rd] R 4.1.1 scheduled for August 10
+Message-ID: <4CAF26B5-9712-4083-8839-F77BC51453C9@cbs.dk>
+
+Full schedule is available on developer.r-project.org.
+
+(This comes somewhat late this year, partly because we needed to squeeze in 4.0.5 before 4.1.0 could be released.)
+
+-- 
+Peter Dalgaard, Professor,
+Center for Statistics, Copenhagen Business School
+Solbjerg Plads 3, 2000 Frederiksberg, Denmark
+Phone: (+45)38153501
+Office: A 4.23
+Email: pd.mes at cbs.dk  Priv: PDalgd at gmail.com
+
+
+From m|ch@e|ch|r|co4 @end|ng |rom gm@||@com  Mon Jul 12 08:43:15 2021
+From: m|ch@e|ch|r|co4 @end|ng |rom gm@||@com (Michael Chirico)
+Date: Sun, 11 Jul 2021 23:43:15 -0700
+Subject: [Rd] tools::update_pkg_po() doesn't work on Solaris?
+Message-ID: <CAPRVBcx5GDLJ0ZGFF_wZwHFTbrjwEbM1qWx=yt1sH7E7fkp8kw@mail.gmail.com>
+
+Hi all,
+
+I am about 99% sure tools::update_pkg_po() is using an invocation that
+is not supported by the Solaris version of msgfmt.
+
+The invocation[1]:
+
+msgfmt -c --statistics -o /path/to/file.mo /path/to/file.po
+
+AFAICT neither -c nor --statistics appear to be supported by Solaris [2]:
+
+I don't have access to a Solaris machine where I can try this, but I
+did manage to get r-hub to pass by disabling those options in potools
+which similarly relies on msgfmt to generate .mo files [3], [4].
+
+So I wanted to check with the list if anyone can confirm this before
+filing a bug report.
+
+Thanks,
+Mike C
+
+[1] per https://github.com/wch/r-source/blob/59a1965239143ca6242b9cc948d8834e1194e84a/src/library/tools/R/translations.R#L142
+[2] https://docs.oracle.com/cd/E36784_01/html/E36870/msgfmt-1.html#REFMAN1msgfmt-1
+[3] https://github.com/MichaelChirico/potools/pull/219
+[4] https://builder.r-hub.io/status/potools_0.2.1.tar.gz-f4e936eec1b74bebb91e07c59c23b1cf
+
+
+From m|ch@e|ch|r|co4 @end|ng |rom gm@||@com  Mon Jul 12 23:21:14 2021
+From: m|ch@e|ch|r|co4 @end|ng |rom gm@||@com (Michael Chirico)
+Date: Mon, 12 Jul 2021 14:21:14 -0700
+Subject: [Rd] translation domain is not inferred correctly from a package's
+ print methods -- intended behavior?
+Message-ID: <CAPRVBcx4PXAAOSs6jqw4cio0E7GxnOft1McUma6TBh_hcaBWLg@mail.gmail.com>
+
+Here is a reprex:
+
+# initialize reprex package
+cd /tmp
+mkdir myPkg && cd myPkg
+echo "Package: myPkg" > DESCRIPTION
+echo "Version: 0.0.1" >> DESCRIPTION
+mkdir R
+echo "print.my_class = function(x, ...) { cat(gettext(\"'%s' is
+deprecated.\"), '\n', gettext(\"'%s' is deprecated.\",
+domain='R-myPkg'), '\n') }" > R/foo.R
+echo "S3method(print, my_class)" > NAMESPACE
+# extract string for translation
+Rscript -e "tools::update_pkg_po('.')"
+# add dummy translation
+msginit -i po/R-myPkg.pot -o po/R-ja.po -l ja --no-translator
+head -n -1 po/R-ja.po > tmp && mv tmp po/R-ja.po
+echo 'msgstr "%s successfully translated"' >> po/R-ja.po
+# install .mo translations
+Rscript -e "tools::update_pkg_po('.')"
+# install package & test
+R CMD INSTALL .
+LANGUAGE=ja Rscript -e "library(myPkg); print(structure(1, class = 'my_class'))"
+#  '%s' ???????
+#  %s successfully translated
+
+Note that the first gettext() call, which doesn't supply domain=,
+returns the corresponding translation from base R (i.e., the output is
+the same as gettext("'%s' is deprecated.", domain="R-base")).
+
+The second gettext() call, where domain= is supplied, returns our
+dummy translation, which is what I would have expected from the first
+execution.
+
+Here is what's in ?gettext:
+
+> If domain is NULL or "", and gettext or ngettext is called from a function in the namespace of package pkg the domain is set to "R-pkg". Otherwise there is no default domain.
+
+Does that mean the S3 print method is not "in the namespace of myPkg"?
+Or is there a bug here?
+
+If the former, is the edge case of concern here just S3 methods where
+the "top level" S3 method is defined in another package? Can we refine
+the manual text wording here to be more clear about when we should
+expect we need to supply domain= vs have it set automatically?
+
+
+From tom@@@k@||ber@ @end|ng |rom gm@||@com  Tue Jul 13 12:26:05 2021
+From: tom@@@k@||ber@ @end|ng |rom gm@||@com (Tomas Kalibera)
+Date: Tue, 13 Jul 2021 12:26:05 +0200
+Subject: [Rd] R Can Use Your Help: Testing R Before Release
+Message-ID: <c26bcbb8-6139-a887-636a-7e31be239f81@gmail.com>
+
+If anyone is interested in helping out, this is a good time to test R 
+4.1.1 before it is released. Now is the time to look for and report
+
+- regressions (things that worked in 4.1.0, but not in 4.1.1)
+- regressions in 4.1.0 not fixed by 4.1.1
+- bugs in new features in 4.1.0 not fixed by 4.1.1
+
+For more tips and details, please see
+https://developer.r-project.org/Blog/public/2021/04/28/r-can-use-your-help-testing-r-before-release
+
+Thanks
+Tomas
+
+
+From |reder|k @end|ng |rom o|b@net  Tue Jul 13 17:37:05 2021
+From: |reder|k @end|ng |rom o|b@net (Frederick Eaton)
+Date: Tue, 13 Jul 2021 08:37:05 -0700
+Subject: [Rd] unicode in R documentation
+Message-ID: <20210713153705.joq4fbqmcfgggi64@localhost>
+
+Dear R Team,
+
+I am running R from the terminal command line (not RStudio). I've noticed that R has been using Unicode quotes in its documentation for some time, maybe since before I started using it.
+
+I am wondering if it is possible to compile the documentation to use normal quotes instead.
+
+I find it useful to be able to search documentation for strings with quotes, for example when reading "?options" I might search for "'dev" to find an option starting with the letters "dev". Without the single-quote at the front, there would be a lot of matches that I'm not interested in, but the single-quote at the front helps narrow it down to the parameters that are being indexed in the documentation. However, I can't actually search for "'dev" in "?options" because it is written with curly quotes "?device?" and "'" does not match "?" on my machine.
+
+Similarly, when I read manual pages for commands on Linux, I sometimes search for "-r" instead of "r" because "-r" is likely to find documentation for the option "-r", while searching for "r" will match almost every line.
+
+I'm wondering what other people do when reading through documentation. Do you search for things at all or just read it straight through? Is there a hyperlinked version that just lets you jump to the "device" entry in "?options" or do you have to type out a search string? What search string do you use? Do you have a way to enter Unicode quotes when doing this, or does your pager provide a special regular expression syntax which makes it easier to match them?
+
+Thanks,
+
+Frederick
+
+
+From mtmorg@n@b|oc @end|ng |rom gm@||@com  Tue Jul 13 18:00:05 2021
+From: mtmorg@n@b|oc @end|ng |rom gm@||@com (Martin Morgan)
+Date: Tue, 13 Jul 2021 16:00:05 +0000
+Subject: [Rd] unicode in R documentation
+In-Reply-To: <20210713153705.joq4fbqmcfgggi64@localhost>
+References: <20210713153705.joq4fbqmcfgggi64@localhost>
+Message-ID: <BN8PR04MB6241932F7B480A59546AC13AF9149@BN8PR04MB6241.namprd04.prod.outlook.com>
+
+I have options(useFancyQuotes = FALSE) in my ~/.Rprofile.
+
+Martin Morgan
+
+?On 7/13/21, 11:37 AM, "R-devel on behalf of Frederick Eaton" <r-devel-bounces at r-project.org on behalf of frederik at ofb.net> wrote:
+
+    Dear R Team,
+
+    I am running R from the terminal command line (not RStudio). I've noticed that R has been using Unicode quotes in its documentation for some time, maybe since before I started using it.
+
+    I am wondering if it is possible to compile the documentation to use normal quotes instead.
+
+    I find it useful to be able to search documentation for strings with quotes, for example when reading "?options" I might search for "'dev" to find an option starting with the letters "dev". Without the single-quote at the front, there would be a lot of matches that I'm not interested in, but the single-quote at the front helps narrow it down to the parameters that are being indexed in the documentation. However, I can't actually search for "'dev" in "?options" because it is written with curly quotes "?device?" and "'" does not match "?" on my machine.
+
+    Similarly, when I read manual pages for commands on Linux, I sometimes search for "-r" instead of "r" because "-r" is likely to find documentation for the option "-r", while searching for "r" will match almost every line.
+
+    I'm wondering what other people do when reading through documentation. Do you search for things at all or just read it straight through? Is there a hyperlinked version that just lets you jump to the "device" entry in "?options" or do you have to type out a search string? What search string do you use? Do you have a way to enter Unicode quotes when doing this, or does your pager provide a special regular expression syntax which makes it easier to match them?
+
+    Thanks,
+
+    Frederick
+
+    ______________________________________________
+    R-devel at r-project.org mailing list
+    https://stat.ethz.ch/mailman/listinfo/r-devel
+
+From @eb@meyer @end|ng |rom |@u@de  Tue Jul 13 18:03:59 2021
+From: @eb@meyer @end|ng |rom |@u@de (Sebastian Meyer)
+Date: Tue, 13 Jul 2021 18:03:59 +0200
+Subject: [Rd] unicode in R documentation
+In-Reply-To: <20210713153705.joq4fbqmcfgggi64@localhost>
+References: <20210713153705.joq4fbqmcfgggi64@localhost>
+Message-ID: <992f7ee1-061a-9b27-3c27-e8bf5cde93eb@fau.de>
+
+Am 13.07.21 um 17:37 schrieb Frederick Eaton:
+> Dear R Team,
+> 
+> I am running R from the terminal command line (not RStudio). I've 
+> noticed that R has been using Unicode quotes in its documentation for 
+> some time, maybe since before I started using it.
+> 
+> I am wondering if it is possible to compile the documentation to use 
+> normal quotes instead.
+
+
+Not sure if this is more of an R-help topic. I use
+
+     options(useFancyQuotes = FALSE)
+
+in my .Rprofile.
+
+Best regards,
+
+	Sebastian
+
+
+> I find it useful to be able to search documentation for strings with 
+> quotes, for example when reading "?options" I might search for "'dev" to 
+> find an option starting with the letters "dev". Without the single-quote 
+> at the front, there would be a lot of matches that I'm not interested 
+> in, but the single-quote at the front helps narrow it down to the 
+> parameters that are being indexed in the documentation. However, I can't 
+> actually search for "'dev" in "?options" because it is written with 
+> curly quotes "?device?" and "'" does not match "?" on my machine.
+> 
+> Similarly, when I read manual pages for commands on Linux, I sometimes 
+> search for "-r" instead of "r" because "-r" is likely to find 
+> documentation for the option "-r", while searching for "r" will match 
+> almost every line.
+> 
+> I'm wondering what other people do when reading through documentation. 
+> Do you search for things at all or just read it straight through? Is 
+> there a hyperlinked version that just lets you jump to the "device" 
+> entry in "?options" or do you have to type out a search string? What 
+> search string do you use? Do you have a way to enter Unicode quotes when 
+> doing this, or does your pager provide a special regular expression 
+> syntax which makes it easier to match them?
+> 
+> Thanks,
+> 
+> Frederick
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From |reder|k @end|ng |rom o|b@net  Tue Jul 13 21:00:48 2021
+From: |reder|k @end|ng |rom o|b@net (Frederick Eaton)
+Date: Tue, 13 Jul 2021 12:00:48 -0700
+Subject: [Rd] unicode in R documentation
+In-Reply-To: <BN8PR04MB6241932F7B480A59546AC13AF9149@BN8PR04MB6241.namprd04.prod.outlook.com>
+ <992f7ee1-061a-9b27-3c27-e8bf5cde93eb@fau.de>
+Message-ID: <20210713190048.nbx2hznjouvqv6ec@localhost>
+
+Thank you both! it works
+
+On Tue, Jul 13, 2021 at 04:00:05PM +0000, Martin Morgan wrote:
+>I have options(useFancyQuotes = FALSE) in my ~/.Rprofile.
+>
+>Martin Morgan
+
+>Not sure if this is more of an R-help topic. I use
+>
+>    options(useFancyQuotes = FALSE)
+>
+>in my .Rprofile.
+>
+>Best regards,
+>
+>	Sebastian
+>
+>
+>>I find it useful to be able to search documentation for strings with 
+>>quotes, for example when reading "?options" I might search for 
+>>"'dev" to find an option starting with the letters "dev". Without 
+>>the single-quote at the front, there would be a lot of matches that 
+>>I'm not interested in, but the single-quote at the front helps 
+>>narrow it down to the parameters that are being indexed in the 
+>>documentation. However, I can't actually search for "'dev" in 
+>>"?options" because it is written with curly quotes "?device?" and 
+>>"'" does not match "?" on my machine.
+>>
+>>Similarly, when I read manual pages for commands on Linux, I 
+>>sometimes search for "-r" instead of "r" because "-r" is likely to 
+>>find documentation for the option "-r", while searching for "r" will 
+>>match almost every line.
+>>
+>>I'm wondering what other people do when reading through 
+>>documentation. Do you search for things at all or just read it 
+>>straight through? Is there a hyperlinked version that just lets you 
+>>jump to the "device" entry in "?options" or do you have to type out 
+>>a search string? What search string do you use? Do you have a way to 
+>>enter Unicode quotes when doing this, or does your pager provide a 
+>>special regular expression syntax which makes it easier to match 
+>>them?
+>>
+>>Thanks,
+>>
+>>Frederick
+>>
+>>______________________________________________
+>>R-devel at r-project.org mailing list
+>>https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+
+
+From pro|jcn@@h @end|ng |rom gm@||@com  Wed Jul 14 01:21:56 2021
+From: pro|jcn@@h @end|ng |rom gm@||@com (J C Nash)
+Date: Tue, 13 Jul 2021 19:21:56 -0400
+Subject: [Rd] subset argument in nls() and possibly other functions
+Message-ID: <9903076b-9f7b-81c8-d81e-b47f9a9f1cad@gmail.com>
+
+In mentoring and participating in a Google Summer of Code project "Improvements to nls()",
+I've not found examples of use of the "subset" argument in the call to nls(). Moreover,
+in searching through the source code for the various functions related to nls(), I can't
+seem to find where subset is used, but a simple example, included below, indicates it works.
+Three approaches all seem to give the same results.
+
+Can someone point to documentation or code so we can make sure we get our revised programs
+to work properly? The aim is to make them more maintainable and provide maintainer documentation,
+along with some improved functionality. We seem, for example, to already be able to offer
+analytic derivatives where they are feasible, and should be able to add Marquardt-Levenberg
+stabilization as an option.
+
+Note that this "subset" does not seem to be the "subset()" function of R.
+
+John Nash
+
+# CroucherSubset.R -- https://walkingrandomly.com/?p=5254
+
+xdata = c(-2,-1.64,-1.33,-0.7,0,0.45,1.2,1.64,2.32,2.9)
+ydata = c(0.699369,0.700462,0.695354,1.03905,1.97389,2.41143,1.91091,0.919576,-0.730975,-1.42001)
+Cform <- ydata ~ p1*cos(p2*xdata) + p2*sin(p1*xdata)
+Cstart<-list(p1=1,p2=0.2)
+Cdata<-data.frame(xdata, ydata)
+Csubset<-1:8 # just first 8 points
+
+# Original problem - no subset
+fit0 = nls(ydata ~ p1*cos(p2*xdata) + p2*sin(p1*xdata), data=Cdata, start=list(p1=1,p2=.2))
+summary(fit0)
+
+# via subset argument
+fit1 = nls(ydata ~ p1*cos(p2*xdata) + p2*sin(p1*xdata), data=Cdata, start=list(p1=1,p2=.2), subset=Csubset)
+summary(fit1)
+
+# via explicit subsetting
+Csdata <- Cdata[Csubset, ]
+Csdata
+fit2 = nls(ydata ~ p1*cos(p2*xdata) + p2*sin(p1*xdata), data=Csdata, start=list(p1=1,p2=.2))
+summary(fit2)
+
+# via weights -- seems to give correct observation count if zeros not recognized
+wts <- c(rep(1,8), rep(0,2))
+fit3 = nls(ydata ~ p1*cos(p2*xdata) + p2*sin(p1*xdata), data=Cdata, weights=wts, start=list(p1=1,p2=.2))
+summary(fit3)
+
+
