@@ -1,0 +1,2448 @@
+From Thom@@@SOEIRO @end|ng |rom @p-hm@|r  Wed Sep  1 17:01:43 2021
+From: Thom@@@SOEIRO @end|ng |rom @p-hm@|r (SOEIRO Thomas)
+Date: Wed, 1 Sep 2021 15:01:43 +0000
+Subject: [Rd] sep hard coded in write.ftable
+Message-ID: <1a597120ad27455e9249bd6577ea39b2@SCWPR-EXDAG1-6A.aphm.ap-hm.fr>
+
+Dear all,
+
+(This is a follow up of a previous suggestion for ftable that was added in R 4.1.0: https://stat.ethz.ch/pipermail/r-devel/2020-May/079451.html)
+
+The sep argument is hard coded in write.ftable:
+	
+write.ftable <- function(x, file = "", quote = TRUE, append = FALSE,
+			 digits = getOption("digits"), ...)
+{
+    r <- format.ftable(x, quote = quote, digits = digits, ...)
+    cat(t(r), file = file, append = append,
+	sep = c(rep(" ", ncol(r) - 1), "\n"))
+    invisible(x)
+}
+
+A minor change would allow users to modify it:
+
+write.ftable2 <- function(x, file = "", quote = TRUE, append = FALSE,
+                          digits = getOption("digits"), sep = " ", ...)
+{
+  r <- stats:::format.ftable(x, quote = quote, digits = digits, ...)
+  cat(t(r), file = file, append = append,
+      sep = c(rep(sep, ncol(r) - 1), "\n"))
+  invisible(x)
+}
+
+This would allow to avoid a previous call to format.ftable (although write.ftable is significantly slower than write.table):
+
+ftable(formula = wool + tension ~ breaks, data = warpbreaks) |>
+  format(quote = FALSE) |>
+  write.table(sep = ";", row.names = FALSE, col.names = FALSE)
+
+ftable(formula = wool + tension ~ breaks, data = warpbreaks) |>
+  write.ftable2(sep = ";")
+
+Best regards,
+
+Thomas
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Thu Sep  2 11:29:39 2021
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Thu, 2 Sep 2021 11:29:39 +0200
+Subject: [Rd] sep hard coded in write.ftable
+In-Reply-To: <1a597120ad27455e9249bd6577ea39b2@SCWPR-EXDAG1-6A.aphm.ap-hm.fr>
+References: <1a597120ad27455e9249bd6577ea39b2@SCWPR-EXDAG1-6A.aphm.ap-hm.fr>
+Message-ID: <24880.39299.992900.911002@stat.math.ethz.ch>
+
+>>>>> SOEIRO Thomas 
+>>>>>     on Wed, 1 Sep 2021 15:01:43 +0000 writes:
+
+    > Dear all,
+
+    > (This is a follow up of a previous suggestion for ftable that was added in R 4.1.0: https://stat.ethz.ch/pipermail/r-devel/2020-May/079451.html)
+
+    > The sep argument is hard coded in write.ftable:
+	
+    > write.ftable <- function(x, file = "", quote = TRUE, append = FALSE,
+    > digits = getOption("digits"), ...)
+    > {
+    > r <- format.ftable(x, quote = quote, digits = digits, ...)
+    > cat(t(r), file = file, append = append,
+    > sep = c(rep(" ", ncol(r) - 1), "\n"))
+    > invisible(x)
+    > }
+
+    > A minor change would allow users to modify it:
+
+    > write.ftable2 <- function(x, file = "", quote = TRUE, append = FALSE,
+    > digits = getOption("digits"), sep = " ", ...)
+    > {
+    > r <- stats:::format.ftable(x, quote = quote, digits = digits, ...)
+    > cat(t(r), file = file, append = append,
+    > sep = c(rep(sep, ncol(r) - 1), "\n"))
+    > invisible(x)
+    > }
+
+I agree this sounds reasonable, and am currently running
+'make check-devel' on sources modified accordingly ..
+
+Martin
+
+
+    > This would allow to avoid a previous call to format.ftable (although write.ftable is significantly slower than write.table):
+
+    > ftable(formula = wool + tension ~ breaks, data = warpbreaks) |>
+    > format(quote = FALSE) |>
+    > write.table(sep = ";", row.names = FALSE, col.names = FALSE)
+
+    > ftable(formula = wool + tension ~ breaks, data = warpbreaks) |>
+    > write.ftable2(sep = ";")
+
+    > Best regards,
+    > Thomas
+
+    > ______________________________________________
+    > R-devel at r-project.org mailing list
+    > https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From wo||g@ng@v|echtb@uer @end|ng |rom m@@@tr|chtun|ver@|ty@n|  Thu Sep  2 12:55:03 2021
+From: wo||g@ng@v|echtb@uer @end|ng |rom m@@@tr|chtun|ver@|ty@n| (Viechtbauer, Wolfgang (SP))
+Date: Thu, 2 Sep 2021 10:55:03 +0000
+Subject: [Rd] sum() and mean() for (ALTREP) integer sequences
+Message-ID: <159209eaff1e4ba99bc467eed45d336f@UM-MAIL3214.unimaas.nl>
+
+Hi all,
+
+I am trying to understand the performance of functions applied to integer sequences. Consider the following:
+
+### begin example ###
+
+library(lobstr)
+library(microbenchmark)
+
+x <- sample(1e6)
+obj_size(x)
+# 4,000,048 B
+
+y <- 1:1e6
+obj_size(y)
+# 680 B
+
+# So we can see that 'y' uses ALTREP. These are, as expected, the same:
+
+sum(x)
+# [1] 500000500000
+sum(y)
+# [1] 500000500000
+
+# For 'x', we have to go through the trouble of actually summing up 1e6 integers.
+# For 'y', knowing its form, we really just need to do:
+
+1e6*(1e6+1)/2
+# [1] 500000500000
+
+# which should be a whole lot faster. And indeed, it is:
+
+microbenchmark(sum(x),sum(y))
+
+# Unit: nanoseconds                                                                                                     
+#    expr    min       lq      mean   median       uq    max neval cld
+#  sum(x) 533452 595204.5 634266.90 613102.5 638271.5 978519   100   b                                                  
+#  sum(y)    183    245.5    446.09    338.5    447.0   3233   100  a
+
+# Now what about mean()?
+
+mean(x)
+# [1] 500000.5
+mean(y)
+# [1] 500000.5
+
+# which is the same as
+
+(1e6+1)/2
+# [1] 500000.5
+
+# But this surprised me:
+
+microbenchmark(mean(x),mean(y))
+
+# Unit: microseconds                                                                                                    
+#     expr      min        lq     mean   median       uq      max neval cld
+#  mean(x)  935.389  943.4795 1021.423  954.689  985.122 2065.974   100  a                                              
+#  mean(y) 3500.262 3581.9530 3814.664 3637.984 3734.598 5866.768   100   b
+
+### end example ###
+
+So why is mean() on an ALTREP sequence slower when sum() is faster?
+
+And more generally, when using sum() on an ALTREP integer sequence, does R actually use something like n*(n+1)/2 (or generalized to sequences a:b -- (a+b)*(b-a+1)/2) for computing the sum? If so, why not (it seems) for mean()?
+
+Best,
+Wolfgang
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Thu Sep  2 13:46:18 2021
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Thu, 2 Sep 2021 07:46:18 -0400
+Subject: [Rd] sum() and mean() for (ALTREP) integer sequences
+In-Reply-To: <159209eaff1e4ba99bc467eed45d336f@UM-MAIL3214.unimaas.nl>
+References: <159209eaff1e4ba99bc467eed45d336f@UM-MAIL3214.unimaas.nl>
+Message-ID: <7189aade-9a94-ceb0-c9a9-1106c7592a2e@gmail.com>
+
+On 02/09/2021 6:55 a.m., Viechtbauer, Wolfgang (SP) wrote:
+> Hi all,
+> 
+> I am trying to understand the performance of functions applied to integer sequences. Consider the following:
+> 
+> ### begin example ###
+> 
+> library(lobstr)
+> library(microbenchmark)
+> 
+> x <- sample(1e6)
+> obj_size(x)
+> # 4,000,048 B
+> 
+> y <- 1:1e6
+> obj_size(y)
+> # 680 B
+> 
+> # So we can see that 'y' uses ALTREP. These are, as expected, the same:
+> 
+> sum(x)
+> # [1] 500000500000
+> sum(y)
+> # [1] 500000500000
+> 
+> # For 'x', we have to go through the trouble of actually summing up 1e6 integers.
+> # For 'y', knowing its form, we really just need to do:
+> 
+> 1e6*(1e6+1)/2
+> # [1] 500000500000
+> 
+> # which should be a whole lot faster. And indeed, it is:
+> 
+> microbenchmark(sum(x),sum(y))
+> 
+> # Unit: nanoseconds
+> #    expr    min       lq      mean   median       uq    max neval cld
+> #  sum(x) 533452 595204.5 634266.90 613102.5 638271.5 978519   100   b
+> #  sum(y)    183    245.5    446.09    338.5    447.0   3233   100  a
+> 
+> # Now what about mean()?
+> 
+> mean(x)
+> # [1] 500000.5
+> mean(y)
+> # [1] 500000.5
+> 
+> # which is the same as
+> 
+> (1e6+1)/2
+> # [1] 500000.5
+> 
+> # But this surprised me:
+> 
+> microbenchmark(mean(x),mean(y))
+> 
+> # Unit: microseconds
+> #     expr      min        lq     mean   median       uq      max neval cld
+> #  mean(x)  935.389  943.4795 1021.423  954.689  985.122 2065.974   100  a
+> #  mean(y) 3500.262 3581.9530 3814.664 3637.984 3734.598 5866.768   100   b
+> 
+> ### end example ###
+> 
+> So why is mean() on an ALTREP sequence slower when sum() is faster?
+> 
+> And more generally, when using sum() on an ALTREP integer sequence, does R actually use something like n*(n+1)/2 (or generalized to sequences a:b -- (a+b)*(b-a+1)/2) for computing the sum? If so, why not (it seems) for mean()?
+
+The mean.default function looks like this:
+
+function (x, trim = 0, na.rm = FALSE, ...)
+{
+     if (!is.numeric(x) && !is.complex(x) && !is.logical(x)) {
+         warning("argument is not numeric or logical: returning NA")
+         return(NA_real_)
+     }
+     if (na.rm)
+         x <- x[!is.na(x)]
+     if (!is.numeric(trim) || length(trim) != 1L)
+         stop("'trim' must be numeric of length one")
+     n <- length(x)
+     if (trim > 0 && n) {
+         if (is.complex(x))
+             stop("trimmed means are not defined for complex data")
+         if (anyNA(x))
+             return(NA_real_)
+         if (trim >= 0.5)
+             return(stats::median(x, na.rm = FALSE))
+         lo <- floor(n * trim) + 1
+         hi <- n + 1 - lo
+         x <- sort.int(x, partial = unique(c(lo, hi)))[lo:hi]
+     }
+     .Internal(mean(x))
+}
+
+So it does fixups for trimming and NA removal, then calls an internal 
+function.  The internal function is the first part of do_summary, here:
+
+https://github.com/wch/r-source/blob/f9c955fc6699a1f0482e4281ba658215c0e0b949/src/main/summary.c#L541-L556 
+
+
+It is using separate functions for the mean by type.  The real_mean 
+function here:
+
+https://github.com/wch/r-source/blob/f9c955fc6699a1f0482e4281ba658215c0e0b949/src/main/summary.c#L476-L515 
+
+
+makes a big effort to avoid overflows.
+
+So I suspect the reason mean.default doesn't use sum(x)/length(x) at the 
+end is that on a long vector sum(x) could overflow when mean(x) shouldn't.
+
+So why not take the ALTREP into account?  I suspect it's just too much 
+trouble for a rare case.
+
+Duncan Murdoch
+
+
+From Thom@@@SOEIRO @end|ng |rom @p-hm@|r  Thu Sep  2 13:09:35 2021
+From: Thom@@@SOEIRO @end|ng |rom @p-hm@|r (SOEIRO Thomas)
+Date: Thu, 2 Sep 2021 11:09:35 +0000
+Subject: [Rd] sep hard coded in write.ftable
+In-Reply-To: <24880.39299.992900.911002@stat.math.ethz.ch>
+References: <1a597120ad27455e9249bd6577ea39b2@SCWPR-EXDAG1-6A.aphm.ap-hm.fr>
+ <24880.39299.992900.911002@stat.math.ethz.ch>
+Message-ID: <3883f6fe98d2418ca6bdf11abc93ce2d@SCWPR-EXDAG1-6A.aphm.ap-hm.fr>
+
+Dear Martin,
+
+Thank you very much for your prompt feedback!
+
+Best regards,
+
+Thomas
+
+-----Message d'origine-----
+De?: Martin Maechler [mailto:maechler at stat.math.ethz.ch] 
+Envoy??: jeudi 2 septembre 2021 11:30
+??: SOEIRO Thomas
+Cc?: r-devel at r-project.org
+Objet?: Re: [Rd] sep hard coded in write.ftable
+
+EMAIL EXTERNE - TRAITER AVEC PR?CAUTION LIENS ET FICHIERS
+
+>>>>> SOEIRO Thomas
+>>>>>     on Wed, 1 Sep 2021 15:01:43 +0000 writes:
+
+    > Dear all,
+
+    > (This is a follow up of a previous suggestion for ftable that was added in R 4.1.0: https://urldefense.com/v3/__https://stat.ethz.ch/pipermail/r-devel/2020-May/079451.html__;!!JQ5agg!KmMY870t4h88LdWZEtwjGSopF57R5zxrL05DHa6nECGqI5_nFYUsC3OJoOzD0LQYZLOR$ )
+
+    > The sep argument is hard coded in write.ftable:
+
+    > write.ftable <- function(x, file = "", quote = TRUE, append = FALSE,
+    > digits = getOption("digits"), ...)
+    > {
+    > r <- format.ftable(x, quote = quote, digits = digits, ...)
+    > cat(t(r), file = file, append = append,
+    > sep = c(rep(" ", ncol(r) - 1), "\n"))
+    > invisible(x)
+    > }
+
+    > A minor change would allow users to modify it:
+
+    > write.ftable2 <- function(x, file = "", quote = TRUE, append = FALSE,
+    > digits = getOption("digits"), sep = " ", ...)
+    > {
+    > r <- stats:::format.ftable(x, quote = quote, digits = digits, ...)
+    > cat(t(r), file = file, append = append,
+    > sep = c(rep(sep, ncol(r) - 1), "\n"))
+    > invisible(x)
+    > }
+
+I agree this sounds reasonable, and am currently running 'make check-devel' on sources modified accordingly ..
+
+Martin
+
+
+    > This would allow to avoid a previous call to format.ftable (although write.ftable is significantly slower than write.table):
+
+    > ftable(formula = wool + tension ~ breaks, data = warpbreaks) |>
+    > format(quote = FALSE) |>
+    > write.table(sep = ";", row.names = FALSE, col.names = FALSE)
+
+    > ftable(formula = wool + tension ~ breaks, data = warpbreaks) |>
+    > write.ftable2(sep = ";")
+
+    > Best regards,
+    > Thomas
+
+    > ______________________________________________
+    > R-devel at r-project.org mailing list
+    > https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-devel__;!!JQ5agg!KmMY870t4h88LdWZEtwjGSopF57R5zxrL05DHa6nECGqI5_nFYUsC3OJoOzD0M93CBRa$
+
+From Thom@@@SOEIRO @end|ng |rom @p-hm@|r  Thu Sep  2 13:24:03 2021
+From: Thom@@@SOEIRO @end|ng |rom @p-hm@|r (SOEIRO Thomas)
+Date: Thu, 2 Sep 2021 11:24:03 +0000
+Subject: [Rd] sep hard coded in write.ftable
+References: <1a597120ad27455e9249bd6577ea39b2@SCWPR-EXDAG1-6A.aphm.ap-hm.fr>
+ <24880.39299.992900.911002@stat.math.ethz.ch> 
+Message-ID: <cd8b1ed8f75b47fb9d46872deb1e7a25@SCWPR-EXDAG1-6A.aphm.ap-hm.fr>
+
+There is a small typo in the NEWS file: write.table -> write.ftable
+
+-----Message d'origine-----
+De?: SOEIRO Thomas 
+Envoy??: jeudi 2 septembre 2021 13:10
+??: 'Martin Maechler'
+Cc?: r-devel at r-project.org
+Objet?: RE: [Rd] sep hard coded in write.ftable
+
+Dear Martin,
+
+Thank you very much for your prompt feedback!
+
+Best regards,
+
+Thomas
+
+-----Message d'origine-----
+De?: Martin Maechler [mailto:maechler at stat.math.ethz.ch] 
+Envoy??: jeudi 2 septembre 2021 11:30
+??: SOEIRO Thomas
+Cc?: r-devel at r-project.org
+Objet?: Re: [Rd] sep hard coded in write.ftable
+
+EMAIL EXTERNE - TRAITER AVEC PR?CAUTION LIENS ET FICHIERS
+
+>>>>> SOEIRO Thomas
+>>>>>     on Wed, 1 Sep 2021 15:01:43 +0000 writes:
+
+    > Dear all,
+
+    > (This is a follow up of a previous suggestion for ftable that was added in R 4.1.0: https://urldefense.com/v3/__https://stat.ethz.ch/pipermail/r-devel/2020-May/079451.html__;!!JQ5agg!KmMY870t4h88LdWZEtwjGSopF57R5zxrL05DHa6nECGqI5_nFYUsC3OJoOzD0LQYZLOR$ )
+
+    > The sep argument is hard coded in write.ftable:
+
+    > write.ftable <- function(x, file = "", quote = TRUE, append = FALSE,
+    > digits = getOption("digits"), ...)
+    > {
+    > r <- format.ftable(x, quote = quote, digits = digits, ...)
+    > cat(t(r), file = file, append = append,
+    > sep = c(rep(" ", ncol(r) - 1), "\n"))
+    > invisible(x)
+    > }
+
+    > A minor change would allow users to modify it:
+
+    > write.ftable2 <- function(x, file = "", quote = TRUE, append = FALSE,
+    > digits = getOption("digits"), sep = " ", ...)
+    > {
+    > r <- stats:::format.ftable(x, quote = quote, digits = digits, ...)
+    > cat(t(r), file = file, append = append,
+    > sep = c(rep(sep, ncol(r) - 1), "\n"))
+    > invisible(x)
+    > }
+
+I agree this sounds reasonable, and am currently running 'make check-devel' on sources modified accordingly ..
+
+Martin
+
+
+    > This would allow to avoid a previous call to format.ftable (although write.ftable is significantly slower than write.table):
+
+    > ftable(formula = wool + tension ~ breaks, data = warpbreaks) |>
+    > format(quote = FALSE) |>
+    > write.table(sep = ";", row.names = FALSE, col.names = FALSE)
+
+    > ftable(formula = wool + tension ~ breaks, data = warpbreaks) |>
+    > write.ftable2(sep = ";")
+
+    > Best regards,
+    > Thomas
+
+    > ______________________________________________
+    > R-devel at r-project.org mailing list
+    > https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-devel__;!!JQ5agg!KmMY870t4h88LdWZEtwjGSopF57R5zxrL05DHa6nECGqI5_nFYUsC3OJoOzD0M93CBRa$
+
+From Andre@G||||bert @end|ng |rom chu-rouen@|r  Thu Sep  2 21:54:18 2021
+From: Andre@G||||bert @end|ng |rom chu-rouen@|r (GILLIBERT, Andre)
+Date: Thu, 2 Sep 2021 19:54:18 +0000
+Subject: [Rd] sum() and mean() for (ALTREP) integer sequences
+In-Reply-To: <159209eaff1e4ba99bc467eed45d336f@UM-MAIL3214.unimaas.nl>
+References: <159209eaff1e4ba99bc467eed45d336f@UM-MAIL3214.unimaas.nl>
+Message-ID: <5f9a70cd96804175a8bbd3d4e92757e9@chu-rouen.fr>
+
+
+Hello,
+
+
+Please, find a long response below.
+
+
+== difference between mean(x) and sum(x)/length(x) ==
+
+
+At the core, mean(x) and sum(x)/length(x) works very differently for real numbers.
+
+Mean is more accurate when applied to a vector with a small variance but a very high mean, especially on platforms without extended precision numbers (i.e. long double is 64 bits rather than 80 bits).
+
+
+On a Windows 10 computer (with 80 bits long double):
+
+k=1e6
+base=2^51
+realmean = mean(1:k)
+sqa=(base+1):(base+k) # with ALTREP
+sq=(base+1):(base+k)+0.0 # without ALTREP
+mean(sq) - base - realmean  # correctly returns zero
+sum(sq)/k - base - realmean # incorrectly returns -0.5
+sum(sqa)/k - base - realmean # correctly returns zero
+
+On a GNU/Linux x86_64 computer with extended precision floating point disabled, the difference is worse:
+mean(sq) - base - realmean  # correctly returns zero
+sum(sq)/k - base - realmean # incorrectly returns -1180
+sum(sqa)/k - base - realmean # correctly returns zero
+
+Therefore (without ALTREP) sum can be inaccurate, due to floating point rounding errors.
+
+The good accuracy of mean() is due to a two-passes algorithm of the real_mean() function in src/main/summary.c.
+
+The algorithm can be summarized by the following equivalent R code:
+badmean=function(v) {sum(v)/length(v)}
+goodmean=function(v) {center = badmean(v); center + badmean(v - center)}
+goodmean(sq) - base - realmean # correctly returns zero
+
+
+== should mean() call ALTINTEGER_SUM ? ==
+As you noticed in the examples above, sum() is much more accurate with ALTREPs than with the naive algorithm, because there are no cumulative rounding errors.
+
+Moreover, if we focus on INTSXP, the maximum possible value is lower : INT_MAX = 2^31-1
+
+The sum of a large sequence (e.g. 1:(2^31-1)) can still overflow the exact integer range (0 to 2^53) of an FP64, and the division does not always round back to the correct value.
+
+bad = 1:189812531L
+mean(bad) - sum(bad)/length(bad) # returns -1.5e-08 on a platform with FP80
+mean(bad) == 94906266 # correct value (the actual result is an integer)
+
+The implementation of mean() on INTSXP do not use the two-passes trick, but relies on a LDOUBLE (typically FP80 on the x86 platform) that is large enough to avoid rounding bugs even with huge integer sequences.
+
+Unfortunately the ALTINTEGER_SUM interface returns at best a FP64, and so, would not return the FP64 closest to the actual mean for some sequences.
+
+Adding a MEAN function to the ALTREP interface could solve the problem.
+
+
+== can mean performance be improved easily ? ==
+
+
+The mean() implementation for integers, supports ALTREPs with poor iteration performances, using the slow INTEGER_ELT() macro.
+
+Moreover, it converts each integer to LDOUBLE, which is slow.
+
+
+It can be improved using ITERATE_BY_REGION0 and using a 64 bits integer (if available) that cannot overflow on small batches (size = 512).
+
+
+# before patching (on Ubuntu x86_64 Silvermont Celeron J1900)
+x = 1:1e8
+y = 1:1e8+0L
+system.time(mean(x)) # user 1.33 second
+system.time(mean(y)) # user 0.32 second
+
+# after patching (on Ubuntu x86_64 Silvermont Celeron J1900)
+# after patching (on Ubuntu x86_64 Silvermont Celeron J1900)
+x = 1:1e8
+y = 1:1e8+0L
+system.time(mean(x)) # user 0.29 second # more than x4 faster
+system.time(mean(y)) # user 0.18 second # x 1.7 faster !
+
+(patch attached to this message)
+
+The patch is not optimal. It should ideally use isum(), and risum() but these functions are a mess, needing refactoring. For instance, they take a 'call' argument and may display a warning message related to the sum() function.
+
+--
+Sincerely
+Andre GILLIBERT
+________________________________
+De : R-devel <r-devel-bounces at r-project.org> de la part de Viechtbauer, Wolfgang (SP) <wolfgang.viechtbauer at maastrichtuniversity.nl>
+Envoy? : jeudi 2 septembre 2021 12:55:03
+? : r-devel at r-project.org
+Objet : [Rd] sum() and mean() for (ALTREP) integer sequences
+
+ATTENTION: Cet e-mail provient d?une adresse mail ext?rieure au CHU de Rouen. Ne cliquez pas sur les liens ou n'ouvrez pas les pi?ces jointes ? moins de conna?tre l'exp?diteur et de savoir que le contenu est s?r. En cas de doute, transf?rer le mail ? ? DSI, S?curit? ? pour analyse. Merci de votre vigilance
+
+
+Hi all,
+
+I am trying to understand the performance of functions applied to integer sequences. Consider the following:
+
+### begin example ###
+
+library(lobstr)
+library(microbenchmark)
+
+x <- sample(1e6)
+obj_size(x)
+# 4,000,048 B
+
+y <- 1:1e6
+obj_size(y)
+# 680 B
+
+# So we can see that 'y' uses ALTREP. These are, as expected, the same:
+
+sum(x)
+# [1] 500000500000
+sum(y)
+# [1] 500000500000
+
+# For 'x', we have to go through the trouble of actually summing up 1e6 integers.
+# For 'y', knowing its form, we really just need to do:
+
+1e6*(1e6+1)/2
+# [1] 500000500000
+
+# which should be a whole lot faster. And indeed, it is:
+
+microbenchmark(sum(x),sum(y))
+
+# Unit: nanoseconds
+#    expr    min       lq      mean   median       uq    max neval cld
+#  sum(x) 533452 595204.5 634266.90 613102.5 638271.5 978519   100   b
+#  sum(y)    183    245.5    446.09    338.5    447.0   3233   100  a
+
+# Now what about mean()?
+
+mean(x)
+# [1] 500000.5
+mean(y)
+# [1] 500000.5
+
+# which is the same as
+
+(1e6+1)/2
+# [1] 500000.5
+
+# But this surprised me:
+
+microbenchmark(mean(x),mean(y))
+
+# Unit: microseconds
+#     expr      min        lq     mean   median       uq      max neval cld
+#  mean(x)  935.389  943.4795 1021.423  954.689  985.122 2065.974   100  a
+#  mean(y) 3500.262 3581.9530 3814.664 3637.984 3734.598 5866.768   100   b
+
+### end example ###
+
+So why is mean() on an ALTREP sequence slower when sum() is faster?
+
+And more generally, when using sum() on an ALTREP integer sequence, does R actually use something like n*(n+1)/2 (or generalized to sequences a:b -- (a+b)*(b-a+1)/2) for computing the sum? If so, why not (it seems) for mean()?
+
+Best,
+Wolfgang
+
+______________________________________________
+R-devel at r-project.org mailing list
+https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From wo||g@ng@v|echtb@uer @end|ng |rom m@@@tr|chtun|ver@|ty@n|  Fri Sep  3 14:49:27 2021
+From: wo||g@ng@v|echtb@uer @end|ng |rom m@@@tr|chtun|ver@|ty@n| (Viechtbauer, Wolfgang (SP))
+Date: Fri, 3 Sep 2021 12:49:27 +0000
+Subject: [Rd] sum() and mean() for (ALTREP) integer sequences
+In-Reply-To: <7189aade-9a94-ceb0-c9a9-1106c7592a2e@gmail.com>
+References: <159209eaff1e4ba99bc467eed45d336f@UM-MAIL3214.unimaas.nl>
+ <7189aade-9a94-ceb0-c9a9-1106c7592a2e@gmail.com>
+Message-ID: <77d3f0b36b4c41cb92fe0415a891c1dd@UM-MAIL3214.unimaas.nl>
+
+>> Hi all,
+>>
+>> I am trying to understand the performance of functions applied to integer
+>sequences. Consider the following:
+>>
+>> ### begin example ###
+>>
+>> library(lobstr)
+>> library(microbenchmark)
+>>
+>> x <- sample(1e6)
+>> obj_size(x)
+>> # 4,000,048 B
+>>
+>> y <- 1:1e6
+>> obj_size(y)
+>> # 680 B
+>>
+>> # So we can see that 'y' uses ALTREP. These are, as expected, the same:
+>>
+>> sum(x)
+>> # [1] 500000500000
+>> sum(y)
+>> # [1] 500000500000
+>>
+>> # For 'x', we have to go through the trouble of actually summing up 1e6
+>integers.
+>> # For 'y', knowing its form, we really just need to do:
+>>
+>> 1e6*(1e6+1)/2
+>> # [1] 500000500000
+>>
+>> # which should be a whole lot faster. And indeed, it is:
+>>
+>> microbenchmark(sum(x),sum(y))
+>>
+>> # Unit: nanoseconds
+>> #    expr    min       lq      mean   median       uq    max neval cld
+>> #  sum(x) 533452 595204.5 634266.90 613102.5 638271.5 978519   100   b
+>> #  sum(y)    183    245.5    446.09    338.5    447.0   3233   100  a
+>>
+>> # Now what about mean()?
+>>
+>> mean(x)
+>> # [1] 500000.5
+>> mean(y)
+>> # [1] 500000.5
+>>
+>> # which is the same as
+>>
+>> (1e6+1)/2
+>> # [1] 500000.5
+>>
+>> # But this surprised me:
+>>
+>> microbenchmark(mean(x),mean(y))
+>>
+>> # Unit: microseconds
+>> #     expr      min        lq     mean   median       uq      max neval cld
+>> #  mean(x)  935.389  943.4795 1021.423  954.689  985.122 2065.974   100  a
+>> #  mean(y) 3500.262 3581.9530 3814.664 3637.984 3734.598 5866.768   100   b
+>>
+>> ### end example ###
+>>
+>> So why is mean() on an ALTREP sequence slower when sum() is faster?
+>>
+>> And more generally, when using sum() on an ALTREP integer sequence, does R
+>actually use something like n*(n+1)/2 (or generalized to sequences a:b --
+>(a+b)*(b-a+1)/2) for computing the sum? If so, why not (it seems) for mean()?
+>
+>The mean.default function looks like this:
+>
+>function (x, trim = 0, na.rm = FALSE, ...)
+>{
+>     if (!is.numeric(x) && !is.complex(x) && !is.logical(x)) {
+>         warning("argument is not numeric or logical: returning NA")
+>         return(NA_real_)
+>     }
+>     if (na.rm)
+>         x <- x[!is.na(x)]
+>     if (!is.numeric(trim) || length(trim) != 1L)
+>         stop("'trim' must be numeric of length one")
+>     n <- length(x)
+>     if (trim > 0 && n) {
+>         if (is.complex(x))
+>             stop("trimmed means are not defined for complex data")
+>         if (anyNA(x))
+>             return(NA_real_)
+>         if (trim >= 0.5)
+>             return(stats::median(x, na.rm = FALSE))
+>         lo <- floor(n * trim) + 1
+>         hi <- n + 1 - lo
+>         x <- sort.int(x, partial = unique(c(lo, hi)))[lo:hi]
+>     }
+>     .Internal(mean(x))
+>}
+>
+>So it does fixups for trimming and NA removal, then calls an internal
+>function.  The internal function is the first part of do_summary, here:
+>
+>https://github.com/wch/r-
+>source/blob/f9c955fc6699a1f0482e4281ba658215c0e0b949/src/main/summary.c#L541-L556
+>
+>It is using separate functions for the mean by type.  The real_mean
+>function here:
+>
+>https://github.com/wch/r-
+>source/blob/f9c955fc6699a1f0482e4281ba658215c0e0b949/src/main/summary.c#L476-L515
+>
+>makes a big effort to avoid overflows.
+>
+>So I suspect the reason mean.default doesn't use sum(x)/length(x) at the
+>end is that on a long vector sum(x) could overflow when mean(x) shouldn't.
+>
+>So why not take the ALTREP into account?  I suspect it's just too much
+>trouble for a rare case.
+>
+>Duncan Murdoch
+
+Hi Duncan,
+
+Thanks for pointing me to the appropriate places in the C code. And ok, makes sense.
+
+Best,
+Wolfgang
+
+From wo||g@ng@v|echtb@uer @end|ng |rom m@@@tr|chtun|ver@|ty@n|  Fri Sep  3 14:54:50 2021
+From: wo||g@ng@v|echtb@uer @end|ng |rom m@@@tr|chtun|ver@|ty@n| (Viechtbauer, Wolfgang (SP))
+Date: Fri, 3 Sep 2021 12:54:50 +0000
+Subject: [Rd] sum() and mean() for (ALTREP) integer sequences
+In-Reply-To: <5f9a70cd96804175a8bbd3d4e92757e9@chu-rouen.fr>
+References: <159209eaff1e4ba99bc467eed45d336f@UM-MAIL3214.unimaas.nl>
+ <5f9a70cd96804175a8bbd3d4e92757e9@chu-rouen.fr>
+Message-ID: <a3bbb35090df43ed8d672ea5eea2db01@UM-MAIL3214.unimaas.nl>
+
+Wow, thanks for this extensive reply, Andre. As Duncan mentioned, it's probably not worth the bother for such a rare case. And my curiosity as to why the timing difference was happening has been more than satisfied.
+
+Best,
+Wolfgang
+
+>-----Original Message-----
+>From: GILLIBERT, Andre [mailto:Andre.Gillibert at chu-rouen.fr]
+>Sent: Thursday, 02 September, 2021 21:54
+>To: Viechtbauer, Wolfgang (SP); r-devel at r-project.org
+>Subject: RE: sum() and mean() for (ALTREP) integer sequences
+>
+>Hello,
+>
+>Please, find a long response below.
+>
+>== difference between mean(x) and sum(x)/length(x) ==
+>
+>At the core, mean(x) and sum(x)/length(x) works very differently for real numbers.
+>Mean is more accurate when applied to a vector with a small variance but a very
+>high mean, especially on platforms without extended precision numbers (i.e. long
+>double is 64 bits rather than 80 bits).
+>
+>On a Windows 10 computer (with 80 bits long double):
+>k=1e6
+>base=2^51
+>realmean = mean(1:k)
+>sqa=(base+1):(base+k) # with ALTREP
+>sq=(base+1):(base+k)+0.0 # without ALTREP
+>mean(sq) - base - realmean? # correctly returns zero
+>sum(sq)/k - base - realmean # incorrectly returns -0.5
+>sum(sqa)/k - base - realmean # correctly returns zero
+>
+>On a GNU/Linux x86_64 computer with extended precision floating point disabled,
+>the difference is worse:
+>mean(sq) - base - realmean? # correctly returns zero
+>sum(sq)/k - base - realmean # incorrectly returns -1180
+>sum(sqa)/k - base - realmean # correctly returns zero
+>
+>Therefore (without ALTREP) sum can be inaccurate, due to floating point rounding
+>errors.
+>
+>The good accuracy of mean() is due to a two-passes algorithm of the real_mean()
+>function in src/main/summary.c.
+>
+>The algorithm can be summarized by the following equivalent R code:
+>badmean=function(v) {sum(v)/length(v)}
+>goodmean=function(v) {center = badmean(v); center + badmean(v - center)}
+>goodmean(sq) - base - realmean # correctly returns zero
+>
+>== should mean() call ALTINTEGER_SUM ? ==
+>As you noticed in the examples above, sum() is much more accurate with ALTREPs
+>than with the naive algorithm, because there are no cumulative rounding errors.
+>
+>Moreover, if we focus on INTSXP, the maximum possible value is lower : INT_MAX =
+>2^31-1
+>The sum of a large sequence (e.g. 1:(2^31-1)) can still overflow the exact integer
+>range (0 to 2^53) of an FP64, and the division does not always round back to the
+>correct value.
+>
+>bad = 1:189812531L
+>mean(bad) - sum(bad)/length(bad) # returns -1.5e-08 on a platform with FP80
+>mean(bad) == 94906266 # correct value (the actual result is an integer)
+>
+>The implementation of mean() on INTSXP do not use the two-passes trick, but relies
+>on a LDOUBLE (typically FP80 on the x86 platform) that is large enough to avoid
+>rounding bugs even with huge integer sequences.
+>
+>Unfortunately the ALTINTEGER_SUM interface returns at best a FP64, and so, would
+>not return the FP64 closest to the actual mean for some sequences.
+>
+>Adding a MEAN function to the ALTREP interface could solve the problem.
+>
+>== can mean performance be improved easily ? ==
+>
+>The mean() implementation for integers, supports ALTREPs?with poor iteration
+>performances, using the slow INTEGER_ELT() macro.
+>Moreover, it converts each integer to LDOUBLE, which is slow.
+>
+>It can be improved using ITERATE_BY_REGION0 and using a 64 bits integer (if
+>available) that cannot overflow on small batches (size = 512).
+>
+># before patching (on Ubuntu x86_64 Silvermont Celeron J1900)
+>x = 1:1e8
+>y = 1:1e8+0L
+>system.time(mean(x)) # user 1.33 second
+>system.time(mean(y)) # user 0.32 second
+>
+># after patching (on Ubuntu x86_64 Silvermont Celeron J1900)
+># after patching (on Ubuntu x86_64 Silvermont Celeron J1900)
+>x = 1:1e8
+>y = 1:1e8+0L
+>system.time(mean(x)) # user 0.29 second # more than x4 faster
+>system.time(mean(y)) # user 0.18 second # x 1.7 faster !
+>
+>(patch attached to this message)
+>
+>The patch is not optimal. It should ideally use isum(), and risum() but these
+>functions are a mess, needing refactoring. For instance, they take a 'call'
+>argument and may display a warning message related to the sum() function.
+>
+>--
+>Sincerely
+>Andre GILLIBERT
+>________________________________________
+>De : R-devel <r-devel-bounces at r-project.org> de la part de Viechtbauer, Wolfgang
+>(SP) <wolfgang.viechtbauer at maastrichtuniversity.nl>
+>Envoy? : jeudi 2 septembre 2021 12:55:03
+>? : r-devel at r-project.org
+>Objet : [Rd] sum() and mean() for (ALTREP) integer sequences
+>
+>Hi all,
+>
+>I am trying to understand the performance of functions applied to integer
+>sequences. Consider the following:
+>
+>### begin example ###
+>
+>library(lobstr)
+>library(microbenchmark)
+>
+>x <- sample(1e6)
+>obj_size(x)
+># 4,000,048 B
+>
+>y <- 1:1e6
+>obj_size(y)
+># 680 B
+>
+># So we can see that 'y' uses ALTREP. These are, as expected, the same:
+>
+>sum(x)
+># [1] 500000500000
+>sum(y)
+># [1] 500000500000
+>
+># For 'x', we have to go through the trouble of actually summing up 1e6 integers.
+># For 'y', knowing its form, we really just need to do:
+>
+>1e6*(1e6+1)/2
+># [1] 500000500000
+>
+># which should be a whole lot faster. And indeed, it is:
+>
+>microbenchmark(sum(x),sum(y))
+>
+># Unit: nanoseconds
+>#??? expr??? min?????? lq????? mean?? median?????? uq??? max neval cld
+>#? sum(x) 533452 595204.5 634266.90 613102.5 638271.5 978519?? 100?? b
+>#? sum(y)??? 183??? 245.5??? 446.09??? 338.5??? 447.0?? 3233?? 100? a
+>
+># Now what about mean()?
+>
+>mean(x)
+># [1] 500000.5
+>mean(y)
+># [1] 500000.5
+>
+># which is the same as
+>
+>(1e6+1)/2
+># [1] 500000.5
+>
+># But this surprised me:
+>
+>microbenchmark(mean(x),mean(y))
+>
+># Unit: microseconds
+>#???? expr????? min??????? lq???? mean?? median?????? uq????? max neval cld
+>#? mean(x)? 935.389? 943.4795 1021.423? 954.689? 985.122 2065.974?? 100? a
+>#? mean(y) 3500.262 3581.9530 3814.664 3637.984 3734.598 5866.768?? 100?? b
+>
+>### end example ###
+>
+>So why is mean() on an ALTREP sequence slower when sum() is faster?
+>
+>And more generally, when using sum() on an ALTREP integer sequence, does R
+>actually use something like n*(n+1)/2 (or generalized to sequences a:b --
+>(a+b)*(b-a+1)/2) for computing the sum? If so, why not (it seems) for mean()?
+>
+>Best,
+>Wolfgang
+
+
+From ch|r|com @end|ng |rom goog|e@com  Tue Sep  7 19:44:03 2021
+From: ch|r|com @end|ng |rom goog|e@com (Michael Chirico)
+Date: Tue, 7 Sep 2021 10:44:03 -0700
+Subject: [Rd] Should seq.Date() return double storage?
+Message-ID: <CAD7Bkx8G-74PxQpchi2+ejTEKzOVaPih2o13pmbhmRRo9FTCLg@mail.gmail.com>
+
+today <- Sys.Date()
+typeof(today)
+# [1] "double"
+typeof(seq(today, by=1, length.out=2))
+# [1] "integer"
+
+Clearly minor as it doesn't seem to have come up before (e.g. coercion
+to numeric will happen automatically whenever fractional dates are
+needed); I only noticed because of a test using identical failing:
+
+identical(
+  seq(today, by=1, length.out=10),
+  today + 0:9
+)
+# [1] FALSE
+
+It's easy in this case to fix the test using coercion, but this could
+(and did in practice) come up at deeper levels of nesting that become
+more onerous to handle. And using all.equal() comes with its own
+tradeoffs.
+
+The fix would be easy enough -- at a glance there are two usages of
+.Date(seq.int(...)) in seq.Date() that could be replaced by
+.Date(as.numeric(seq.int(...))).
+
+Mike C
+
+
+From Kurt@Horn|k @end|ng |rom wu@@c@@t  Wed Sep  8 08:18:42 2021
+From: Kurt@Horn|k @end|ng |rom wu@@c@@t (Kurt Hornik)
+Date: Wed, 8 Sep 2021 08:18:42 +0200
+Subject: [Rd] Should seq.Date() return double storage?
+In-Reply-To: <CAD7Bkx8G-74PxQpchi2+ejTEKzOVaPih2o13pmbhmRRo9FTCLg@mail.gmail.com>
+References: <CAD7Bkx8G-74PxQpchi2+ejTEKzOVaPih2o13pmbhmRRo9FTCLg@mail.gmail.com>
+Message-ID: <24888.21954.735124.993759@hornik.net>
+
+>>>>> Michael Chirico via R-devel writes:
+
+> today <- Sys.Date()
+> typeof(today)
+> # [1] "double"
+> typeof(seq(today, by=1, length.out=2))
+> # [1] "integer"
+
+> Clearly minor as it doesn't seem to have come up before (e.g. coercion
+> to numeric will happen automatically whenever fractional dates are
+> needed); I only noticed because of a test using identical failing:
+
+> identical(
+>   seq(today, by=1, length.out=10),
+>   today + 0:9
+> )
+> # [1] FALSE
+
+> It's easy in this case to fix the test using coercion, but this could
+> (and did in practice) come up at deeper levels of nesting that become
+> more onerous to handle. And using all.equal() comes with its own
+> tradeoffs.
+
+> The fix would be easy enough -- at a glance there are two usages of
+> .Date(seq.int(...)) in seq.Date() that could be replaced by
+> .Date(as.numeric(seq.int(...))).
+
+Thanks.  Can you pls provide a patch for these?
+
+Best
+-k
+
+> Mike C
+
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From yut@n|@|n| @end|ng |rom gm@||@com  Wed Sep  8 14:08:40 2021
+From: yut@n|@|n| @end|ng |rom gm@||@com (Hiroaki Yutani)
+Date: Wed, 8 Sep 2021 21:08:40 +0900
+Subject: [Rd] Detect UCRT-built R from within R sessions (and in
+ configure.win)
+Message-ID: <CALyqOb8r7ajAumf5V0+YJk83X091NS2eRCs-cu=X6zO+09z0Rg@mail.gmail.com>
+
+Hi,
+
+Are there any proper ways to know whether the session is running on
+the R that is built with the UCRT toolchain or not? Checking if the
+encoding is UTF-8 might do the trick, but I'm not sure if it's always
+reliable.
+
+Also, I'd like to know if there's any mechanism to detect the UCRT in
+configure.win. I know there are Makevars.ucrt and Makefile.ucrt, but
+one might want to do some feature test that is specific to the UCRT
+toolchain.
+
+Best,
+Hiroaki Yutani
+
+
+From tom@@@k@||ber@ @end|ng |rom gm@||@com  Wed Sep  8 17:48:20 2021
+From: tom@@@k@||ber@ @end|ng |rom gm@||@com (Tomas Kalibera)
+Date: Wed, 8 Sep 2021 17:48:20 +0200
+Subject: [Rd] Detect UCRT-built R from within R sessions (and in
+ configure.win)
+In-Reply-To: <CALyqOb8r7ajAumf5V0+YJk83X091NS2eRCs-cu=X6zO+09z0Rg@mail.gmail.com>
+References: <CALyqOb8r7ajAumf5V0+YJk83X091NS2eRCs-cu=X6zO+09z0Rg@mail.gmail.com>
+Message-ID: <a219a307-5200-a13e-b4d9-a1e7a646e137@gmail.com>
+
+
+On 9/8/21 2:08 PM, Hiroaki Yutani wrote:
+> Hi,
+>
+> Are there any proper ways to know whether the session is running on
+> the R that is built with the UCRT toolchain or not? Checking if the
+> encoding is UTF-8 might do the trick, but I'm not sure if it's always
+> reliable.
+
+There in not such a mechanism, yet, but can be added, at least for 
+diagnostics.
+
+You are right that checking for UTF-8 encoding would not always be 
+reliable. For example, the version of Windows may be too old to allow R 
+use UTF-8 as native encoding (e.g. Windows server 2016), then R will use 
+the native code page as it does today in the MSVCRT builds.
+
+> Also, I'd like to know if there's any mechanism to detect the UCRT in
+> configure.win. I know there are Makevars.ucrt and Makefile.ucrt, but
+> one might want to do some feature test that is specific to the UCRT
+> toolchain.
+
+We could add support for configure.ucrt, which would take precedence 
+over configure.win on the UCRT builds (like Makevars.ucrt takes 
+precedence over Makevars.win). Would that work for you?
+
+Best
+Tomas
+
+>
+> Best,
+> Hiroaki Yutani
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From yut@n|@|n| @end|ng |rom gm@||@com  Thu Sep  9 05:54:57 2021
+From: yut@n|@|n| @end|ng |rom gm@||@com (Hiroaki Yutani)
+Date: Thu, 9 Sep 2021 12:54:57 +0900
+Subject: [Rd] Detect UCRT-built R from within R sessions (and in
+ configure.win)
+In-Reply-To: <a219a307-5200-a13e-b4d9-a1e7a646e137@gmail.com>
+References: <CALyqOb8r7ajAumf5V0+YJk83X091NS2eRCs-cu=X6zO+09z0Rg@mail.gmail.com>
+ <a219a307-5200-a13e-b4d9-a1e7a646e137@gmail.com>
+Message-ID: <CALyqOb8yer26avLG8wmGxpFQgEeYtxaPGOnixpYTssAJiOLfDA@mail.gmail.com>
+
+Thank you for the prompt reply.
+
+> There in not such a mechanism, yet, but can be added, at least for
+> diagnostics.
+
+For example, can R.version somehow contain the information?
+
+> We could add support for configure.ucrt, which would take precedence
+> over configure.win on the UCRT builds (like Makevars.ucrt takes
+> precedence over Makevars.win). Would that work for you?
+
+Yes, configure.ucrt should work for me. There might be someone who prefers
+to switch by some envvar rather than creating another file, but I don't
+have a strong opinion here.
+
+Best,
+Hiroaki Yutani
+
+2021?9?9?(?) 0:48 Tomas Kalibera <tomas.kalibera at gmail.com>:
+
+>
+> On 9/8/21 2:08 PM, Hiroaki Yutani wrote:
+> > Hi,
+> >
+> > Are there any proper ways to know whether the session is running on
+> > the R that is built with the UCRT toolchain or not? Checking if the
+> > encoding is UTF-8 might do the trick, but I'm not sure if it's always
+> > reliable.
+>
+> There in not such a mechanism, yet, but can be added, at least for
+> diagnostics.
+>
+> You are right that checking for UTF-8 encoding would not always be
+> reliable. For example, the version of Windows may be too old to allow R
+> use UTF-8 as native encoding (e.g. Windows server 2016), then R will use
+> the native code page as it does today in the MSVCRT builds.
+>
+> > Also, I'd like to know if there's any mechanism to detect the UCRT in
+> > configure.win. I know there are Makevars.ucrt and Makefile.ucrt, but
+> > one might want to do some feature test that is specific to the UCRT
+> > toolchain.
+>
+> We could add support for configure.ucrt, which would take precedence
+> over configure.win on the UCRT builds (like Makevars.ucrt takes
+> precedence over Makevars.win). Would that work for you?
+>
+> Best
+> Tomas
+>
+> >
+> > Best,
+> > Hiroaki Yutani
+> >
+> > ______________________________________________
+> > R-devel at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+
+	[[alternative HTML version deleted]]
+
+
+From @tevem@rt|n041 @end|ng |rom gm@||@com  Thu Sep  9 06:05:26 2021
+From: @tevem@rt|n041 @end|ng |rom gm@||@com (Steve Martin)
+Date: Thu, 9 Sep 2021 00:05:26 -0400
+Subject: [Rd] Should Position() use match.fun()?
+Message-ID: <CAP=dwz9FY4j77S0Qm+grtX+S=Hjud6UF5+csewX6J4mG2HUHnQ@mail.gmail.com>
+
+Hello,
+
+All of the funprog functions except Position() use match.fun() early
+in the body of the function. (Filter() seems to rely on lapply() for
+this, but the effect is the same.) In most cases this isn't a problem,
+but I can't see why Position() shouldn't look something like
+
+Position2 <- function(f, x, right = FALSE, nomatch = NA_integer_) {
+    f <- match.fun(f) # the only difference from Position()
+    ind <- if (right) rev(seq_along(x)) else seq_along(x)
+    for (i in ind) {
+        if (f(x[[i]])) return(i)
+    }
+    nomatch
+}
+
+This would make it consistent with the other funprog functions, and
+would mean that Find() and Position() give the same result when
+expected
+
+> equals3 <- function(x) x == 3
+> Position("equals3", 1:5)
+Error in f(x[[i]]) : could not find function "f"
+> Position2("equals3", 1:5)
+[1] 3
+> Find("equals3", 1:5)
+[1] 3
+
+Thanks,
+Steve
+
+
+From Kurt@Horn|k @end|ng |rom wu@@c@@t  Thu Sep  9 09:23:24 2021
+From: Kurt@Horn|k @end|ng |rom wu@@c@@t (Kurt Hornik)
+Date: Thu, 9 Sep 2021 09:23:24 +0200
+Subject: [Rd] Should Position() use match.fun()?
+In-Reply-To: <CAP=dwz9FY4j77S0Qm+grtX+S=Hjud6UF5+csewX6J4mG2HUHnQ@mail.gmail.com>
+References: <CAP=dwz9FY4j77S0Qm+grtX+S=Hjud6UF5+csewX6J4mG2HUHnQ@mail.gmail.com>
+Message-ID: <24889.46700.99366.498401@hornik.net>
+
+>>>>> Steve Martin writes:
+
+> Hello,
+> All of the funprog functions except Position() use match.fun() early
+> in the body of the function. (Filter() seems to rely on lapply() for
+> this, but the effect is the same.) 
+
+Right. 
+
+> In most cases this isn't a problem, but I can't see why Position()
+> shouldn't look something like
+
+> Position2 <- function(f, x, right = FALSE, nomatch = NA_integer_) {
+>     f <- match.fun(f) # the only difference from Position()
+>     ind <- if (right) rev(seq_along(x)) else seq_along(x)
+>     for (i in ind) {
+>         if (f(x[[i]])) return(i)
+>     }
+>     nomatch
+> }
+
+> This would make it consistent with the other funprog functions, and
+> would mean that Find() and Position() give the same result when
+> expected
+
+Indeed.  I'll look into adding the match.fun ...
+
+Best
+-k
+
+>> equals3 <- function(x) x == 3
+>> Position("equals3", 1:5)
+> Error in f(x[[i]]) : could not find function "f"
+>> Position2("equals3", 1:5)
+> [1] 3
+>> Find("equals3", 1:5)
+> [1] 3
+
+> Thanks,
+> Steve
+
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From Kurt@Horn|k @end|ng |rom wu@@c@@t  Thu Sep  9 15:24:02 2021
+From: Kurt@Horn|k @end|ng |rom wu@@c@@t (Kurt Hornik)
+Date: Thu, 9 Sep 2021 15:24:02 +0200
+Subject: [Rd] Should Position() use match.fun()?
+In-Reply-To: <24889.46700.99366.498401@hornik.net>
+References: <CAP=dwz9FY4j77S0Qm+grtX+S=Hjud6UF5+csewX6J4mG2HUHnQ@mail.gmail.com>
+ <24889.46700.99366.498401@hornik.net>
+Message-ID: <24890.2802.938653.54969@hornik.net>
+
+>>>>> Kurt Hornik writes:
+
+>>>>> Steve Martin writes:
+>> Hello,
+>> All of the funprog functions except Position() use match.fun() early
+>> in the body of the function. (Filter() seems to rely on lapply() for
+>> this, but the effect is the same.) 
+
+> Right. 
+
+>> In most cases this isn't a problem, but I can't see why Position()
+>> shouldn't look something like
+
+>> Position2 <- function(f, x, right = FALSE, nomatch = NA_integer_) {
+>> f <- match.fun(f) # the only difference from Position()
+>> ind <- if (right) rev(seq_along(x)) else seq_along(x)
+>> for (i in ind) {
+>> if (f(x[[i]])) return(i)
+>> }
+>> nomatch
+>> }
+
+>> This would make it consistent with the other funprog functions, and
+>> would mean that Find() and Position() give the same result when
+>> expected
+
+> Indeed.  I'll look into adding the match.fun ...
+
+Changed now with c80873.
+
+Best
+-k
+
+> Best
+> -k
+
+>>> equals3 <- function(x) x == 3
+>>> Position("equals3", 1:5)
+>> Error in f(x[[i]]) : could not find function "f"
+>>> Position2("equals3", 1:5)
+>> [1] 3
+>>> Find("equals3", 1:5)
+>> [1] 3
+
+>> Thanks,
+>> Steve
+
+>> ______________________________________________
+>> R-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From hp@ge@@on@g|thub @end|ng |rom gm@||@com  Fri Sep 10 02:54:06 2021
+From: hp@ge@@on@g|thub @end|ng |rom gm@||@com (=?UTF-8?B?SGVydsOpIFBhZ8Oocw==?=)
+Date: Thu, 9 Sep 2021 17:54:06 -0700
+Subject: [Rd] Unneeded if statements in RealFromComplex C code
+Message-ID: <af8f0c90-b643-3151-82ba-4e3efccb1e1f@gmail.com>
+
+Hi,
+
+I just stumbled across these 2 lines in RealFromComplex (lines 208 & 209 
+in src/main/coerce.c):
+
+   double attribute_hidden
+
+   RealFromComplex(Rcomplex x, int *warn)
+
+   {
+
+       if (ISNAN(x.r) || ISNAN(x.i))
+
+           return NA_REAL;
+
+       if (ISNAN(x.r)) return x.r;
+               <- line 208
+       if (ISNAN(x.i)) return NA_REAL;
+           <- line 209
+       if (x.i != 0)
+
+           *warn |= WARN_IMAG;
+
+       return x.r;
+
+   }
+
+
+They were added in 2015 (revision 69410).
+
+They don't serve any purpose and might slow things down a little (unless 
+compiler optimization is able to ignore them). In any case they should 
+probably be removed.
+
+Cheers,
+H.
+
+-- 
+Herv? Pag?s
+
+Bioconductor Core Team
+hpages.on.github at gmail.com
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Fri Sep 10 11:24:09 2021
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Fri, 10 Sep 2021 11:24:09 +0200
+Subject: [Rd] Unneeded if statements in RealFromComplex C code
+In-Reply-To: <af8f0c90-b643-3151-82ba-4e3efccb1e1f@gmail.com>
+References: <af8f0c90-b643-3151-82ba-4e3efccb1e1f@gmail.com>
+Message-ID: <24891.9273.43964.300205@stat.math.ethz.ch>
+
+>>>>> Herv? Pag?s 
+>>>>>     on Thu, 9 Sep 2021 17:54:06 -0700 writes:
+
+    > Hi,
+
+    > I just stumbled across these 2 lines in RealFromComplex (lines 208 & 209 
+    > in src/main/coerce.c):
+
+    > double attribute_hidden
+    > RealFromComplex(Rcomplex x, int *warn)
+    > {
+    >   if (ISNAN(x.r) || ISNAN(x.i))
+    >       return NA_REAL;
+    >   if (ISNAN(x.r)) return x.r;        <- line 208
+    >   if (ISNAN(x.i)) return NA_REAL;    <- line 209
+    >   if (x.i != 0)
+    >      *warn |= WARN_IMAG;
+    >   return x.r;
+    > }
+
+    > They were added in 2015 (revision 69410).
+
+by me.  "Of course" the intent at the time was to  *replace* the
+previous 2 lines and return NA/NaN of the "exact same kind"....
+
+but in the mean time, I have learned that trying to preserve
+exact *kinds* of NaN / NA is typically not platform portable,
+anyway because compiler/library optimizations and
+implementations are pretty "free to do what they want" with these.
+
+    > They don't serve any purpose and might slow things down a little (unless 
+    > compiler optimization is able to ignore them). In any case they should 
+    > probably be removed.
+
+I've cleaned up now, indeed back compatibly, i.e., removing both
+lines as you suggested.
+
+Thank you, Herv?!
+
+Martin
+
+
+    > Cheers,
+    > H.
+
+    > -- 
+    > Herv? Pag?s
+
+    > Bioconductor Core Team
+    > hpages.on.github at gmail.com
+
+
+From hp@ge@@on@g|thub @end|ng |rom gm@||@com  Fri Sep 10 17:29:59 2021
+From: hp@ge@@on@g|thub @end|ng |rom gm@||@com (=?UTF-8?B?SGVydsOpIFBhZ8Oocw==?=)
+Date: Fri, 10 Sep 2021 08:29:59 -0700
+Subject: [Rd] Spurious warnings in coercion from double/complex/character to
+ raw
+Message-ID: <8b1874d6-b41b-8909-7ddb-2da0459618e2@gmail.com>
+
+Hi,
+
+The first warning below is unexpected and confusing:
+
+   > as.raw(c(3e9, 5.1))
+   [1] 00 05
+   Warning messages:
+   1: NAs introduced by coercion to integer range
+   2: out-of-range values treated as 0 in coercion to raw
+
+The reason we get it is that coercion from numeric to raw is currently 
+implemented on top of coercion from numeric to int (file 
+src/main/coerce.c, lines 700-710):
+
+     case REALSXP:
+         for (i = 0; i < n; i++) {
+//          if ((i+1) % NINTERRUPT == 0) R_CheckUserInterrupt();
+             tmp = IntegerFromReal(REAL_ELT(v, i), &warn);
+             if(tmp == NA_INTEGER || tmp < 0 || tmp > 255) {
+                 tmp = 0;
+                 warn |= WARN_RAW;
+             }
+             pa[i] = (Rbyte) tmp;
+         }
+         break;
+
+The first warning comes from the call to IntegerFromReal().
+
+The following code avoids the spurious warning and is also simpler and 
+slightly faster:
+
+     case REALSXP:
+         for (i = 0; i < n; i++) {
+//          if ((i+1) % NINTERRUPT == 0) R_CheckUserInterrupt();
+             double vi = REAL_ELT(v, i);
+             if(ISNAN(vi) || (tmp = (int) vi) < 0 || tmp > 255) {
+                 tmp = 0;
+                 warn |= WARN_RAW;
+             }
+             pa[i] = (Rbyte) tmp;
+         }
+         break;
+
+Coercion from complex to raw has the same problem:
+
+   > as.raw(c(3e9+0i, 5.1))
+   [1] 00 05
+   Warning messages:
+   1: NAs introduced by coercion to integer range
+   2: out-of-range values treated as 0 in coercion to raw
+
+Current implementation (file src/main/coerce.c, lines 711-721):
+
+     case CPLXSXP:
+         for (i = 0; i < n; i++) {
+//          if ((i+1) % NINTERRUPT == 0) R_CheckUserInterrupt();
+             tmp = IntegerFromComplex(COMPLEX_ELT(v, i), &warn);
+             if(tmp == NA_INTEGER || tmp < 0 || tmp > 255) {
+                 tmp = 0;
+                 warn |= WARN_RAW;
+             }
+             pa[i] = (Rbyte) tmp;
+         }
+         break;
+
+This implementation has the following additional problem when the 
+supplied complex has a nonzero imaginary part:
+
+   > as.raw(300+4i)
+   [1] 00
+   Warning messages:
+   1: imaginary parts discarded in coercion
+   2: out-of-range values treated as 0 in coercion to raw
+
+   > as.raw(3e9+4i)
+   [1] 00
+   Warning messages:
+   1: NAs introduced by coercion to integer range
+   2: out-of-range values treated as 0 in coercion to raw
+
+In one case we get a warning about the discarding of the imaginary part 
+but not the other case, which is unexpected. We should see the exact 
+same warning (or warnings) in both cases.
+
+With the following fix we only get the warning about the discarding of 
+the imaginary part if we are not in a "out-of-range values treated as 0 
+in coercion to raw" situation:
+
+     case CPLXSXP:
+         for (i = 0; i < n; i++) {
+//          if ((i+1) % NINTERRUPT == 0) R_CheckUserInterrupt();
+             Rcomplex vi = COMPLEX_ELT(v, i);
+             if(ISNAN(vi.r) || ISNAN(vi.i) || (tmp = (int) vi.r) < 0 || 
+tmp > 255) {
+                 tmp = 0;
+                 warn |= WARN_RAW;
+             } else {
+                 if(vi.i != 0.0)
+                     warn |= WARN_IMAG;
+             }
+             pa[i] = (Rbyte) tmp;
+         }
+         break;
+
+Finally, coercion from character to raw has the same problem and its 
+code can be fixed in a similar manner:
+
+   > as.raw(c("3e9", 5.1))
+   [1] 00 05
+   Warning messages:
+   1: NAs introduced by coercion to integer range
+   2: out-of-range values treated as 0 in coercion to raw
+
+Cheers,
+H.
+
+
+-- 
+Herv? Pag?s
+
+Bioconductor Core Team
+hpages.on.github at gmail.com
+
+
+From hp@ge@@on@g|thub @end|ng |rom gm@||@com  Fri Sep 10 17:48:01 2021
+From: hp@ge@@on@g|thub @end|ng |rom gm@||@com (=?UTF-8?B?SGVydsOpIFBhZ8Oocw==?=)
+Date: Fri, 10 Sep 2021 08:48:01 -0700
+Subject: [Rd] Unneeded if statements in RealFromComplex C code
+In-Reply-To: <24891.9273.43964.300205@stat.math.ethz.ch>
+References: <af8f0c90-b643-3151-82ba-4e3efccb1e1f@gmail.com>
+ <24891.9273.43964.300205@stat.math.ethz.ch>
+Message-ID: <08c59f31-555f-5ea0-cac2-868251f6990d@gmail.com>
+
+Thanks Martin!
+
+Best,
+H.
+
+On 10/09/2021 02:24, Martin Maechler wrote:
+>>>>>> Herv? Pag?s
+>>>>>>      on Thu, 9 Sep 2021 17:54:06 -0700 writes:
+> 
+>      > Hi,
+> 
+>      > I just stumbled across these 2 lines in RealFromComplex (lines 208 & 209
+>      > in src/main/coerce.c):
+> 
+>      > double attribute_hidden
+>      > RealFromComplex(Rcomplex x, int *warn)
+>      > {
+>      >   if (ISNAN(x.r) || ISNAN(x.i))
+>      >       return NA_REAL;
+>      >   if (ISNAN(x.r)) return x.r;        <- line 208
+>      >   if (ISNAN(x.i)) return NA_REAL;    <- line 209
+>      >   if (x.i != 0)
+>      >      *warn |= WARN_IMAG;
+>      >   return x.r;
+>      > }
+> 
+>      > They were added in 2015 (revision 69410).
+> 
+> by me.  "Of course" the intent at the time was to  *replace* the
+> previous 2 lines and return NA/NaN of the "exact same kind"....
+> 
+> but in the mean time, I have learned that trying to preserve
+> exact *kinds* of NaN / NA is typically not platform portable,
+> anyway because compiler/library optimizations and
+> implementations are pretty "free to do what they want" with these.
+> 
+>      > They don't serve any purpose and might slow things down a little (unless
+>      > compiler optimization is able to ignore them). In any case they should
+>      > probably be removed.
+> 
+> I've cleaned up now, indeed back compatibly, i.e., removing both
+> lines as you suggested.
+> 
+> Thank you, Herv?!
+> 
+> Martin
+> 
+> 
+>      > Cheers,
+>      > H.
+> 
+>      > --
+>      > Herv? Pag?s
+> 
+>      > Bioconductor Core Team
+>      > hpages.on.github at gmail.com
+> 
+
+-- 
+Herv? Pag?s
+
+Bioconductor Core Team
+hpages.on.github at gmail.com
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Fri Sep 10 18:12:02 2021
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Fri, 10 Sep 2021 12:12:02 -0400
+Subject: [Rd] 
+ Spurious warnings in coercion from double/complex/character to raw
+In-Reply-To: <8b1874d6-b41b-8909-7ddb-2da0459618e2@gmail.com>
+References: <8b1874d6-b41b-8909-7ddb-2da0459618e2@gmail.com>
+Message-ID: <2b1460bb-a8e8-42ee-6623-b07a5858b332@gmail.com>
+
+On 10/09/2021 11:29 a.m., Herv? Pag?s wrote:
+> Hi,
+> 
+> The first warning below is unexpected and confusing:
+> 
+>     > as.raw(c(3e9, 5.1))
+>     [1] 00 05
+>     Warning messages:
+>     1: NAs introduced by coercion to integer range
+>     2: out-of-range values treated as 0 in coercion to raw
+> 
+> The reason we get it is that coercion from numeric to raw is currently
+> implemented on top of coercion from numeric to int (file
+> src/main/coerce.c, lines 700-710):
+> 
+>       case REALSXP:
+>           for (i = 0; i < n; i++) {
+> //          if ((i+1) % NINTERRUPT == 0) R_CheckUserInterrupt();
+>               tmp = IntegerFromReal(REAL_ELT(v, i), &warn);
+>               if(tmp == NA_INTEGER || tmp < 0 || tmp > 255) {
+>                   tmp = 0;
+>                   warn |= WARN_RAW;
+>               }
+>               pa[i] = (Rbyte) tmp;
+>           }
+>           break;
+> 
+> The first warning comes from the call to IntegerFromReal().
+> 
+> The following code avoids the spurious warning and is also simpler and
+> slightly faster:
+> 
+>       case REALSXP:
+>           for (i = 0; i < n; i++) {
+> //          if ((i+1) % NINTERRUPT == 0) R_CheckUserInterrupt();
+>               double vi = REAL_ELT(v, i);
+>               if(ISNAN(vi) || (tmp = (int) vi) < 0 || tmp > 255) {
+>                   tmp = 0;
+>                   warn |= WARN_RAW;
+>               }
+>               pa[i] = (Rbyte) tmp;
+>           }
+>           break;
+
+Doesn't that give different results in case vi is so large that "(int) 
+vi" overflows?  (I don't know what the C standard says, but some online 
+references say that behaviour is implementation dependent.)
+
+For example, if
+
+   vi = 1.0 +  INT_MAX;
+
+wouldn't "(int) vi" be equal to a small integer?
+
+Duncan Murdoch
+
+
+> 
+> Coercion from complex to raw has the same problem:
+> 
+>     > as.raw(c(3e9+0i, 5.1))
+>     [1] 00 05
+>     Warning messages:
+>     1: NAs introduced by coercion to integer range
+>     2: out-of-range values treated as 0 in coercion to raw
+> 
+> Current implementation (file src/main/coerce.c, lines 711-721):
+> 
+>       case CPLXSXP:
+>           for (i = 0; i < n; i++) {
+> //          if ((i+1) % NINTERRUPT == 0) R_CheckUserInterrupt();
+>               tmp = IntegerFromComplex(COMPLEX_ELT(v, i), &warn);
+>               if(tmp == NA_INTEGER || tmp < 0 || tmp > 255) {
+>                   tmp = 0;
+>                   warn |= WARN_RAW;
+>               }
+>               pa[i] = (Rbyte) tmp;
+>           }
+>           break;
+> 
+> This implementation has the following additional problem when the
+> supplied complex has a nonzero imaginary part:
+> 
+>     > as.raw(300+4i)
+>     [1] 00
+>     Warning messages:
+>     1: imaginary parts discarded in coercion
+>     2: out-of-range values treated as 0 in coercion to raw
+> 
+>     > as.raw(3e9+4i)
+>     [1] 00
+>     Warning messages:
+>     1: NAs introduced by coercion to integer range
+>     2: out-of-range values treated as 0 in coercion to raw
+> 
+> In one case we get a warning about the discarding of the imaginary part
+> but not the other case, which is unexpected. We should see the exact
+> same warning (or warnings) in both cases.
+> 
+> With the following fix we only get the warning about the discarding of
+> the imaginary part if we are not in a "out-of-range values treated as 0
+> in coercion to raw" situation:
+> 
+>       case CPLXSXP:
+>           for (i = 0; i < n; i++) {
+> //          if ((i+1) % NINTERRUPT == 0) R_CheckUserInterrupt();
+>               Rcomplex vi = COMPLEX_ELT(v, i);
+>               if(ISNAN(vi.r) || ISNAN(vi.i) || (tmp = (int) vi.r) < 0 ||
+> tmp > 255) {
+>                   tmp = 0;
+>                   warn |= WARN_RAW;
+>               } else {
+>                   if(vi.i != 0.0)
+>                       warn |= WARN_IMAG;
+>               }
+>               pa[i] = (Rbyte) tmp;
+>           }
+>           break;
+> 
+> Finally, coercion from character to raw has the same problem and its
+> code can be fixed in a similar manner:
+> 
+>     > as.raw(c("3e9", 5.1))
+>     [1] 00 05
+>     Warning messages:
+>     1: NAs introduced by coercion to integer range
+>     2: out-of-range values treated as 0 in coercion to raw
+> 
+> Cheers,
+> H.
+> 
+>
+
+
+From Andre@G||||bert @end|ng |rom chu-rouen@|r  Fri Sep 10 18:36:25 2021
+From: Andre@G||||bert @end|ng |rom chu-rouen@|r (GILLIBERT, Andre)
+Date: Fri, 10 Sep 2021 16:36:25 +0000
+Subject: [Rd] 
+ Spurious warnings in coercion from double/complex/character to raw
+In-Reply-To: <2b1460bb-a8e8-42ee-6623-b07a5858b332@gmail.com>
+References: <8b1874d6-b41b-8909-7ddb-2da0459618e2@gmail.com>,
+ <2b1460bb-a8e8-42ee-6623-b07a5858b332@gmail.com>
+Message-ID: <29503b11191c48cc81a9b972b395c880@chu-rouen.fr>
+
+Hello,
+
+
+Integer overflow is undefined behavior by the C standard.
+
+
+For instance, on my computer, with GCC 5.4.0, with the optimization level 2, the following program never stops:
+
+
+include <stdio.h>
+
+
+int main(void) {
+        for(int i=1; i != 0; i++) {
+                if ((i & 0xFFFFFFF) == 0) {
+                        printf("%d\n", i);
+                }
+        }
+}
+
+
+
+This is due to a compiler optimization, that assumes that the integer can never overflow, and so, can never be equal to zero, and so, the for loop should never stops. You should always be very cautious when adding two integers, to avoid any overflow. There is no problem with unsigned integers.
+
+
+Similarly, double-to-integer conversions are only safe if the double is in the range [INT_MIN to INT_MAX]
+
+
+The standard contains:
+
+When a finite value of real floating type is converted to an integer type other than _Bool,
+the fractional part is discarded (i.e., the value is truncated toward zero). If the value of
+the integral part cannot be represented by the integer type, the behavior is undefined
+
+
+The easiest solution to avoid a risk when converting, is to check that the double (e.g. vi) is in range [0 to 255] BEFORE converting to an integer.
+
+
+--
+
+Sincerely
+
+Andr? GILLIBERT
+
+________________________________
+De : R-devel <r-devel-bounces at r-project.org> de la part de Duncan Murdoch <murdoch.duncan at gmail.com>
+Envoy? : vendredi 10 septembre 2021 18:12:02
+? : Herv? Pag?s; r-devel
+Objet : Re: [Rd] Spurious warnings in coercion from double/complex/character to raw
+
+ATTENTION: Cet e-mail provient d?une adresse mail ext?rieure au CHU de Rouen. Ne cliquez pas sur les liens ou n'ouvrez pas les pi?ces jointes ? moins de conna?tre l'exp?diteur et de savoir que le contenu est s?r. En cas de doute, transf?rer le mail ? ? DSI, S?curit? ? pour analyse. Merci de votre vigilance
+
+
+On 10/09/2021 11:29 a.m., Herv? Pag?s wrote:
+> Hi,
+>
+> The first warning below is unexpected and confusing:
+>
+>     > as.raw(c(3e9, 5.1))
+>     [1] 00 05
+>     Warning messages:
+>     1: NAs introduced by coercion to integer range
+>     2: out-of-range values treated as 0 in coercion to raw
+>
+> The reason we get it is that coercion from numeric to raw is currently
+> implemented on top of coercion from numeric to int (file
+> src/main/coerce.c, lines 700-710):
+>
+>       case REALSXP:
+>           for (i = 0; i < n; i++) {
+> //          if ((i+1) % NINTERRUPT == 0) R_CheckUserInterrupt();
+>               tmp = IntegerFromReal(REAL_ELT(v, i), &warn);
+>               if(tmp == NA_INTEGER || tmp < 0 || tmp > 255) {
+>                   tmp = 0;
+>                   warn |= WARN_RAW;
+>               }
+>               pa[i] = (Rbyte) tmp;
+>           }
+>           break;
+>
+> The first warning comes from the call to IntegerFromReal().
+>
+> The following code avoids the spurious warning and is also simpler and
+> slightly faster:
+>
+>       case REALSXP:
+>           for (i = 0; i < n; i++) {
+> //          if ((i+1) % NINTERRUPT == 0) R_CheckUserInterrupt();
+>               double vi = REAL_ELT(v, i);
+>               if(ISNAN(vi) || (tmp = (int) vi) < 0 || tmp > 255) {
+>                   tmp = 0;
+>                   warn |= WARN_RAW;
+>               }
+>               pa[i] = (Rbyte) tmp;
+>           }
+>           break;
+
+Doesn't that give different results in case vi is so large that "(int)
+vi" overflows?  (I don't know what the C standard says, but some online
+references say that behaviour is implementation dependent.)
+
+For example, if
+
+   vi = 1.0 +  INT_MAX;
+
+wouldn't "(int) vi" be equal to a small integer?
+
+Duncan Murdoch
+
+
+>
+> Coercion from complex to raw has the same problem:
+>
+>     > as.raw(c(3e9+0i, 5.1))
+>     [1] 00 05
+>     Warning messages:
+>     1: NAs introduced by coercion to integer range
+>     2: out-of-range values treated as 0 in coercion to raw
+>
+> Current implementation (file src/main/coerce.c, lines 711-721):
+>
+>       case CPLXSXP:
+>           for (i = 0; i < n; i++) {
+> //          if ((i+1) % NINTERRUPT == 0) R_CheckUserInterrupt();
+>               tmp = IntegerFromComplex(COMPLEX_ELT(v, i), &warn);
+>               if(tmp == NA_INTEGER || tmp < 0 || tmp > 255) {
+>                   tmp = 0;
+>                   warn |= WARN_RAW;
+>               }
+>               pa[i] = (Rbyte) tmp;
+>           }
+>           break;
+>
+> This implementation has the following additional problem when the
+> supplied complex has a nonzero imaginary part:
+>
+>     > as.raw(300+4i)
+>     [1] 00
+>     Warning messages:
+>     1: imaginary parts discarded in coercion
+>     2: out-of-range values treated as 0 in coercion to raw
+>
+>     > as.raw(3e9+4i)
+>     [1] 00
+>     Warning messages:
+>     1: NAs introduced by coercion to integer range
+>     2: out-of-range values treated as 0 in coercion to raw
+>
+> In one case we get a warning about the discarding of the imaginary part
+> but not the other case, which is unexpected. We should see the exact
+> same warning (or warnings) in both cases.
+>
+> With the following fix we only get the warning about the discarding of
+> the imaginary part if we are not in a "out-of-range values treated as 0
+> in coercion to raw" situation:
+>
+>       case CPLXSXP:
+>           for (i = 0; i < n; i++) {
+> //          if ((i+1) % NINTERRUPT == 0) R_CheckUserInterrupt();
+>               Rcomplex vi = COMPLEX_ELT(v, i);
+>               if(ISNAN(vi.r) || ISNAN(vi.i) || (tmp = (int) vi.r) < 0 ||
+> tmp > 255) {
+>                   tmp = 0;
+>                   warn |= WARN_RAW;
+>               } else {
+>                   if(vi.i != 0.0)
+>                       warn |= WARN_IMAG;
+>               }
+>               pa[i] = (Rbyte) tmp;
+>           }
+>           break;
+>
+> Finally, coercion from character to raw has the same problem and its
+> code can be fixed in a similar manner:
+>
+>     > as.raw(c("3e9", 5.1))
+>     [1] 00 05
+>     Warning messages:
+>     1: NAs introduced by coercion to integer range
+>     2: out-of-range values treated as 0 in coercion to raw
+>
+> Cheers,
+> H.
+>
+>
+
+______________________________________________
+R-devel at r-project.org mailing list
+https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+	[[alternative HTML version deleted]]
+
+
+From hp@ge@@on@g|thub @end|ng |rom gm@||@com  Fri Sep 10 21:13:30 2021
+From: hp@ge@@on@g|thub @end|ng |rom gm@||@com (=?UTF-8?B?SGVydsOpIFBhZ8Oocw==?=)
+Date: Fri, 10 Sep 2021 12:13:30 -0700
+Subject: [Rd] 
+ Spurious warnings in coercion from double/complex/character to raw
+In-Reply-To: <2b1460bb-a8e8-42ee-6623-b07a5858b332@gmail.com>
+References: <8b1874d6-b41b-8909-7ddb-2da0459618e2@gmail.com>
+ <2b1460bb-a8e8-42ee-6623-b07a5858b332@gmail.com>
+Message-ID: <fe49f407-ab9a-2cac-7fed-15cc4a6e18b3@gmail.com>
+
+
+
+On 10/09/2021 09:12, Duncan Murdoch wrote:
+> On 10/09/2021 11:29 a.m., Herv? Pag?s wrote:
+>> Hi,
+>>
+>> The first warning below is unexpected and confusing:
+>>
+>> ??? > as.raw(c(3e9, 5.1))
+>> ??? [1] 00 05
+>> ??? Warning messages:
+>> ??? 1: NAs introduced by coercion to integer range
+>> ??? 2: out-of-range values treated as 0 in coercion to raw
+>>
+>> The reason we get it is that coercion from numeric to raw is currently
+>> implemented on top of coercion from numeric to int (file
+>> src/main/coerce.c, lines 700-710):
+>>
+>> ????? case REALSXP:
+>> ????????? for (i = 0; i < n; i++) {
+>> //????????? if ((i+1) % NINTERRUPT == 0) R_CheckUserInterrupt();
+>> ????????????? tmp = IntegerFromReal(REAL_ELT(v, i), &warn);
+>> ????????????? if(tmp == NA_INTEGER || tmp < 0 || tmp > 255) {
+>> ????????????????? tmp = 0;
+>> ????????????????? warn |= WARN_RAW;
+>> ????????????? }
+>> ????????????? pa[i] = (Rbyte) tmp;
+>> ????????? }
+>> ????????? break;
+>>
+>> The first warning comes from the call to IntegerFromReal().
+>>
+>> The following code avoids the spurious warning and is also simpler and
+>> slightly faster:
+>>
+>> ????? case REALSXP:
+>> ????????? for (i = 0; i < n; i++) {
+>> //????????? if ((i+1) % NINTERRUPT == 0) R_CheckUserInterrupt();
+>> ????????????? double vi = REAL_ELT(v, i);
+>> ????????????? if(ISNAN(vi) || (tmp = (int) vi) < 0 || tmp > 255) {
+>> ????????????????? tmp = 0;
+>> ????????????????? warn |= WARN_RAW;
+>> ????????????? }
+>> ????????????? pa[i] = (Rbyte) tmp;
+>> ????????? }
+>> ????????? break;
+> 
+> Doesn't that give different results in case vi is so large that "(int) 
+> vi" overflows?? (I don't know what the C standard says, but some online 
+> references say that behaviour is implementation dependent.)
+> 
+> For example, if
+> 
+>  ? vi = 1.0 +? INT_MAX;
+> 
+> wouldn't "(int) vi" be equal to a small integer?
+
+Good catch, thanks!
+
+Replacing
+
+     if(ISNAN(vi) || (tmp = (int) vi) < 0 || tmp > 255) {
+         tmp = 0;
+
+         warn |= WARN_RAW;
+
+     }
+     pa[i] = (Rbyte) tmp;
+
+with
+
+     if(ISNAN(vi) || vi <= -1.0 || vi >= 256.0)
+  {
+         tmp = 0;
+
+         warn |= WARN_RAW;
+
+     } else {
+         tmp = (int) vi;
+     }
+     pa[i] = (Rbyte) tmp;
+
+should address that.
+
+FWIW IntegerFromReal() has a similar risk of int overflow 
+(src/main/coerce.c, lines 128-138):
+
+   int attribute_hidden
+
+   IntegerFromReal(double x, int *warn)
+
+   {
+
+       if (ISNAN(x))
+
+           return NA_INTEGER;
+
+       else if (x >= INT_MAX+1. || x <= INT_MIN ) {
+
+           *warn |= WARN_INT_NA;
+
+           return NA_INTEGER;
+
+       }
+
+       return (int) x;
+
+   }
+
+
+
+The cast to int will also be an int overflow situation if x is > INT_MAX 
+and < INT_MAX+1 so the risk is small! There are other instances of this 
+situation in IntegerFromComplex() and IntegerFromString().
+
+More below...
+
+> 
+> Duncan Murdoch
+> 
+> 
+>>
+>> Coercion from complex to raw has the same problem:
+>>
+>> ??? > as.raw(c(3e9+0i, 5.1))
+>> ??? [1] 00 05
+>> ??? Warning messages:
+>> ??? 1: NAs introduced by coercion to integer range
+>> ??? 2: out-of-range values treated as 0 in coercion to raw
+>>
+>> Current implementation (file src/main/coerce.c, lines 711-721):
+>>
+>> ????? case CPLXSXP:
+>> ????????? for (i = 0; i < n; i++) {
+>> //????????? if ((i+1) % NINTERRUPT == 0) R_CheckUserInterrupt();
+>> ????????????? tmp = IntegerFromComplex(COMPLEX_ELT(v, i), &warn);
+>> ????????????? if(tmp == NA_INTEGER || tmp < 0 || tmp > 255) {
+>> ????????????????? tmp = 0;
+>> ????????????????? warn |= WARN_RAW;
+>> ????????????? }
+>> ????????????? pa[i] = (Rbyte) tmp;
+>> ????????? }
+>> ????????? break;
+>>
+>> This implementation has the following additional problem when the
+>> supplied complex has a nonzero imaginary part:
+>>
+>> ??? > as.raw(300+4i)
+>> ??? [1] 00
+>> ??? Warning messages:
+>> ??? 1: imaginary parts discarded in coercion
+>> ??? 2: out-of-range values treated as 0 in coercion to raw
+>>
+>> ??? > as.raw(3e9+4i)
+>> ??? [1] 00
+>> ??? Warning messages:
+>> ??? 1: NAs introduced by coercion to integer range
+>> ??? 2: out-of-range values treated as 0 in coercion to raw
+>>
+>> In one case we get a warning about the discarding of the imaginary part
+>> but not the other case, which is unexpected. We should see the exact
+>> same warning (or warnings) in both cases.
+>>
+>> With the following fix we only get the warning about the discarding of
+>> the imaginary part if we are not in a "out-of-range values treated as 0
+>> in coercion to raw" situation:
+>>
+>> ????? case CPLXSXP:
+>> ????????? for (i = 0; i < n; i++) {
+>> //????????? if ((i+1) % NINTERRUPT == 0) R_CheckUserInterrupt();
+>> ????????????? Rcomplex vi = COMPLEX_ELT(v, i);
+>> ????????????? if(ISNAN(vi.r) || ISNAN(vi.i) || (tmp = (int) vi.r) < 0 ||
+>> tmp > 255) {
+>> ????????????????? tmp = 0;
+>> ????????????????? warn |= WARN_RAW;
+>> ????????????? } else {
+>> ????????????????? if(vi.i != 0.0)
+>> ????????????????????? warn |= WARN_IMAG;
+>> ????????????? }
+>> ????????????? pa[i] = (Rbyte) tmp;
+>> ????????? }
+>> ????????? break;
+
+Corrected version:
+
+     if(ISNAN(vi.r) || ISNAN(vi.i) || vi.r <= -1.00 ||
+  vi.r >= 256.00) {
+
+         tmp = 0;
+
+         warn |= WARN_RAW;
+
+     } else {
+
+         tmp = (int) vi.r;
+         if(vi.i != 0.0)
+
+             warn |= WARN_IMAG;
+
+     }
+
+     pa[i] = (Rbyte) tmp;
+
+Hopefully this time I got it right.
+
+Best,
+H.
+
+>>
+>> Finally, coercion from character to raw has the same problem and its
+>> code can be fixed in a similar manner:
+>>
+>> ??? > as.raw(c("3e9", 5.1))
+>> ??? [1] 00 05
+>> ??? Warning messages:
+>> ??? 1: NAs introduced by coercion to integer range
+>> ??? 2: out-of-range values treated as 0 in coercion to raw
+>>
+>> Cheers,
+>> H.
+>>
+>>
+> 
+
+-- 
+Herv? Pag?s
+
+Bioconductor Core Team
+hpages.on.github at gmail.com
+
+
+From brod|e@g@@|@m @end|ng |rom y@hoo@com  Fri Sep 10 21:53:04 2021
+From: brod|e@g@@|@m @end|ng |rom y@hoo@com (brodie gaslam)
+Date: Fri, 10 Sep 2021 19:53:04 +0000 (UTC)
+Subject: [Rd] 
+ Spurious warnings in coercion from double/complex/character to raw
+In-Reply-To: <fe49f407-ab9a-2cac-7fed-15cc4a6e18b3@gmail.com>
+References: <8b1874d6-b41b-8909-7ddb-2da0459618e2@gmail.com>
+ <2b1460bb-a8e8-42ee-6623-b07a5858b332@gmail.com>
+ <fe49f407-ab9a-2cac-7fed-15cc4a6e18b3@gmail.com>
+Message-ID: <1604597188.364742.1631303584179@mail.yahoo.com>
+
+
+> On Friday, September 10, 2021, 03:13:54 PM EDT, Herv? Pag?s <hpages.on.github at gmail.com> wrote:
+>
+> Good catch, thanks!
+>
+> Replacing
+>
+>???? if(ISNAN(vi) || (tmp = (int) vi) < 0 || tmp > 255) {
+>???????? tmp = 0;
+>
+>???????? warn |= WARN_RAW;
+>
+>???? }
+>???? pa[i] = (Rbyte) tmp;
+>
+> with
+>
+>???? if(ISNAN(vi) || vi <= -1.0 || vi >= 256.0)
+>?? {
+>???????? tmp = 0;
+>
+>???????? warn |= WARN_RAW;
+>
+>???? } else {
+>???????? tmp = (int) vi;
+>???? }
+>???? pa[i] = (Rbyte) tmp;
+>
+> should address that.
+>
+> FWIW IntegerFromReal() has a similar risk of int overflow
+> (src/main/coerce.c, lines 128-138):
+>
+>
+>?? int attribute_hidden
+>
+>?? IntegerFromReal(double x, int *warn)
+>
+>?? {
+>
+>?????? if (ISNAN(x))
+>
+>?????????? return NA_INTEGER;
+>
+>?????? else if (x >= INT_MAX+1. || x <= INT_MIN ) {
+>
+>?????????? *warn |= WARN_INT_NA;
+>
+>?????????? return NA_INTEGER;
+>
+>?????? }
+>
+>?????? return (int) x;
+>
+>?? }
+>
+>
+>
+> The cast to int will also be an int overflow situation if x is > INT_MAX
+> and < INT_MAX+1 so the risk is small!
+
+I might be being dense, but it feels this isn't a problem?? Quoting C99
+6.3.1.4 again (emph added):
+
+> When a finite value of real floating type is converted to an integer
+> type other than _Bool, **the fractional part is discarded** (i.e., the
+> value is truncated toward zero). If the value of the integral part
+> cannot be represented by the integer type, the behavior is undefined.50)
+
+Does the "fractional part is discarded" not save us here?
+
+Best,
+
+B.
+
+
+From hp@ge@@on@g|thub @end|ng |rom gm@||@com  Fri Sep 10 23:14:39 2021
+From: hp@ge@@on@g|thub @end|ng |rom gm@||@com (=?UTF-8?B?SGVydsOpIFBhZ8Oocw==?=)
+Date: Fri, 10 Sep 2021 14:14:39 -0700
+Subject: [Rd] 
+ Spurious warnings in coercion from double/complex/character to raw
+In-Reply-To: <1604597188.364742.1631303584179@mail.yahoo.com>
+References: <8b1874d6-b41b-8909-7ddb-2da0459618e2@gmail.com>
+ <2b1460bb-a8e8-42ee-6623-b07a5858b332@gmail.com>
+ <fe49f407-ab9a-2cac-7fed-15cc4a6e18b3@gmail.com>
+ <1604597188.364742.1631303584179@mail.yahoo.com>
+Message-ID: <ad5994f2-1e6b-6059-52aa-6c0f4c0d04b1@gmail.com>
+
+
+
+On 10/09/2021 12:53, brodie gaslam wrote:
+> 
+>> On Friday, September 10, 2021, 03:13:54 PM EDT, Herv? Pag?s <hpages.on.github at gmail.com> wrote:
+>>
+>> Good catch, thanks!
+>>
+>> Replacing
+>>
+>>  ???? if(ISNAN(vi) || (tmp = (int) vi) < 0 || tmp > 255) {
+>>  ???????? tmp = 0;
+>>
+>>  ???????? warn |= WARN_RAW;
+>>
+>>  ???? }
+>>  ???? pa[i] = (Rbyte) tmp;
+>>
+>> with
+>>
+>>  ???? if(ISNAN(vi) || vi <= -1.0 || vi >= 256.0)
+>>  ?? {
+>>  ???????? tmp = 0;
+>>
+>>  ???????? warn |= WARN_RAW;
+>>
+>>  ???? } else {
+>>  ???????? tmp = (int) vi;
+>>  ???? }
+>>  ???? pa[i] = (Rbyte) tmp;
+>>
+>> should address that.
+>>
+>> FWIW IntegerFromReal() has a similar risk of int overflow
+>> (src/main/coerce.c, lines 128-138):
+>>
+>>
+>>  ?? int attribute_hidden
+>>
+>>  ?? IntegerFromReal(double x, int *warn)
+>>
+>>  ?? {
+>>
+>>  ?????? if (ISNAN(x))
+>>
+>>  ?????????? return NA_INTEGER;
+>>
+>>  ?????? else if (x >= INT_MAX+1. || x <= INT_MIN ) {
+>>
+>>  ?????????? *warn |= WARN_INT_NA;
+>>
+>>  ?????????? return NA_INTEGER;
+>>
+>>  ?????? }
+>>
+>>  ?????? return (int) x;
+>>
+>>  ?? }
+>>
+>>
+>>
+>> The cast to int will also be an int overflow situation if x is > INT_MAX
+>> and < INT_MAX+1 so the risk is small!
+> 
+> I might be being dense, but it feels this isn't a problem?? Quoting C99
+> 6.3.1.4 again (emph added):
+> 
+>> When a finite value of real floating type is converted to an integer
+>> type other than _Bool, **the fractional part is discarded** (i.e., the
+>> value is truncated toward zero). If the value of the integral part
+>> cannot be represented by the integer type, the behavior is undefined.50)
+> 
+> Does the "fractional part is discarded" not save us here?
+
+I think it does. Thanks for clarifying and sorry for the false positive!
+
+H.
+
+> 
+> Best,
+> 
+> B.
+> 
+> 
+
+-- 
+Herv? Pag?s
+
+Bioconductor Core Team
+hpages.on.github at gmail.com
+
+
