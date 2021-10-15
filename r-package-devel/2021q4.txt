@@ -1,0 +1,2422 @@
+From rhe|p @end|ng |rom eoo@@dd@@n|  Fri Oct  1 13:52:01 2021
+From: rhe|p @end|ng |rom eoo@@dd@@n| (Jan van der Laan)
+Date: Fri, 1 Oct 2021 13:52:01 +0200
+Subject: [R-pkg-devel] Tests run without --as-cran and not with
+In-Reply-To: <20210930195925.2fd0ea80@Tarkus>
+References: <bef68b00-0b1a-f56c-22ee-f75888b489bc@dds.nl>
+ <20210930195925.2fd0ea80@Tarkus>
+Message-ID: <c4400714-68fb-5545-27cf-aaee31e089d0@dds.nl>
+
+Thanks! That looks relevant.
+
+I think I have found the relevant source code in pandoc, and it seems it 
+just calls Rscript without path. So it will probably call the dummy 
+Rscript. Hmm, I'll have to think how to fix that.
+
+It is probably good that R CMD check checks this as this could cause 
+weird errors when people have multiple versions of R on their system.
+
+Best,
+Jan
+
+
+
+On 30-09-2021 18:59, Ivan Krylov wrote:
+> On Fri, 24 Sep 2021 21:48:12 +0200
+> Jan van der Laan <rhelp at eoos.dds.nl> wrote:
+> 
+>> my tests run fine when run with R CMD check, but not with R CMD check
+>> --as-cran
+> 
+> <...>
+> 
+>> pandoc then calls R again with a script which is part of the package
+> 
+> Part of R CMD check --as-cran is placing fake R and Rscript executables
+> on the PATH (but currently not on Windows):
+> 
+> https://github.com/r-devel/r-svn/blob/98f33a2a7b22f400d51220162cf400a0cfdc9aaf/src/library/tools/R/check.R#L279
+> 
+> https://github.com/r-devel/r-svn/blob/98f33a2a7b22f400d51220162cf400a0cfdc9aaf/src/library/tools/R/check.R#L6297-L6323
+> 
+> Does the pandoc script use the R_HOME variable to call the correct R
+> executable?
+>
+
+
+From r@c@rtwr|ght @end|ng |rom gm@||@com  Sat Oct  2 00:14:43 2021
+From: r@c@rtwr|ght @end|ng |rom gm@||@com (Reed A. Cartwright)
+Date: Fri, 1 Oct 2021 15:14:43 -0700
+Subject: [R-pkg-devel] Lists vs Attributes
+Message-ID: <CALOkxuwsK0Ej3+tRHPWotB3C4M4EAd1GGu2yyhYpCjBqyvae2A@mail.gmail.com>
+
+I'm rethinking the interface of a package, specifically how external binary
+data is formatted for use in R. I can't decide if it is better to use
+attributes to store metadata or use a list to hold the main data and
+metadata as separate elements.
+
+Here's is what one datatype currently looks like:
+
+List of 2
+ $ : int [1:16, 1:16, 1:16] 9 9 9 9 10 10 1 1 14 14 ...
+  ..- attr(*, "palette")=List of 16
+ [snip]
+ $ : int [1:16, 1:16, 1:16] 1 1 1 1 1 1 1 1 1 1 ...
+  ..- attr(*, "palette")=List of 2
+ [snip]
+  - attr(*, "offset")= int 3
+
+It's a list of two 16x16x16 arrays of integers. Each array has its own
+"palette" attribute. Each value in the array refers to a specific element
+of the palette. In addition the entire list has an offset attribute.
+
+I am considering alternative strategies for representing this data, and I
+would like any opinions on which style is recommended and why?
+
+List of 3
+ $ index  :List of 2
+  ..$ : int [1:16, 1:16, 1:16] 9 9 9 9 10 10 1 1 14 14 ...
+  ..$ : int [1:16, 1:16, 1:16] 1 1 1 1 1 1 1 1 1 1 ...
+ $ palette:List of 2
+  ..$ :List of 16
+  ..$ :LIST of 2
+ $ offset : int 3
+
+or
+
+List of 2
+ $ :List of 2
+  ..$ index: int [1:16, 1:16, 1:16] 9 9 9 9 10 10 1 1 14 14 ...
+  ..$ palette:List of 16
+ $ : List of 2
+ ..$ index : int [1:16, 1:16, 1:16] 1 1 1 1 1 1 1 1 1 1 ...
+ ..$ palette : List of 2
+ - attr(*, "offset")= int 3
+
+Thanks.
+
+	[[alternative HTML version deleted]]
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Sat Oct  2 02:30:56 2021
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Fri, 1 Oct 2021 20:30:56 -0400
+Subject: [R-pkg-devel] Lists vs Attributes
+In-Reply-To: <CALOkxuwsK0Ej3+tRHPWotB3C4M4EAd1GGu2yyhYpCjBqyvae2A@mail.gmail.com>
+References: <CALOkxuwsK0Ej3+tRHPWotB3C4M4EAd1GGu2yyhYpCjBqyvae2A@mail.gmail.com>
+Message-ID: <4eeb68f6-fb46-c964-d15c-eeb0b4e3112d@gmail.com>
+
+On 01/10/2021 6:14 p.m., Reed A. Cartwright wrote:
+> I'm rethinking the interface of a package, specifically how external binary
+> data is formatted for use in R. I can't decide if it is better to use
+> attributes to store metadata or use a list to hold the main data and
+> metadata as separate elements.
+
+Is the object like some other common R object?  You say it's a 16x16x16 
+array of integers.  Is there an advantage to treating it *exactly* like 
+that, so x[1,2,3] gives an integer?  Then put the other stuff in attributes.
+
+Is it weird enough that x[1,2,3] *needs* to look at the other attributes 
+to know what to return?  Does it never make sense to do regular 
+operations on the object, as though it really was 16x16x16 array of 
+integers?  Then make it a list of different components, and spend the 
+time to define methods to handle any operations that do make sense.
+
+Both approaches are possible; you want to choose the one that is 
+easiest, and most maintainable.
+
+Duncan Murdoch
+
+> 
+> Here's is what one datatype currently looks like:
+> 
+> List of 2
+>   $ : int [1:16, 1:16, 1:16] 9 9 9 9 10 10 1 1 14 14 ...
+>    ..- attr(*, "palette")=List of 16
+>   [snip]
+>   $ : int [1:16, 1:16, 1:16] 1 1 1 1 1 1 1 1 1 1 ...
+>    ..- attr(*, "palette")=List of 2
+>   [snip]
+>    - attr(*, "offset")= int 3
+> 
+> It's a list of two 16x16x16 arrays of integers. Each array has its own
+> "palette" attribute. Each value in the array refers to a specific element
+> of the palette. In addition the entire list has an offset attribute.
+> 
+> I am considering alternative strategies for representing this data, and I
+> would like any opinions on which style is recommended and why?
+> 
+> List of 3
+>   $ index  :List of 2
+>    ..$ : int [1:16, 1:16, 1:16] 9 9 9 9 10 10 1 1 14 14 ...
+>    ..$ : int [1:16, 1:16, 1:16] 1 1 1 1 1 1 1 1 1 1 ...
+>   $ palette:List of 2
+>    ..$ :List of 16
+>    ..$ :LIST of 2
+>   $ offset : int 3
+> 
+> or
+> 
+> List of 2
+>   $ :List of 2
+>    ..$ index: int [1:16, 1:16, 1:16] 9 9 9 9 10 10 1 1 14 14 ...
+>    ..$ palette:List of 16
+>   $ : List of 2
+>   ..$ index : int [1:16, 1:16, 1:16] 1 1 1 1 1 1 1 1 1 1 ...
+>   ..$ palette : List of 2
+>   - attr(*, "offset")= int 3
+> 
+> Thanks.
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+
+
+From jdnewm|| @end|ng |rom dcn@d@v|@@c@@u@  Sat Oct  2 03:48:08 2021
+From: jdnewm|| @end|ng |rom dcn@d@v|@@c@@u@ (Jeff Newmiller)
+Date: Fri, 01 Oct 2021 18:48:08 -0700
+Subject: [R-pkg-devel] Lists vs Attributes
+In-Reply-To: <4eeb68f6-fb46-c964-d15c-eeb0b4e3112d@gmail.com>
+References: <CALOkxuwsK0Ej3+tRHPWotB3C4M4EAd1GGu2yyhYpCjBqyvae2A@mail.gmail.com>
+ <4eeb68f6-fb46-c964-d15c-eeb0b4e3112d@gmail.com>
+Message-ID: <880DA717-591D-4338-ADAA-457A7F1A389F@dcn.davis.ca.us>
+
+Duncan has used the phrase "do regular operations on the object" to divide the use cases and emphasized that needing the attributes might be important, but he did not come out and remind you that if you _do_ perform regular operations on it then the outputs of those operations are likely to lose the attributes, which is why you might want to avoid relying on them if that is an issue for your class use cases.
+
+On October 1, 2021 5:30:56 PM PDT, Duncan Murdoch <murdoch.duncan at gmail.com> wrote:
+>On 01/10/2021 6:14 p.m., Reed A. Cartwright wrote:
+>> I'm rethinking the interface of a package, specifically how external binary
+>> data is formatted for use in R. I can't decide if it is better to use
+>> attributes to store metadata or use a list to hold the main data and
+>> metadata as separate elements.
+>
+>Is the object like some other common R object?  You say it's a 16x16x16 
+>array of integers.  Is there an advantage to treating it *exactly* like 
+>that, so x[1,2,3] gives an integer?  Then put the other stuff in attributes.
+>
+>Is it weird enough that x[1,2,3] *needs* to look at the other attributes 
+>to know what to return?  Does it never make sense to do regular 
+>operations on the object, as though it really was 16x16x16 array of 
+>integers?  Then make it a list of different components, and spend the 
+>time to define methods to handle any operations that do make sense.
+>
+>Both approaches are possible; you want to choose the one that is 
+>easiest, and most maintainable.
+>
+>Duncan Murdoch
+>
+>> 
+>> Here's is what one datatype currently looks like:
+>> 
+>> List of 2
+>>   $ : int [1:16, 1:16, 1:16] 9 9 9 9 10 10 1 1 14 14 ...
+>>    ..- attr(*, "palette")=List of 16
+>>   [snip]
+>>   $ : int [1:16, 1:16, 1:16] 1 1 1 1 1 1 1 1 1 1 ...
+>>    ..- attr(*, "palette")=List of 2
+>>   [snip]
+>>    - attr(*, "offset")= int 3
+>> 
+>> It's a list of two 16x16x16 arrays of integers. Each array has its own
+>> "palette" attribute. Each value in the array refers to a specific element
+>> of the palette. In addition the entire list has an offset attribute.
+>> 
+>> I am considering alternative strategies for representing this data, and I
+>> would like any opinions on which style is recommended and why?
+>> 
+>> List of 3
+>>   $ index  :List of 2
+>>    ..$ : int [1:16, 1:16, 1:16] 9 9 9 9 10 10 1 1 14 14 ...
+>>    ..$ : int [1:16, 1:16, 1:16] 1 1 1 1 1 1 1 1 1 1 ...
+>>   $ palette:List of 2
+>>    ..$ :List of 16
+>>    ..$ :LIST of 2
+>>   $ offset : int 3
+>> 
+>> or
+>> 
+>> List of 2
+>>   $ :List of 2
+>>    ..$ index: int [1:16, 1:16, 1:16] 9 9 9 9 10 10 1 1 14 14 ...
+>>    ..$ palette:List of 16
+>>   $ : List of 2
+>>   ..$ index : int [1:16, 1:16, 1:16] 1 1 1 1 1 1 1 1 1 1 ...
+>>   ..$ palette : List of 2
+>>   - attr(*, "offset")= int 3
+>> 
+>> Thanks.
+>> 
+>> 	[[alternative HTML version deleted]]
+>> 
+>> ______________________________________________
+>> R-package-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>>
+>
+>______________________________________________
+>R-package-devel at r-project.org mailing list
+>https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+-- 
+Sent from my phone. Please excuse my brevity.
+
+
+From pik@pp@@devei m@iii@g oii gm@ii@com  Thu Oct  7 23:20:20 2021
+From: pik@pp@@devei m@iii@g oii gm@ii@com (pik@pp@@devei m@iii@g oii gm@ii@com)
+Date: Thu, 7 Oct 2021 23:20:20 +0200
+Subject: [R-pkg-devel] Formula modeling
+Message-ID: <000401d7bbc1$2274c840$675e58c0$@gmail.com>
+
+Dear R-package-devel subscribers,
+
+ 
+
+My question concerns a package design issue relating to the usage of
+formulas.
+
+ 
+
+I am interested in describing via formulas systems of the form:
+
+ 
+
+d = p + x + y 
+
+s = p + w + y
+
+p = z + y
+
+q = min(d,s).
+
+ 
+
+The context in which I am working is that of market models with, primarily,
+panel data. In the above system, one may think of the first equation as
+demand, the second as supply, and the third as an equation (co-)determining
+prices. The fourth equation is implicitly used by the estimation method, and
+it does not need to be specified when programming the R formula. If you need
+more information bout the system, you may check the package diseq.
+Currently, I am using constructors to build market model objects. In a
+constructor call, I pass [i] the right-hand sides of the first three
+equations as strings, [ii] an argument indicating whether the equations of
+the system have correlated shocks, [iii] the identifiers of the used dataset
+(one for the subjects of the panel and one for time), and [iv] the quantity
+(q) and price (p) variables. These four arguments contain all the necessary
+information for constructing a model.
+
+ 
+
+I would now like to re-implement model construction using formulas, which
+would be a more regular practice for most R users. I am currently
+considering passing all the above information with a single formula of the
+form:
+
+ 
+
+q | p | subject | time | rho ~ p + x + y | p + w + y | z + y 
+
+ 
+
+where subject and time are the identifiers, and rho indicates whether
+correlated or independent shocks should be used.
+
+ 
+
+I am unaware of other packages that use formulas in this way (for instance,
+passing the identifiers in the formula), and I wonder if this would go
+against any good practices. Would it be better to exclude some of the
+necessary elements for constructing the model? This might make the resuting
+formulas more similar to those of models with multiple responses or multiple
+parts. I am not sure, though, how one would use such model formulas without
+all the relevant information. Is there any suggested design alternative that
+I could check?
+
+ 
+
+I would appreciate any suggestions and discussion!
+
+ 
+
+Kind regards,
+
+Pantelis
+
+
+	[[alternative HTML version deleted]]
+
+
+From rmh @end|ng |rom temp|e@edu  Thu Oct  7 23:51:15 2021
+From: rmh @end|ng |rom temp|e@edu (Richard M. Heiberger)
+Date: Thu, 7 Oct 2021 21:51:15 +0000
+Subject: [R-pkg-devel] [External]  Formula modeling
+In-Reply-To: <000401d7bbc1$2274c840$675e58c0$@gmail.com>
+References: <000401d7bbc1$2274c840$675e58c0$@gmail.com>
+Message-ID: <0C8570AB-3D33-4EAB-A0E9-1BC99149E93A@temple.edu>
+
+I am responding to a subset of what you asked.  There are packages which use multiple formulas
+in their argument sequence.
+
+
+What you have as a single formula with | as a separator
+q | p | subject | time | rho ~ p + x + y | p + w + y | z + y 
+I think would be better as a comma-separated list of formulas
+
+q , p , subject , time , rho ~ p + x + y , p + w + y , z + y 
+
+because in R notation | is usually an operator, not a separator.
+
+lattice uses formulas and the | is used as a conditioning operator.
+
+nlme and lme4 can have multiple formulas in the same calling sequence.
+
+lme4 is newer.  from its ?lme4-package
+?lme4? covers approximately the same ground as the earlier ?nlme?
+     package.
+
+lme4 should probably be the modelyou are looking for for the package design.
+
+> On Oct 07, 2021, at 17:20, pikappa.devel at gmail.com wrote:
+> 
+> Dear R-package-devel subscribers,
+> 
+> 
+> 
+> My question concerns a package design issue relating to the usage of
+> formulas.
+> 
+> 
+> 
+> I am interested in describing via formulas systems of the form:
+> 
+> 
+> 
+> d = p + x + y 
+> 
+> s = p + w + y
+> 
+> p = z + y
+> 
+> q = min(d,s).
+> 
+> 
+> 
+> The context in which I am working is that of market models with, primarily,
+> panel data. In the above system, one may think of the first equation as
+> demand, the second as supply, and the third as an equation (co-)determining
+> prices. The fourth equation is implicitly used by the estimation method, and
+> it does not need to be specified when programming the R formula. If you need
+> more information bout the system, you may check the package diseq.
+> Currently, I am using constructors to build market model objects. In a
+> constructor call, I pass [i] the right-hand sides of the first three
+> equations as strings, [ii] an argument indicating whether the equations of
+> the system have correlated shocks, [iii] the identifiers of the used dataset
+> (one for the subjects of the panel and one for time), and [iv] the quantity
+> (q) and price (p) variables. These four arguments contain all the necessary
+> information for constructing a model.
+> 
+> 
+> 
+> I would now like to re-implement model construction using formulas, which
+> would be a more regular practice for most R users. I am currently
+> considering passing all the above information with a single formula of the
+> form:
+> 
+> 
+> 
+> q | p | subject | time | rho ~ p + x + y | p + w + y | z + y 
+> 
+> 
+> 
+> where subject and time are the identifiers, and rho indicates whether
+> correlated or independent shocks should be used.
+> 
+> 
+> 
+> I am unaware of other packages that use formulas in this way (for instance,
+> passing the identifiers in the formula), and I wonder if this would go
+> against any good practices. Would it be better to exclude some of the
+> necessary elements for constructing the model? This might make the resuting
+> formulas more similar to those of models with multiple responses or multiple
+> parts. I am not sure, though, how one would use such model formulas without
+> all the relevant information. Is there any suggested design alternative that
+> I could check?
+> 
+> 
+> 
+> I would appreciate any suggestions and discussion!
+> 
+> 
+> 
+> Kind regards,
+> 
+> Pantelis
+> 
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://nam10.safelinks.protection.outlook.com/?url=https%3A%2F%2Fstat.ethz.ch%2Fmailman%2Flistinfo%2Fr-package-devel&amp;data=04%7C01%7Crmh%40temple.edu%7C21a51d63bc6242e5e24908d989d84fce%7C716e81efb52244738e3110bd02ccf6e5%7C0%7C0%7C637692385020500219%7CUnknown%7CTWFpbGZsb3d8eyJWIjoiMC4wLjAwMDAiLCJQIjoiV2luMzIiLCJBTiI6Ik1haWwiLCJXVCI6Mn0%3D%7C3000&amp;sdata=UKazmoIzXSn8DDQY3diUTPmVIg1cfTI3e1roXyo2DMQ%3D&amp;reserved=0
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Thu Oct  7 23:58:34 2021
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Thu, 7 Oct 2021 17:58:34 -0400
+Subject: [R-pkg-devel] [External] Formula modeling
+In-Reply-To: <0C8570AB-3D33-4EAB-A0E9-1BC99149E93A@temple.edu>
+References: <000401d7bbc1$2274c840$675e58c0$@gmail.com>
+ <0C8570AB-3D33-4EAB-A0E9-1BC99149E93A@temple.edu>
+Message-ID: <2b25dca4-6c0c-7759-779a-3a11e670acfc@gmail.com>
+
+I don't work with models like this, but I would find it more natural to 
+express the multiple formulas in a list:
+
+   list(d ~ p + x + y, s ~ p + w + y, p ~ z + y)
+
+I'd really have no idea how either of the proposals below should be parsed.
+
+Of course, if people working with models like this are used to working 
+with notation like yours, that would be a strong argument to use your 
+notation.
+
+Duncan Murdoch
+
+On 07/10/2021 5:51 p.m., Richard M. Heiberger wrote:
+> I am responding to a subset of what you asked.  There are packages which use multiple formulas
+> in their argument sequence.
+> 
+> 
+> What you have as a single formula with | as a separator
+> q | p | subject | time | rho ~ p + x + y | p + w + y | z + y
+> I think would be better as a comma-separated list of formulas
+> 
+> q , p , subject , time , rho ~ p + x + y , p + w + y , z + y
+> 
+> because in R notation | is usually an operator, not a separator.
+> 
+> lattice uses formulas and the | is used as a conditioning operator.
+> 
+> nlme and lme4 can have multiple formulas in the same calling sequence.
+> 
+> lme4 is newer.  from its ?lme4-package
+> ?lme4? covers approximately the same ground as the earlier ?nlme?
+>       package.
+> 
+> lme4 should probably be the modelyou are looking for for the package design.
+> 
+>> On Oct 07, 2021, at 17:20, pikappa.devel at gmail.com wrote:
+>>
+>> Dear R-package-devel subscribers,
+>>
+>>
+>>
+>> My question concerns a package design issue relating to the usage of
+>> formulas.
+>>
+>>
+>>
+>> I am interested in describing via formulas systems of the form:
+>>
+>>
+>>
+>> d = p + x + y
+>>
+>> s = p + w + y
+>>
+>> p = z + y
+>>
+>> q = min(d,s).
+>>
+>>
+>>
+>> The context in which I am working is that of market models with, primarily,
+>> panel data. In the above system, one may think of the first equation as
+>> demand, the second as supply, and the third as an equation (co-)determining
+>> prices. The fourth equation is implicitly used by the estimation method, and
+>> it does not need to be specified when programming the R formula. If you need
+>> more information bout the system, you may check the package diseq.
+>> Currently, I am using constructors to build market model objects. In a
+>> constructor call, I pass [i] the right-hand sides of the first three
+>> equations as strings, [ii] an argument indicating whether the equations of
+>> the system have correlated shocks, [iii] the identifiers of the used dataset
+>> (one for the subjects of the panel and one for time), and [iv] the quantity
+>> (q) and price (p) variables. These four arguments contain all the necessary
+>> information for constructing a model.
+>>
+>>
+>>
+>> I would now like to re-implement model construction using formulas, which
+>> would be a more regular practice for most R users. I am currently
+>> considering passing all the above information with a single formula of the
+>> form:
+>>
+>>
+>>
+>> q | p | subject | time | rho ~ p + x + y | p + w + y | z + y
+>>
+>>
+>>
+>> where subject and time are the identifiers, and rho indicates whether
+>> correlated or independent shocks should be used.
+>>
+>>
+>>
+>> I am unaware of other packages that use formulas in this way (for instance,
+>> passing the identifiers in the formula), and I wonder if this would go
+>> against any good practices. Would it be better to exclude some of the
+>> necessary elements for constructing the model? This might make the resuting
+>> formulas more similar to those of models with multiple responses or multiple
+>> parts. I am not sure, though, how one would use such model formulas without
+>> all the relevant information. Is there any suggested design alternative that
+>> I could check?
+>>
+>>
+>>
+>> I would appreciate any suggestions and discussion!
+>>
+>>
+>>
+>> Kind regards,
+>>
+>> Pantelis
+>>
+>>
+>> 	[[alternative HTML version deleted]]
+>>
+>> ______________________________________________
+>> R-package-devel at r-project.org mailing list
+>> https://nam10.safelinks.protection.outlook.com/?url=https%3A%2F%2Fstat.ethz.ch%2Fmailman%2Flistinfo%2Fr-package-devel&amp;data=04%7C01%7Crmh%40temple.edu%7C21a51d63bc6242e5e24908d989d84fce%7C716e81efb52244738e3110bd02ccf6e5%7C0%7C0%7C637692385020500219%7CUnknown%7CTWFpbGZsb3d8eyJWIjoiMC4wLjAwMDAiLCJQIjoiV2luMzIiLCJBTiI6Ik1haWwiLCJXVCI6Mn0%3D%7C3000&amp;sdata=UKazmoIzXSn8DDQY3diUTPmVIg1cfTI3e1roXyo2DMQ%3D&amp;reserved=0
+> 
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+
+
+From bbo|ker @end|ng |rom gm@||@com  Fri Oct  8 00:56:23 2021
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Thu, 7 Oct 2021 18:56:23 -0400
+Subject: [R-pkg-devel] [External] Formula modeling
+In-Reply-To: <2b25dca4-6c0c-7759-779a-3a11e670acfc@gmail.com>
+References: <000401d7bbc1$2274c840$675e58c0$@gmail.com>
+ <0C8570AB-3D33-4EAB-A0E9-1BC99149E93A@temple.edu>
+ <2b25dca4-6c0c-7759-779a-3a11e670acfc@gmail.com>
+Message-ID: <cf1dafb5-c57b-c4f3-5cb0-b6a608678127@gmail.com>
+
+   There's a Formula package on CRAN 
+<https://cran.r-project.org/web/packages/Formula/index.html> that's 
+designed for this use case.
+
+   lme4 and nlme don't use it, but implement their own formula 
+manipulation machinery. (The cleanest version of this machinery is 
+actually in glmmTMB at 
+https://github.com/glmmTMB/glmmTMB/blob/master/glmmTMB/R/reformulas.R .)
+
+   I would probably recommend Duncan's or Richard's approach, but if you 
+want to keep your original syntax then the Formula package is probably 
+the way to go.
+
+
+On 10/7/21 5:58 PM, Duncan Murdoch wrote:
+> I don't work with models like this, but I would find it more natural to 
+> express the multiple formulas in a list:
+> 
+>  ? list(d ~ p + x + y, s ~ p + w + y, p ~ z + y)
+> 
+> I'd really have no idea how either of the proposals below should be parsed.
+> 
+> Of course, if people working with models like this are used to working 
+> with notation like yours, that would be a strong argument to use your 
+> notation.
+> 
+> Duncan Murdoch
+> 
+> On 07/10/2021 5:51 p.m., Richard M. Heiberger wrote:
+>> I am responding to a subset of what you asked.? There are packages 
+>> which use multiple formulas
+>> in their argument sequence.
+>>
+>>
+>> What you have as a single formula with | as a separator
+>> q | p | subject | time | rho ~ p + x + y | p + w + y | z + y
+>> I think would be better as a comma-separated list of formulas
+>>
+>> q , p , subject , time , rho ~ p + x + y , p + w + y , z + y
+>>
+>> because in R notation | is usually an operator, not a separator.
+>>
+>> lattice uses formulas and the | is used as a conditioning operator.
+>>
+>> nlme and lme4 can have multiple formulas in the same calling sequence.
+>>
+>> lme4 is newer.? from its ?lme4-package
+>> ?lme4? covers approximately the same ground as the earlier ?nlme?
+>> ????? package.
+>>
+>> lme4 should probably be the modelyou are looking for for the package 
+>> design.
+>>
+>>> On Oct 07, 2021, at 17:20, pikappa.devel at gmail.com wrote:
+>>>
+>>> Dear R-package-devel subscribers,
+>>>
+>>>
+>>>
+>>> My question concerns a package design issue relating to the usage of
+>>> formulas.
+>>>
+>>>
+>>>
+>>> I am interested in describing via formulas systems of the form:
+>>>
+>>>
+>>>
+>>> d = p + x + y
+>>>
+>>> s = p + w + y
+>>>
+>>> p = z + y
+>>>
+>>> q = min(d,s).
+>>>
+>>>
+>>>
+>>> The context in which I am working is that of market models with, 
+>>> primarily,
+>>> panel data. In the above system, one may think of the first equation as
+>>> demand, the second as supply, and the third as an equation 
+>>> (co-)determining
+>>> prices. The fourth equation is implicitly used by the estimation 
+>>> method, and
+>>> it does not need to be specified when programming the R formula. If 
+>>> you need
+>>> more information bout the system, you may check the package diseq.
+>>> Currently, I am using constructors to build market model objects. In a
+>>> constructor call, I pass [i] the right-hand sides of the first three
+>>> equations as strings, [ii] an argument indicating whether the 
+>>> equations of
+>>> the system have correlated shocks, [iii] the identifiers of the used 
+>>> dataset
+>>> (one for the subjects of the panel and one for time), and [iv] the 
+>>> quantity
+>>> (q) and price (p) variables. These four arguments contain all the 
+>>> necessary
+>>> information for constructing a model.
+>>>
+>>>
+>>>
+>>> I would now like to re-implement model construction using formulas, 
+>>> which
+>>> would be a more regular practice for most R users. I am currently
+>>> considering passing all the above information with a single formula 
+>>> of the
+>>> form:
+>>>
+>>>
+>>>
+>>> q | p | subject | time | rho ~ p + x + y | p + w + y | z + y
+>>>
+>>>
+>>>
+>>> where subject and time are the identifiers, and rho indicates whether
+>>> correlated or independent shocks should be used.
+>>>
+>>>
+>>>
+>>> I am unaware of other packages that use formulas in this way (for 
+>>> instance,
+>>> passing the identifiers in the formula), and I wonder if this would go
+>>> against any good practices. Would it be better to exclude some of the
+>>> necessary elements for constructing the model? This might make the 
+>>> resuting
+>>> formulas more similar to those of models with multiple responses or 
+>>> multiple
+>>> parts. I am not sure, though, how one would use such model formulas 
+>>> without
+>>> all the relevant information. Is there any suggested design 
+>>> alternative that
+>>> I could check?
+>>>
+>>>
+>>>
+>>> I would appreciate any suggestions and discussion!
+>>>
+>>>
+>>>
+>>> Kind regards,
+>>>
+>>> Pantelis
+>>>
+>>>
+>>> ????[[alternative HTML version deleted]]
+>>>
+>>> ______________________________________________
+>>> R-package-devel at r-project.org mailing list
+>>> https://nam10.safelinks.protection.outlook.com/?url=https%3A%2F%2Fstat.ethz.ch%2Fmailman%2Flistinfo%2Fr-package-devel&amp;data=04%7C01%7Crmh%40temple.edu%7C21a51d63bc6242e5e24908d989d84fce%7C716e81efb52244738e3110bd02ccf6e5%7C0%7C0%7C637692385020500219%7CUnknown%7CTWFpbGZsb3d8eyJWIjoiMC4wLjAwMDAiLCJQIjoiV2luMzIiLCJBTiI6Ik1haWwiLCJXVCI6Mn0%3D%7C3000&amp;sdata=UKazmoIzXSn8DDQY3diUTPmVIg1cfTI3e1roXyo2DMQ%3D&amp;reserved=0 
+>>>
+>>
+>> ______________________________________________
+>> R-package-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>>
+> 
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+-- 
+Dr. Benjamin Bolker
+Professor, Mathematics & Statistics and Biology, McMaster University
+Director, School of Computational Science and Engineering
+Graduate chair, Mathematics & Statistics
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Fri Oct  8 02:03:44 2021
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Thu, 7 Oct 2021 20:03:44 -0400
+Subject: [R-pkg-devel] [External] Formula modeling
+In-Reply-To: <2b25dca4-6c0c-7759-779a-3a11e670acfc@gmail.com>
+References: <000401d7bbc1$2274c840$675e58c0$@gmail.com>
+ <0C8570AB-3D33-4EAB-A0E9-1BC99149E93A@temple.edu>
+ <2b25dca4-6c0c-7759-779a-3a11e670acfc@gmail.com>
+Message-ID: <7a5bbede-cbd6-f693-3692-ca364bbaf6dd@gmail.com>
+
+On 07/10/2021 5:58 p.m., Duncan Murdoch wrote:
+> I don't work with models like this, but I would find it more natural to
+> express the multiple formulas in a list:
+> 
+>     list(d ~ p + x + y, s ~ p + w + y, p ~ z + y)
+> 
+> I'd really have no idea how either of the proposals below should be parsed.
+
+There's a disadvantage to this proposal.  I'd assume that "p" means the 
+same in all 3 formulas, but with the notation I give, it could refer to 
+3 unrelated variables, because each of the formulas would have its own 
+environment, and they could all be different.  I guess you could make it 
+a requirement that they all use the same environment, but that's likely 
+going to be confusing to users, who won't know what it means.
+
+Another possibility that wouldn't have this problem (but in my opinion 
+is kind of ugly) is to use R vector construction notation:
+
+   c(d, s, p) ~ c(p + x + y, p + w + y, z + y)
+
+Duncan Murdoch
+
+> 
+> Of course, if people working with models like this are used to working
+> with notation like yours, that would be a strong argument to use your
+> notation.
+> 
+> Duncan Murdoch
+> 
+> On 07/10/2021 5:51 p.m., Richard M. Heiberger wrote:
+>> I am responding to a subset of what you asked.  There are packages which use multiple formulas
+>> in their argument sequence.
+>>
+>>
+>> What you have as a single formula with | as a separator
+>> q | p | subject | time | rho ~ p + x + y | p + w + y | z + y
+>> I think would be better as a comma-separated list of formulas
+>>
+>> q , p , subject , time , rho ~ p + x + y , p + w + y , z + y
+>>
+>> because in R notation | is usually an operator, not a separator.
+>>
+>> lattice uses formulas and the | is used as a conditioning operator.
+>>
+>> nlme and lme4 can have multiple formulas in the same calling sequence.
+>>
+>> lme4 is newer.  from its ?lme4-package
+>> ?lme4? covers approximately the same ground as the earlier ?nlme?
+>>        package.
+>>
+>> lme4 should probably be the modelyou are looking for for the package design.
+>>
+>>> On Oct 07, 2021, at 17:20, pikappa.devel at gmail.com wrote:
+>>>
+>>> Dear R-package-devel subscribers,
+>>>
+>>>
+>>>
+>>> My question concerns a package design issue relating to the usage of
+>>> formulas.
+>>>
+>>>
+>>>
+>>> I am interested in describing via formulas systems of the form:
+>>>
+>>>
+>>>
+>>> d = p + x + y
+>>>
+>>> s = p + w + y
+>>>
+>>> p = z + y
+>>>
+>>> q = min(d,s).
+>>>
+>>>
+>>>
+>>> The context in which I am working is that of market models with, primarily,
+>>> panel data. In the above system, one may think of the first equation as
+>>> demand, the second as supply, and the third as an equation (co-)determining
+>>> prices. The fourth equation is implicitly used by the estimation method, and
+>>> it does not need to be specified when programming the R formula. If you need
+>>> more information bout the system, you may check the package diseq.
+>>> Currently, I am using constructors to build market model objects. In a
+>>> constructor call, I pass [i] the right-hand sides of the first three
+>>> equations as strings, [ii] an argument indicating whether the equations of
+>>> the system have correlated shocks, [iii] the identifiers of the used dataset
+>>> (one for the subjects of the panel and one for time), and [iv] the quantity
+>>> (q) and price (p) variables. These four arguments contain all the necessary
+>>> information for constructing a model.
+>>>
+>>>
+>>>
+>>> I would now like to re-implement model construction using formulas, which
+>>> would be a more regular practice for most R users. I am currently
+>>> considering passing all the above information with a single formula of the
+>>> form:
+>>>
+>>>
+>>>
+>>> q | p | subject | time | rho ~ p + x + y | p + w + y | z + y
+>>>
+>>>
+>>>
+>>> where subject and time are the identifiers, and rho indicates whether
+>>> correlated or independent shocks should be used.
+>>>
+>>>
+>>>
+>>> I am unaware of other packages that use formulas in this way (for instance,
+>>> passing the identifiers in the formula), and I wonder if this would go
+>>> against any good practices. Would it be better to exclude some of the
+>>> necessary elements for constructing the model? This might make the resuting
+>>> formulas more similar to those of models with multiple responses or multiple
+>>> parts. I am not sure, though, how one would use such model formulas without
+>>> all the relevant information. Is there any suggested design alternative that
+>>> I could check?
+>>>
+>>>
+>>>
+>>> I would appreciate any suggestions and discussion!
+>>>
+>>>
+>>>
+>>> Kind regards,
+>>>
+>>> Pantelis
+>>>
+>>>
+>>> 	[[alternative HTML version deleted]]
+>>>
+>>> ______________________________________________
+>>> R-package-devel at r-project.org mailing list
+>>> https://nam10.safelinks.protection.outlook.com/?url=https%3A%2F%2Fstat.ethz.ch%2Fmailman%2Flistinfo%2Fr-package-devel&amp;data=04%7C01%7Crmh%40temple.edu%7C21a51d63bc6242e5e24908d989d84fce%7C716e81efb52244738e3110bd02ccf6e5%7C0%7C0%7C637692385020500219%7CUnknown%7CTWFpbGZsb3d8eyJWIjoiMC4wLjAwMDAiLCJQIjoiV2luMzIiLCJBTiI6Ik1haWwiLCJXVCI6Mn0%3D%7C3000&amp;sdata=UKazmoIzXSn8DDQY3diUTPmVIg1cfTI3e1roXyo2DMQ%3D&amp;reserved=0
+>>
+>> ______________________________________________
+>> R-package-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>>
+>
+
+
+From vo|ody@ @end|ng |rom m|nd@pr|ng@com  Fri Oct  8 03:58:08 2021
+From: vo|ody@ @end|ng |rom m|nd@pr|ng@com (Vladimir Dergachev)
+Date: Thu, 7 Oct 2021 21:58:08 -0400 (EDT)
+Subject: [R-pkg-devel] multithreading in packages
+Message-ID: <alpine.DEB.2.22.394.2110072149150.2405@iridium>
+
+
+  I am considering adding multithreading support in my package, and would 
+appreciate any suggestions/comments/opinions on what is the right way to 
+do this.
+
+   * My understanding from reading documentation and source code is that 
+there is no dedicated support in R yet, but there are packages that use 
+multithreading. Are there any plans for multithreading support in future R 
+versions ?
+
+   * pthread or openmp ? I am particularly concerned about interaction with 
+other packages. I have seen that using pthread and openmp libraries 
+simultaneously can result in incorrectly pinned threads.
+
+   * control of maximum number of threads. One can default to openmp 
+environment variable, but these might vary between openmp implementations.
+
+thank you very much
+
+Vladimir Dergachev
+
+
+From pik@pp@@devei m@iii@g oii gm@ii@com  Fri Oct  8 20:47:16 2021
+From: pik@pp@@devei m@iii@g oii gm@ii@com (pik@pp@@devei m@iii@g oii gm@ii@com)
+Date: Fri, 8 Oct 2021 20:47:16 +0200
+Subject: [R-pkg-devel] [External] Formula modeling
+In-Reply-To: <7a5bbede-cbd6-f693-3692-ca364bbaf6dd@gmail.com>
+References: <000401d7bbc1$2274c840$675e58c0$@gmail.com>
+ <0C8570AB-3D33-4EAB-A0E9-1BC99149E93A@temple.edu>
+ <2b25dca4-6c0c-7759-779a-3a11e670acfc@gmail.com>
+ <7a5bbede-cbd6-f693-3692-ca364bbaf6dd@gmail.com>
+Message-ID: <000901d7bc74$eb0572b0$c1105810$@gmail.com>
+
+Hi,
+
+The different environments can potentially be an issue in the future. I was not aware of the vector construction notation, and I think this is what I was mainly looking for. 
+
+I could provide two initialization methods. One will use the ugly vector notation that one could use to bind the whole model with a particular environment. The second can be more user-friendly and use the comma-separated list of formulas. Essentially, the second will prepare the vector formula and call the first initialization method.
+
+The (|) operator comment makes sense, and I would also want to avoid this to the extent that it is feasible.  So, I am currently thinking something along the line:
+
+c(d, s, p | subject | time) ~ c(p + x + y, p + w + y, z + y)
+
+This is very similar to how the function ?lme4::lmer uses the bar to separate expressions for design matrices from grouping factors. Actually, the subject and time variables are needed for subsetting prices for various operations required for the model matrix. 
+
+Thanks for the suggestions; they are very helpful!
+
+Best,
+Pantelis
+
+-----Original Message-----
+From: Duncan Murdoch <murdoch.duncan at gmail.com> 
+Sent: Friday, October 8, 2021 2:04 AM
+To: Richard M. Heiberger <rmh at temple.edu>; pikappa.devel at gmail.com
+Cc: r-package-devel at r-project.org
+Subject: Re: [R-pkg-devel] [External] Formula modeling
+
+On 07/10/2021 5:58 p.m., Duncan Murdoch wrote:
+> I don't work with models like this, but I would find it more natural 
+> to express the multiple formulas in a list:
+> 
+>     list(d ~ p + x + y, s ~ p + w + y, p ~ z + y)
+> 
+> I'd really have no idea how either of the proposals below should be parsed.
+
+There's a disadvantage to this proposal.  I'd assume that "p" means the same in all 3 formulas, but with the notation I give, it could refer to
+3 unrelated variables, because each of the formulas would have its own environment, and they could all be different.  I guess you could make it a requirement that they all use the same environment, but that's likely going to be confusing to users, who won't know what it means.
+
+Another possibility that wouldn't have this problem (but in my opinion is kind of ugly) is to use R vector construction notation:
+
+   c(d, s, p) ~ c(p + x + y, p + w + y, z + y)
+
+Duncan Murdoch
+
+> 
+> Of course, if people working with models like this are used to working 
+> with notation like yours, that would be a strong argument to use your 
+> notation.
+> 
+> Duncan Murdoch
+> 
+> On 07/10/2021 5:51 p.m., Richard M. Heiberger wrote:
+>> I am responding to a subset of what you asked.  There are packages 
+>> which use multiple formulas in their argument sequence.
+>>
+>>
+>> What you have as a single formula with | as a separator q | p | 
+>> subject | time | rho ~ p + x + y | p + w + y | z + y I think would be 
+>> better as a comma-separated list of formulas
+>>
+>> q , p , subject , time , rho ~ p + x + y , p + w + y , z + y
+>>
+>> because in R notation | is usually an operator, not a separator.
+>>
+>> lattice uses formulas and the | is used as a conditioning operator.
+>>
+>> nlme and lme4 can have multiple formulas in the same calling sequence.
+>>
+>> lme4 is newer.  from its ?lme4-package ?lme4? covers approximately 
+>> the same ground as the earlier ?nlme?
+>>        package.
+>>
+>> lme4 should probably be the modelyou are looking for for the package design.
+>>
+>>> On Oct 07, 2021, at 17:20, pikappa.devel at gmail.com wrote:
+>>>
+>>> Dear R-package-devel subscribers,
+>>>
+>>>
+>>>
+>>> My question concerns a package design issue relating to the usage of 
+>>> formulas.
+>>>
+>>>
+>>>
+>>> I am interested in describing via formulas systems of the form:
+>>>
+>>>
+>>>
+>>> d = p + x + y
+>>>
+>>> s = p + w + y
+>>>
+>>> p = z + y
+>>>
+>>> q = min(d,s).
+>>>
+>>>
+>>>
+>>> The context in which I am working is that of market models with, 
+>>> primarily, panel data. In the above system, one may think of the 
+>>> first equation as demand, the second as supply, and the third as an 
+>>> equation (co-)determining prices. The fourth equation is implicitly 
+>>> used by the estimation method, and it does not need to be specified 
+>>> when programming the R formula. If you need more information bout the system, you may check the package diseq.
+>>> Currently, I am using constructors to build market model objects. In 
+>>> a constructor call, I pass [i] the right-hand sides of the first 
+>>> three equations as strings, [ii] an argument indicating whether the 
+>>> equations of the system have correlated shocks, [iii] the 
+>>> identifiers of the used dataset (one for the subjects of the panel 
+>>> and one for time), and [iv] the quantity
+>>> (q) and price (p) variables. These four arguments contain all the 
+>>> necessary information for constructing a model.
+>>>
+>>>
+>>>
+>>> I would now like to re-implement model construction using formulas, 
+>>> which would be a more regular practice for most R users. I am 
+>>> currently considering passing all the above information with a 
+>>> single formula of the
+>>> form:
+>>>
+>>>
+>>>
+>>> q | p | subject | time | rho ~ p + x + y | p + w + y | z + y
+>>>
+>>>
+>>>
+>>> where subject and time are the identifiers, and rho indicates 
+>>> whether correlated or independent shocks should be used.
+>>>
+>>>
+>>>
+>>> I am unaware of other packages that use formulas in this way (for 
+>>> instance, passing the identifiers in the formula), and I wonder if 
+>>> this would go against any good practices. Would it be better to 
+>>> exclude some of the necessary elements for constructing the model? 
+>>> This might make the resuting formulas more similar to those of 
+>>> models with multiple responses or multiple parts. I am not sure, 
+>>> though, how one would use such model formulas without all the 
+>>> relevant information. Is there any suggested design alternative that I could check?
+>>>
+>>>
+>>>
+>>> I would appreciate any suggestions and discussion!
+>>>
+>>>
+>>>
+>>> Kind regards,
+>>>
+>>> Pantelis
+>>>
+>>>
+>>> 	[[alternative HTML version deleted]]
+>>>
+>>> ______________________________________________
+>>> R-package-devel at r-project.org mailing list
+>>> https://nam10.safelinks.protection.outlook.com/?url=https%3A%2F%2Fst
+>>> at.ethz.ch%2Fmailman%2Flistinfo%2Fr-package-devel&amp;data=04%7C01%7
+>>> Crmh%40temple.edu%7C21a51d63bc6242e5e24908d989d84fce%7C716e81efb5224
+>>> 4738e3110bd02ccf6e5%7C0%7C0%7C637692385020500219%7CUnknown%7CTWFpbGZ
+>>> sb3d8eyJWIjoiMC4wLjAwMDAiLCJQIjoiV2luMzIiLCJBTiI6Ik1haWwiLCJXVCI6Mn0
+>>> %3D%7C3000&amp;sdata=UKazmoIzXSn8DDQY3diUTPmVIg1cfTI3e1roXyo2DMQ%3D&
+>>> amp;reserved=0
+>>
+>> ______________________________________________
+>> R-package-devel at r-project.org mailing list 
+>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>>
+> 
+
+
+From vo|ody@ @end|ng |rom m|nd@pr|ng@com  Sat Oct  9 00:31:41 2021
+From: vo|ody@ @end|ng |rom m|nd@pr|ng@com (Vladimir Dergachev)
+Date: Fri, 8 Oct 2021 18:31:41 -0400 (EDT)
+Subject: [R-pkg-devel] [External] Formula modeling
+In-Reply-To: <000901d7bc74$eb0572b0$c1105810$@gmail.com>
+References: <000401d7bbc1$2274c840$675e58c0$@gmail.com>
+ <0C8570AB-3D33-4EAB-A0E9-1BC99149E93A@temple.edu>
+ <2b25dca4-6c0c-7759-779a-3a11e670acfc@gmail.com>
+ <7a5bbede-cbd6-f693-3692-ca364bbaf6dd@gmail.com>
+ <000901d7bc74$eb0572b0$c1105810$@gmail.com>
+Message-ID: <alpine.DEB.2.22.394.2110081826290.2405@iridium>
+
+
+
+On Fri, 8 Oct 2021, pikappa.devel at gmail.com wrote:
+
+> Hi,
+>
+> The different environments can potentially be an issue in the future. I was not aware of the vector construction notation, and I think this is what I was mainly looking for.
+>
+> I could provide two initialization methods. One will use the ugly vector notation that one could use to bind the whole model with a particular environment. The second can be more user-friendly and use the comma-separated list of formulas. Essentially, the second will prepare the vector formula and call the first initialization method.
+>
+> The (|) operator comment makes sense, and I would also want to avoid this to the extent that it is feasible.  So, I am currently thinking something along the line:
+>
+> c(d, s, p | subject | time) ~ c(p + x + y, p + w + y, z + y)
+
+>From a perspective of a person that does not use formulas outside of 
+xyplot() and glm(), this is a bit hard to parse visually. One could 
+imagine making a mistake that s corresponds to x, rather than p+w+y.
+
+I wonder if there is a way to write something along the lines of
+
+~c( d~p+x+y,
+     s~p+w+y,
+     p~z+y |subject | time
+    )
+
+A quick experiment with R shows that this is treated like a formula, so ~c 
+becomes a way to group formulas.
+
+best
+
+Vladimir Dergachev
+
+>
+> This is very similar to how the function ?lme4::lmer uses the bar to separate expressions for design matrices from grouping factors. Actually, the subject and time variables are needed for subsetting prices for various operations required for the model matrix.
+>
+> Thanks for the suggestions; they are very helpful!
+>
+> Best,
+> Pantelis
+>
+> -----Original Message-----
+> From: Duncan Murdoch <murdoch.duncan at gmail.com>
+> Sent: Friday, October 8, 2021 2:04 AM
+> To: Richard M. Heiberger <rmh at temple.edu>; pikappa.devel at gmail.com
+> Cc: r-package-devel at r-project.org
+> Subject: Re: [R-pkg-devel] [External] Formula modeling
+>
+> On 07/10/2021 5:58 p.m., Duncan Murdoch wrote:
+>> I don't work with models like this, but I would find it more natural
+>> to express the multiple formulas in a list:
+>>
+>>     list(d ~ p + x + y, s ~ p + w + y, p ~ z + y)
+>>
+>> I'd really have no idea how either of the proposals below should be parsed.
+>
+> There's a disadvantage to this proposal.  I'd assume that "p" means the same in all 3 formulas, but with the notation I give, it could refer to
+> 3 unrelated variables, because each of the formulas would have its own environment, and they could all be different.  I guess you could make it a requirement that they all use the same environment, but that's likely going to be confusing to users, who won't know what it means.
+>
+> Another possibility that wouldn't have this problem (but in my opinion is kind of ugly) is to use R vector construction notation:
+>
+>   c(d, s, p) ~ c(p + x + y, p + w + y, z + y)
+>
+> Duncan Murdoch
+>
+>>
+>> Of course, if people working with models like this are used to working
+>> with notation like yours, that would be a strong argument to use your
+>> notation.
+>>
+>> Duncan Murdoch
+>>
+>> On 07/10/2021 5:51 p.m., Richard M. Heiberger wrote:
+>>> I am responding to a subset of what you asked.  There are packages
+>>> which use multiple formulas in their argument sequence.
+>>>
+>>>
+>>> What you have as a single formula with | as a separator q | p |
+>>> subject | time | rho ~ p + x + y | p + w + y | z + y I think would be
+>>> better as a comma-separated list of formulas
+>>>
+>>> q , p , subject , time , rho ~ p + x + y , p + w + y , z + y
+>>>
+>>> because in R notation | is usually an operator, not a separator.
+>>>
+>>> lattice uses formulas and the | is used as a conditioning operator.
+>>>
+>>> nlme and lme4 can have multiple formulas in the same calling sequence.
+>>>
+>>> lme4 is newer.  from its ?lme4-package ?lme4? covers approximately
+>>> the same ground as the earlier ?nlme?
+>>>        package.
+>>>
+>>> lme4 should probably be the modelyou are looking for for the package design.
+>>>
+>>>> On Oct 07, 2021, at 17:20, pikappa.devel at gmail.com wrote:
+>>>>
+>>>> Dear R-package-devel subscribers,
+>>>>
+>>>>
+>>>>
+>>>> My question concerns a package design issue relating to the usage of
+>>>> formulas.
+>>>>
+>>>>
+>>>>
+>>>> I am interested in describing via formulas systems of the form:
+>>>>
+>>>>
+>>>>
+>>>> d = p + x + y
+>>>>
+>>>> s = p + w + y
+>>>>
+>>>> p = z + y
+>>>>
+>>>> q = min(d,s).
+>>>>
+>>>>
+>>>>
+>>>> The context in which I am working is that of market models with,
+>>>> primarily, panel data. In the above system, one may think of the
+>>>> first equation as demand, the second as supply, and the third as an
+>>>> equation (co-)determining prices. The fourth equation is implicitly
+>>>> used by the estimation method, and it does not need to be specified
+>>>> when programming the R formula. If you need more information bout the system, you may check the package diseq.
+>>>> Currently, I am using constructors to build market model objects. In
+>>>> a constructor call, I pass [i] the right-hand sides of the first
+>>>> three equations as strings, [ii] an argument indicating whether the
+>>>> equations of the system have correlated shocks, [iii] the
+>>>> identifiers of the used dataset (one for the subjects of the panel
+>>>> and one for time), and [iv] the quantity
+>>>> (q) and price (p) variables. These four arguments contain all the
+>>>> necessary information for constructing a model.
+>>>>
+>>>>
+>>>>
+>>>> I would now like to re-implement model construction using formulas,
+>>>> which would be a more regular practice for most R users. I am
+>>>> currently considering passing all the above information with a
+>>>> single formula of the
+>>>> form:
+>>>>
+>>>>
+>>>>
+>>>> q | p | subject | time | rho ~ p + x + y | p + w + y | z + y
+>>>>
+>>>>
+>>>>
+>>>> where subject and time are the identifiers, and rho indicates
+>>>> whether correlated or independent shocks should be used.
+>>>>
+>>>>
+>>>>
+>>>> I am unaware of other packages that use formulas in this way (for
+>>>> instance, passing the identifiers in the formula), and I wonder if
+>>>> this would go against any good practices. Would it be better to
+>>>> exclude some of the necessary elements for constructing the model?
+>>>> This might make the resuting formulas more similar to those of
+>>>> models with multiple responses or multiple parts. I am not sure,
+>>>> though, how one would use such model formulas without all the
+>>>> relevant information. Is there any suggested design alternative that I could check?
+>>>>
+>>>>
+>>>>
+>>>> I would appreciate any suggestions and discussion!
+>>>>
+>>>>
+>>>>
+>>>> Kind regards,
+>>>>
+>>>> Pantelis
+>>>>
+>>>>
+>>>> 	[[alternative HTML version deleted]]
+>>>>
+>>>> ______________________________________________
+>>>> R-package-devel at r-project.org mailing list
+>>>> https://nam10.safelinks.protection.outlook.com/?url=https%3A%2F%2Fst
+>>>> at.ethz.ch%2Fmailman%2Flistinfo%2Fr-package-devel&amp;data=04%7C01%7
+>>>> Crmh%40temple.edu%7C21a51d63bc6242e5e24908d989d84fce%7C716e81efb5224
+>>>> 4738e3110bd02ccf6e5%7C0%7C0%7C637692385020500219%7CUnknown%7CTWFpbGZ
+>>>> sb3d8eyJWIjoiMC4wLjAwMDAiLCJQIjoiV2luMzIiLCJBTiI6Ik1haWwiLCJXVCI6Mn0
+>>>> %3D%7C3000&amp;sdata=UKazmoIzXSn8DDQY3diUTPmVIg1cfTI3e1roXyo2DMQ%3D&
+>>>> amp;reserved=0
+>>>
+>>> ______________________________________________
+>>> R-package-devel at r-project.org mailing list
+>>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>>>
+>>
+>
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+
+From kry|ov@r00t @end|ng |rom gm@||@com  Sat Oct  9 08:52:10 2021
+From: kry|ov@r00t @end|ng |rom gm@||@com (Ivan Krylov)
+Date: Sat, 9 Oct 2021 09:52:10 +0300
+Subject: [R-pkg-devel] multithreading in packages
+In-Reply-To: <alpine.DEB.2.22.394.2110072149150.2405@iridium>
+References: <alpine.DEB.2.22.394.2110072149150.2405@iridium>
+Message-ID: <20211009095210.316a5e5c@parabola>
+
+? Thu, 7 Oct 2021 21:58:08 -0400 (EDT)
+Vladimir Dergachev <volodya at mindspring.com> ?????:
+
+>    * My understanding from reading documentation and source code is
+> that there is no dedicated support in R yet, but there are packages
+> that use multithreading. Are there any plans for multithreading
+> support in future R versions ?
+
+Shared memory multithreading is hard to get right in a memory-safe
+language (e.g. R), but there's the parallel package, which is a part of
+base R, which offers process-based parallelism and may run your code on
+multiple machines at the same time. There's no communication _between_
+these machines, though. (But I think there's an MPI package on CRAN.)
+
+>    * pthread or openmp ? I am particularly concerned about
+> interaction with other packages. I have seen that using pthread and
+> openmp libraries simultaneously can result in incorrectly pinned
+> threads.
+
+pthreads-based code could be harder to run on Windows (which is a
+first-class platform for R, expected to be supported by most packages).
+OpenMP should be cross-platform, but Apple compilers are sometimes
+lacking; the latest Apple likely has been solved since I've heard about
+it. If your problem can be made embarrassingly parallel, you're welcome
+to use the parallel package.
+
+>    * control of maximum number of threads. One can default to openmp 
+> environment variable, but these might vary between openmp
+> implementations.
+
+Moreover, CRAN-facing tests aren't allowed to consume more than 200%
+CPU, so it's a good idea to leave the number of workers in control of
+the user. According to a reference guide I got from openmp.org, OpenMP
+implementations are expected to understand omp_set_num_threads() and
+the OMP_NUM_THREADS environment variable.
+
+-- 
+Best regards,
+Ivan
+
+
+From c@@rd|@g@bor @end|ng |rom gm@||@com  Sat Oct  9 14:24:12 2021
+From: c@@rd|@g@bor @end|ng |rom gm@||@com (=?UTF-8?B?R8OhYm9yIENzw6FyZGk=?=)
+Date: Sat, 9 Oct 2021 14:24:12 +0200
+Subject: [R-pkg-devel] multithreading in packages
+In-Reply-To: <20211009095210.316a5e5c@parabola>
+References: <alpine.DEB.2.22.394.2110072149150.2405@iridium>
+ <20211009095210.316a5e5c@parabola>
+Message-ID: <CABtg=KnJOnn3gi2BxbPMMaOtf153JPO9q4dvJLZMtBedy00+nw@mail.gmail.com>
+
+On Sat, Oct 9, 2021 at 8:52 AM Ivan Krylov <krylov.r00t at gmail.com> wrote:
+[...]
+> >    * pthread or openmp ? I am particularly concerned about
+> > interaction with other packages. I have seen that using pthread and
+> > openmp libraries simultaneously can result in incorrectly pinned
+> > threads.
+>
+> pthreads-based code could be harder to run on Windows (which is a
+> first-class platform for R, expected to be supported by most packages).
+
+R uses mingw on windows, and mingw supports pthreads, you don't need
+to do anything special on Windows. You don't even need a
+`Makevars`/`Makevars.win` or configure* file just for using pthreads.
+
+Some CRAN packages do this, you can search here:
+https://github.com/search?l=C&p=5&q=org%3Acran+pthread_create&type=Code
+(Some of these are from Unix-specific code, but not all.)
+
+Gabor
+
+[...]
+
+
+From mo|||eebrook@ @end|ng |rom gm@||@com  Sat Oct  9 16:29:25 2021
+From: mo|||eebrook@ @end|ng |rom gm@||@com (Mollie Brooks)
+Date: Sat, 9 Oct 2021 16:29:25 +0200
+Subject: [R-pkg-devel] vignette on CRAN missing equations
+Message-ID: <CAMu=eMCwhwBN4H3=+X=Dw0Af-wHff2fO82jbY2aaXukyzQ+GXw@mail.gmail.com>
+
+[CROSSPOST from glmmTMB issue #767
+https://github.com/glmmTMB/glmmTMB/issues/767]
+
+Hi devel list,
+
+I recently noticed that a vignette is missing a couple of equations when
+installed from CRAN and when displayed by CRAN. The code renders as
+expected with the equations when I knit it on my own computer. The lines
+that do not render on CRAN are the following:
+
+\begin{equation}
+g(\boldsymbol{\mu}) = \boldsymbol{X\beta} + \boldsymbol{Zb}
+\end{equation}
+
+
+<!-- -->
+\begin{align}
+g(\boldsymbol{\mu}) &= \boldsymbol{X\beta} + \boldsymbol{Z(I_n \otimes
+\Lambda)b} \\
+&= \boldsymbol{X\beta} + \boldsymbol{Zb_{new}}
+\end{align}
+<!-- -->
+
+Has anyone else experienced this and found a solution?
+Can you suggest where to notify CRAN of this bug?
+
+The missing equations should be in section "General latent variable model"
+here
+https://cran.r-project.org/web/packages/glmmTMB/vignettes/covstruct.html
+
+cheers,
+Mollie
+
+	[[alternative HTML version deleted]]
+
+
+From vo|ody@ @end|ng |rom m|nd@pr|ng@com  Sat Oct  9 16:34:55 2021
+From: vo|ody@ @end|ng |rom m|nd@pr|ng@com (Vladimir Dergachev)
+Date: Sat, 9 Oct 2021 10:34:55 -0400 (EDT)
+Subject: [R-pkg-devel] multithreading in packages
+In-Reply-To: <20211009095210.316a5e5c@parabola>
+References: <alpine.DEB.2.22.394.2110072149150.2405@iridium>
+ <20211009095210.316a5e5c@parabola>
+Message-ID: <alpine.DEB.2.22.394.2110091019140.2405@iridium>
+
+
+
+On Sat, 9 Oct 2021, Ivan Krylov wrote:
+
+> ? Thu, 7 Oct 2021 21:58:08 -0400 (EDT)
+> Vladimir Dergachev <volodya at mindspring.com> ?????:
+>
+>>    * My understanding from reading documentation and source code is
+>> that there is no dedicated support in R yet, but there are packages
+>> that use multithreading. Are there any plans for multithreading
+>> support in future R versions ?
+>
+> Shared memory multithreading is hard to get right in a memory-safe
+> language (e.g. R), but there's the parallel package, which is a part of
+> base R, which offers process-based parallelism and may run your code on
+> multiple machines at the same time. There's no communication _between_
+> these machines, though. (But I think there's an MPI package on CRAN.)
+
+Well, the way I planned to use multitheading is to speedup processing of 
+very large vectors, so one does not have to wait seconds for the command 
+to return. Same could be done for many built-in R primitives.
+
+>
+>>    * pthread or openmp ? I am particularly concerned about
+>> interaction with other packages. I have seen that using pthread and
+>> openmp libraries simultaneously can result in incorrectly pinned
+>> threads.
+>
+> pthreads-based code could be harder to run on Windows (which is a
+> first-class platform for R, expected to be supported by most packages).
+
+G?bor Cs?rdi pointed out that R is compiled with mingw on Windows and 
+has pthread support - something I did not know either.
+
+> OpenMP should be cross-platform, but Apple compilers are sometimes
+> lacking; the latest Apple likely has been solved since I've heard about
+> it. If your problem can be made embarrassingly parallel, you're welcome
+> to use the parallel package.
+
+I used parallel before, it is very nice, but R-level only. I am looking 
+for something to speedup response of individual package functions so they 
+themselves can be used of part of more complicated code.
+
+>
+>>    * control of maximum number of threads. One can default to openmp
+>> environment variable, but these might vary between openmp
+>> implementations.
+>
+> Moreover, CRAN-facing tests aren't allowed to consume more than 200%
+> CPU, so it's a good idea to leave the number of workers in control of
+> the user. According to a reference guide I got from openmp.org, OpenMP
+> implementations are expected to understand omp_set_num_threads() and
+> the OMP_NUM_THREADS environment variable.
+
+Oh, this would never be run through CRAN tests, it is meant for data that 
+is too big for CRAN.
+
+I seem to remember that the Intel compiler used a different environmental 
+variable, but it could be this was fixed since the last time I used it.
+
+best
+
+Vladimir Dergachev
+
+>
+> -- 
+> Best regards,
+> Ivan
+>
+
+From vo|ody@ @end|ng |rom m|nd@pr|ng@com  Sat Oct  9 16:56:16 2021
+From: vo|ody@ @end|ng |rom m|nd@pr|ng@com (Vladimir Dergachev)
+Date: Sat, 9 Oct 2021 10:56:16 -0400 (EDT)
+Subject: [R-pkg-devel] multithreading in packages
+In-Reply-To: <CABtg=KnJOnn3gi2BxbPMMaOtf153JPO9q4dvJLZMtBedy00+nw@mail.gmail.com>
+References: <alpine.DEB.2.22.394.2110072149150.2405@iridium>
+ <20211009095210.316a5e5c@parabola>
+ <CABtg=KnJOnn3gi2BxbPMMaOtf153JPO9q4dvJLZMtBedy00+nw@mail.gmail.com>
+Message-ID: <alpine.DEB.2.22.394.2110091035010.2405@iridium>
+
+
+
+On Sat, 9 Oct 2021, G?bor Cs?rdi wrote:
+
+> On Sat, Oct 9, 2021 at 8:52 AM Ivan Krylov <krylov.r00t at gmail.com> wrote:
+> [...]
+>>>    * pthread or openmp ? I am particularly concerned about
+>>> interaction with other packages. I have seen that using pthread and
+>>> openmp libraries simultaneously can result in incorrectly pinned
+>>> threads.
+>>
+>> pthreads-based code could be harder to run on Windows (which is a
+>> first-class platform for R, expected to be supported by most packages).
+>
+> R uses mingw on windows, and mingw supports pthreads, you don't need
+> to do anything special on Windows. You don't even need a
+> `Makevars`/`Makevars.win` or configure* file just for using pthreads.
+
+Great, thank you !
+
+>
+> Some CRAN packages do this, you can search here:
+> https://github.com/search?l=C&p=5&q=org%3Acran+pthread_create&type=Code
+> (Some of these are from Unix-specific code, but not all.)
+
+Useful link ! I also did a search for cran+omp and this turned up some 
+packages as well.
+
+Looks like both openmp and pthreads are used in packages that passed CRAN 
+checks.
+
+thanks
+
+Vladimir Dergachev
+
+>
+> Gabor
+>
+> [...]
+>
+
+From jdnewm|| @end|ng |rom dcn@d@v|@@c@@u@  Sat Oct  9 17:09:58 2021
+From: jdnewm|| @end|ng |rom dcn@d@v|@@c@@u@ (Jeff Newmiller)
+Date: Sat, 09 Oct 2021 08:09:58 -0700
+Subject: [R-pkg-devel] [Tagged]  Re:  multithreading in packages
+In-Reply-To: <alpine.DEB.2.22.394.2110091019140.2405@iridium>
+References: <alpine.DEB.2.22.394.2110072149150.2405@iridium>
+ <20211009095210.316a5e5c@parabola>
+ <alpine.DEB.2.22.394.2110091019140.2405@iridium>
+Message-ID: <08837D3C-798B-4163-B95B-8C9C97FAD459@dcn.davis.ca.us>
+
+Keep in mind that by embedding this decision into your package you may be consuming a resource (cores) that may be more efficiently allocated by an application-level partitioning. of available resources. I for one am not a fan of this kind of thinking, and it makes system requirements for your package more complex even if you allow me to disable it.
+
+On October 9, 2021 7:34:55 AM PDT, Vladimir Dergachev <volodya at mindspring.com> wrote:
+>
+>
+>On Sat, 9 Oct 2021, Ivan Krylov wrote:
+>
+>> ? Thu, 7 Oct 2021 21:58:08 -0400 (EDT)
+>> Vladimir Dergachev <volodya at mindspring.com> ?????:
+>>
+>>>    * My understanding from reading documentation and source code is
+>>> that there is no dedicated support in R yet, but there are packages
+>>> that use multithreading. Are there any plans for multithreading
+>>> support in future R versions ?
+>>
+>> Shared memory multithreading is hard to get right in a memory-safe
+>> language (e.g. R), but there's the parallel package, which is a part of
+>> base R, which offers process-based parallelism and may run your code on
+>> multiple machines at the same time. There's no communication _between_
+>> these machines, though. (But I think there's an MPI package on CRAN.)
+>
+>Well, the way I planned to use multitheading is to speedup processing of 
+>very large vectors, so one does not have to wait seconds for the command 
+>to return. Same could be done for many built-in R primitives.
+>
+>>
+>>>    * pthread or openmp ? I am particularly concerned about
+>>> interaction with other packages. I have seen that using pthread and
+>>> openmp libraries simultaneously can result in incorrectly pinned
+>>> threads.
+>>
+>> pthreads-based code could be harder to run on Windows (which is a
+>> first-class platform for R, expected to be supported by most packages).
+>
+>G?bor Cs?rdi pointed out that R is compiled with mingw on Windows and 
+>has pthread support - something I did not know either.
+>
+>> OpenMP should be cross-platform, but Apple compilers are sometimes
+>> lacking; the latest Apple likely has been solved since I've heard about
+>> it. If your problem can be made embarrassingly parallel, you're welcome
+>> to use the parallel package.
+>
+>I used parallel before, it is very nice, but R-level only. I am looking 
+>for something to speedup response of individual package functions so they 
+>themselves can be used of part of more complicated code.
+>
+>>
+>>>    * control of maximum number of threads. One can default to openmp
+>>> environment variable, but these might vary between openmp
+>>> implementations.
+>>
+>> Moreover, CRAN-facing tests aren't allowed to consume more than 200%
+>> CPU, so it's a good idea to leave the number of workers in control of
+>> the user. According to a reference guide I got from openmp.org, OpenMP
+>> implementations are expected to understand omp_set_num_threads() and
+>> the OMP_NUM_THREADS environment variable.
+>
+>Oh, this would never be run through CRAN tests, it is meant for data that 
+>is too big for CRAN.
+>
+>I seem to remember that the Intel compiler used a different environmental 
+>variable, but it could be this was fixed since the last time I used it.
+>
+>best
+>
+>Vladimir Dergachev
+>
+>>
+>> -- 
+>> Best regards,
+>> Ivan
+>>
+>______________________________________________
+>R-package-devel at r-project.org mailing list
+>https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+-- 
+Sent from my phone. Please excuse my brevity.
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Sat Oct  9 17:19:59 2021
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Sat, 9 Oct 2021 11:19:59 -0400
+Subject: [R-pkg-devel] vignette on CRAN missing equations
+In-Reply-To: <CAMu=eMCwhwBN4H3=+X=Dw0Af-wHff2fO82jbY2aaXukyzQ+GXw@mail.gmail.com>
+References: <CAMu=eMCwhwBN4H3=+X=Dw0Af-wHff2fO82jbY2aaXukyzQ+GXw@mail.gmail.com>
+Message-ID: <ad9cfd6f-0c46-762c-0f99-2809e547fed0@gmail.com>
+
+Those display equations aren't in the vignette I see if I call 
+browseVignettes("glmmTMB").
+
+Looking in the tarball, I don't see them in
+
+   inst/doc/covstruct.html
+
+Are you sure they were in the file that you submitted?  I suspect this 
+is a problem in the way you built the tarball, rather than a bug at CRAN.
+
+Duncan Murdoch
+
+On 09/10/2021 10:29 a.m., Mollie Brooks wrote:
+> [CROSSPOST from glmmTMB issue #767
+> https://github.com/glmmTMB/glmmTMB/issues/767]
+> 
+> Hi devel list,
+> 
+> I recently noticed that a vignette is missing a couple of equations when
+> installed from CRAN and when displayed by CRAN. The code renders as
+> expected with the equations when I knit it on my own computer. The lines
+> that do not render on CRAN are the following:
+> 
+> \begin{equation}
+> g(\boldsymbol{\mu}) = \boldsymbol{X\beta} + \boldsymbol{Zb}
+> \end{equation}
+> 
+> 
+> <!-- -->
+> \begin{align}
+> g(\boldsymbol{\mu}) &= \boldsymbol{X\beta} + \boldsymbol{Z(I_n \otimes
+> \Lambda)b} \\
+> &= \boldsymbol{X\beta} + \boldsymbol{Zb_{new}}
+> \end{align}
+> <!-- -->
+> 
+> Has anyone else experienced this and found a solution?
+> Can you suggest where to notify CRAN of this bug?
+> 
+> The missing equations should be in section "General latent variable model"
+> here
+> https://cran.r-project.org/web/packages/glmmTMB/vignettes/covstruct.html
+> 
+> cheers,
+> Mollie
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+
+
+From vo|ody@ @end|ng |rom m|nd@pr|ng@com  Sat Oct  9 17:45:44 2021
+From: vo|ody@ @end|ng |rom m|nd@pr|ng@com (Vladimir Dergachev)
+Date: Sat, 9 Oct 2021 11:45:44 -0400 (EDT)
+Subject: [R-pkg-devel] [Tagged]  Re:  multithreading in packages
+In-Reply-To: <08837D3C-798B-4163-B95B-8C9C97FAD459@dcn.davis.ca.us>
+References: <alpine.DEB.2.22.394.2110072149150.2405@iridium>
+ <20211009095210.316a5e5c@parabola>
+ <alpine.DEB.2.22.394.2110091019140.2405@iridium>
+ <08837D3C-798B-4163-B95B-8C9C97FAD459@dcn.davis.ca.us>
+Message-ID: <alpine.DEB.2.22.394.2110091134250.2405@iridium>
+
+
+
+On Sat, 9 Oct 2021, Jeff Newmiller wrote:
+
+> Keep in mind that by embedding this decision into your package you may 
+> be consuming a resource (cores) that may be more efficiently allocated 
+> by an application-level partitioning. of available resources. I for one 
+> am not a fan of this kind of thinking, and it makes system requirements 
+> for your package more complex even if you allow me to disable it.
+
+That's right, and this is why I was asking about any present or future 
+plans for R support - if there was a way to find out how many threads R 
+should use, I would use that.
+
+So far, it looks like the most portable way is to use OpenMP and let the 
+user set an appropriate environment variable if they want to restrict 
+thread usage. I could use the same OpenMP variable for pthreads as well.
+
+This is pretty common on clusters anyway, with openmp environment 
+variables set automatically to the number of cores user requested.
+
+I would probably also add a function to the package to report the number 
+of threads being used. Not sure whether it would be a good idea to report 
+this during package loading (and not sure what is the right way to display 
+a message during package load either).
+
+best
+
+Vladimir Dergachev
+
+
+From bbo|ker @end|ng |rom gm@||@com  Sat Oct  9 18:08:04 2021
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Sat, 9 Oct 2021 12:08:04 -0400
+Subject: [R-pkg-devel] [Tagged] Re: multithreading in packages
+In-Reply-To: <alpine.DEB.2.22.394.2110091134250.2405@iridium>
+References: <alpine.DEB.2.22.394.2110072149150.2405@iridium>
+ <20211009095210.316a5e5c@parabola>
+ <alpine.DEB.2.22.394.2110091019140.2405@iridium>
+ <08837D3C-798B-4163-B95B-8C9C97FAD459@dcn.davis.ca.us>
+ <alpine.DEB.2.22.394.2110091134250.2405@iridium>
+Message-ID: <0cfa8691-11c7-a082-43a2-8866d4a64405@gmail.com>
+
+   FWIW there is some machinery in the glmmTMB package for querying, 
+setting, etc. the number of OpenMP threads.
+
+https://github.com/glmmTMB/glmmTMB/search?q=omp
+
+On 10/9/21 11:45 AM, Vladimir Dergachev wrote:
+> 
+> 
+> On Sat, 9 Oct 2021, Jeff Newmiller wrote:
+> 
+>> Keep in mind that by embedding this decision into your package you may 
+>> be consuming a resource (cores) that may be more efficiently allocated 
+>> by an application-level partitioning. of available resources. I for 
+>> one am not a fan of this kind of thinking, and it makes system 
+>> requirements for your package more complex even if you allow me to 
+>> disable it.
+> 
+> That's right, and this is why I was asking about any present or future 
+> plans for R support - if there was a way to find out how many threads R 
+> should use, I would use that.
+> 
+> So far, it looks like the most portable way is to use OpenMP and let the 
+> user set an appropriate environment variable if they want to restrict 
+> thread usage. I could use the same OpenMP variable for pthreads as well.
+> 
+> This is pretty common on clusters anyway, with openmp environment 
+> variables set automatically to the number of cores user requested.
+> 
+> I would probably also add a function to the package to report the number 
+> of threads being used. Not sure whether it would be a good idea to 
+> report this during package loading (and not sure what is the right way 
+> to display a message during package load either).
+> 
+> best
+> 
+> Vladimir Dergachev
+> 
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+-- 
+Dr. Benjamin Bolker
+Professor, Mathematics & Statistics and Biology, McMaster University
+Director, School of Computational Science and Engineering
+Graduate chair, Mathematics & Statistics
+
+
+From edd @end|ng |rom deb|@n@org  Sat Oct  9 18:33:03 2021
+From: edd @end|ng |rom deb|@n@org (Dirk Eddelbuettel)
+Date: Sat, 9 Oct 2021 11:33:03 -0500
+Subject: [R-pkg-devel] [Tagged] Re: multithreading in packages
+In-Reply-To: <0cfa8691-11c7-a082-43a2-8866d4a64405@gmail.com>
+References: <alpine.DEB.2.22.394.2110072149150.2405@iridium>
+ <20211009095210.316a5e5c@parabola>
+ <alpine.DEB.2.22.394.2110091019140.2405@iridium>
+ <08837D3C-798B-4163-B95B-8C9C97FAD459@dcn.davis.ca.us>
+ <alpine.DEB.2.22.394.2110091134250.2405@iridium>
+ <0cfa8691-11c7-a082-43a2-8866d4a64405@gmail.com>
+Message-ID: <24929.50239.740081.740992@rob.eddelbuettel.com>
+
+
+On 9 October 2021 at 12:08, Ben Bolker wrote:
+|    FWIW there is some machinery in the glmmTMB package for querying, 
+| setting, etc. the number of OpenMP threads.
+| 
+| https://github.com/glmmTMB/glmmTMB/search?q=omp
+
+https://cloud.r-project.org/package=RhpcBLASctl
+
+Dirk
+
+-- 
+https://dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From wo||g@ng@v|echtb@uer @end|ng |rom m@@@tr|chtun|ver@|ty@n|  Sat Oct  9 18:37:17 2021
+From: wo||g@ng@v|echtb@uer @end|ng |rom m@@@tr|chtun|ver@|ty@n| (Viechtbauer, Wolfgang (SP))
+Date: Sat, 9 Oct 2021 16:37:17 +0000
+Subject: [R-pkg-devel] [Tagged] Re: multithreading in packages
+In-Reply-To: <24929.50239.740081.740992@rob.eddelbuettel.com>
+References: <alpine.DEB.2.22.394.2110072149150.2405@iridium>
+ <20211009095210.316a5e5c@parabola>
+ <alpine.DEB.2.22.394.2110091019140.2405@iridium>
+ <08837D3C-798B-4163-B95B-8C9C97FAD459@dcn.davis.ca.us>
+ <alpine.DEB.2.22.394.2110091134250.2405@iridium>
+ <0cfa8691-11c7-a082-43a2-8866d4a64405@gmail.com>
+ <24929.50239.740081.740992@rob.eddelbuettel.com>
+Message-ID: <350172968c5a4e6299a8ac249d9d99e9@UM-MAIL3214.unimaas.nl>
+
+One thing I did not see mentioned in this thread (pun intended) so far:
+
+For what kind of computations is multithreading supposed to be used within the package being developed? If the computations involve a lot of linear/matrix algebra, then one could just use R with other linear algebra routines (e.g., OpenBLAS, Atlas, MKL, BLIS) and get the performance benefits of multicore processing of those computations without having to change a single line of code in the package (although in my experience, most of the performance benefits come from switching to something like OpenBLAS and using it single-threaded).
+
+This aside, I am personally more in favor of explicitly parallelizing those things that are known to be embarrassingly parallelizable using packages like parallel, future, etc. since a package author should know best when these situations arise and can take the necessary steps to parallelize those computations -- but making the use of parallel processing in these cases an option, not a default. I have seen way too many cases in HPC environments where jobs are being parallelized, the package is doing parallel processing, and multicore linear algebra routines are being used all simultaneously, which is just a disaster.
+
+Finally, I don't think the HPC task view has been mentioned so far:
+
+https://cran.r-project.org/web/views/HighPerformanceComputing.html
+
+(not even by Dirk just now, who maintains it!)
+
+Best,
+Wolfgang
+
+>-----Original Message-----
+>From: R-package-devel [mailto:r-package-devel-bounces at r-project.org] On Behalf Of
+>Dirk Eddelbuettel
+>Sent: Saturday, 09 October, 2021 18:33
+>To: Ben Bolker
+>Cc: r-package-devel at r-project.org
+>Subject: Re: [R-pkg-devel] [Tagged] Re: multithreading in packages
+>
+>
+>On 9 October 2021 at 12:08, Ben Bolker wrote:
+>|    FWIW there is some machinery in the glmmTMB package for querying,
+>| setting, etc. the number of OpenMP threads.
+>|
+>| https://github.com/glmmTMB/glmmTMB/search?q=omp
+>
+>https://cloud.r-project.org/package=RhpcBLASctl
+>
+>Dirk
+>
+>--
+>https://dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+>
+>______________________________________________
+>R-package-devel at r-project.org mailing list
+>https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+
+From vo|ody@ @end|ng |rom m|nd@pr|ng@com  Sat Oct  9 19:35:19 2021
+From: vo|ody@ @end|ng |rom m|nd@pr|ng@com (Vladimir Dergachev)
+Date: Sat, 9 Oct 2021 13:35:19 -0400 (EDT)
+Subject: [R-pkg-devel] [Tagged] Re: multithreading in packages
+In-Reply-To: <0cfa8691-11c7-a082-43a2-8866d4a64405@gmail.com>
+References: <alpine.DEB.2.22.394.2110072149150.2405@iridium>
+ <20211009095210.316a5e5c@parabola>
+ <alpine.DEB.2.22.394.2110091019140.2405@iridium>
+ <08837D3C-798B-4163-B95B-8C9C97FAD459@dcn.davis.ca.us>
+ <alpine.DEB.2.22.394.2110091134250.2405@iridium>
+ <0cfa8691-11c7-a082-43a2-8866d4a64405@gmail.com>
+Message-ID: <alpine.DEB.2.22.394.2110091335080.2405@iridium>
+
+
+
+On Sat, 9 Oct 2021, Ben Bolker wrote:
+
+>  FWIW there is some machinery in the glmmTMB package for querying, setting, 
+> etc. the number of OpenMP threads.
+>
+> https://github.com/glmmTMB/glmmTMB/search?q=omp
+
+Great, thank you !
+
+Vladimir Dergachev
+
+>
+> On 10/9/21 11:45 AM, Vladimir Dergachev wrote:
+>> 
+>> 
+>> On Sat, 9 Oct 2021, Jeff Newmiller wrote:
+>> 
+>>> Keep in mind that by embedding this decision into your package you may be 
+>>> consuming a resource (cores) that may be more efficiently allocated by an 
+>>> application-level partitioning. of available resources. I for one am not a 
+>>> fan of this kind of thinking, and it makes system requirements for your 
+>>> package more complex even if you allow me to disable it.
+>> 
+>> That's right, and this is why I was asking about any present or future 
+>> plans for R support - if there was a way to find out how many threads R 
+>> should use, I would use that.
+>> 
+>> So far, it looks like the most portable way is to use OpenMP and let the 
+>> user set an appropriate environment variable if they want to restrict 
+>> thread usage. I could use the same OpenMP variable for pthreads as well.
+>> 
+>> This is pretty common on clusters anyway, with openmp environment variables 
+>> set automatically to the number of cores user requested.
+>> 
+>> I would probably also add a function to the package to report the number of 
+>> threads being used. Not sure whether it would be a good idea to report this 
+>> during package loading (and not sure what is the right way to display a 
+>> message during package load either).
+>> 
+>> best
+>> 
+>> Vladimir Dergachev
+>> 
+>> ______________________________________________
+>> R-package-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+> -- 
+> Dr. Benjamin Bolker
+> Professor, Mathematics & Statistics and Biology, McMaster University
+> Director, School of Computational Science and Engineering
+> Graduate chair, Mathematics & Statistics
+>
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+
+
+From vo|ody@ @end|ng |rom m|nd@pr|ng@com  Sat Oct  9 19:49:51 2021
+From: vo|ody@ @end|ng |rom m|nd@pr|ng@com (Vladimir Dergachev)
+Date: Sat, 9 Oct 2021 13:49:51 -0400 (EDT)
+Subject: [R-pkg-devel] [Tagged] Re: multithreading in packages
+In-Reply-To: <24929.50239.740081.740992@rob.eddelbuettel.com>
+References: <alpine.DEB.2.22.394.2110072149150.2405@iridium>
+ <20211009095210.316a5e5c@parabola>
+ <alpine.DEB.2.22.394.2110091019140.2405@iridium>
+ <08837D3C-798B-4163-B95B-8C9C97FAD459@dcn.davis.ca.us>
+ <alpine.DEB.2.22.394.2110091134250.2405@iridium>
+ <0cfa8691-11c7-a082-43a2-8866d4a64405@gmail.com>
+ <24929.50239.740081.740992@rob.eddelbuettel.com>
+Message-ID: <alpine.DEB.2.22.394.2110091349260.2405@iridium>
+
+
+
+On Sat, 9 Oct 2021, Dirk Eddelbuettel wrote:
+
+>
+> On 9 October 2021 at 12:08, Ben Bolker wrote:
+> |    FWIW there is some machinery in the glmmTMB package for querying,
+> | setting, etc. the number of OpenMP threads.
+> |
+> | https://github.com/glmmTMB/glmmTMB/search?q=omp
+>
+> https://cloud.r-project.org/package=RhpcBLASctl
+
+Very useful, thank you ! Tried it on my notebook, I can see OpenMP 
+working.
+
+thanks
+
+Vladimir Dergachev
+
+>
+> Dirk
+>
+> -- 
+> https://dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+>
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+
+
+From vo|ody@ @end|ng |rom m|nd@pr|ng@com  Sat Oct  9 20:08:39 2021
+From: vo|ody@ @end|ng |rom m|nd@pr|ng@com (Vladimir Dergachev)
+Date: Sat, 9 Oct 2021 14:08:39 -0400 (EDT)
+Subject: [R-pkg-devel] [Tagged] Re: multithreading in packages
+In-Reply-To: <350172968c5a4e6299a8ac249d9d99e9@UM-MAIL3214.unimaas.nl>
+References: <alpine.DEB.2.22.394.2110072149150.2405@iridium>
+ <20211009095210.316a5e5c@parabola>
+ <alpine.DEB.2.22.394.2110091019140.2405@iridium>
+ <08837D3C-798B-4163-B95B-8C9C97FAD459@dcn.davis.ca.us>
+ <alpine.DEB.2.22.394.2110091134250.2405@iridium>
+ <0cfa8691-11c7-a082-43a2-8866d4a64405@gmail.com>
+ <24929.50239.740081.740992@rob.eddelbuettel.com>
+ <350172968c5a4e6299a8ac249d9d99e9@UM-MAIL3214.unimaas.nl>
+Message-ID: <alpine.DEB.2.22.394.2110091350050.2405@iridium>
+
+
+
+On Sat, 9 Oct 2021, Viechtbauer, Wolfgang (SP) wrote:
+
+> One thing I did not see mentioned in this thread (pun intended) so far:
+>
+> For what kind of computations is multithreading supposed to be used within the package being developed? If the computations involve a lot of linear/matrix algebra, then one could just use R with other linear algebra routines (e.g., OpenBLAS, Atlas, MKL, BLIS) and get the performance benefits of multicore processing of those computations without having to change a single line of code in the package (although in my experience, most of the performance benefits come from switching to something like OpenBLAS and using it single-threaded).
+
+This is meant for the RMVL package, which memory maps MVL format files for 
+direct access. The package also provides database functionality.
+
+The files I am interested in are large. For example, the Gaia DR3 dataset 
+is 500GB+.
+
+Plain linear algebra will likely not need multithreading - the computation 
+will proceed at the speed of storage I/O (which is quite impressive 
+nowadays).
+
+But it will be useful to multithread more involved code that builds or 
+queries indices, and I was also thinking of some functions to assist with 
+visualization - plot() and xyplot() were not meant for very long vectors.
+
+Ideally, one would be able to explore such large data sets interactively.
+And then do more interesting things on the cluster.
+
+>
+> This aside, I am personally more in favor of explicitly parallelizing those things that are known to be embarrassingly parallelizable using packages like parallel, future, etc. since a package author should know best when these situations arise and can take the necessary steps to parallelize those computations -- but making the use of parallel processing in these cases an option, not a default. I have seen way too many cases in HPC environments where jobs are being parallelized, the package is doing parallel processing, and multicore linear algebra routines are being used all simultaneously, which is just a disaster.
+>
+> Finally, I don't think the HPC task view has been mentioned so far:
+>
+> https://cran.r-project.org/web/views/HighPerformanceComputing.html
+
+Thanks for the link !
+
+I see there is an OpenCL package, very interesting.
+
+best
+
+Vladimir Dergachev
+
+>
+> (not even by Dirk just now, who maintains it!)
+>
+> Best,
+> Wolfgang
+>
+>> -----Original Message-----
+>> From: R-package-devel [mailto:r-package-devel-bounces at r-project.org] On Behalf Of
+>> Dirk Eddelbuettel
+>> Sent: Saturday, 09 October, 2021 18:33
+>> To: Ben Bolker
+>> Cc: r-package-devel at r-project.org
+>> Subject: Re: [R-pkg-devel] [Tagged] Re: multithreading in packages
+>>
+>>
+>> On 9 October 2021 at 12:08, Ben Bolker wrote:
+>> |    FWIW there is some machinery in the glmmTMB package for querying,
+>> | setting, etc. the number of OpenMP threads.
+>> |
+>> | https://github.com/glmmTMB/glmmTMB/search?q=omp
+>>
+>> https://cloud.r-project.org/package=RhpcBLASctl
+>>
+>> Dirk
+>>
+>> --
+>> https://dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+>>
+>> ______________________________________________
+>> R-package-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+
+
+From er|nm@hodge@@ @end|ng |rom gm@||@com  Sat Oct  9 20:56:13 2021
+From: er|nm@hodge@@ @end|ng |rom gm@||@com (Erin Hodgess)
+Date: Sat, 9 Oct 2021 12:56:13 -0600
+Subject: [R-pkg-devel] multithreading in packages
+In-Reply-To: <alpine.DEB.2.22.394.2110091019140.2405@iridium>
+References: <alpine.DEB.2.22.394.2110072149150.2405@iridium>
+ <20211009095210.316a5e5c@parabola>
+ <alpine.DEB.2.22.394.2110091019140.2405@iridium>
+Message-ID: <CACxE24=jJFbBA9Uq7-uO4HXE39HFoR2UxtQs5Zf9=ja1C_ymzg@mail.gmail.com>
+
+Have you thought about using C or c++, please?  Also, there are packages
+called pbdDMAT from Drew Schmidt at U of Tenn which might help.
+
+On Sat, Oct 9, 2021 at 8:39 AM Vladimir Dergachev <volodya at mindspring.com>
+wrote:
+
+>
+>
+> On Sat, 9 Oct 2021, Ivan Krylov wrote:
+>
+> > ? Thu, 7 Oct 2021 21:58:08 -0400 (EDT)
+> > Vladimir Dergachev <volodya at mindspring.com> ?????:
+> >
+> >>    * My understanding from reading documentation and source code is
+> >> that there is no dedicated support in R yet, but there are packages
+> >> that use multithreading. Are there any plans for multithreading
+> >> support in future R versions ?
+> >
+> > Shared memory multithreading is hard to get right in a memory-safe
+> > language (e.g. R), but there's the parallel package, which is a part of
+> > base R, which offers process-based parallelism and may run your code on
+> > multiple machines at the same time. There's no communication _between_
+> > these machines, though. (But I think there's an MPI package on CRAN.)
+>
+> Well, the way I planned to use multitheading is to speedup processing of
+> very large vectors, so one does not have to wait seconds for the command
+> to return. Same could be done for many built-in R primitives.
+>
+> >
+> >>    * pthread or openmp ? I am particularly concerned about
+> >> interaction with other packages. I have seen that using pthread and
+> >> openmp libraries simultaneously can result in incorrectly pinned
+> >> threads.
+> >
+> > pthreads-based code could be harder to run on Windows (which is a
+> > first-class platform for R, expected to be supported by most packages).
+>
+> G?bor Cs?rdi pointed out that R is compiled with mingw on Windows and
+> has pthread support - something I did not know either.
+>
+> > OpenMP should be cross-platform, but Apple compilers are sometimes
+> > lacking; the latest Apple likely has been solved since I've heard about
+> > it. If your problem can be made embarrassingly parallel, you're welcome
+> > to use the parallel package.
+>
+> I used parallel before, it is very nice, but R-level only. I am looking
+> for something to speedup response of individual package functions so they
+> themselves can be used of part of more complicated code.
+>
+> >
+> >>    * control of maximum number of threads. One can default to openmp
+> >> environment variable, but these might vary between openmp
+> >> implementations.
+> >
+> > Moreover, CRAN-facing tests aren't allowed to consume more than 200%
+> > CPU, so it's a good idea to leave the number of workers in control of
+> > the user. According to a reference guide I got from openmp.org, OpenMP
+> > implementations are expected to understand omp_set_num_threads() and
+> > the OMP_NUM_THREADS environment variable.
+>
+> Oh, this would never be run through CRAN tests, it is meant for data that
+> is too big for CRAN.
+>
+> I seem to remember that the Intel compiler used a different environmental
+> variable, but it could be this was fixed since the last time I used it.
+>
+> best
+>
+> Vladimir Dergachev
+>
+> >
+> > --
+> > Best regards,
+> > Ivan
+> >
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+-- 
+Erin Hodgess, PhD
+mailto: erinm.hodgess at gmail.com
+
+	[[alternative HTML version deleted]]
+
+
+From vo|ody@ @end|ng |rom m|nd@pr|ng@com  Sat Oct  9 22:23:15 2021
+From: vo|ody@ @end|ng |rom m|nd@pr|ng@com (Vladimir Dergachev)
+Date: Sat, 9 Oct 2021 16:23:15 -0400 (EDT)
+Subject: [R-pkg-devel] multithreading in packages
+In-Reply-To: <CACxE24=jJFbBA9Uq7-uO4HXE39HFoR2UxtQs5Zf9=ja1C_ymzg@mail.gmail.com>
+References: <alpine.DEB.2.22.394.2110072149150.2405@iridium>
+ <20211009095210.316a5e5c@parabola>
+ <alpine.DEB.2.22.394.2110091019140.2405@iridium>
+ <CACxE24=jJFbBA9Uq7-uO4HXE39HFoR2UxtQs5Zf9=ja1C_ymzg@mail.gmail.com>
+Message-ID: <alpine.DEB.2.22.394.2110091605100.2405@iridium>
+
+
+
+On Sat, 9 Oct 2021, Erin Hodgess wrote:
+
+> Have you thought about using C or c++, please??
+
+Yes, indeed, the core of the package is written in C, with some C++ for 
+sorting (which turned out to be rather interesting).
+
+Beyound writing optimized C there are two ways to speed up execution on a 
+single computer - multithreading and vector instructions.
+
+Multithreading is easier here, because only one or two libraries are 
+needed (libgomp or pthread) and because it is often hard to vectorize 
+operations like sorting, hashing and the like.
+
+Also, to use vector instructions to full potential one typically needs a 
+fair bit of black magic which is unlikely to pass CRAN tests. I am having 
+enough trouble as it is getting a simple flexible array past address 
+sanitizers.
+
+> Also, there are packages called pbdDMAT from Drew Schmidt at U of Tenn which might help.
+
+Great, thanks for pointing this out ! Looks like pbdDMAT uses mpi.
+
+Also, it appears this package was removed from CRAN for failing to compile 
+on macs, which seems rather unfair - I don't know of any clusters running 
+mac os.
+
+Vladimir Dergachev
+
+From er|nm@hodge@@ @end|ng |rom gm@||@com  Sat Oct  9 22:25:12 2021
+From: er|nm@hodge@@ @end|ng |rom gm@||@com (Erin Hodgess)
+Date: Sat, 9 Oct 2021 14:25:12 -0600
+Subject: [R-pkg-devel] multithreading in packages
+In-Reply-To: <alpine.DEB.2.22.394.2110091605100.2405@iridium>
+References: <alpine.DEB.2.22.394.2110072149150.2405@iridium>
+ <20211009095210.316a5e5c@parabola>
+ <alpine.DEB.2.22.394.2110091019140.2405@iridium>
+ <CACxE24=jJFbBA9Uq7-uO4HXE39HFoR2UxtQs5Zf9=ja1C_ymzg@mail.gmail.com>
+ <alpine.DEB.2.22.394.2110091605100.2405@iridium>
+Message-ID: <CACxE24n60k5b6R--atDnn-UJ3EoxCvHhjrRnoQY5RHcawa_iqw@mail.gmail.com>
+
+Yes it does use MPI.  You can get the pbd from GitHub, as a backup.
+
+Thanks
+
+On Sat, Oct 9, 2021 at 2:23 PM Vladimir Dergachev <volodya at mindspring.com>
+wrote:
+
+>
+>
+> On Sat, 9 Oct 2021, Erin Hodgess wrote:
+>
+> > Have you thought about using C or c++, please?
+>
+> Yes, indeed, the core of the package is written in C, with some C++ for
+> sorting (which turned out to be rather interesting).
+>
+> Beyound writing optimized C there are two ways to speed up execution on a
+> single computer - multithreading and vector instructions.
+>
+> Multithreading is easier here, because only one or two libraries are
+> needed (libgomp or pthread) and because it is often hard to vectorize
+> operations like sorting, hashing and the like.
+>
+> Also, to use vector instructions to full potential one typically needs a
+> fair bit of black magic which is unlikely to pass CRAN tests. I am having
+> enough trouble as it is getting a simple flexible array past address
+> sanitizers.
+>
+> > Also, there are packages called pbdDMAT from Drew Schmidt at U of Tenn
+> which might help.
+>
+> Great, thanks for pointing this out ! Looks like pbdDMAT uses mpi.
+>
+> Also, it appears this package was removed from CRAN for failing to compile
+> on macs, which seems rather unfair - I don't know of any clusters running
+> mac os.
+>
+> Vladimir Dergachev
+
+-- 
+Erin Hodgess, PhD
+mailto: erinm.hodgess at gmail.com
+
+	[[alternative HTML version deleted]]
+
+
+From th|erry@onke||nx @end|ng |rom |nbo@be  Mon Oct 11 13:06:55 2021
+From: th|erry@onke||nx @end|ng |rom |nbo@be (Thierry Onkelinx)
+Date: Mon, 11 Oct 2021 13:06:55 +0200
+Subject: [R-pkg-devel] which functions to deprecate
+Message-ID: <CAJuCY5zYavOjbrgxxu_-Nsr8o1gAUrZk=yKBwunZ-sWThCpN0w@mail.gmail.com>
+
+Dear all,
+
+I have a package with a legacy main function which calls a few exported
+functions. In practice most users will only call the main function. Should
+I deprecate only the main function or all the legacy functions? The latter
+case generates more deprecation warnings when calling the main function.
+
+Best regards,
+
+ir. Thierry Onkelinx
+Statisticus / Statistician
+
+Vlaamse Overheid / Government of Flanders
+INSTITUUT VOOR NATUUR- EN BOSONDERZOEK / RESEARCH INSTITUTE FOR NATURE AND
+FOREST
+Team Biometrie & Kwaliteitszorg / Team Biometrics & Quality Assurance
+thierry.onkelinx at inbo.be
+Havenlaan 88 bus 73, 1000 Brussel
+www.inbo.be
+
+///////////////////////////////////////////////////////////////////////////////////////////
+To call in the statistician after the experiment is done may be no more
+than asking him to perform a post-mortem examination: he may be able to say
+what the experiment died of. ~ Sir Ronald Aylmer Fisher
+The plural of anecdote is not data. ~ Roger Brinner
+The combination of some data and an aching desire for an answer does not
+ensure that a reasonable answer can be extracted from a given body of data.
+~ John Tukey
+///////////////////////////////////////////////////////////////////////////////////////////
+
+<https://www.inbo.be>
+
+	[[alternative HTML version deleted]]
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Mon Oct 11 13:56:39 2021
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Mon, 11 Oct 2021 07:56:39 -0400
+Subject: [R-pkg-devel] which functions to deprecate
+In-Reply-To: <CAJuCY5zYavOjbrgxxu_-Nsr8o1gAUrZk=yKBwunZ-sWThCpN0w@mail.gmail.com>
+References: <CAJuCY5zYavOjbrgxxu_-Nsr8o1gAUrZk=yKBwunZ-sWThCpN0w@mail.gmail.com>
+Message-ID: <c6396ae6-ea95-94e7-b592-57b08aec53bb@gmail.com>
+
+On 11/10/2021 7:06 a.m., Thierry Onkelinx wrote:
+> Dear all,
+> 
+> I have a package with a legacy main function which calls a few exported
+> functions. In practice most users will only call the main function. Should
+> I deprecate only the main function or all the legacy functions? The latter
+> case generates more deprecation warnings when calling the main function.
+
+I'd say you should deprecate all the functions you intend to stop 
+exporting two releases from now, i.e. they'll all be deprecated in
+the next release, and defunct in the release after that.
+
+If you find that calling the main function generates too many messages, 
+then you could leave the others undeprecated for now, and deprecate them 
+when you finally mark the main one as defunct (or delete it).  That is:
+
+next release:  main is deprecated
+next+1 release: main is defunct, others are deprecated
+next+2 release: all are defunct
+
+Alternatively, you could deprecate all of them now, but edit the main 
+one so it suppresses the deprecation messages in the others. 
+Deprecation messages are documented to have class "deprecatedWarning", 
+so you can suppress only those messages if you work at it.
+
+Duncan Murdoch
+
+
