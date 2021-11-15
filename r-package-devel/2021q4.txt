@@ -2420,3 +2420,4821 @@ so you can suppress only those messages if you work at it.
 Duncan Murdoch
 
 
+From p@r|k@heet@n@nd@ @end|ng |rom uconn@edu  Tue Oct 19 05:13:11 2021
+From: p@r|k@heet@n@nd@ @end|ng |rom uconn@edu (Pariksheet Nanda)
+Date: Mon, 18 Oct 2021 23:13:11 -0400
+Subject: [R-pkg-devel] How does one install a libtool generated libfoo.so.1
+ file into ./libs/?
+Message-ID: <a170c691-3074-cabe-fcc8-8805ca66544e@uconn.edu>
+
+Hi folks,
+
+My package [1] depends on a C library libghmm-dev that's available in 
+many GNU/Linux package managers.  However, it's not available on all 
+platforms and if this dependency is not installed, my autoconf generated 
+configure script defaults to falling back to compiling and installing 
+the dependency from my bundled copy of upstream's pristine source 
+tarball [2].  Now, because upstream uses automake which in turn uses 
+libtool, I also use automake and libtool in my build process to hook 
+into their build artifacts using SUBDIRS and *-local automake rules [3].
+
+As you may know libtool appends `-version-info` to its generated shared 
+libraries in the form "libfoo.so.1.2.3".  I'm linking against the 
+bundled library which only sets the first value, namely libghmm.so.1.
+
+The trouble is, R's installation process will only copy compiled files 
+from ./libs/ that have exactly the extension ".so" and files ending with 
+".so.1" are ignored.
+
+My current workaround is to set -Wl,-rpath to the location of the 
+generated ".so.1" file.  This allows the installation process to 
+complete and sneakily pass the 2 canonical tests:
+
+
+** testing if installed package can be loaded from temporary location
+---snip---
+** testing if installed package can be loaded from final location
+
+
+However, not surprisingly, when I try to load the library from the final 
+location after the temporary directory has been deleted it fails with:
+
+
+library(tsshmm)
+...
+Error: package or namespace load failed for 'tsshmm' indyn.load(file, 
+DLLpath = DLLpath, ...):
+  unable to load shared object 
+'/home/omsai/R/x86_64-pc-linux-gnu-library/4.1/tsshmm/libs/tsshmm.so':
+   libghmm.so.1: cannot open shared object file: No such file or directory
+
+
+I can rename the dependency from ".so.1" to ".so" to also get the 
+dependent library to the final location.  But it still fails with the 
+above error because the library links against the ".so.1" file and I 
+would need an accompanying symlink.  I tried creating a symlink but 
+can't think of how to get the symlink to the final location.  If my 
+Makefile writes the symlink into ./inst/libs/libghmm.so.1 during compile 
+time it is not actually installed; perhaps because the ./inst/ 
+sub-directories are only copied earlier on when staging and are ignored 
+later?  If I were to create that dangling symlink inside ./inst/libs/ 
+instead of generating it later during compile time, devtools::install() 
+complains about the broken symlink with:
+
+
+cp: cannot stat 'tsshmm/inst/libs/libghmm.so.1': No such file or directory
+
+
+So is there some mechanism to copy arbitrary files or symlinks to the 
+final install location?  I prefer not to patch upstreams Makefile.am to 
+remove their -version-info, but currently that's the only option I can 
+think of.  I can't find helpful discussion surrounding this in the 
+mailing list archives.
+
+Last week when I've posted for help with my package on another issue on 
+the Bioconductor mailing list, one adventurous soul tried installing the 
+package using `remotes::install_gitlab("coregenomics/tsshmm")`.  This 
+won't work because I haven't committed the generated autotools files; if 
+anyone wants to play with it, you'll have to follow the 2 additional 
+steps run by the continuous integration script, namely, unpacking 
+./src/ghmm-0.9-rc3.tar.gz into ./src/ and running `autoreconf -ivf` in 
+the package's top-level directory where configure.ac is located.
+
+Any help appreciated,
+
+Pariksheet
+
+
+[1] https://gitlab.com/coregenomics/tsshmm
+
+[2] The only patches I apply to the dependency are to fix 2 bugs for 
+compiling, and to remedy a warning severe enough to be flagged by `R CMD 
+check`.
+
+[3] You can see my Makefile.am here:
+https://gitlab.com/coregenomics/tsshmm/-/blob/master/src/Makefile.am
+
+
+From p@r|k@heet@n@nd@ @end|ng |rom uconn@edu  Tue Oct 19 08:16:41 2021
+From: p@r|k@heet@n@nd@ @end|ng |rom uconn@edu (Pariksheet Nanda)
+Date: Tue, 19 Oct 2021 02:16:41 -0400
+Subject: [R-pkg-devel] 
+ How does one install a libtool generated libfoo.so.1
+ file into ./libs/?
+In-Reply-To: <a170c691-3074-cabe-fcc8-8805ca66544e@uconn.edu>
+References: <a170c691-3074-cabe-fcc8-8805ca66544e@uconn.edu>
+Message-ID: <79e256dd-8441-425a-e38e-6545386da575@uconn.edu>
+
+Hi folks,
+
+On 10/18/21 11:13 PM, Pariksheet Nanda wrote:
+> 
+> The trouble is, R's installation process will only copy compiled files 
+> from ./libs/ that have exactly the extension ".so" and files ending with 
+> ".so.1" are ignored.
+--snip--
+> So is there some mechanism to copy arbitrary files or symlinks to the 
+> final install location?? I prefer not to patch upstreams Makefile.am to 
+> remove their -version-info, but currently that's the only option I can 
+> think of.
+
+It turns out removing -version-info or setting it to 0.0.0 will still 
+try to link against libghmm.so.0 which is still problematic.  I don't 
+see how to disable libtool's versioning.
+
+So after playing around, the only way I can think of doing is is 
+eliminating the dependency file by compiling it statically and linking 
+it with the dynamic library, because when I try merging the 2 dynamic 
+libraries with libtool it gives the same error of not finding 
+"libghmm.so.1".  I have a patch that works on my Debian machines, but 
+not yet on the Ubuntu CI Image:
+
+https://gitlab.com/coregenomics/tsshmm/-/commit/e9608f01deb7baa13684d2bd65fe11e93f6c2e08
+
+Also pasting the short diff below for search-ability.
+
+
+> Pariksheet
+
+Pariksheet
+
+
+
+$ GIT_PAGER=cat git log -1 --patch
+commit e9608f01deb7baa13684d2bd65fe11e93f6c2e08 (HEAD -> master, 
+origin/master, origin/HEAD)
+Author: Pariksheet Nanda <pariksheet.nanda at uconn.edu>
+Date:   Tue Oct 19 01:43:09 2021 -0400
+
+     BLD: Link bundled dependency statically to workaround load errors
+
+diff --git a/configure.ac b/configure.ac
+index 87b4d31..4d0be6e 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -135,8 +135,6 @@ AS_IF([test x$with_ghmm_strategy = x],
+        ) # AS_IF
+  ) # AS_IF
+
+-AC_SUBST(GHMM_LIBS, -lghmm)
+-
+  # If GHMM_ROOT was provided, set the header and library paths.
+  #
+  # Check for the existance of include/ and lib/ sub-directories and if 
+both are
+@@ -180,7 +178,10 @@ AS_IF(test x$found_ghmm_system != xyes &&
+        AM_CONDITIONAL(BUNDLED_GHMM, true)
+        [AX_SUBDIRS_CONFIGURE([src/ghmm-0.9-rc3],
+                              [[CFLAGS=$CFLAGS],
+-                             [--enable-gsl=no],
++                             [--enable-static],
++                             [--disable-shared],
++                             [--with-pic],
++                             [--enable-gsl=no],
+                               [--disable-gsltest],
+                               [--with-rng=mt],
+                               [--with-python=no],
+@@ -191,8 +192,14 @@ AS_IF(test x$found_ghmm_system != xyes &&
+        [AS_IF([test -d $GHMM_ROOT], [],
+               AC_MSG_FAILURE(Directory of bundled GHMM not found.))]
+        [AC_SUBST(GHMM_CPPFLAGS, ["-I$GHMM_ROOT/.."])]
+-      # Using -rpath=. prefers the bundled over any system installation.
+-      [AC_SUBST(GHMM_LDFLAGS, ["-Wl,-rpath=. -L$GHMM_ROOT/.libs"])]
++      # We don't need GMM_LIBS or GHMM_LDFLAGS because we can directly 
+merge
++      # libraries using tsshmm_la_LIBADD per
++      # https://stackoverflow.com/a/13978856 and
++      # 
+https://www.gnu.org/software/automake/manual/html_node/Libtool-Convenience-Libraries.html
++      #
++      # However we now need to link against libghmm's libxml2 dependency
++      # because we're merging libraries.
++      [PKG_CHECK_MODULES([LIBXML2], [libxml-2.0 >= 2.6])]
+        AC_MSG_NOTICE(Applying patches to GHMM to fix errors and 
+warnings from "R CMD check")
+        # Patch bug in upstream's configure bug:
+        #
+@@ -239,7 +246,9 @@ AS_IF(test x$found_ghmm_system != xyes &&
+  #include <ghmm/fbgibbs.h>' src/ghmm-0.9-rc3/tests/mcmc.c
+        [touch -r src/ghmm-0.9-rc3/tests/mcmc.c{.bak,}]
+        [diff -u src/ghmm-0.9-rc3/tests/mcmc.c{.bak,}]
+-      AC_MSG_NOTICE(Finished patching GHMM)
++      AC_MSG_NOTICE(Finished patching GHMM),
++      # Only link if we're not using the static bundled dependency.
++      [AC_SUBST(GHMM_LIBS, -lghmm)]
+  ) # AS_IF
+
+  # Variables for Doxygen.
+diff --git a/src/Makefile.am b/src/Makefile.am
+index 617a4e7..0e38b4a 100644
+--- a/src/Makefile.am
++++ b/src/Makefile.am
+@@ -9,18 +9,19 @@ endif
+  lib_LTLIBRARIES    = tsshmm.la
+  tsshmm_la_CFLAGS   = $(PKG_CFLAGS)
+  tsshmm_la_CPPFLAGS = $(PKG_CPPFLAGS)
++if BUNDLED_GHMM
++tsshmm_la_LIBADD   = @GHMM_ROOT@/libghmm.la
++tsshmm_la_LDFLAGS  = -module $(PKG_LIBS) @LIBXML2_LIBS@
++else
+  tsshmm_la_LDFLAGS  = -module $(PKG_LIBS)
++endif
+  tsshmm_la_SOURCES  = R_init_tsshmm.c R_wrap_tsshmm.c models.c \
+  simulate.c train.c tss.c viterbi.c
+
+  ACLOCAL_AMFLAGS = -I tools
+
+  # Hook that runs after the default "all" rule.
+-if BUNDLED_GHMM
+-all-local : tsshmm.so libghmm.so
+-else
+  all-local : tsshmm.so
+-endif
+
+  # One of the limitations with POSIX-compliant `make` is not being able to
+  # specify multiple outputs from a single rule.  Therefore, even though 
+libtool
+@@ -30,14 +31,8 @@ tsshmm.so : tsshmm.la
+  	cp -av .libs/tsshmm.so.0.0.0 $@
+  	chmod -x $@
+
+-if BUNDLED_GHMM
+-libghmm.so : @GHMM_ROOT@/libghmm.la
+-	cp -av @GHMM_ROOT@/.libs/libghmm.so.1.0.0 $@
+-	chmod -x $@
+-endif
+-
+  clean-local :
+-	rm -f tsshmm.so libghmm.so
++	rm -f tsshmm.so
+
+  distclean-local : clean-local
+
+
+From d@tr7320 @end|ng |rom un|@@ydney@edu@@u  Tue Oct 19 10:00:10 2021
+From: d@tr7320 @end|ng |rom un|@@ydney@edu@@u (Dario Strbenac)
+Date: Tue, 19 Oct 2021 08:00:10 +0000
+Subject: [R-pkg-devel] Concise Summary For Any Variety Of R Function
+Message-ID: <SYBPR01MB476167052FB7281BB0B4FBF7CDBD9@SYBPR01MB4761.ausprd01.prod.outlook.com>
+
+Good day,
+
+I would like to create a concise show method for an S4 class that I am developing. One class slot stores a function specified by the end user. It could be a basic function, an S3 function, an S4 function. For S4 functions, I can get a concise representation:
+
+> capture.output(showMethods(limmaSelection))[1]
+[1] "Function: limmaSelection (package ClassifyR)"
+
+If the user specified the function bdiag from Matrix, how could I generalise the show code to describe the function, such that the output would be "Function bdiag from package Matrix" and simiarly for an S3 function?
+
+--------------------------------------
+Dario Strbenac
+University of Sydney
+Camperdown NSW 2050
+Australia
+
+From vo|ody@ @end|ng |rom m|nd@pr|ng@com  Tue Oct 19 12:39:08 2021
+From: vo|ody@ @end|ng |rom m|nd@pr|ng@com (Vladimir Dergachev)
+Date: Tue, 19 Oct 2021 06:39:08 -0400 (EDT)
+Subject: [R-pkg-devel] 
+ How does one install a libtool generated libfoo.so.1
+ file into ./libs/?
+In-Reply-To: <79e256dd-8441-425a-e38e-6545386da575@uconn.edu>
+References: <a170c691-3074-cabe-fcc8-8805ca66544e@uconn.edu>
+ <79e256dd-8441-425a-e38e-6545386da575@uconn.edu>
+Message-ID: <alpine.DEB.2.22.394.2110190637530.2405@iridium>
+
+
+The simplest thing to try is to compile the library statically and link it 
+into your package. No extra files - no trouble.
+
+You can also try renaming the file from *.so.1 to *.so.
+
+best
+
+Vladimir Dergachev
+
+
+From @|mon@bonner @end|ng |rom uwo@c@  Tue Oct 19 14:37:35 2021
+From: @|mon@bonner @end|ng |rom uwo@c@ (Simon Bonner)
+Date: Tue, 19 Oct 2021 12:37:35 +0000
+Subject: [R-pkg-devel] Package submission to CRAN
+Message-ID: <YQXPR01MB3045FF5F34BA17CBC8C7F000F9BD9@YQXPR01MB3045.CANPRD01.PROD.OUTLOOK.COM>
+
+Hi all,
+
+I have a question re package submission that I'm hoping someone might be able to help with.
+
+A package I maintain (dalmatian) was archived last year because one of the packages it depends on (dglm) was removed from CRAN. The dglm package has been fixed and is back on CRAN, and I have resubmitted my package. There have been no changes to my package and I resubmitted the same version with the same version number. I noted this in my submission.
+
+All checks passed, but I received the following from log CRAN-pretest:
+
+Flavor: r-devel-linux-x86_64-debian-gcc, r-devel-windows-ix86+x86_64
+Check: CRAN incoming feasibility, Result: WARNING
+  Maintainer: 'Simon Bonner simon.bonner at uwo.ca<mailto:simon.bonner at uwo.ca>'
+
+  New submission
+
+  Package was archived on CRAN
+
+  Insufficient package version (submitted: 0.6.1, existing: 0.6.1)
+
+  CRAN repository db overrides:
+    X-CRAN-Comment: Archived on 2020-10-18 as requires archived package
+      'dglm'.
+
+  This build time stamp is over a month old.
+
+It seems that I am not allowed to submit the package with the same version, but  it also seems odd to increment the version to get around this when nothing at all has changed in the package.
+
+Is there another solution?
+
+Thanks,
+
+Simon
+
+-----
+Simon Bonner (he/him)
+Associate Professor of Environmetrics
+Vice-Director, Western Data Science Solutions
+Department of Statistical and Actuarial Sciences
+University of Western Ontario
+
+Office: Western Science Centre rm 276
+
+Email: sbonner6 at uwo.ca<mailto:sbonner6 at uwo.ca> | Telephone: 519-661-2111 x88205 | Fax: 519-661-3813
+Twitter: @bonnerstatslab | Website: http://simon.bonners.ca/bonner-lab/wpblog/
+
+
+	[[alternative HTML version deleted]]
+
+
+From brod|e@g@@|@m @end|ng |rom y@hoo@com  Tue Oct 19 15:08:54 2021
+From: brod|e@g@@|@m @end|ng |rom y@hoo@com (Brodie Gaslam)
+Date: Tue, 19 Oct 2021 13:08:54 +0000 (UTC)
+Subject: [R-pkg-devel] Package submission to CRAN
+In-Reply-To: <YQXPR01MB3045FF5F34BA17CBC8C7F000F9BD9@YQXPR01MB3045.CANPRD01.PROD.OUTLOOK.COM>
+References: <YQXPR01MB3045FF5F34BA17CBC8C7F000F9BD9@YQXPR01MB3045.CANPRD01.PROD.OUTLOOK.COM>
+Message-ID: <1272888170.4573512.1634648934305@mail.yahoo.com>
+
+I would just increment the version.? This is the from the CRAN
+re-submission policy[1]:
+
+> Updates to previously-published packages must have an increased version. Increasing the version number at each submission reduces confusion so is preferred even when a previous submission was not accepted.
+
+You could always add NEWS entry explaining what the new version
+is, then the package will not be exactly the same anymore ;).
+
+Best,
+
+B.
+
+
+[1]: https://cran.r-project.org/web/packages/policies.html#Re_002dsubmission
+
+
+
+On Tuesday, October 19, 2021, 08:38:01 AM EDT, Simon Bonner <simon.bonner at uwo.ca> wrote: 
+
+
+
+
+
+Hi all,
+
+I have a question re package submission that I'm hoping someone might be able to help with.
+
+A package I maintain (dalmatian) was archived last year because one of the packages it depends on (dglm) was removed from CRAN. The dglm package has been fixed and is back on CRAN, and I have resubmitted my package. There have been no changes to my package and I resubmitted the same version with the same version number. I noted this in my submission.
+
+All checks passed, but I received the following from log CRAN-pretest:
+
+Flavor: r-devel-linux-x86_64-debian-gcc, r-devel-windows-ix86+x86_64
+Check: CRAN incoming feasibility, Result: WARNING
+? Maintainer: 'Simon Bonner simon.bonner at uwo.ca<mailto:simon.bonner at uwo.ca>'
+
+? New submission
+
+? Package was archived on CRAN
+
+? Insufficient package version (submitted: 0.6.1, existing: 0.6.1)
+
+? CRAN repository db overrides:
+? ? X-CRAN-Comment: Archived on 2020-10-18 as requires archived package
+? ? ? 'dglm'.
+
+? This build time stamp is over a month old.
+
+It seems that I am not allowed to submit the package with the same version, but? it also seems odd to increment the version to get around this when nothing at all has changed in the package.
+
+Is there another solution?
+
+Thanks,
+
+Simon
+
+-----
+Simon Bonner (he/him)
+Associate Professor of Environmetrics
+Vice-Director, Western Data Science Solutions
+Department of Statistical and Actuarial Sciences
+University of Western Ontario
+
+Office: Western Science Centre rm 276
+
+Email: sbonner6 at uwo.ca<mailto:sbonner6 at uwo.ca> | Telephone: 519-661-2111 x88205 | Fax: 519-661-3813
+Twitter: @bonnerstatslab | Website: http://simon.bonners.ca/bonner-lab/wpblog/
+
+
+??? [[alternative HTML version deleted]]
+
+______________________________________________
+R-package-devel at r-project.org mailing list
+https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+
+From p@r|k@heet@n@nd@ @end|ng |rom uconn@edu  Tue Oct 19 17:50:11 2021
+From: p@r|k@heet@n@nd@ @end|ng |rom uconn@edu (Pariksheet Nanda)
+Date: Tue, 19 Oct 2021 11:50:11 -0400
+Subject: [R-pkg-devel] 
+ How does one install a libtool generated libfoo.so.1
+ file into ./libs/?
+In-Reply-To: <08A88244-636F-4F69-B396-6786EAFEEB37@R-project.org>
+References: <a170c691-3074-cabe-fcc8-8805ca66544e@uconn.edu>
+ <08A88244-636F-4F69-B396-6786EAFEEB37@R-project.org>
+Message-ID: <b51b66f5-3d89-e58c-9317-6e9d51253e78@uconn.edu>
+
+Hi Simon and Vladimir,
+
+ >> On Oct 19, 2021, at 4:13 PM, Pariksheet Nanda 
+<pariksheet.nanda at uconn.edu> wrote:
+ >> The trouble is, R's installation process will only copy compiled 
+files from ./libs/ that have exactly the extension ".so" and files 
+ending with ".so.1" are ignored.
+--snip--
+ >> library(tsshmm)
+ >> ...
+ >> Error: package or namespace load failed for 'tsshmm' 
+indyn.load(file, DLLpath = DLLpath, ...):
+ >> unable to load shared object 
+'/home/omsai/R/x86_64-pc-linux-gnu-library/4.1/tsshmm/libs/tsshmm.so':
+ >>   libghmm.so.1: cannot open shared object file: No such file or 
+directory
+ >
+>> Pariksheet
+On 10/19/21 5:00 AM, Simon Urbanek wrote:
+> 
+> dynamic linking won't work, compile a static version with PIC enabled. If the subproject is autoconf-compatible this means using --disable-shared --with-pic. Then you only need to add libfoo.a to your PKG_LIBS. >
+ > Simon
+
+On 10/19/21 6:39 AM, Vladimir Dergachev wrote:
+ >
+ > The simplest thing to try is to compile the library statically and 
+link it
+ > into your package. No extra files - no trouble.
+ >
+ > You can also try renaming the file from *.so.1 to *.so.
+ >
+ > Vladimir Dergachev
+
+Thank you both for your suggestions!  I will link the code statically 
+with PIC per your consensus.
+
+I found when linking the R package library, one also has to link the 
+dependencies of the static library; in this case libghmm depends on 
+libxml-2.0 > 2.6 and so I have to link libxml2 to my R package library 
+after finding libxml2 with pkg-config.
+
+
+Thanks for the quick replies,
+
+Pariksheet
+
+
+From Jen@@Oeh|@ch|@ege| @end|ng |rom truec|u@ter@com  Tue Oct 19 21:43:46 2021
+From: Jen@@Oeh|@ch|@ege| @end|ng |rom truec|u@ter@com (=?UTF-8?Q?Jens_Oehlschl=c3=a4gel?=)
+Date: Tue, 19 Oct 2021 21:43:46 +0200
+Subject: [R-pkg-devel] failing S3 dispatch
+Message-ID: <de55d0d0-6c1d-f9a4-3320-9a176afb8848@truecluster.com>
+
+I didn't find an answer elsewhere:
+
+My package 'bit' creates a S3 generic 'clone' and exports it. 
+Furthermore it registers a S3 method 'clone.default' (not exported).
+
+My package 'ff' imports package 'bit' and exports and registers a new S3 
+method 'clone.ff'. However, calling 'clone(ffobj)' dispatches to 
+clone.default instead of clone.ff !? Why?
+
+What is the recommended way to create new S3-methods that get 
+dispatched? In earlier versions of the packages I simply exported 
+everything - that worked.
+
+Best
+
+
+Jens
+
+
+ > require(ff)
+ >
+ > a <- as.ff(0:9)
+ > class(x)
+[1] "ff_vector" "ff"
+ >
+ > x <- clone(a)
+ > y <- bit:::clone.default(a)
+ > z <- clone.ff(a)
+ >
+ > # cloned ffobjects should have different filenames>
+
+ > filename(a)? # original
+[1] "/tmp/Rtmpk17JRZ/ff/clone1ed54cbb5060.ff"
+ >
+ > filename(x)? # unexpected equal (dispatch to clone.default)
+[1] "/tmp/Rtmpk17JRZ/ff/clone1ed54cbb5060.ff"
+ >
+ > filename(y)? # expected equal
+[1] "/tmp/Rtmpk17JRZ/ff/clone1ed54cbb5060.ff"
+ >
+ > filename(z)? # OK
+[1] "/tmp/Rtmpk17JRZ/ff/clone1ed551d3ee66.ff"
+
+ > version
+ ?????????????? _
+platform?????? x86_64-pc-linux-gnu
+arch?????????? x86_64
+os???????????? linux-gnu
+system???????? x86_64, linux-gnu
+status
+major????????? 4
+minor????????? 1.1
+year?????????? 2021
+month????????? 08
+day??????????? 10
+svn rev??????? 80725
+language?????? R
+version.string R version 4.1.1 (2021-08-10)
+nickname?????? Kick Things
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Wed Oct 20 11:02:41 2021
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Wed, 20 Oct 2021 05:02:41 -0400
+Subject: [R-pkg-devel] failing S3 dispatch
+In-Reply-To: <de55d0d0-6c1d-f9a4-3320-9a176afb8848@truecluster.com>
+References: <de55d0d0-6c1d-f9a4-3320-9a176afb8848@truecluster.com>
+Message-ID: <2413a4ad-1cc9-9e89-30d2-51dd9272b727@gmail.com>
+
+On 19/10/2021 3:43 p.m., Jens Oehlschl?gel wrote:
+> I didn't find an answer elsewhere:
+> 
+> My package 'bit' creates a S3 generic 'clone' and exports it.
+> Furthermore it registers a S3 method 'clone.default' (not exported).
+> 
+> My package 'ff' imports package 'bit' and exports and registers a new S3
+> method 'clone.ff'. However, calling 'clone(ffobj)' dispatches to
+> clone.default instead of clone.ff !? Why?
+
+You should show us the NAMESPACE entries involving clone and clone.ff 
+from ff.
+
+Some comments that may or may not be relevant:
+
+  - Normally you wouldn't export clone.ff, it's enough to register it 
+using S3method().
+
+  - You may have created a new generic named clone, and that's what 
+clone.ff would attach itself to.  You can have bit::clone and ff::clone 
+as different generics and that would cause problems.
+
+> 
+> What is the recommended way to create new S3-methods that get
+> dispatched? In earlier versions of the packages I simply exported
+> everything - that worked.
+
+I import the generic and use S3method(generic, method).  I don't export 
+the methods, so I wouldn't be able to call z <- clone.ff(a).
+
+Duncan Murdoch
+
+> 
+> Best
+> 
+> 
+> Jens
+> 
+> 
+>   > require(ff)
+>   >
+>   > a <- as.ff(0:9)
+>   > class(x)
+> [1] "ff_vector" "ff"
+>   >
+>   > x <- clone(a)
+>   > y <- bit:::clone.default(a)
+>   > z <- clone.ff(a)
+>   >
+>   > # cloned ffobjects should have different filenames>
+> 
+>   > filename(a)? # original
+> [1] "/tmp/Rtmpk17JRZ/ff/clone1ed54cbb5060.ff"
+>   >
+>   > filename(x)? # unexpected equal (dispatch to clone.default)
+> [1] "/tmp/Rtmpk17JRZ/ff/clone1ed54cbb5060.ff"
+>   >
+>   > filename(y)? # expected equal
+> [1] "/tmp/Rtmpk17JRZ/ff/clone1ed54cbb5060.ff"
+>   >
+>   > filename(z)? # OK
+> [1] "/tmp/Rtmpk17JRZ/ff/clone1ed551d3ee66.ff"
+> 
+>   > version
+>   ?????????????? _
+> platform?????? x86_64-pc-linux-gnu
+> arch?????????? x86_64
+> os???????????? linux-gnu
+> system???????? x86_64, linux-gnu
+> status
+> major????????? 4
+> minor????????? 1.1
+> year?????????? 2021
+> month????????? 08
+> day??????????? 10
+> svn rev??????? 80725
+> language?????? R
+> version.string R version 4.1.1 (2021-08-10)
+> nickname?????? Kick Things
+> 
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+
+
+From Jen@@Oeh|@ch|@ege| @end|ng |rom truec|u@ter@com  Wed Oct 20 13:43:13 2021
+From: Jen@@Oeh|@ch|@ege| @end|ng |rom truec|u@ter@com (=?UTF-8?Q?Jens_Oehlschl=c3=a4gel?=)
+Date: Wed, 20 Oct 2021 13:43:13 +0200
+Subject: [R-pkg-devel] failing S3 dispatch
+In-Reply-To: <2413a4ad-1cc9-9e89-30d2-51dd9272b727@gmail.com>
+References: <de55d0d0-6c1d-f9a4-3320-9a176afb8848@truecluster.com>
+ <2413a4ad-1cc9-9e89-30d2-51dd9272b727@gmail.com>
+Message-ID: <5db91d48-6687-cd4f-558e-a5853c3efdea@truecluster.com>
+
+Thank you Duncan,
+
+bit NAMESPACE has
+
+S3method(clone,default)
+export(clone)
+
+ff NAMESPACE has
+
+import(bit)
+# wish of CRAN maintainers: export another time here (now maintained and 
+exported in bit)
+# without this R CMD CHECK complained, but with it R CMD CHECK complains 
+also, how to export again and why?
+# clone
+#,clone.default
+ ?clone.ff
+,clone.ffdf
+S3method("clone",ff)
+S3method(clone, ffdf)
+# wish of CRAN maintainers: export another time here (now maintained and 
+exported in bit)
+#S3method(clone, default)
+
+Best
+
+Jens
+
+
+
+On 20.10.21 11:02, Duncan Murdoch wrote:
+> On 19/10/2021 3:43 p.m., Jens Oehlschl?gel wrote:
+>> I didn't find an answer elsewhere:
+>>
+>> My package 'bit' creates a S3 generic 'clone' and exports it.
+>> Furthermore it registers a S3 method 'clone.default' (not exported).
+>>
+>> My package 'ff' imports package 'bit' and exports and registers a new S3
+>> method 'clone.ff'. However, calling 'clone(ffobj)' dispatches to
+>> clone.default instead of clone.ff !? Why?
+>
+> You should show us the NAMESPACE entries involving clone and clone.ff 
+> from ff.
+>
+> Some comments that may or may not be relevant:
+>
+> ?- Normally you wouldn't export clone.ff, it's enough to register it 
+> using S3method().
+>
+> ?- You may have created a new generic named clone, and that's what 
+> clone.ff would attach itself to.? You can have bit::clone and 
+> ff::clone as different generics and that would cause problems.
+>
+>>
+>> What is the recommended way to create new S3-methods that get
+>> dispatched? In earlier versions of the packages I simply exported
+>> everything - that worked.
+>
+> I import the generic and use S3method(generic, method).? I don't 
+> export the methods, so I wouldn't be able to call z <- clone.ff(a).
+>
+> Duncan Murdoch
+>
+>>
+>> Best
+>>
+>>
+>> Jens
+>>
+>>
+>> ? > require(ff)
+>> ? >
+>> ? > a <- as.ff(0:9)
+>> ? > class(x)
+>> [1] "ff_vector" "ff"
+>> ? >
+>> ? > x <- clone(a)
+>> ? > y <- bit:::clone.default(a)
+>> ? > z <- clone.ff(a)
+>> ? >
+>> ? > # cloned ffobjects should have different filenames>
+>>
+>> ? > filename(a)? # original
+>> [1] "/tmp/Rtmpk17JRZ/ff/clone1ed54cbb5060.ff"
+>> ? >
+>> ? > filename(x)? # unexpected equal (dispatch to clone.default)
+>> [1] "/tmp/Rtmpk17JRZ/ff/clone1ed54cbb5060.ff"
+>> ? >
+>> ? > filename(y)? # expected equal
+>> [1] "/tmp/Rtmpk17JRZ/ff/clone1ed54cbb5060.ff"
+>> ? >
+>> ? > filename(z)? # OK
+>> [1] "/tmp/Rtmpk17JRZ/ff/clone1ed551d3ee66.ff"
+>>
+>> ? > version
+>> ? ?????????????? _
+>> platform?????? x86_64-pc-linux-gnu
+>> arch?????????? x86_64
+>> os???????????? linux-gnu
+>> system???????? x86_64, linux-gnu
+>> status
+>> major????????? 4
+>> minor????????? 1.1
+>> year?????????? 2021
+>> month????????? 08
+>> day??????????? 10
+>> svn rev??????? 80725
+>> language?????? R
+>> version.string R version 4.1.1 (2021-08-10)
+>> nickname?????? Kick Things
+>>
+>> ______________________________________________
+>> R-package-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>>
+>
+
+
+From @|mon@urb@nek @end|ng |rom R-project@org  Tue Oct 19 11:12:33 2021
+From: @|mon@urb@nek @end|ng |rom R-project@org (Simon Urbanek)
+Date: Tue, 19 Oct 2021 22:12:33 +1300
+Subject: [R-pkg-devel] Concise Summary For Any Variety Of R Function
+In-Reply-To: <SYBPR01MB476167052FB7281BB0B4FBF7CDBD9@SYBPR01MB4761.ausprd01.prod.outlook.com>
+References: <SYBPR01MB476167052FB7281BB0B4FBF7CDBD9@SYBPR01MB4761.ausprd01.prod.outlook.com>
+Message-ID: <7691B1FF-E682-4372-B744-03C087DDEB66@R-project.org>
+
+
+Dario,
+
+there is not such thing as S4 function. However, all functions have an environment and for functions from packages that environment will be the namespace of the package. So in those special cases you can use environmentName() to get the name, e.g.:
+
+> who = function(f) cat(deparse(substitute(f)), "from", environmentName(environment(f)),"\n")
+> who(ls)
+ls from base 
+> who(rnorm)
+rnorm from stats 
+> who(who)
+who from R_GlobalEnv 
+
+However, this won't work for functions defined in arbitrary environments which have no name:
+
+> local({ f= function(x) x
++ who(f)
++ })
+f from  
+
+Depending on how much time you want to spend, you can do a search up the frames to find a named environment, but the concept you're trying to implement looks very fragile.
+
+Cheers,
+Simon
+
+
+
+> On Oct 19, 2021, at 9:00 PM, Dario Strbenac <dstr7320 at uni.sydney.edu.au> wrote:
+> 
+> Good day,
+> 
+> I would like to create a concise show method for an S4 class that I am developing. One class slot stores a function specified by the end user. It could be a basic function, an S3 function, an S4 function. For S4 functions, I can get a concise representation:
+> 
+>> capture.output(showMethods(limmaSelection))[1]
+> [1] "Function: limmaSelection (package ClassifyR)"
+> 
+> If the user specified the function bdiag from Matrix, how could I generalise the show code to describe the function, such that the output would be "Function bdiag from package Matrix" and simiarly for an S3 function?
+> 
+> --------------------------------------
+> Dario Strbenac
+> University of Sydney
+> Camperdown NSW 2050
+> Australia
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+> 
+
+
+From @|mon@urb@nek @end|ng |rom R-project@org  Tue Oct 19 11:00:12 2021
+From: @|mon@urb@nek @end|ng |rom R-project@org (Simon Urbanek)
+Date: Tue, 19 Oct 2021 22:00:12 +1300
+Subject: [R-pkg-devel] 
+ How does one install a libtool generated libfoo.so.1
+ file into ./libs/?
+In-Reply-To: <a170c691-3074-cabe-fcc8-8805ca66544e@uconn.edu>
+References: <a170c691-3074-cabe-fcc8-8805ca66544e@uconn.edu>
+Message-ID: <08A88244-636F-4F69-B396-6786EAFEEB37@R-project.org>
+
+
+Pariksheet,
+
+dynamic linking won't work, compile a static version with PIC enabled. If the subproject is autoconf-compatible this means using --disable-shared --with-pic. Then you only need to add libfoo.a to your PKG_LIBS.
+
+Cheers,
+Simon
+
+
+
+
+> On Oct 19, 2021, at 4:13 PM, Pariksheet Nanda <pariksheet.nanda at uconn.edu> wrote:
+> 
+> Hi folks,
+> 
+> My package [1] depends on a C library libghmm-dev that's available in many GNU/Linux package managers.  However, it's not available on all platforms and if this dependency is not installed, my autoconf generated configure script defaults to falling back to compiling and installing the dependency from my bundled copy of upstream's pristine source tarball [2].  Now, because upstream uses automake which in turn uses libtool, I also use automake and libtool in my build process to hook into their build artifacts using SUBDIRS and *-local automake rules [3].
+> 
+> As you may know libtool appends `-version-info` to its generated shared libraries in the form "libfoo.so.1.2.3".  I'm linking against the bundled library which only sets the first value, namely libghmm.so.1.
+> 
+> The trouble is, R's installation process will only copy compiled files from ./libs/ that have exactly the extension ".so" and files ending with ".so.1" are ignored.
+> 
+> My current workaround is to set -Wl,-rpath to the location of the generated ".so.1" file.  This allows the installation process to complete and sneakily pass the 2 canonical tests:
+> 
+> 
+> ** testing if installed package can be loaded from temporary location
+> ---snip---
+> ** testing if installed package can be loaded from final location
+> 
+> 
+> However, not surprisingly, when I try to load the library from the final location after the temporary directory has been deleted it fails with:
+> 
+> 
+> library(tsshmm)
+> ...
+> Error: package or namespace load failed for 'tsshmm' indyn.load(file, DLLpath = DLLpath, ...):
+> unable to load shared object '/home/omsai/R/x86_64-pc-linux-gnu-library/4.1/tsshmm/libs/tsshmm.so':
+>  libghmm.so.1: cannot open shared object file: No such file or directory
+> 
+> 
+> I can rename the dependency from ".so.1" to ".so" to also get the dependent library to the final location.  But it still fails with the above error because the library links against the ".so.1" file and I would need an accompanying symlink.  I tried creating a symlink but can't think of how to get the symlink to the final location.  If my Makefile writes the symlink into ./inst/libs/libghmm.so.1 during compile time it is not actually installed; perhaps because the ./inst/ sub-directories are only copied earlier on when staging and are ignored later?  If I were to create that dangling symlink inside ./inst/libs/ instead of generating it later during compile time, devtools::install() complains about the broken symlink with:
+> 
+> 
+> cp: cannot stat 'tsshmm/inst/libs/libghmm.so.1': No such file or directory
+> 
+> 
+> So is there some mechanism to copy arbitrary files or symlinks to the final install location?  I prefer not to patch upstreams Makefile.am to remove their -version-info, but currently that's the only option I can think of.  I can't find helpful discussion surrounding this in the mailing list archives.
+> 
+> Last week when I've posted for help with my package on another issue on the Bioconductor mailing list, one adventurous soul tried installing the package using `remotes::install_gitlab("coregenomics/tsshmm")`.  This won't work because I haven't committed the generated autotools files; if anyone wants to play with it, you'll have to follow the 2 additional steps run by the continuous integration script, namely, unpacking ./src/ghmm-0.9-rc3.tar.gz into ./src/ and running `autoreconf -ivf` in the package's top-level directory where configure.ac is located.
+> 
+> Any help appreciated,
+> 
+> Pariksheet
+> 
+> 
+> [1] https://gitlab.com/coregenomics/tsshmm
+> 
+> [2] The only patches I apply to the dependency are to fix 2 bugs for compiling, and to remedy a warning severe enough to be flagged by `R CMD check`.
+> 
+> [3] You can see my Makefile.am here:
+> https://gitlab.com/coregenomics/tsshmm/-/blob/master/src/Makefile.am
+> 
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+> 
+
+
+From @|mon@urb@nek @end|ng |rom R-project@org  Wed Oct 20 21:52:13 2021
+From: @|mon@urb@nek @end|ng |rom R-project@org (Simon Urbanek)
+Date: Wed, 20 Oct 2021 19:52:13 -0000
+Subject: [R-pkg-devel] CRAN Mac Builder based on M1
+Message-ID: <B273D215-87E2-4570-A501-6CA25740EB24@R-project.org>
+
+
+Dear Mac useRs.
+
+I'm pleased to announce that thanks to the R Foundation and donations from users like you we are now able to offer a CRAN Mac Builder based on M1 hardware which allows package authors that don't have access to a recent Mac to check their package using the same process as CRAN:
+
+https://mac.r-project.org/macbuilder/submit.html
+
+The machine mirrors all CRAN packages nightly and uses the CRAN building and checking system[1] so the results should be as close to the CRAN setup as feasible.
+The resources are limited, so do not treat this as a CI setup, but rather as a service for package authors to facilitate checks before CRAN submissions.
+
+The setup is new and experimental, so please contact me for any comments, problem reports or suggestions regarding the Mac Builder. For any Mac-related questions, please use R-SIG-Mac instead of this mailing list.
+
+Cheers,
+Simon
+
+[1] - https://svn.r-project.org/R-dev-web/trunk/QA/Simon/packages
+
+
+From r@turner @end|ng |rom @uck|@nd@@c@nz  Thu Oct 21 06:28:50 2021
+From: r@turner @end|ng |rom @uck|@nd@@c@nz (Rolf Turner)
+Date: Thu, 21 Oct 2021 17:28:50 +1300
+Subject: [R-pkg-devel] Is there a better way ...?
+Message-ID: <20211021172850.5ad79de2@rolf-Latitude-E7470>
+
+
+I have a plot method (say plot.foo()) that I want to be able to call so
+that if argument "add" is set equal to TRUE, then further structure will
+be added to the same plot.  This is to be used *only* in the context in
+which the plot being added to was created using plot.foo().
+
+[Please don't ask me why I don't do everything in a single call to
+plot.foo().  There *are* reasons.]
+
+In order to make sure that the "further structure" has the appropriate
+form, the call to plot.foo(...,add=TRUE,...) needs to access information
+about what was done in the previous call to plot.foo().
+
+Initially I tried to effect this by creating, in a call of the form
+plot.foo(...,add=FALSE,...), an object, say ".fooInfo", in the global
+environment, and then having the call plot.foo(...,add=TRUE,...)
+access the necessary information from ".fooInfo".
+
+It all worked OK, but when I built my package for Windoze, using
+win-builder, I got a note of the form:
+
+> NOTE
+> Found the following assignment to the global environment:
+> File 'pckgename/R/plot.foo.R':
+>   assign(".fooInfo", fooInfo, pos = 1)
+
+I thought uh-oh; CRAN will kick up a stink if/when I submit my package.
+
+I think I've figured out a work-around using tempfile().  There
+are difficulties in that tempfile() creates unique names by tacking
+on an alpha-numeric string such as "38348397e595c" to the file name
+that I specify, so the call to plot.foo(...,add=TRUE,...) cannot know
+the *exact* file name.  I think I can get around that by grepping on
+"fooInfo" in list.files(tempdir()).  I also need to make sure that
+I unlink() any old instances of files in tempdir() with the string
+"fooInfo" in their names before creating a new instance.  Elsewise
+ambiguities will ensue.
+
+As I say --- I think this can all be made to work.  But ....
+Am I missing some "obvious" strategy?  I.e. is there a
+better/simpler/less convoluted way of handling this problem?
+
+Grateful for any pearls of wisdom.
+
+cheers,
+
+Rolf Turner
+
+-- 
+Honorary Research Fellow
+Department of Statistics
+University of Auckland
+Phone: +64-9-373-7599 ext. 88276
+
+
+From deep@y@n@@@rk@r @end|ng |rom gm@||@com  Thu Oct 21 06:40:45 2021
+From: deep@y@n@@@rk@r @end|ng |rom gm@||@com (Deepayan Sarkar)
+Date: Thu, 21 Oct 2021 10:10:45 +0530
+Subject: [R-pkg-devel] Is there a better way ...?
+In-Reply-To: <20211021172850.5ad79de2@rolf-Latitude-E7470>
+References: <20211021172850.5ad79de2@rolf-Latitude-E7470>
+Message-ID: <CADfFDC6+giV+LGLpPY4geGOrnbxn_L4bTk3EZq9+5yyz_Yzdxw@mail.gmail.com>
+
+On Thu, Oct 21, 2021 at 9:59 AM Rolf Turner <r.turner at auckland.ac.nz> wrote:
+>
+>
+> I have a plot method (say plot.foo()) that I want to be able to call so
+> that if argument "add" is set equal to TRUE, then further structure will
+> be added to the same plot.  This is to be used *only* in the context in
+> which the plot being added to was created using plot.foo().
+>
+> [Please don't ask me why I don't do everything in a single call to
+> plot.foo().  There *are* reasons.]
+>
+> In order to make sure that the "further structure" has the appropriate
+> form, the call to plot.foo(...,add=TRUE,...) needs to access information
+> about what was done in the previous call to plot.foo().
+>
+> Initially I tried to effect this by creating, in a call of the form
+> plot.foo(...,add=FALSE,...), an object, say ".fooInfo", in the global
+> environment, and then having the call plot.foo(...,add=TRUE,...)
+> access the necessary information from ".fooInfo".
+
+Why not have a private (unexported) environment in your own package
+for the same purpose? (That's the strategy used by lattice.) E.g., in
+your zzz.R
+
+.FooEnv <- new.env()
+
+and then have your plot.foo write into / read from that. Long term, it
+may be better to write accessor functions (which can still be
+unexported if only used by your package code) if you want an
+implementation-agnostic interface.
+
+Best,
+-Deepayan
+
+> It all worked OK, but when I built my package for Windoze, using
+> win-builder, I got a note of the form:
+>
+> > NOTE
+> > Found the following assignment to the global environment:
+> > File 'pckgename/R/plot.foo.R':
+> >   assign(".fooInfo", fooInfo, pos = 1)
+>
+> I thought uh-oh; CRAN will kick up a stink if/when I submit my package.
+>
+> I think I've figured out a work-around using tempfile().  There
+> are difficulties in that tempfile() creates unique names by tacking
+> on an alpha-numeric string such as "38348397e595c" to the file name
+> that I specify, so the call to plot.foo(...,add=TRUE,...) cannot know
+> the *exact* file name.  I think I can get around that by grepping on
+> "fooInfo" in list.files(tempdir()).  I also need to make sure that
+> I unlink() any old instances of files in tempdir() with the string
+> "fooInfo" in their names before creating a new instance.  Elsewise
+> ambiguities will ensue.
+>
+> As I say --- I think this can all be made to work.  But ....
+> Am I missing some "obvious" strategy?  I.e. is there a
+> better/simpler/less convoluted way of handling this problem?
+>
+> Grateful for any pearls of wisdom.
+>
+> cheers,
+>
+> Rolf Turner
+>
+> --
+> Honorary Research Fellow
+> Department of Statistics
+> University of Auckland
+> Phone: +64-9-373-7599 ext. 88276
+>
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+
+From @kw@|mmo @end|ng |rom gm@||@com  Thu Oct 21 06:40:52 2021
+From: @kw@|mmo @end|ng |rom gm@||@com (Andrew Simmons)
+Date: Thu, 21 Oct 2021 00:40:52 -0400
+Subject: [R-pkg-devel] Is there a better way ...?
+In-Reply-To: <20211021172850.5ad79de2@rolf-Latitude-E7470>
+References: <20211021172850.5ad79de2@rolf-Latitude-E7470>
+Message-ID: <CAPcHnpQ3XeKcw0TB-b-EMJC0bxbGb9AWykFsVEvxBs43izcjeg@mail.gmail.com>
+
+I think the simplest answer is to store the variable in the functions
+frame. I'm assuming here that the only plot.foo needs access to .fooInfo,
+if not this can be changed.
+
+
+plot.foo <- function (...)
+{
+    .fooInfo
+}
+environment(plot.foo) <- new.env()
+evalq({
+    .fooInfo <- NULL
+}, environment(plot.foo))
+
+
+Make your function, and do whatever you need with .fooInfo within said
+function. Whenever you previously updated .fooInfo in the global
+environment, update .fooInfo in plot.foo environment instead.
+Also, because .fooInfo is not stored in the package's frame, it won't be
+locked when the namespace is sealed. If you created it at the toplevel,
+that would create some issues. But this works fine.
+
+On Thu, Oct 21, 2021 at 12:29 AM Rolf Turner <r.turner at auckland.ac.nz>
+wrote:
+
+>
+> I have a plot method (say plot.foo()) that I want to be able to call so
+> that if argument "add" is set equal to TRUE, then further structure will
+> be added to the same plot.  This is to be used *only* in the context in
+> which the plot being added to was created using plot.foo().
+>
+> [Please don't ask me why I don't do everything in a single call to
+> plot.foo().  There *are* reasons.]
+>
+> In order to make sure that the "further structure" has the appropriate
+> form, the call to plot.foo(...,add=TRUE,...) needs to access information
+> about what was done in the previous call to plot.foo().
+>
+> Initially I tried to effect this by creating, in a call of the form
+> plot.foo(...,add=FALSE,...), an object, say ".fooInfo", in the global
+> environment, and then having the call plot.foo(...,add=TRUE,...)
+> access the necessary information from ".fooInfo".
+>
+> It all worked OK, but when I built my package for Windoze, using
+> win-builder, I got a note of the form:
+>
+> > NOTE
+> > Found the following assignment to the global environment:
+> > File 'pckgename/R/plot.foo.R':
+> >   assign(".fooInfo", fooInfo, pos = 1)
+>
+> I thought uh-oh; CRAN will kick up a stink if/when I submit my package.
+>
+> I think I've figured out a work-around using tempfile().  There
+> are difficulties in that tempfile() creates unique names by tacking
+> on an alpha-numeric string such as "38348397e595c" to the file name
+> that I specify, so the call to plot.foo(...,add=TRUE,...) cannot know
+> the *exact* file name.  I think I can get around that by grepping on
+> "fooInfo" in list.files(tempdir()).  I also need to make sure that
+> I unlink() any old instances of files in tempdir() with the string
+> "fooInfo" in their names before creating a new instance.  Elsewise
+> ambiguities will ensue.
+>
+> As I say --- I think this can all be made to work.  But ....
+> Am I missing some "obvious" strategy?  I.e. is there a
+> better/simpler/less convoluted way of handling this problem?
+>
+> Grateful for any pearls of wisdom.
+>
+> cheers,
+>
+> Rolf Turner
+>
+> --
+> Honorary Research Fellow
+> Department of Statistics
+> University of Auckland
+> Phone: +64-9-373-7599 ext. 88276
+>
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+
+	[[alternative HTML version deleted]]
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Thu Oct 21 08:03:41 2021
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Thu, 21 Oct 2021 02:03:41 -0400
+Subject: [R-pkg-devel] Is there a better way ...?
+In-Reply-To: <CAPcHnpQ3XeKcw0TB-b-EMJC0bxbGb9AWykFsVEvxBs43izcjeg@mail.gmail.com>
+References: <20211021172850.5ad79de2@rolf-Latitude-E7470>
+ <CAPcHnpQ3XeKcw0TB-b-EMJC0bxbGb9AWykFsVEvxBs43izcjeg@mail.gmail.com>
+Message-ID: <140f9d00-0da3-feea-7ab3-e97ac47da37c@gmail.com>
+
+On 21/10/2021 12:40 a.m., Andrew Simmons wrote:
+> I think the simplest answer is to store the variable in the functions
+> frame. I'm assuming here that the only plot.foo needs access to .fooInfo,
+> if not this can be changed.
+> 
+> 
+> plot.foo <- function (...)
+> {
+>      .fooInfo
+> }
+> environment(plot.foo) <- new.env()
+> evalq({
+>      .fooInfo <- NULL
+> }, environment(plot.foo))
+> 
+> 
+> Make your function, and do whatever you need with .fooInfo within said
+> function. Whenever you previously updated .fooInfo in the global
+> environment, update .fooInfo in plot.foo environment instead.
+> Also, because .fooInfo is not stored in the package's frame, it won't be
+> locked when the namespace is sealed. If you created it at the toplevel,
+> that would create some issues. But this works fine.
+
+I agree with the final result, but I'd write the code differently:
+
+plot.foo <- local({
+
+   .fooInfo <- NULL
+
+   function (...) { ... }
+})
+
+creates an environment, puts .fooInfo into it with value NULL, then 
+creates a function with that environment attached and returns it.
+
+I think Andrew's approach will work, but changing a function's 
+environment always worries me.  Using local(), the function assigned to 
+plot.foo never has a different environment than the one it ends up with 
+(and I don't need to remember how evalq() works).
+
+Duncan Murdoch
+
+
+
+> On Thu, Oct 21, 2021 at 12:29 AM Rolf Turner <r.turner at auckland.ac.nz>
+> wrote:
+> 
+>>
+>> I have a plot method (say plot.foo()) that I want to be able to call so
+>> that if argument "add" is set equal to TRUE, then further structure will
+>> be added to the same plot.  This is to be used *only* in the context in
+>> which the plot being added to was created using plot.foo().
+>>
+>> [Please don't ask me why I don't do everything in a single call to
+>> plot.foo().  There *are* reasons.]
+>>
+>> In order to make sure that the "further structure" has the appropriate
+>> form, the call to plot.foo(...,add=TRUE,...) needs to access information
+>> about what was done in the previous call to plot.foo().
+>>
+>> Initially I tried to effect this by creating, in a call of the form
+>> plot.foo(...,add=FALSE,...), an object, say ".fooInfo", in the global
+>> environment, and then having the call plot.foo(...,add=TRUE,...)
+>> access the necessary information from ".fooInfo".
+>>
+>> It all worked OK, but when I built my package for Windoze, using
+>> win-builder, I got a note of the form:
+>>
+>>> NOTE
+>>> Found the following assignment to the global environment:
+>>> File 'pckgename/R/plot.foo.R':
+>>>    assign(".fooInfo", fooInfo, pos = 1)
+>>
+>> I thought uh-oh; CRAN will kick up a stink if/when I submit my package.
+>>
+>> I think I've figured out a work-around using tempfile().  There
+>> are difficulties in that tempfile() creates unique names by tacking
+>> on an alpha-numeric string such as "38348397e595c" to the file name
+>> that I specify, so the call to plot.foo(...,add=TRUE,...) cannot know
+>> the *exact* file name.  I think I can get around that by grepping on
+>> "fooInfo" in list.files(tempdir()).  I also need to make sure that
+>> I unlink() any old instances of files in tempdir() with the string
+>> "fooInfo" in their names before creating a new instance.  Elsewise
+>> ambiguities will ensue.
+>>
+>> As I say --- I think this can all be made to work.  But ....
+>> Am I missing some "obvious" strategy?  I.e. is there a
+>> better/simpler/less convoluted way of handling this problem?
+>>
+>> Grateful for any pearls of wisdom.
+>>
+>> cheers,
+>>
+>> Rolf Turner
+>>
+>> --
+>> Honorary Research Fellow
+>> Department of Statistics
+>> University of Auckland
+>> Phone: +64-9-373-7599 ext. 88276
+>>
+>> ______________________________________________
+>> R-package-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>>
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+
+
+From r@turner @end|ng |rom @uck|@nd@@c@nz  Thu Oct 21 08:45:21 2021
+From: r@turner @end|ng |rom @uck|@nd@@c@nz (Rolf Turner)
+Date: Thu, 21 Oct 2021 19:45:21 +1300
+Subject: [R-pkg-devel] Is there a better way ...?
+In-Reply-To: <140f9d00-0da3-feea-7ab3-e97ac47da37c@gmail.com>
+References: <20211021172850.5ad79de2@rolf-Latitude-E7470>
+ <CAPcHnpQ3XeKcw0TB-b-EMJC0bxbGb9AWykFsVEvxBs43izcjeg@mail.gmail.com>
+ <140f9d00-0da3-feea-7ab3-e97ac47da37c@gmail.com>
+Message-ID: <20211021194201.3e4b4653@rolf-Latitude-E7470>
+
+
+On Thu, 21 Oct 2021 02:03:41 -0400
+Duncan Murdoch <murdoch.duncan at gmail.com> wrote:
+
+> On 21/10/2021 12:40 a.m., Andrew Simmons wrote:
+> > I think the simplest answer is to store the variable in the
+> > functions frame. I'm assuming here that the only plot.foo needs
+> > access to .fooInfo, if not this can be changed.
+> > 
+> > 
+> > plot.foo <- function (...)
+> > {
+> >      .fooInfo
+> > }
+> > environment(plot.foo) <- new.env()
+> > evalq({
+> >      .fooInfo <- NULL
+> > }, environment(plot.foo))
+> > 
+> > 
+> > Make your function, and do whatever you need with .fooInfo within
+> > said function. Whenever you previously updated .fooInfo in the
+> > global environment, update .fooInfo in plot.foo environment instead.
+> > Also, because .fooInfo is not stored in the package's frame, it
+> > won't be locked when the namespace is sealed. If you created it at
+> > the toplevel, that would create some issues. But this works fine.
+> 
+> I agree with the final result, but I'd write the code differently:
+> 
+> plot.foo <- local({
+> 
+>    .fooInfo <- NULL
+> 
+>    function (...) { ... }
+> })
+> 
+> creates an environment, puts .fooInfo into it with value NULL, then 
+> creates a function with that environment attached and returns it.
+> 
+> I think Andrew's approach will work, but changing a function's 
+> environment always worries me.  Using local(), the function assigned
+> to plot.foo never has a different environment than the one it ends up
+> with (and I don't need to remember how evalq() works).
+
+Thanks everyone for these suggestions.  They seem a great deal
+less shaganappi/kludgy than my previous approaches.
+
+I've never really felt totally comfortable with the environment
+concept, despite have used it quite a bit (basically in a
+hammer-and-hope style.)
+
+Can anyone comment on the difference between Deepayan's suggestion
+(create a new environment in the package) and Duncan's suggestion
+(create an environment that is local to plot.foo())?  Are there pros
+and cons between the two?
+
+And Deepayan:  what is the rationale for not exporting the new
+environment that you suggest creating?  Presumably this guards against
+something.  What?  I'd just like to extend my (currently minimal)
+comprehension of the issues.
+
+I must admit that Andrew's suggestion kind of overwhelms and bewilders
+me.  I really have no idea what evalq() does.  I guess I could RTFM,
+but the thought of doing that scares me! :-)
+
+Thanks again everybody.
+
+cheers,
+
+Rolf
+
+-- 
+Honorary Research Fellow
+Department of Statistics
+University of Auckland
+Phone: +64-9-373-7599 ext. 88276
+
+
+From deep@y@n@@@rk@r @end|ng |rom gm@||@com  Thu Oct 21 09:41:18 2021
+From: deep@y@n@@@rk@r @end|ng |rom gm@||@com (Deepayan Sarkar)
+Date: Thu, 21 Oct 2021 13:11:18 +0530
+Subject: [R-pkg-devel] Is there a better way ...?
+In-Reply-To: <20211021194201.3e4b4653@rolf-Latitude-E7470>
+References: <20211021172850.5ad79de2@rolf-Latitude-E7470>
+ <CAPcHnpQ3XeKcw0TB-b-EMJC0bxbGb9AWykFsVEvxBs43izcjeg@mail.gmail.com>
+ <140f9d00-0da3-feea-7ab3-e97ac47da37c@gmail.com>
+ <20211021194201.3e4b4653@rolf-Latitude-E7470>
+Message-ID: <CADfFDC5s_q3tDkYvnvRd+RJysiqBF5e+xfJ4JOr3rT1ak1ddig@mail.gmail.com>
+
+On Thu, Oct 21, 2021 at 12:15 PM Rolf Turner <r.turner at auckland.ac.nz> wrote:
+>
+>
+> On Thu, 21 Oct 2021 02:03:41 -0400
+> Duncan Murdoch <murdoch.duncan at gmail.com> wrote:
+>
+> > On 21/10/2021 12:40 a.m., Andrew Simmons wrote:
+> > > I think the simplest answer is to store the variable in the
+> > > functions frame. I'm assuming here that the only plot.foo needs
+> > > access to .fooInfo, if not this can be changed.
+> > >
+> > >
+> > > plot.foo <- function (...)
+> > > {
+> > >      .fooInfo
+> > > }
+> > > environment(plot.foo) <- new.env()
+> > > evalq({
+> > >      .fooInfo <- NULL
+> > > }, environment(plot.foo))
+> > >
+> > >
+> > > Make your function, and do whatever you need with .fooInfo within
+> > > said function. Whenever you previously updated .fooInfo in the
+> > > global environment, update .fooInfo in plot.foo environment instead.
+> > > Also, because .fooInfo is not stored in the package's frame, it
+> > > won't be locked when the namespace is sealed. If you created it at
+> > > the toplevel, that would create some issues. But this works fine.
+> >
+> > I agree with the final result, but I'd write the code differently:
+> >
+> > plot.foo <- local({
+> >
+> >    .fooInfo <- NULL
+> >
+> >    function (...) { ... }
+> > })
+> >
+> > creates an environment, puts .fooInfo into it with value NULL, then
+> > creates a function with that environment attached and returns it.
+> >
+> > I think Andrew's approach will work, but changing a function's
+> > environment always worries me.  Using local(), the function assigned
+> > to plot.foo never has a different environment than the one it ends up
+> > with (and I don't need to remember how evalq() works).
+>
+> Thanks everyone for these suggestions.  They seem a great deal
+> less shaganappi/kludgy than my previous approaches.
+>
+> I've never really felt totally comfortable with the environment
+> concept, despite have used it quite a bit (basically in a
+> hammer-and-hope style.)
+>
+> Can anyone comment on the difference between Deepayan's suggestion
+> (create a new environment in the package) and Duncan's suggestion
+> (create an environment that is local to plot.foo())?  Are there pros
+> and cons between the two?
+
+My suggestion is having a package-specific environment, and Duncan's
+is to have a function-specific environment. If you only need this for
+this one function, then that should be good enough. If you eventually
+want to access the persistent information from multiple functions,
+having a package-specific environment would be more useful.
+
+I'm not sure what you are trying to do, but I can't see how you can do
+something sensible with a function-specific environment if someone
+does
+
+plot.foo(something)
+plot.default(1:10)
+plot.foo(something else, add = TRUE)
+
+So maybe you would eventually want to set a hook (?setHook) for
+plot.new to ensure that no other plot has been created in between,
+which could write into this package-specific environment.
+
+> And Deepayan:  what is the rationale for not exporting the new
+> environment that you suggest creating?  Presumably this guards against
+> something.  What?  I'd just like to extend my (currently minimal)
+> comprehension of the issues.
+
+Nothing other than the usual reason for not exporting things
+unnecessarily, which is to not pollute the user workspace.
+
+> I must admit that Andrew's suggestion kind of overwhelms and bewilders
+> me.  I really have no idea what evalq() does.  I guess I could RTFM,
+> but the thought of doing that scares me! :-)
+
+Andrew's suggestion looks more complicated than it is. Think of
+.fooInfo as a "global" variable, just in your package namespace rather
+than .GlobalEnv, so you could do (in your package code)
+
+.fooInfo <- NULL
+
+plot.foo <- function(...)
+{
+   if (is.null(.fooInfo)) ... # use .fooInfo
+   .fooInfo <<- something # set .fooInfo
+}
+
+Andrew suggested a separate (and unnamed) environment to store both
+.fooInfo and plot.foo, so the setting part becomes a bit more
+complicated (but accessing becomes safer in the sense that no other
+function can access .fooInfo).
+
+My suggestion is essentially similar, except that you can use <-
+instead of <<- because it's an environment.
+
+.fooEnv <- new.env()
+
+plot.foo <- function(...)
+{
+   if (is.null(.fooEnv$info)) ... # use .fooEnv$info
+   .fooEnv$info <- something # set .fooEnv$info
+}
+
+Best,
+-Deepayan
+
+> Thanks again everybody.
+>
+> cheers,
+>
+> Rolf
+>
+> --
+> Honorary Research Fellow
+> Department of Statistics
+> University of Auckland
+> Phone: +64-9-373-7599 ext. 88276
+>
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Thu Oct 21 14:09:02 2021
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Thu, 21 Oct 2021 08:09:02 -0400
+Subject: [R-pkg-devel] Is there a better way ...?
+In-Reply-To: <CADfFDC5s_q3tDkYvnvRd+RJysiqBF5e+xfJ4JOr3rT1ak1ddig@mail.gmail.com>
+References: <20211021172850.5ad79de2@rolf-Latitude-E7470>
+ <CAPcHnpQ3XeKcw0TB-b-EMJC0bxbGb9AWykFsVEvxBs43izcjeg@mail.gmail.com>
+ <140f9d00-0da3-feea-7ab3-e97ac47da37c@gmail.com>
+ <20211021194201.3e4b4653@rolf-Latitude-E7470>
+ <CADfFDC5s_q3tDkYvnvRd+RJysiqBF5e+xfJ4JOr3rT1ak1ddig@mail.gmail.com>
+Message-ID: <a42c0aa6-816a-b953-d3aa-bfea0b104630@gmail.com>
+
+I agree with almost everything Deepayan said, but would add one thing:
+
+
+On 21/10/2021 3:41 a.m., Deepayan Sarkar wrote:
+  ...
+
+> My suggestion is having a package-specific environment, and Duncan's
+> is to have a function-specific environment. If you only need this for
+> this one function, then that should be good enough. If you eventually
+> want to access the persistent information from multiple functions,
+> having a package-specific environment would be more useful.
+
+I agree with that statement, but those aren't the only two choices. 
+Your local() call can create several functions and return them in a 
+list; then just those functions have access to the local variables.  For 
+example,
+
+createFns <- local({
+
+    .fooInfo <- NULL
+
+    fn1 <- function (...) { ... }
+    fn2 <- function (...) { ... }
+
+    list(fn1 = fn1, fn2 = fn2)
+})
+
+fns <- createFns()
+fn1 <- fns$fn1
+fn2 <- fns$fn2
+
+Now fn1 and fn2 are functions that can see .fooInfo, and nobody else can 
+(without going through contortions).
+
+One other difference between this approach and the package-specific 
+environment:  there's only one package-specific environment in 
+Deepayan's formulation, but I could call createFns() several times, 
+creating several pairs of functions, each pair with its own independent 
+version of .fooInfo.
+
+I don't know if that's something that would be useful to you, but 
+conceivably you'd want to maintain partial plots in several different 
+windows, and that would allow you to do so.
+
+And there are other choices too:  there are several packages 
+implementing object systems that allow objects to maintain persistent 
+data.   I haven't used those, so this list may contain omissions and 
+errors:  R6, R.oo, proto.
+
+Duncan Murdoch
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Thu Oct 21 15:04:22 2021
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Thu, 21 Oct 2021 15:04:22 +0200
+Subject: [R-pkg-devel] Is there a better way ...?
+In-Reply-To: <a42c0aa6-816a-b953-d3aa-bfea0b104630@gmail.com>
+References: <20211021172850.5ad79de2@rolf-Latitude-E7470>
+ <CAPcHnpQ3XeKcw0TB-b-EMJC0bxbGb9AWykFsVEvxBs43izcjeg@mail.gmail.com>
+ <140f9d00-0da3-feea-7ab3-e97ac47da37c@gmail.com>
+ <20211021194201.3e4b4653@rolf-Latitude-E7470>
+ <CADfFDC5s_q3tDkYvnvRd+RJysiqBF5e+xfJ4JOr3rT1ak1ddig@mail.gmail.com>
+ <a42c0aa6-816a-b953-d3aa-bfea0b104630@gmail.com>
+Message-ID: <24945.25942.925883.906392@stat.math.ethz.ch>
+
+>>>>> Duncan Murdoch 
+>>>>>     on Thu, 21 Oct 2021 08:09:02 -0400 writes:
+
+    > I agree with almost everything Deepayan said, but would add one thing:
+    > On 21/10/2021 3:41 a.m., Deepayan Sarkar wrote:
+    > ...
+
+    >> My suggestion is having a package-specific environment, and Duncan's
+    >> is to have a function-specific environment. If you only need this for
+    >> this one function, then that should be good enough. If you eventually
+    >> want to access the persistent information from multiple functions,
+    >> having a package-specific environment would be more useful.
+
+    > I agree with that statement, but those aren't the only two choices. 
+    > Your local() call can create several functions and return them in a 
+    > list; then just those functions have access to the local variables.  For 
+    > example,
+
+    > createFns <- local({
+
+    > .fooInfo <- NULL
+
+    > fn1 <- function (...) { ... }
+    > fn2 <- function (...) { ... }
+
+    > list(fn1 = fn1, fn2 = fn2)
+    > })
+
+    > fns <- createFns()
+    > fn1 <- fns$fn1
+    > fn2 <- fns$fn2
+
+    > Now fn1 and fn2 are functions that can see .fooInfo, and nobody else can 
+    > (without going through contortions).
+
+    > One other difference between this approach and the package-specific 
+    > environment:  there's only one package-specific environment in 
+    > Deepayan's formulation, but I could call createFns() several times, 
+    > creating several pairs of functions, each pair with its own independent 
+    > version of .fooInfo.
+
+    > I don't know if that's something that would be useful to you, but 
+    > conceivably you'd want to maintain partial plots in several different 
+    > windows, and that would allow you to do so.
+
+Note that the above approach has been how  nls()  has been
+implemented for R ... a very long time ago {before R 1.0.0}
+
+e.g. from  example(nls) :
+
+DNase1 <- subset(DNase, Run == 1)
+fm1 <- nls(density ~ SSlogis(log(conc), Asym, xmid, scal), DNase1)
+str(fm1 $ m)
+> List of 16
+>  $ resid     :function ()  
+>  $ fitted    :function ()  
+>  $ formula   :function ()  
+>  $ deviance  :function ()  
+>  $ lhs       :function ()  
+>  $ gradient  :function ()  
+>  $ conv      :function ()  
+>  $ incr      :function ()  
+>  $ setVarying:function (vary = rep_len(TRUE, np))  
+>  $ setPars   :function (newPars)  
+>  $ getPars   :function ()  
+>  $ getAllPars:function ()  
+>  $ getEnv    :function ()  
+>  $ trace     :function ()  
+>  $ Rmat      :function ()  
+>  $ predict   :function (newdata = list(), qr = FALSE)  
+>  - attr(*, "class")= chr "nlsModel"
+
+## so 16 functions, all sharing the *same* environment very
+## efficiently and nicely
+
+## this is *the* environment for the fitted model :
+fmE <- environment(fm1$m[[1]])
+ls.str(fmE)
+> convCrit : function ()  
+> dev :  num 0.00479
+> env : <environment: 0x106c88a0> 
+> form : Class 'formula'  language density ~ SSlogis(log(conc), Asym, xmid, scal)
+> getPars : function ()  
+> ....     
+> ....     
+> ....     
+
+so the environment "contains" the functions themselves (but quite
+a few more things) and for an environment that means it only
+has pointers to the same function objects which are *also* in  `fm1$m`.
+
+So, there has been a nice convincing and important example on
+how to do this - inside R for more than two decennia.
+
+Martin Maechler
+
+
+From @kw@|mmo @end|ng |rom gm@||@com  Thu Oct 21 16:45:02 2021
+From: @kw@|mmo @end|ng |rom gm@||@com (Andrew Simmons)
+Date: Thu, 21 Oct 2021 10:45:02 -0400
+Subject: [R-pkg-devel] Is there a better way ...?
+In-Reply-To: <20211021194201.3e4b4653@rolf-Latitude-E7470>
+References: <20211021172850.5ad79de2@rolf-Latitude-E7470>
+ <CAPcHnpQ3XeKcw0TB-b-EMJC0bxbGb9AWykFsVEvxBs43izcjeg@mail.gmail.com>
+ <140f9d00-0da3-feea-7ab3-e97ac47da37c@gmail.com>
+ <20211021194201.3e4b4653@rolf-Latitude-E7470>
+Message-ID: <CAPcHnpSto1DXfi3EssbM3AfDeQ2-MjsEmU5+9XAW0Y7rH17EaQ@mail.gmail.com>
+
+Duncan's version is much clearer than my solution, and the only reason I
+use my version is so that the source reference of the function looks
+neater, and so that auto-code-indentation won't mess up my source reference
+either.
+If none of that made sense, don't worry about it, use Duncan's approach.
+I think the advantage of Duncan's solution is that getting and setting
+.fooInfo is more compact.
+
+It's not clear exactly how you're modifying .fooInfo, but I'll assume
+plot.foo is modifying it. Using Duncan's approach, you might do something
+like:
+
+
+plot.foo <- local({
+
+
+    .fooInfo <- 0
+
+
+    function (...)
+{
+    value <- .fooInfo  # get .fooInfo
+    .fooInfo <<- .fooInfo + 1  # set .fooInfo, you must use <<- here
+instead of <-
+    return(value)
+}
+
+
+})
+
+
+and Deepayan's approach:
+
+
+..foo.env <- local({
+
+
+    .fooInfo <- 0
+
+
+    environment()
+})
+
+
+plot.foo <- function (...)
+{
+    value <- .foo.env$.fooInfo  # get .fooInfo
+    .foo.env$.fooInfo <- .foo.env$.fooInfo + 1  # set .fooInfo
+    return(value)
+}
+
+
+Both of these work perfectly fine, so you don't have to worry too much
+about which you implement. The differences are mostly just visual
+appearance, they have nearly equivalent functionality and performance.
+
+On Thu, Oct 21, 2021 at 2:45 AM Rolf Turner <r.turner at auckland.ac.nz> wrote:
+
+>
+> On Thu, 21 Oct 2021 02:03:41 -0400
+> Duncan Murdoch <murdoch.duncan at gmail.com> wrote:
+>
+> > On 21/10/2021 12:40 a.m., Andrew Simmons wrote:
+> > > I think the simplest answer is to store the variable in the
+> > > functions frame. I'm assuming here that the only plot.foo needs
+> > > access to .fooInfo, if not this can be changed.
+> > >
+> > >
+> > > plot.foo <- function (...)
+> > > {
+> > >      .fooInfo
+> > > }
+> > > environment(plot.foo) <- new.env()
+> > > evalq({
+> > >      .fooInfo <- NULL
+> > > }, environment(plot.foo))
+> > >
+> > >
+> > > Make your function, and do whatever you need with .fooInfo within
+> > > said function. Whenever you previously updated .fooInfo in the
+> > > global environment, update .fooInfo in plot.foo environment instead.
+> > > Also, because .fooInfo is not stored in the package's frame, it
+> > > won't be locked when the namespace is sealed. If you created it at
+> > > the toplevel, that would create some issues. But this works fine.
+> >
+> > I agree with the final result, but I'd write the code differently:
+> >
+> > plot.foo <- local({
+> >
+> >    .fooInfo <- NULL
+> >
+> >    function (...) { ... }
+> > })
+> >
+> > creates an environment, puts .fooInfo into it with value NULL, then
+> > creates a function with that environment attached and returns it.
+> >
+> > I think Andrew's approach will work, but changing a function's
+> > environment always worries me.  Using local(), the function assigned
+> > to plot.foo never has a different environment than the one it ends up
+> > with (and I don't need to remember how evalq() works).
+>
+> Thanks everyone for these suggestions.  They seem a great deal
+> less shaganappi/kludgy than my previous approaches.
+>
+> I've never really felt totally comfortable with the environment
+> concept, despite have used it quite a bit (basically in a
+> hammer-and-hope style.)
+>
+> Can anyone comment on the difference between Deepayan's suggestion
+> (create a new environment in the package) and Duncan's suggestion
+> (create an environment that is local to plot.foo())?  Are there pros
+> and cons between the two?
+>
+> And Deepayan:  what is the rationale for not exporting the new
+> environment that you suggest creating?  Presumably this guards against
+> something.  What?  I'd just like to extend my (currently minimal)
+> comprehension of the issues.
+>
+> I must admit that Andrew's suggestion kind of overwhelms and bewilders
+> me.  I really have no idea what evalq() does.  I guess I could RTFM,
+> but the thought of doing that scares me! :-)
+>
+> Thanks again everybody.
+>
+> cheers,
+>
+> Rolf
+>
+> --
+> Honorary Research Fellow
+> Department of Statistics
+> University of Auckland
+> Phone: +64-9-373-7599 ext. 88276
+>
+>
+
+	[[alternative HTML version deleted]]
+
+
+From Jen@@Oeh|@ch|@ege| @end|ng |rom truec|u@ter@com  Thu Oct 21 19:23:03 2021
+From: Jen@@Oeh|@ch|@ege| @end|ng |rom truec|u@ter@com (=?UTF-8?Q?Jens_Oehlschl=c3=a4gel?=)
+Date: Thu, 21 Oct 2021 19:23:03 +0200
+Subject: [R-pkg-devel] failing S3 dispatch
+In-Reply-To: <5db91d48-6687-cd4f-558e-a5853c3efdea@truecluster.com>
+References: <de55d0d0-6c1d-f9a4-3320-9a176afb8848@truecluster.com>
+ <2413a4ad-1cc9-9e89-30d2-51dd9272b727@gmail.com>
+ <5db91d48-6687-cd4f-558e-a5853c3efdea@truecluster.com>
+Message-ID: <39ffdb6a-6d01-4558-0a28-385c04bb0d6e@truecluster.com>
+
+Thanks Duncan,
+
+I finally found the reason for the mysterious dispatch-failure: I had an 
+unwanted and unexported replicated definition of the 'clone' generic in 
+ff's namespace (a left-over).
+
+I still don't understand how this prevented the proper dispatch since 
+the duplicate in ff's namespace it was *not* called. I further 
+experimented and *any* non-exported object matching the name of the 
+generic caused the problem. Scary, maybe worth a check!
+
+Anyhow, removing the non-exported object solved the problem.
+
+Best regards
+
+Jens
+
+
+On 20.10.21 13:43, Jens Oehlschl?gel wrote:
+> Thank you Duncan,
+>
+> bit NAMESPACE has
+>
+> S3method(clone,default)
+> export(clone)
+>
+> ff NAMESPACE has
+>
+> import(bit)
+> # wish of CRAN maintainers: export another time here (now maintained 
+> and exported in bit)
+> # without this R CMD CHECK complained, but with it R CMD CHECK 
+> complains also, how to export again and why?
+> # clone
+> #,clone.default
+> ?clone.ff
+> ,clone.ffdf
+> S3method("clone",ff)
+> S3method(clone, ffdf)
+> # wish of CRAN maintainers: export another time here (now maintained 
+> and exported in bit)
+> #S3method(clone, default)
+>
+> Best
+>
+> Jens
+>
+>
+>
+> On 20.10.21 11:02, Duncan Murdoch wrote:
+>> On 19/10/2021 3:43 p.m., Jens Oehlschl?gel wrote:
+>>> I didn't find an answer elsewhere:
+>>>
+>>> My package 'bit' creates a S3 generic 'clone' and exports it.
+>>> Furthermore it registers a S3 method 'clone.default' (not exported).
+>>>
+>>> My package 'ff' imports package 'bit' and exports and registers a 
+>>> new S3
+>>> method 'clone.ff'. However, calling 'clone(ffobj)' dispatches to
+>>> clone.default instead of clone.ff !? Why?
+>>
+>> You should show us the NAMESPACE entries involving clone and clone.ff 
+>> from ff.
+>>
+>> Some comments that may or may not be relevant:
+>>
+>> ?- Normally you wouldn't export clone.ff, it's enough to register it 
+>> using S3method().
+>>
+>> ?- You may have created a new generic named clone, and that's what 
+>> clone.ff would attach itself to.? You can have bit::clone and 
+>> ff::clone as different generics and that would cause problems.
+>>
+>>>
+>>> What is the recommended way to create new S3-methods that get
+>>> dispatched? In earlier versions of the packages I simply exported
+>>> everything - that worked.
+>>
+>> I import the generic and use S3method(generic, method).? I don't 
+>> export the methods, so I wouldn't be able to call z <- clone.ff(a).
+>>
+>> Duncan Murdoch
+>>
+>>>
+>>> Best
+>>>
+>>>
+>>> Jens
+>>>
+>>>
+>>> ? > require(ff)
+>>> ? >
+>>> ? > a <- as.ff(0:9)
+>>> ? > class(x)
+>>> [1] "ff_vector" "ff"
+>>> ? >
+>>> ? > x <- clone(a)
+>>> ? > y <- bit:::clone.default(a)
+>>> ? > z <- clone.ff(a)
+>>> ? >
+>>> ? > # cloned ffobjects should have different filenames>
+>>>
+>>> ? > filename(a)? # original
+>>> [1] "/tmp/Rtmpk17JRZ/ff/clone1ed54cbb5060.ff"
+>>> ? >
+>>> ? > filename(x)? # unexpected equal (dispatch to clone.default)
+>>> [1] "/tmp/Rtmpk17JRZ/ff/clone1ed54cbb5060.ff"
+>>> ? >
+>>> ? > filename(y)? # expected equal
+>>> [1] "/tmp/Rtmpk17JRZ/ff/clone1ed54cbb5060.ff"
+>>> ? >
+>>> ? > filename(z)? # OK
+>>> [1] "/tmp/Rtmpk17JRZ/ff/clone1ed551d3ee66.ff"
+>>>
+>>> ? > version
+>>> ? ?????????????? _
+>>> platform?????? x86_64-pc-linux-gnu
+>>> arch?????????? x86_64
+>>> os???????????? linux-gnu
+>>> system???????? x86_64, linux-gnu
+>>> status
+>>> major????????? 4
+>>> minor????????? 1.1
+>>> year?????????? 2021
+>>> month????????? 08
+>>> day??????????? 10
+>>> svn rev??????? 80725
+>>> language?????? R
+>>> version.string R version 4.1.1 (2021-08-10)
+>>> nickname?????? Kick Things
+>>>
+>>> ______________________________________________
+>>> R-package-devel at r-project.org mailing list
+>>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>>>
+>>
+>
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Thu Oct 21 21:54:36 2021
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Thu, 21 Oct 2021 15:54:36 -0400
+Subject: [R-pkg-devel] failing S3 dispatch
+In-Reply-To: <39ffdb6a-6d01-4558-0a28-385c04bb0d6e@truecluster.com>
+References: <de55d0d0-6c1d-f9a4-3320-9a176afb8848@truecluster.com>
+ <2413a4ad-1cc9-9e89-30d2-51dd9272b727@gmail.com>
+ <5db91d48-6687-cd4f-558e-a5853c3efdea@truecluster.com>
+ <39ffdb6a-6d01-4558-0a28-385c04bb0d6e@truecluster.com>
+Message-ID: <6ee9cc65-20df-bb9a-166a-e833ed77d16d@gmail.com>
+
+On 21/10/2021 1:23 p.m., Jens Oehlschl?gel wrote:
+> Thanks Duncan,
+> 
+> I finally found the reason for the mysterious dispatch-failure: I had an
+> unwanted and unexported replicated definition of the 'clone' generic in
+> ff's namespace (a left-over).
+> 
+> I still don't understand how this prevented the proper dispatch since
+> the duplicate in ff's namespace it was *not* called. I further
+> experimented and *any* non-exported object matching the name of the
+> generic caused the problem. Scary, maybe worth a check!
+
+Your NAMESPACE file contains
+
+   S3method("clone",ff)
+
+When R installs your package, it has to figure out where "clone" lives. 
+  You imported a copy of it from bit, and then overwrote that imported 
+copy with the replicated definition.
+
+That created a new generic belonging to ff, and that's the one that your 
+clone.ff method was attached to.
+
+When you called clone(x), you called the bit::clone generic which never 
+received the registration, so dispatch to clone.ff never happened.
+
+It makes sense:  you don't want a generic in one package to interfere 
+with an unrelated generic in another package that happens to have the 
+same name.
+
+Duncan Murdoch
+
+
+> 
+> Anyhow, removing the non-exported object solved the problem.
+> 
+> Best regards
+> 
+> Jens
+> 
+> 
+> On 20.10.21 13:43, Jens Oehlschl?gel wrote:
+>> Thank you Duncan,
+>>
+>> bit NAMESPACE has
+>>
+>> S3method(clone,default)
+>> export(clone)
+>>
+>> ff NAMESPACE has
+>>
+>> import(bit)
+>> # wish of CRAN maintainers: export another time here (now maintained
+>> and exported in bit)
+>> # without this R CMD CHECK complained, but with it R CMD CHECK
+>> complains also, how to export again and why?
+>> # clone
+>> #,clone.default
+>>  ?clone.ff
+>> ,clone.ffdf
+>> S3method("clone",ff)
+>> S3method(clone, ffdf)
+>> # wish of CRAN maintainers: export another time here (now maintained
+>> and exported in bit)
+>> #S3method(clone, default)
+>>
+>> Best
+>>
+>> Jens
+>>
+>>
+>>
+>> On 20.10.21 11:02, Duncan Murdoch wrote:
+>>> On 19/10/2021 3:43 p.m., Jens Oehlschl?gel wrote:
+>>>> I didn't find an answer elsewhere:
+>>>>
+>>>> My package 'bit' creates a S3 generic 'clone' and exports it.
+>>>> Furthermore it registers a S3 method 'clone.default' (not exported).
+>>>>
+>>>> My package 'ff' imports package 'bit' and exports and registers a
+>>>> new S3
+>>>> method 'clone.ff'. However, calling 'clone(ffobj)' dispatches to
+>>>> clone.default instead of clone.ff !? Why?
+>>>
+>>> You should show us the NAMESPACE entries involving clone and clone.ff
+>>> from ff.
+>>>
+>>> Some comments that may or may not be relevant:
+>>>
+>>>  ?- Normally you wouldn't export clone.ff, it's enough to register it
+>>> using S3method().
+>>>
+>>>  ?- You may have created a new generic named clone, and that's what
+>>> clone.ff would attach itself to.? You can have bit::clone and
+>>> ff::clone as different generics and that would cause problems.
+>>>
+>>>>
+>>>> What is the recommended way to create new S3-methods that get
+>>>> dispatched? In earlier versions of the packages I simply exported
+>>>> everything - that worked.
+>>>
+>>> I import the generic and use S3method(generic, method).? I don't
+>>> export the methods, so I wouldn't be able to call z <- clone.ff(a).
+>>>
+>>> Duncan Murdoch
+>>>
+>>>>
+>>>> Best
+>>>>
+>>>>
+>>>> Jens
+>>>>
+>>>>
+>>>>  ? > require(ff)
+>>>>  ? >
+>>>>  ? > a <- as.ff(0:9)
+>>>>  ? > class(x)
+>>>> [1] "ff_vector" "ff"
+>>>>  ? >
+>>>>  ? > x <- clone(a)
+>>>>  ? > y <- bit:::clone.default(a)
+>>>>  ? > z <- clone.ff(a)
+>>>>  ? >
+>>>>  ? > # cloned ffobjects should have different filenames>
+>>>>
+>>>>  ? > filename(a)? # original
+>>>> [1] "/tmp/Rtmpk17JRZ/ff/clone1ed54cbb5060.ff"
+>>>>  ? >
+>>>>  ? > filename(x)? # unexpected equal (dispatch to clone.default)
+>>>> [1] "/tmp/Rtmpk17JRZ/ff/clone1ed54cbb5060.ff"
+>>>>  ? >
+>>>>  ? > filename(y)? # expected equal
+>>>> [1] "/tmp/Rtmpk17JRZ/ff/clone1ed54cbb5060.ff"
+>>>>  ? >
+>>>>  ? > filename(z)? # OK
+>>>> [1] "/tmp/Rtmpk17JRZ/ff/clone1ed551d3ee66.ff"
+>>>>
+>>>>  ? > version
+>>>>  ? ?????????????? _
+>>>> platform?????? x86_64-pc-linux-gnu
+>>>> arch?????????? x86_64
+>>>> os???????????? linux-gnu
+>>>> system???????? x86_64, linux-gnu
+>>>> status
+>>>> major????????? 4
+>>>> minor????????? 1.1
+>>>> year?????????? 2021
+>>>> month????????? 08
+>>>> day??????????? 10
+>>>> svn rev??????? 80725
+>>>> language?????? R
+>>>> version.string R version 4.1.1 (2021-08-10)
+>>>> nickname?????? Kick Things
+>>>>
+>>>> ______________________________________________
+>>>> R-package-devel at r-project.org mailing list
+>>>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>>>>
+>>>
+>>
+>> ______________________________________________
+>> R-package-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+
+From chr|@@br|en @end|ng |rom @de|@|de@edu@@u  Thu Oct 28 01:16:15 2021
+From: chr|@@br|en @end|ng |rom @de|@|de@edu@@u (Chris Brien)
+Date: Wed, 27 Oct 2021 23:16:15 +0000
+Subject: [R-pkg-devel] update.formula does not keep.order
+Message-ID: <ME3P282MB1283DF427A406FF025AEDFDCA0859@ME3P282MB1283.AUSP282.PROD.OUTLOOK.COM>
+
+Hi listers,
+
+
+
+I have a package asremlPlus on CRAN that manipulates formulae. It uses the keep.order argument, as in the stats::terms function, to allow control over the order of terms in a model.
+
+
+
+However, when stats::update.formula is used to update a formula, there is no keep.order argument for update.formula. The result is that the updated formula is always simplified to a sum of single terms and these terms are always re-ordered. I have written a function that is able to update a formula and keep the order. The following example illustrates the problem and my solution.
+
+
+
+#Functions to keep.order when a formula is updated
+
+update_keep_order <- function(object, ...) {
+
+  UseMethod("update_keep_order")
+
+}
+
+update_keep_order.formula <- function(old, new, keep.order = TRUE) {
+
+  tmp <- .Call(stats:::C_updateform, as.formula(old), as.formula(new))
+
+  formula(terms.formula(tmp, keep.order = keep.order, simplify = TRUE))
+
+}
+
+
+
+#Generate some factors and a formula
+
+facs <- expand.grid(A=1:2, B=1:2, C=1:2, D=1:2)
+
+form <- with(facs, formula(~ A*B + C*D))
+
+
+
+#Update with update.formula
+
+(upd <- update(form, ~ . - C, keep.order = TRUE))
+
+
+
+#Update with update_keep_order.formula
+
+(upd_keep <- update_keep_order(form, ~ . - C, keep.order = TRUE))
+
+
+
+However, the function calls the undocumented function stats::C_updateform and so cannot be added to my package.
+
+
+
+Is there another solution to achieve this outcome that does not require this undocumented function and so could be incorporated in an R package on CRAN?
+
+
+
+Thanks in advance for any help in solving this issue.
+
+
+
+Cheers,
+
+
+
+  Chris
+
+
+	[[alternative HTML version deleted]]
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Thu Oct 28 14:11:51 2021
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Thu, 28 Oct 2021 08:11:51 -0400
+Subject: [R-pkg-devel] update.formula does not keep.order
+In-Reply-To: <ME3P282MB1283DF427A406FF025AEDFDCA0859@ME3P282MB1283.AUSP282.PROD.OUTLOOK.COM>
+References: <ME3P282MB1283DF427A406FF025AEDFDCA0859@ME3P282MB1283.AUSP282.PROD.OUTLOOK.COM>
+Message-ID: <84203c48-71ed-e0f2-0264-0ba9bfacdc93@gmail.com>
+
+On 27/10/2021 7:16 p.m., Chris Brien wrote:
+> Hi listers,
+> 
+> 
+> 
+> I have a package asremlPlus on CRAN that manipulates formulae. It uses the keep.order argument, as in the stats::terms function, to allow control over the order of terms in a model.
+> 
+> 
+> 
+> However, when stats::update.formula is used to update a formula, there is no keep.order argument for update.formula. The result is that the updated formula is always simplified to a sum of single terms and these terms are always re-ordered. I have written a function that is able to update a formula and keep the order. The following example illustrates the problem and my solution.
+> 
+> 
+> 
+> #Functions to keep.order when a formula is updated
+> 
+> update_keep_order <- function(object, ...) {
+> 
+>    UseMethod("update_keep_order")
+> 
+> }
+> 
+> update_keep_order.formula <- function(old, new, keep.order = TRUE) {
+> 
+>    tmp <- .Call(stats:::C_updateform, as.formula(old), as.formula(new))
+> 
+>    formula(terms.formula(tmp, keep.order = keep.order, simplify = TRUE))
+> 
+> }
+> 
+> 
+> 
+> #Generate some factors and a formula
+> 
+> facs <- expand.grid(A=1:2, B=1:2, C=1:2, D=1:2)
+> 
+> form <- with(facs, formula(~ A*B + C*D))
+> 
+> 
+> 
+> #Update with update.formula
+> 
+> (upd <- update(form, ~ . - C, keep.order = TRUE))
+> 
+> 
+> 
+> #Update with update_keep_order.formula
+> 
+> (upd_keep <- update_keep_order(form, ~ . - C, keep.order = TRUE))
+> 
+> 
+> 
+> However, the function calls the undocumented function stats::C_updateform and so cannot be added to my package.
+> 
+> 
+> 
+> Is there another solution to achieve this outcome that does not require this undocumented function and so could be incorporated in an R package on CRAN?
+> 
+> 
+> 
+> Thanks in advance for any help in solving this issue.
+
+I can't think of a short term solution.  The long term solution is to 
+prepare and submit a patch to R to add the keep_order argument to 
+update.formula.
+
+As a workaround, perhaps you could modify the result of update() to 
+restore the original order.  This sounds messy, but if you already have 
+code to manipulate formulae, maybe it's mostly in place.  The steps 
+would be:
+
+  Decompose the formula into a vector of terms, e.g. ~A + B + A:B + C + 
+D + C:D becomes
+
+old <- expression(A, B, A:B, C, D, C:D)
+
+  Update the formula, and decompose the new formula in the same way.
+
+So A + B + D + A:B + C:D becomes
+
+new <- expression(A, B, D, A:B, C:D)
+
+
+  Match each term in the new vector to its location in the original 
+vector, and sort it.
+
+index <- match(new, old)
+sorted <- order(index)
+new[sorted]
+
+In your example, this gives expression(A, B, A:B, D, C:D) .
+
+
+  (You'll need to decide what to do with terms that weren't present in 
+the original.  They'll have NA values in index.  Presumably they go to 
+the end.)
+
+  Rebuild the formula after sorting.
+
+Duncan Murdoch
+
+
+From chr|@@br|en @end|ng |rom @de|@|de@edu@@u  Fri Oct 29 03:04:43 2021
+From: chr|@@br|en @end|ng |rom @de|@|de@edu@@u (Chris Brien)
+Date: Fri, 29 Oct 2021 01:04:43 +0000
+Subject: [R-pkg-devel] update.formula does not keep.order
+In-Reply-To: <84203c48-71ed-e0f2-0264-0ba9bfacdc93@gmail.com>
+References: <ME3P282MB1283DF427A406FF025AEDFDCA0859@ME3P282MB1283.AUSP282.PROD.OUTLOOK.COM>
+ <84203c48-71ed-e0f2-0264-0ba9bfacdc93@gmail.com>
+Message-ID: <ME4P282MB1287562FE6FF32A33AC72025A0879@ME4P282MB1287.AUSP282.PROD.OUTLOOK.COM>
+
+Hi Duncan,
+
+Thanks for your suggestions.
+
+I have now confirmed that bug report 15763 addresses a related problem of the simplify argument. So I could incorporate my modification into that bug report. Or, I could take up your suggested option of dealing with it myself.
+
+New terms are a little tricky. I think that, at least in a fixed model, you would want them to go before any term of which their variables are a subset.
+
+Further investigation is needed.
+
+Cheers,
+
+  Chris
+
+-----Original Message-----
+From: Duncan Murdoch [mailto:murdoch.duncan at gmail.com]
+Sent: Thursday, 28 October 2021 10:42 PM
+To: Chris Brien; 'r-package-devel at r-project.org'
+Subject: Re: [R-pkg-devel] update.formula does not keep.order
+
+CAUTION: External email. Only click on links or open attachments from trusted senders.
+
+On 27/10/2021 7:16 p.m., Chris Brien wrote:
+> Hi listers,
+>
+>
+>
+> I have a package asremlPlus on CRAN that manipulates formulae. It uses the keep.order argument, as in the stats::terms function, to allow control over the order of terms in a model.
+>
+>
+>
+> However, when stats::update.formula is used to update a formula, there is no keep.order argument for update.formula. The result is that the updated formula is always simplified to a sum of single terms and these terms are always re-ordered. I have written a function that is able to update a formula and keep the order. The following example illustrates the problem and my solution.
+>
+>
+>
+> #Functions to keep.order when a formula is updated
+>
+> update_keep_order <- function(object, ...) {
+>
+>    UseMethod("update_keep_order")
+>
+> }
+>
+> update_keep_order.formula <- function(old, new, keep.order = TRUE) {
+>
+>    tmp <- .Call(stats:::C_updateform, as.formula(old), as.formula(new))
+>
+>    formula(terms.formula(tmp, keep.order = keep.order, simplify = TRUE))
+>
+> }
+>
+>
+>
+> #Generate some factors and a formula
+>
+> facs <- expand.grid(A=1:2, B=1:2, C=1:2, D=1:2)
+>
+> form <- with(facs, formula(~ A*B + C*D))
+>
+>
+>
+> #Update with update.formula
+>
+> (upd <- update(form, ~ . - C, keep.order = TRUE))
+>
+>
+>
+> #Update with update_keep_order.formula
+>
+> (upd_keep <- update_keep_order(form, ~ . - C, keep.order = TRUE))
+>
+>
+>
+> However, the function calls the undocumented function stats::C_updateform and so cannot be added to my package.
+>
+>
+>
+> Is there another solution to achieve this outcome that does not require this undocumented function and so could be incorporated in an R package on CRAN?
+>
+>
+>
+> Thanks in advance for any help in solving this issue.
+
+I can't think of a short term solution.  The long term solution is to
+prepare and submit a patch to R to add the keep_order argument to
+update.formula.
+
+As a workaround, perhaps you could modify the result of update() to
+restore the original order.  This sounds messy, but if you already have
+code to manipulate formulae, maybe it's mostly in place.  The steps
+would be:
+
+  Decompose the formula into a vector of terms, e.g. ~A + B + A:B + C +
+D + C:D becomes
+
+old <- expression(A, B, A:B, C, D, C:D)
+
+  Update the formula, and decompose the new formula in the same way.
+
+So A + B + D + A:B + C:D becomes
+
+new <- expression(A, B, D, A:B, C:D)
+
+
+  Match each term in the new vector to its location in the original
+vector, and sort it.
+
+index <- match(new, old)
+sorted <- order(index)
+new[sorted]
+
+In your example, this gives expression(A, B, A:B, D, C:D) .
+
+
+  (You'll need to decide what to do with terms that weren't present in
+the original.  They'll have NA values in index.  Presumably they go to
+the end.)
+
+  Rebuild the formula after sorting.
+
+Duncan Murdoch
+
+
+From |@go@mo@que|r@ @end|ng |rom wur@n|  Fri Oct 29 13:44:12 2021
+From: |@go@mo@que|r@ @end|ng |rom wur@n| (Mosqueira Sanchez, Iago)
+Date: Fri, 29 Oct 2021 11:44:12 +0000
+Subject: [R-pkg-devel] What influences the size of the rdb file in a package
+Message-ID: <e5cf2107e126582c5e34dce48ed0ca7ed696c660.camel@wur.nl>
+
+
+I am getting warnings in some packages about the size of the R folder
+
+* checking installed package size ... NOTE
+  installed size is 20.5Mb
+  sub-directories of 1Mb or more:
+    data   2.4Mb
+    R     17.8Mb
+
+This package contains around 3300 lines of code, if the results of
+
+grep -v '^\s*#' *.R | wc
+
+are correct.
+
+Is this size to be expected? Is there anything I might be missinmg to
+make it smaller?
+
+Thanks,
+
+
+Iago
+-- 
+dr. Iago Mosqueira
+
+Wageningen Marine Research
+
+Haringkade 1
+Postbus 68
+1976CP, IJmuiden
+
+Tel.: +31 (0)317 488 995
+iago.mosqueira at wur.nl
+
+From c@@rd|@g@bor @end|ng |rom gm@||@com  Fri Oct 29 22:23:55 2021
+From: c@@rd|@g@bor @end|ng |rom gm@||@com (=?UTF-8?B?R8OhYm9yIENzw6FyZGk=?=)
+Date: Fri, 29 Oct 2021 22:23:55 +0200
+Subject: [R-pkg-devel] 
+ What influences the size of the rdb file in a package
+In-Reply-To: <e5cf2107e126582c5e34dce48ed0ca7ed696c660.camel@wur.nl>
+References: <e5cf2107e126582c5e34dce48ed0ca7ed696c660.camel@wur.nl>
+Message-ID: <CABtg=KndURNEXvbpwNRumnXSZgQUj=aozg9Y5n4Q-nQ32VjqVg@mail.gmail.com>
+
+You probably (accidentally?) put some large object into your package,
+e.g. a non-function object. But it is hard to say more without seeing
+the actual code....
+
+Gabor
+
+On Fri, Oct 29, 2021 at 10:07 PM Mosqueira Sanchez, Iago
+<iago.mosqueira at wur.nl> wrote:
+>
+>
+> I am getting warnings in some packages about the size of the R folder
+>
+> * checking installed package size ... NOTE
+>   installed size is 20.5Mb
+>   sub-directories of 1Mb or more:
+>     data   2.4Mb
+>     R     17.8Mb
+>
+> This package contains around 3300 lines of code, if the results of
+>
+> grep -v '^\s*#' *.R | wc
+>
+> are correct.
+>
+> Is this size to be expected? Is there anything I might be missinmg to
+> make it smaller?
+>
+> Thanks,
+>
+>
+> Iago
+> --
+> dr. Iago Mosqueira
+>
+> Wageningen Marine Research
+>
+> Haringkade 1
+> Postbus 68
+> 1976CP, IJmuiden
+>
+> Tel.: +31 (0)317 488 995
+> iago.mosqueira at wur.nl
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Sat Oct 30 02:21:46 2021
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Fri, 29 Oct 2021 20:21:46 -0400
+Subject: [R-pkg-devel] 
+ What influences the size of the rdb file in a package
+In-Reply-To: <CABtg=KndURNEXvbpwNRumnXSZgQUj=aozg9Y5n4Q-nQ32VjqVg@mail.gmail.com>
+References: <e5cf2107e126582c5e34dce48ed0ca7ed696c660.camel@wur.nl>
+ <CABtg=KndURNEXvbpwNRumnXSZgQUj=aozg9Y5n4Q-nQ32VjqVg@mail.gmail.com>
+Message-ID: <d8759dda-cfa3-fdef-3de4-51fef8430f99@gmail.com>
+
+On 29/10/2021 4:23 p.m., G?bor Cs?rdi wrote:
+> You probably (accidentally?) put some large object into your package,
+> e.g. a non-function object. But it is hard to say more without seeing
+> the actual code....
+
+Yes.  To track it down, you need to understand that an INSTALL executes 
+everything in the .R files, and saves every object that was created. In 
+a simple package, that's just a bunch of functions, but in more 
+complicated situations, you may have created some objects in order to 
+build functions, even though you don't need them:  but unless you remove 
+them, it's very easy to have them included too.
+
+Duncan Murdoch
+> 
+> Gabor
+> 
+> On Fri, Oct 29, 2021 at 10:07 PM Mosqueira Sanchez, Iago
+> <iago.mosqueira at wur.nl> wrote:
+>>
+>>
+>> I am getting warnings in some packages about the size of the R folder
+>>
+>> * checking installed package size ... NOTE
+>>    installed size is 20.5Mb
+>>    sub-directories of 1Mb or more:
+>>      data   2.4Mb
+>>      R     17.8Mb
+>>
+>> This package contains around 3300 lines of code, if the results of
+>>
+>> grep -v '^\s*#' *.R | wc
+>>
+>> are correct.
+>>
+>> Is this size to be expected? Is there anything I might be missinmg to
+>> make it smaller?
+>>
+>> Thanks,
+>>
+>>
+>> Iago
+>> --
+>> dr. Iago Mosqueira
+>>
+>> Wageningen Marine Research
+>>
+>> Haringkade 1
+>> Postbus 68
+>> 1976CP, IJmuiden
+>>
+>> Tel.: +31 (0)317 488 995
+>> iago.mosqueira at wur.nl
+>> ______________________________________________
+>> R-package-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+> 
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+
+
+From |@go@mo@que|r@ @end|ng |rom wur@n|  Sat Oct 30 09:00:00 2021
+From: |@go@mo@que|r@ @end|ng |rom wur@n| (Mosqueira Sanchez, Iago)
+Date: Sat, 30 Oct 2021 07:00:00 +0000
+Subject: [R-pkg-devel] 
+ What influences the size of the rdb file in a package
+In-Reply-To: <d8759dda-cfa3-fdef-3de4-51fef8430f99@gmail.com>
+References: <e5cf2107e126582c5e34dce48ed0ca7ed696c660.camel@wur.nl>
+ <CABtg=KndURNEXvbpwNRumnXSZgQUj=aozg9Y5n4Q-nQ32VjqVg@mail.gmail.com>
+ <d8759dda-cfa3-fdef-3de4-51fef8430f99@gmail.com>
+Message-ID: <da1a60077971a3a56beeef9102a4ba617735fd73.camel@wur.nl>
+
+As far as I can see only classes, methods and functions are present
+there. I loaded the rdb file and looked at the contents and sizes of
+objects.
+
+Am I right in assuming every method or function imported from another
+package sits in the database? In another S4 package I see that the
+largest objects are nls, cor and lm, which we overload for some S4
+classes.
+
+
+
+Iago
+
+On Fri, 2021-10-29 at 20:21 -0400, Duncan Murdoch wrote:
+> On 29/10/2021 4:23 p.m., G?bor Cs?rdi wrote:
+> > You probably (accidentally?) put some large object into your
+> > package,
+> > e.g. a non-function object. But it is hard to say more without
+> > seeing
+> > the actual code....
+> 
+> Yes.  To track it down, you need to understand that an INSTALL
+> executes 
+> everything in the .R files, and saves every object that was created.
+> In 
+> a simple package, that's just a bunch of functions, but in more 
+> complicated situations, you may have created some objects in order
+> to 
+> build functions, even though you don't need them:  but unless you
+> remove 
+> them, it's very easy to have them included too.
+> 
+> Duncan Murdoch
+> > Gabor
+> > 
+> > On Fri, Oct 29, 2021 at 10:07 PM Mosqueira Sanchez, Iago
+> > <iago.mosqueira at wur.nl> wrote:
+> > > 
+> > > I am getting warnings in some packages about the size of the R
+> > > folder
+> > > 
+> > > * checking installed package size ... NOTE
+> > >    installed size is 20.5Mb
+> > >    sub-directories of 1Mb or more:
+> > >      data   2.4Mb
+> > >      R     17.8Mb
+> > > 
+> > > This package contains around 3300 lines of code, if the results
+> > > of
+> > > 
+> > > grep -v '^\s*#' *.R | wc
+> > > 
+> > > are correct.
+> > > 
+> > > Is this size to be expected? Is there anything I might be
+> > > missinmg to
+> > > make it smaller?
+> > > 
+> > > Thanks,
+> > > 
+> > > 
+> > > Iago
+> > > --
+> > > dr. Iago Mosqueira
+> > > 
+> > > Wageningen Marine Research
+> > > 
+> > > Haringkade 1
+> > > Postbus 68
+> > > 1976CP, IJmuiden
+> > > 
+> > > Tel.: +31 (0)317 488 995
+> > > iago.mosqueira at wur.nl
+> > > ______________________________________________
+> > > R-package-devel at r-project.org mailing list
+> > > https://eur03.safelinks.protection.outlook.com/?url=https%3A%2F%2Fstat.ethz.ch%2Fmailman%2Flistinfo%2Fr-package-devel&amp;data=04%7C01%7Ciago.mosqueira%40wur.nl%7Cab72634b9fed43fd7a2208d99b3b43cd%7C27d137e5761f4dc1af88d26430abb18f%7C0%7C0%7C637711501535857883%7CUnknown%7CTWFpbGZsb3d8eyJWIjoiMC4wLjAwMDAiLCJQIjoiV2luMzIiLCJBTiI6Ik1haWwiLCJXVCI6Mn0%3D%7C2000&amp;sdata=E9aOOkVzR46TP2lah4alc%2F%2B5PmFPX27oDV140kBcrEI%3D&amp;reserved=0
+> > 
+> > ______________________________________________
+> > R-package-devel at r-project.org mailing list
+> > https://eur03.safelinks.protection.outlook.com/?url=https%3A%2F%2Fstat.ethz.ch%2Fmailman%2Flistinfo%2Fr-package-devel&amp;data=04%7C01%7Ciago.mosqueira%40wur.nl%7Cab72634b9fed43fd7a2208d99b3b43cd%7C27d137e5761f4dc1af88d26430abb18f%7C0%7C0%7C637711501535867885%7CUnknown%7CTWFpbGZsb3d8eyJWIjoiMC4wLjAwMDAiLCJQIjoiV2luMzIiLCJBTiI6Ik1haWwiLCJXVCI6Mn0%3D%7C2000&amp;sdata=ZMc2qL9zGn9u5Tcf8nRNNffZlkMZVbXvdW3pVgrrI0E%3D&amp;reserved=0
+> > 
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Sat Oct 30 12:38:57 2021
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Sat, 30 Oct 2021 06:38:57 -0400
+Subject: [R-pkg-devel] 
+ What influences the size of the rdb file in a package
+In-Reply-To: <da1a60077971a3a56beeef9102a4ba617735fd73.camel@wur.nl>
+References: <e5cf2107e126582c5e34dce48ed0ca7ed696c660.camel@wur.nl>
+ <CABtg=KndURNEXvbpwNRumnXSZgQUj=aozg9Y5n4Q-nQ32VjqVg@mail.gmail.com>
+ <d8759dda-cfa3-fdef-3de4-51fef8430f99@gmail.com>
+ <da1a60077971a3a56beeef9102a4ba617735fd73.camel@wur.nl>
+Message-ID: <be72f252-c32e-7145-c6b4-378b440ba923@gmail.com>
+
+On 30/10/2021 3:00 a.m., Mosqueira Sanchez, Iago wrote:
+> As far as I can see only classes, methods and functions are present
+> there. I loaded the rdb file and looked at the contents and sizes of
+> objects.
+> 
+> Am I right in assuming every method or function imported from another
+> package sits in the database? In another S4 package I see that the
+> largest objects are nls, cor and lm, which we overload for some S4
+> classes.
+
+I think imports just get a small record saying where to get the object 
+from, they don't get full copies.  That way if you import foo::bar, and 
+the foo package gets updated, your package will use the latest version.
+
+If you want to find out what is taking up all the space, this is what 
+you can do.  Suppose your package is called "foo".  Then read the index 
+to the R objects using
+
+rdx <- readRDS(system.file("R/foo.rdx", package = "foo"))
+
+Then rdx$variables will be a named list.  The names are the names of the 
+variables, and the values are offsets and sizes of each variable in the 
+foo.rdb file.  So this will print all the sizes from smallest to largest:
+
+sort(sapply(rdx$variables, function(x) x[2]))
+
+If none of those are very big, you could look at
+
+sapply(rdx$references, function(x) x[2]))
+
+for the sizes of the references to other environments.  These are harder 
+to interpret, because they get names like "env::3", unlike the 
+variables, which have the name they use in R. I suppose you could figure 
+out how lazyLoadDBfetch() works and read one of them to see what's in 
+it, but I haven't done that.
+
+Duncan Murdoch
+
+> 
+> 
+> 
+> Iago
+> 
+> On Fri, 2021-10-29 at 20:21 -0400, Duncan Murdoch wrote:
+>> On 29/10/2021 4:23 p.m., G?bor Cs?rdi wrote:
+>>> You probably (accidentally?) put some large object into your
+>>> package,
+>>> e.g. a non-function object. But it is hard to say more without
+>>> seeing
+>>> the actual code....
+>>
+>> Yes.  To track it down, you need to understand that an INSTALL
+>> executes
+>> everything in the .R files, and saves every object that was created.
+>> In
+>> a simple package, that's just a bunch of functions, but in more
+>> complicated situations, you may have created some objects in order
+>> to
+>> build functions, even though you don't need them:  but unless you
+>> remove
+>> them, it's very easy to have them included too.
+>>
+>> Duncan Murdoch
+>>> Gabor
+>>>
+>>> On Fri, Oct 29, 2021 at 10:07 PM Mosqueira Sanchez, Iago
+>>> <iago.mosqueira at wur.nl> wrote:
+>>>>
+>>>> I am getting warnings in some packages about the size of the R
+>>>> folder
+>>>>
+>>>> * checking installed package size ... NOTE
+>>>>     installed size is 20.5Mb
+>>>>     sub-directories of 1Mb or more:
+>>>>       data   2.4Mb
+>>>>       R     17.8Mb
+>>>>
+>>>> This package contains around 3300 lines of code, if the results
+>>>> of
+>>>>
+>>>> grep -v '^\s*#' *.R | wc
+>>>>
+>>>> are correct.
+>>>>
+>>>> Is this size to be expected? Is there anything I might be
+>>>> missinmg to
+>>>> make it smaller?
+>>>>
+>>>> Thanks,
+>>>>
+>>>>
+>>>> Iago
+>>>> --
+>>>> dr. Iago Mosqueira
+>>>>
+>>>> Wageningen Marine Research
+>>>>
+>>>> Haringkade 1
+>>>> Postbus 68
+>>>> 1976CP, IJmuiden
+>>>>
+>>>> Tel.: +31 (0)317 488 995
+>>>> iago.mosqueira at wur.nl
+>>>> ______________________________________________
+>>>> R-package-devel at r-project.org mailing list
+>>>> https://eur03.safelinks.protection.outlook.com/?url=https%3A%2F%2Fstat.ethz.ch%2Fmailman%2Flistinfo%2Fr-package-devel&amp;data=04%7C01%7Ciago.mosqueira%40wur.nl%7Cab72634b9fed43fd7a2208d99b3b43cd%7C27d137e5761f4dc1af88d26430abb18f%7C0%7C0%7C637711501535857883%7CUnknown%7CTWFpbGZsb3d8eyJWIjoiMC4wLjAwMDAiLCJQIjoiV2luMzIiLCJBTiI6Ik1haWwiLCJXVCI6Mn0%3D%7C2000&amp;sdata=E9aOOkVzR46TP2lah4alc%2F%2B5PmFPX27oDV140kBcrEI%3D&amp;reserved=0
+>>>
+>>> ______________________________________________
+>>> R-package-devel at r-project.org mailing list
+>>> https://eur03.safelinks.protection.outlook.com/?url=https%3A%2F%2Fstat.ethz.ch%2Fmailman%2Flistinfo%2Fr-package-devel&amp;data=04%7C01%7Ciago.mosqueira%40wur.nl%7Cab72634b9fed43fd7a2208d99b3b43cd%7C27d137e5761f4dc1af88d26430abb18f%7C0%7C0%7C637711501535867885%7CUnknown%7CTWFpbGZsb3d8eyJWIjoiMC4wLjAwMDAiLCJQIjoiV2luMzIiLCJBTiI6Ik1haWwiLCJXVCI6Mn0%3D%7C2000&amp;sdata=ZMc2qL9zGn9u5Tcf8nRNNffZlkMZVbXvdW3pVgrrI0E%3D&amp;reserved=0
+>>>
+
+
+From w||||@mwdun|@p @end|ng |rom gm@||@com  Sat Oct 30 17:12:06 2021
+From: w||||@mwdun|@p @end|ng |rom gm@||@com (Bill Dunlap)
+Date: Sat, 30 Oct 2021 08:12:06 -0700
+Subject: [R-pkg-devel] 
+ What influences the size of the rdb file in a package
+In-Reply-To: <da1a60077971a3a56beeef9102a4ba617735fd73.camel@wur.nl>
+References: <e5cf2107e126582c5e34dce48ed0ca7ed696c660.camel@wur.nl>
+ <CABtg=KndURNEXvbpwNRumnXSZgQUj=aozg9Y5n4Q-nQ32VjqVg@mail.gmail.com>
+ <d8759dda-cfa3-fdef-3de4-51fef8430f99@gmail.com>
+ <da1a60077971a3a56beeef9102a4ba617735fd73.camel@wur.nl>
+Message-ID: <CAHqSRuSZs47dWw7K_zdc8em84js=ZW44Cc7zFsNcDyHV6ELdiQ@mail.gmail.com>
+
+The byte code attached to each function in a package can be surprisingly
+large.  E.g., the byte code for the c. 300 line function Matrix:::replTmat
+seems to be c. 4.5 times the size of the raw code:
+
+> object.size(Matrix:::replTmat) /
+object.size(as.function(as.list(Matrix:::replTmat)))
+5.5 bytes
+
+[Is there a more direct way to remove byte code from a function?  Or to
+inspect it?]
+
+Building Matrix with --no-byte-compile reduces the size of R/Matrix.rdx by
+more than half, from 2.7 MB to 1 MB.
+
+-Bill
+
+On Sat, Oct 30, 2021 at 12:00 AM Mosqueira Sanchez, Iago <
+iago.mosqueira at wur.nl> wrote:
+
+> As far as I can see only classes, methods and functions are present
+> there. I loaded the rdb file and looked at the contents and sizes of
+> objects.
+>
+> Am I right in assuming every method or function imported from another
+> package sits in the database? In another S4 package I see that the
+> largest objects are nls, cor and lm, which we overload for some S4
+> classes.
+>
+>
+>
+> Iago
+>
+> On Fri, 2021-10-29 at 20:21 -0400, Duncan Murdoch wrote:
+> > On 29/10/2021 4:23 p.m., G?bor Cs?rdi wrote:
+> > > You probably (accidentally?) put some large object into your
+> > > package,
+> > > e.g. a non-function object. But it is hard to say more without
+> > > seeing
+> > > the actual code....
+> >
+> > Yes.  To track it down, you need to understand that an INSTALL
+> > executes
+> > everything in the .R files, and saves every object that was created.
+> > In
+> > a simple package, that's just a bunch of functions, but in more
+> > complicated situations, you may have created some objects in order
+> > to
+> > build functions, even though you don't need them:  but unless you
+> > remove
+> > them, it's very easy to have them included too.
+> >
+> > Duncan Murdoch
+> > > Gabor
+> > >
+> > > On Fri, Oct 29, 2021 at 10:07 PM Mosqueira Sanchez, Iago
+> > > <iago.mosqueira at wur.nl> wrote:
+> > > >
+> > > > I am getting warnings in some packages about the size of the R
+> > > > folder
+> > > >
+> > > > * checking installed package size ... NOTE
+> > > >    installed size is 20.5Mb
+> > > >    sub-directories of 1Mb or more:
+> > > >      data   2.4Mb
+> > > >      R     17.8Mb
+> > > >
+> > > > This package contains around 3300 lines of code, if the results
+> > > > of
+> > > >
+> > > > grep -v '^\s*#' *.R | wc
+> > > >
+> > > > are correct.
+> > > >
+> > > > Is this size to be expected? Is there anything I might be
+> > > > missinmg to
+> > > > make it smaller?
+> > > >
+> > > > Thanks,
+> > > >
+> > > >
+> > > > Iago
+> > > > --
+> > > > dr. Iago Mosqueira
+> > > >
+> > > > Wageningen Marine Research
+> > > >
+> > > > Haringkade 1
+> > > > Postbus 68
+> > > > 1976CP, IJmuiden
+> > > >
+> > > > Tel.: +31 (0)317 488 995
+> > > > iago.mosqueira at wur.nl
+> > > > ______________________________________________
+> > > > R-package-devel at r-project.org mailing list
+> > > >
+> https://eur03.safelinks.protection.outlook.com/?url=https%3A%2F%2Fstat.ethz.ch%2Fmailman%2Flistinfo%2Fr-package-devel&amp;data=04%7C01%7Ciago.mosqueira%40wur.nl%7Cab72634b9fed43fd7a2208d99b3b43cd%7C27d137e5761f4dc1af88d26430abb18f%7C0%7C0%7C637711501535857883%7CUnknown%7CTWFpbGZsb3d8eyJWIjoiMC4wLjAwMDAiLCJQIjoiV2luMzIiLCJBTiI6Ik1haWwiLCJXVCI6Mn0%3D%7C2000&amp;sdata=E9aOOkVzR46TP2lah4alc%2F%2B5PmFPX27oDV140kBcrEI%3D&amp;reserved=0
+> > >
+> > > ______________________________________________
+> > > R-package-devel at r-project.org mailing list
+> > >
+> https://eur03.safelinks.protection.outlook.com/?url=https%3A%2F%2Fstat.ethz.ch%2Fmailman%2Flistinfo%2Fr-package-devel&amp;data=04%7C01%7Ciago.mosqueira%40wur.nl%7Cab72634b9fed43fd7a2208d99b3b43cd%7C27d137e5761f4dc1af88d26430abb18f%7C0%7C0%7C637711501535867885%7CUnknown%7CTWFpbGZsb3d8eyJWIjoiMC4wLjAwMDAiLCJQIjoiV2luMzIiLCJBTiI6Ik1haWwiLCJXVCI6Mn0%3D%7C2000&amp;sdata=ZMc2qL9zGn9u5Tcf8nRNNffZlkMZVbXvdW3pVgrrI0E%3D&amp;reserved=0
+> > >
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+
+	[[alternative HTML version deleted]]
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Sat Oct 30 18:28:17 2021
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Sat, 30 Oct 2021 12:28:17 -0400
+Subject: [R-pkg-devel] 
+ What influences the size of the rdb file in a package
+In-Reply-To: <CAHqSRuSZs47dWw7K_zdc8em84js=ZW44Cc7zFsNcDyHV6ELdiQ@mail.gmail.com>
+References: <e5cf2107e126582c5e34dce48ed0ca7ed696c660.camel@wur.nl>
+ <CABtg=KndURNEXvbpwNRumnXSZgQUj=aozg9Y5n4Q-nQ32VjqVg@mail.gmail.com>
+ <d8759dda-cfa3-fdef-3de4-51fef8430f99@gmail.com>
+ <da1a60077971a3a56beeef9102a4ba617735fd73.camel@wur.nl>
+ <CAHqSRuSZs47dWw7K_zdc8em84js=ZW44Cc7zFsNcDyHV6ELdiQ@mail.gmail.com>
+Message-ID: <653f7edb-8430-8351-a85b-4c4174c7f571@gmail.com>
+
+On 30/10/2021 11:12 a.m., Bill Dunlap wrote:
+> The byte code attached to each function in a package can be surprisingly 
+> large.? E.g., the byte code for the c. 300 line function 
+> Matrix:::replTmat seems to be c. 4.5 times the size of the raw code:
+> 
+>  > object.size(Matrix:::replTmat) / 
+> object.size(as.function(as.list(Matrix:::replTmat)))
+> 5.5 bytes
+> 
+> [Is there a more direct way to remove byte code from a function?? Or to 
+> inspect it?]
+
+You can sort of inspect it using compiler::disassemble, though it's not 
+very readable.  You can remove it by assigning to the body, e.g.
+
+body(fn) <- body(fn)
+
+Duncan Murdoch
+
+
+> 
+> Building Matrix with --no-byte-compile reduces the size of R/Matrix.rdx 
+> by more than half, from 2.7 MB to 1 MB.
+> 
+> -Bill
+> 
+> On Sat, Oct 30, 2021 at 12:00 AM Mosqueira Sanchez, Iago 
+> <iago.mosqueira at wur.nl <mailto:iago.mosqueira at wur.nl>> wrote:
+> 
+>     As far as I can see only classes, methods and functions are present
+>     there. I loaded the rdb file and looked at the contents and sizes of
+>     objects.
+> 
+>     Am I right in assuming every method or function imported from another
+>     package sits in the database? In another S4 package I see that the
+>     largest objects are nls, cor and lm, which we overload for some S4
+>     classes.
+> 
+> 
+> 
+>     Iago
+> 
+>     On Fri, 2021-10-29 at 20:21 -0400, Duncan Murdoch wrote:
+>      > On 29/10/2021 4:23 p.m., G?bor Cs?rdi wrote:
+>      > > You probably (accidentally?) put some large object into your
+>      > > package,
+>      > > e.g. a non-function object. But it is hard to say more without
+>      > > seeing
+>      > > the actual code....
+>      >
+>      > Yes.? To track it down, you need to understand that an INSTALL
+>      > executes
+>      > everything in the .R files, and saves every object that was created.
+>      > In
+>      > a simple package, that's just a bunch of functions, but in more
+>      > complicated situations, you may have created some objects in order
+>      > to
+>      > build functions, even though you don't need them:? but unless you
+>      > remove
+>      > them, it's very easy to have them included too.
+>      >
+>      > Duncan Murdoch
+>      > > Gabor
+>      > >
+>      > > On Fri, Oct 29, 2021 at 10:07 PM Mosqueira Sanchez, Iago
+>      > > <iago.mosqueira at wur.nl <mailto:iago.mosqueira at wur.nl>> wrote:
+>      > > >
+>      > > > I am getting warnings in some packages about the size of the R
+>      > > > folder
+>      > > >
+>      > > > * checking installed package size ... NOTE
+>      > > >? ? installed size is 20.5Mb
+>      > > >? ? sub-directories of 1Mb or more:
+>      > > >? ? ? data? ?2.4Mb
+>      > > >? ? ? R? ? ?17.8Mb
+>      > > >
+>      > > > This package contains around 3300 lines of code, if the results
+>      > > > of
+>      > > >
+>      > > > grep -v '^\s*#' *.R | wc
+>      > > >
+>      > > > are correct.
+>      > > >
+>      > > > Is this size to be expected? Is there anything I might be
+>      > > > missinmg to
+>      > > > make it smaller?
+>      > > >
+>      > > > Thanks,
+>      > > >
+>      > > >
+>      > > > Iago
+>      > > > --
+>      > > > dr. Iago Mosqueira
+>      > > >
+>      > > > Wageningen Marine Research
+>      > > >
+>      > > > Haringkade 1
+>      > > > Postbus 68
+>      > > > 1976CP, IJmuiden
+>      > > >
+>      > > > Tel.: +31 (0)317 488 995
+>      > > > iago.mosqueira at wur.nl <mailto:iago.mosqueira at wur.nl>
+>      > > > ______________________________________________
+>      > > > R-package-devel at r-project.org
+>     <mailto:R-package-devel at r-project.org> mailing list
+>      > > >
+>     https://eur03.safelinks.protection.outlook.com/?url=https%3A%2F%2Fstat.ethz.ch%2Fmailman%2Flistinfo%2Fr-package-devel&amp;data=04%7C01%7Ciago.mosqueira%40wur.nl%7Cab72634b9fed43fd7a2208d99b3b43cd%7C27d137e5761f4dc1af88d26430abb18f%7C0%7C0%7C637711501535857883%7CUnknown%7CTWFpbGZsb3d8eyJWIjoiMC4wLjAwMDAiLCJQIjoiV2luMzIiLCJBTiI6Ik1haWwiLCJXVCI6Mn0%3D%7C2000&amp;sdata=E9aOOkVzR46TP2lah4alc%2F%2B5PmFPX27oDV140kBcrEI%3D&amp;reserved=0
+>     <https://eur03.safelinks.protection.outlook.com/?url=https%3A%2F%2Fstat.ethz.ch%2Fmailman%2Flistinfo%2Fr-package-devel&amp;data=04%7C01%7Ciago.mosqueira%40wur.nl%7Cab72634b9fed43fd7a2208d99b3b43cd%7C27d137e5761f4dc1af88d26430abb18f%7C0%7C0%7C637711501535857883%7CUnknown%7CTWFpbGZsb3d8eyJWIjoiMC4wLjAwMDAiLCJQIjoiV2luMzIiLCJBTiI6Ik1haWwiLCJXVCI6Mn0%3D%7C2000&amp;sdata=E9aOOkVzR46TP2lah4alc%2F%2B5PmFPX27oDV140kBcrEI%3D&amp;reserved=0>
+>      > >
+>      > > ______________________________________________
+>      > > R-package-devel at r-project.org
+>     <mailto:R-package-devel at r-project.org> mailing list
+>      > >
+>     https://eur03.safelinks.protection.outlook.com/?url=https%3A%2F%2Fstat.ethz.ch%2Fmailman%2Flistinfo%2Fr-package-devel&amp;data=04%7C01%7Ciago.mosqueira%40wur.nl%7Cab72634b9fed43fd7a2208d99b3b43cd%7C27d137e5761f4dc1af88d26430abb18f%7C0%7C0%7C637711501535867885%7CUnknown%7CTWFpbGZsb3d8eyJWIjoiMC4wLjAwMDAiLCJQIjoiV2luMzIiLCJBTiI6Ik1haWwiLCJXVCI6Mn0%3D%7C2000&amp;sdata=ZMc2qL9zGn9u5Tcf8nRNNffZlkMZVbXvdW3pVgrrI0E%3D&amp;reserved=0
+>     <https://eur03.safelinks.protection.outlook.com/?url=https%3A%2F%2Fstat.ethz.ch%2Fmailman%2Flistinfo%2Fr-package-devel&amp;data=04%7C01%7Ciago.mosqueira%40wur.nl%7Cab72634b9fed43fd7a2208d99b3b43cd%7C27d137e5761f4dc1af88d26430abb18f%7C0%7C0%7C637711501535867885%7CUnknown%7CTWFpbGZsb3d8eyJWIjoiMC4wLjAwMDAiLCJQIjoiV2luMzIiLCJBTiI6Ik1haWwiLCJXVCI6Mn0%3D%7C2000&amp;sdata=ZMc2qL9zGn9u5Tcf8nRNNffZlkMZVbXvdW3pVgrrI0E%3D&amp;reserved=0>
+>      > >
+>     ______________________________________________
+>     R-package-devel at r-project.org <mailto:R-package-devel at r-project.org>
+>     mailing list
+>     https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>     <https://stat.ethz.ch/mailman/listinfo/r-package-devel>
+>
+
+
+From ||gge@ @end|ng |rom @t@t|@t|k@tu-dortmund@de  Sun Oct 31 21:47:25 2021
+From: ||gge@ @end|ng |rom @t@t|@t|k@tu-dortmund@de (Uwe Ligges)
+Date: Sun, 31 Oct 2021 21:47:25 +0100
+Subject: [R-pkg-devel] winbuilder and incoming checks offline on Nov 1 from
+ 10 am CET
+Message-ID: <5a2bcf0c-72e0-804e-3f3d-915d23ff7d3e@statistik.tu-dortmund.de>
+
+Dear all,
+
+winbuilder service and CRAN incoming checks (submission is possible) 
+will be offlne tomorrow (Nov 1) from 10 am CET to not later than 6pm.
+
+Some CRAN hardware in Dortmund will be physically migrated to a new 
+locatiom.
+
+Best,
+Uwe Ligges
+(CRAN team)
+
+
+From @|gbert @end|ng |rom w|w|@hu-ber||n@de  Mon Nov  1 07:47:08 2021
+From: @|gbert @end|ng |rom w|w|@hu-ber||n@de (Sigbert Klinke)
+Date: Mon, 1 Nov 2021 07:47:08 +0100
+Subject: [R-pkg-devel] Package name convention: archived package
+Message-ID: <75d7b016-df22-5212-e37f-de4d742e9793@wiwi.hu-berlin.de>
+
+Hi,
+
+I wanted to submit a package to CRAN. When I ran R CMD check --as-cran I 
+saw that the package name is used by another package. After renaming my 
+package I googled the new name and it turned out that an archived 
+package has the same name. So I renamed my package the second time.
+
+Question: Could I have used the name of the archived package? Especially 
+since we do in both packages something similar?
+
+Best Sigbert
+
+-- 
+https://hu.berlin/sk
+https://www.stat.de/faqs
+https://hu.berlin/mmstat
+https://hu.berlin/mmstat-int
+https://hu.berlin/mmstat-ar
+
+
+From bett|n@@gruen @end|ng |rom wu@@c@@t  Mon Nov  1 08:51:58 2021
+From: bett|n@@gruen @end|ng |rom wu@@c@@t (=?utf-8?B?R3LDvG4sIEJldHRpbmE=?=)
+Date: Mon, 1 Nov 2021 07:51:58 +0000
+Subject: [R-pkg-devel] Package name convention: archived package
+In-Reply-To: <75d7b016-df22-5212-e37f-de4d742e9793@wiwi.hu-berlin.de>
+References: <75d7b016-df22-5212-e37f-de4d742e9793@wiwi.hu-berlin.de>
+Message-ID: <0041e560-66dd-aa98-1245-786bd1953c31@wu.ac.at>
+
+Hi Sigbert,
+
+the CRAN Repository Policy available at
+
+https://cran.r-project.org/web/packages/policies.html
+
+contains
+
+Packages should be named in a way that does not conflict (irrespective of 
+case) with any current or past CRAN package (the Archive area can be 
+consulted), nor any current Bioconductor package. Package maintainers give 
+the right to use that package name to CRAN when they submit, so the CRAN 
+team may orphan a package and allow another maintainer to take it over.
+
+HTH,
+Bettina
+
+On 11/1/21 7:47 AM, Sigbert Klinke wrote:
+> Hi,
+> 
+> I wanted to submit a package to CRAN. When I ran R CMD check --as-cran I 
+> saw that the package name is used by another package. After renaming my 
+> package I googled the new name and it turned out that an archived package 
+> has the same name. So I renamed my package the second time.
+> 
+> Question: Could I have used the name of the archived package? Especially 
+> since we do in both packages something similar?
+> 
+> Best Sigbert
+
+From d@tr7320 @end|ng |rom un|@@ydney@edu@@u  Mon Nov  8 06:00:03 2021
+From: d@tr7320 @end|ng |rom un|@@ydney@edu@@u (Dario Strbenac)
+Date: Mon, 8 Nov 2021 05:00:03 +0000
+Subject: [R-pkg-devel] match.arg With S4 Methods and Missing Inputs
+Message-ID: <SYBPR01MB476156C741E83FD0F6C78890CD919@SYBPR01MB4761.ausprd01.prod.outlook.com>
+
+Good day,
+
+How can a parameter take a default value from a vector of permitted ones, if it is missing?
+
+setClassUnion("characterOrMissing", c("character", "missing"))
+setClassUnion("integerOrMissing", c("integer", "missing"))
+setClass("SetOfParams", representation(A = "characterOrMissing", B = "integer"))
+setGeneric("SetOfParams", function(A, B) standardGeneric("SetOfParams"))
+
+setMethod("SetOfParams", c("missing", "missing"), function() # Empty constructor
+{
+  new("SetOfParams", A = "M", B = 100L)
+})
+
+setMethod("SetOfParams", c("characterOrMissing", "integerOrMissing"), function(A = c("L", "M", "N"), B = 100L)
+{
+  A <- match.arg(A)
+  new("SetOfParams", A = A, B = B)
+})
+
+SetOfParams(B = 500L)
+  Error in match.arg(A) : argument "A" is missing, with no default.
+
+How can I avoid the error about A having no default? I thought I specified it so that it does have one, which match.arg would set for me if the user did not specify one.
+
+--------------------------------------
+Dario Strbenac
+University of Sydney
+Camperdown NSW 2050
+Australia
+
+From @kw@|mmo @end|ng |rom gm@||@com  Mon Nov  8 06:37:18 2021
+From: @kw@|mmo @end|ng |rom gm@||@com (Andrew Simmons)
+Date: Mon, 8 Nov 2021 00:37:18 -0500
+Subject: [R-pkg-devel] match.arg With S4 Methods and Missing Inputs
+In-Reply-To: <SYBPR01MB476156C741E83FD0F6C78890CD919@SYBPR01MB4761.ausprd01.prod.outlook.com>
+References: <SYBPR01MB476156C741E83FD0F6C78890CD919@SYBPR01MB4761.ausprd01.prod.outlook.com>
+Message-ID: <CAPcHnpR2msyvnS8TkFukogAFbfPTHfxDuFMyqtse8BMTh-8kLg@mail.gmail.com>
+
+>From the line `function(A, B) standardGeneric("SetOfParams")`, A and B will
+always have default values of R_MissingArg
+Providing default values within the methods does nothing since A and B have
+already been initialized before arriving at the method.
+You could do something like:
+
+
+if (missing(A))
+    A <- ...
+if (missing(B))
+    B <- ...
+
+
+within each method, and that would emulate having default values for A and
+B.
+
+On Mon, Nov 8, 2021 at 12:00 AM Dario Strbenac <dstr7320 at uni.sydney.edu.au>
+wrote:
+
+> Good day,
+>
+> How can a parameter take a default value from a vector of permitted ones,
+> if it is missing?
+>
+> setClassUnion("characterOrMissing", c("character", "missing"))
+> setClassUnion("integerOrMissing", c("integer", "missing"))
+> setClass("SetOfParams", representation(A = "characterOrMissing", B =
+> "integer"))
+> setGeneric("SetOfParams", function(A, B) standardGeneric("SetOfParams"))
+>
+> setMethod("SetOfParams", c("missing", "missing"), function() # Empty
+> constructor
+> {
+>   new("SetOfParams", A = "M", B = 100L)
+> })
+>
+> setMethod("SetOfParams", c("characterOrMissing", "integerOrMissing"),
+> function(A = c("L", "M", "N"), B = 100L)
+> {
+>   A <- match.arg(A)
+>   new("SetOfParams", A = A, B = B)
+> })
+>
+> SetOfParams(B = 500L)
+>   Error in match.arg(A) : argument "A" is missing, with no default.
+>
+> How can I avoid the error about A having no default? I thought I specified
+> it so that it does have one, which match.arg would set for me if the user
+> did not specify one.
+>
+> --------------------------------------
+> Dario Strbenac
+> University of Sydney
+> Camperdown NSW 2050
+> Australia
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+
+	[[alternative HTML version deleted]]
+
+
+From georg|@bo@hn@kov @end|ng |rom m@nche@ter@@c@uk  Mon Nov  8 10:46:00 2021
+From: georg|@bo@hn@kov @end|ng |rom m@nche@ter@@c@uk (Georgi Boshnakov)
+Date: Mon, 8 Nov 2021 09:46:00 +0000
+Subject: [R-pkg-devel] match.arg With S4 Methods and Missing Inputs
+In-Reply-To: <CAPcHnpR2msyvnS8TkFukogAFbfPTHfxDuFMyqtse8BMTh-8kLg@mail.gmail.com>
+References: <SYBPR01MB476156C741E83FD0F6C78890CD919@SYBPR01MB4761.ausprd01.prod.outlook.com>
+ <CAPcHnpR2msyvnS8TkFukogAFbfPTHfxDuFMyqtse8BMTh-8kLg@mail.gmail.com>
+Message-ID: <LO2P265MB58861A4536DA12A65D3935F7AE919@LO2P265MB5886.GBRP265.PROD.OUTLOOK.COM>
+
+You need to define  the generic with a default value for this parameter. Methods can then have a different default value for it. I remember reading this in S4's documentation but don't remember where.
+
+Georgi Boshnakov
+
+Get Outlook for Android<https://aka.ms/AAb9ysg>
+________________________________
+From: R-package-devel <r-package-devel-bounces at r-project.org> on behalf of Andrew Simmons <akwsimmo at gmail.com>
+Sent: Monday, November 8, 2021 5:37:18 AM
+To: Dario Strbenac <dstr7320 at uni.sydney.edu.au>
+Cc: r-package-devel at r-project.org <r-package-devel at r-project.org>
+Subject: Re: [R-pkg-devel] match.arg With S4 Methods and Missing Inputs
+
+>From the line `function(A, B) standardGeneric("SetOfParams")`, A and B will
+always have default values of R_MissingArg
+Providing default values within the methods does nothing since A and B have
+already been initialized before arriving at the method.
+You could do something like:
+
+
+if (missing(A))
+    A <- ...
+if (missing(B))
+    B <- ...
+
+
+within each method, and that would emulate having default values for A and
+B.
+
+On Mon, Nov 8, 2021 at 12:00 AM Dario Strbenac <dstr7320 at uni.sydney.edu.au>
+wrote:
+
+> Good day,
+>
+> How can a parameter take a default value from a vector of permitted ones,
+> if it is missing?
+>
+> setClassUnion("characterOrMissing", c("character", "missing"))
+> setClassUnion("integerOrMissing", c("integer", "missing"))
+> setClass("SetOfParams", representation(A = "characterOrMissing", B =
+> "integer"))
+> setGeneric("SetOfParams", function(A, B) standardGeneric("SetOfParams"))
+>
+> setMethod("SetOfParams", c("missing", "missing"), function() # Empty
+> constructor
+> {
+>   new("SetOfParams", A = "M", B = 100L)
+> })
+>
+> setMethod("SetOfParams", c("characterOrMissing", "integerOrMissing"),
+> function(A = c("L", "M", "N"), B = 100L)
+> {
+>   A <- match.arg(A)
+>   new("SetOfParams", A = A, B = B)
+> })
+>
+> SetOfParams(B = 500L)
+>   Error in match.arg(A) : argument "A" is missing, with no default.
+>
+> How can I avoid the error about A having no default? I thought I specified
+> it so that it does have one, which match.arg would set for me if the user
+> did not specify one.
+>
+> --------------------------------------
+> Dario Strbenac
+> University of Sydney
+> Camperdown NSW 2050
+> Australia
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+
+        [[alternative HTML version deleted]]
+
+______________________________________________
+R-package-devel at r-project.org mailing list
+https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+	[[alternative HTML version deleted]]
+
+
+From v|ncentv@nhee@ @end|ng |rom gm@||@com  Mon Nov  8 16:29:55 2021
+From: v|ncentv@nhee@ @end|ng |rom gm@||@com (Vincent van Hees)
+Date: Mon, 8 Nov 2021 16:29:55 +0100
+Subject: [R-pkg-devel] R feature suggestion: Duplicated function arguments
+ check
+Message-ID: <CALnEB17CMkDvSSBf5WBNnn6wQS9TO6hgJpOVs0jHWd1ysN59_g@mail.gmail.com>
+
+Not sure if this is the best place to post this message, as it is more of a
+suggestion than a question.
+
+When an R function accepts more than a handful of arguments there is the
+risk that users accidentally provide arguments twice, e.g myfun(A=1, B=2,
+C=4, D=5, A=7), and if those two values are not the same it can have
+frustrating side-effects. To catch this I am planning to add a check for
+duplicated arguments, as shown below, in one of my own functions. I am now
+wondering whether this would be a useful feature for R itself to operate in
+the background when running any R function that has more than a certain
+number of input arguments.
+
+Cheers, Vincent
+
+myfun = function(...) {
+  #check input arguments for duplicate assignments
+  input = list(...)
+  if (length(input) > 0) {
+    argNames = names(input)
+    dupArgNames = duplicated(argNames)
+    if (any(dupArgNames)) {
+      for (dupi in unique(argNames[dupArgNames])) {
+        dupArgValues = input[which(argNames %in% dupi)]
+        if (all(dupArgValues == dupArgValues[[1]])) { # double arguments,
+but no confusion about what value should be
+          warning(paste0("\nArgument ", dupi, " has been provided more than
+once in the same call, which is ambiguous. Please fix."))
+        } else { # double arguments, and confusion about what value should
+be,
+          stop(paste0("\nArgument ", dupi, " has been provided more than
+once in the same call, which is ambiguous. Please fix."))
+        }
+      }
+    }
+  }
+  # rest of code...
+}
+
+	[[alternative HTML version deleted]]
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Mon Nov  8 16:43:30 2021
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Mon, 8 Nov 2021 16:43:30 +0100
+Subject: [R-pkg-devel] match.arg With S4 Methods and Missing Inputs
+In-Reply-To: <LO2P265MB58861A4536DA12A65D3935F7AE919@LO2P265MB5886.GBRP265.PROD.OUTLOOK.COM>
+References: <SYBPR01MB476156C741E83FD0F6C78890CD919@SYBPR01MB4761.ausprd01.prod.outlook.com>
+ <CAPcHnpR2msyvnS8TkFukogAFbfPTHfxDuFMyqtse8BMTh-8kLg@mail.gmail.com>
+ <LO2P265MB58861A4536DA12A65D3935F7AE919@LO2P265MB5886.GBRP265.PROD.OUTLOOK.COM>
+Message-ID: <24969.17826.71427.966253@stat.math.ethz.ch>
+
+>>>>> Georgi Boshnakov 
+>>>>>     on Mon, 8 Nov 2021 09:46:00 +0000 writes:
+
+    > You need to define the generic with a default value for
+    > this parameter. Methods can then have a different default
+    > value for it. 
+    > I remember reading this in S4's documentation but don't remember where.
+
+    > Georgi Boshnakov
+
+interesting ... and would make quite some sense.
+
+Can others confirm / disprove ?
+
+Even as co-author of the "using S4 almost everywhere" package 'Matrix'
+I wouldn't have known this.
+
+If this is seen to be true (I don't have time for checking just now),
+I think it's something we really *should* add to one or more of
+the related help pages.
+
+Martin Maechler
+
+
+    > ________________________________
+
+    > Sent: Monday, November 8, 2021 5:37:18 AM
+    > To: Dario Strbenac <dstr7320 at uni.sydney.edu.au>
+    > Cc: r-package-devel at r-project.org <r-package-devel at r-project.org>
+    > Subject: Re: [R-pkg-devel] match.arg With S4 Methods and Missing Inputs
+
+    >> From the line `function(A, B) standardGeneric("SetOfParams")`, A and B will
+    > always have default values of R_MissingArg
+    > Providing default values within the methods does nothing since A and B have
+    > already been initialized before arriving at the method.
+    > You could do something like:
+
+
+    > if (missing(A))
+    > A <- ...
+    > if (missing(B))
+    > B <- ...
+
+
+    > within each method, and that would emulate having default values for A and
+    > B.
+
+    > On Mon, Nov 8, 2021 at 12:00 AM Dario Strbenac <dstr7320 at uni.sydney.edu.au>
+    > wrote:
+
+    >> Good day,
+    >> 
+    >> How can a parameter take a default value from a vector of permitted ones,
+    >> if it is missing?
+    >> 
+    >> setClassUnion("characterOrMissing", c("character", "missing"))
+    >> setClassUnion("integerOrMissing", c("integer", "missing"))
+    >> setClass("SetOfParams", representation(A = "characterOrMissing", B =
+    >> "integer"))
+    >> setGeneric("SetOfParams", function(A, B) standardGeneric("SetOfParams"))
+    >> 
+    >> setMethod("SetOfParams", c("missing", "missing"), function() # Empty constructor
+    >> {
+    >> new("SetOfParams", A = "M", B = 100L)
+    >> })
+    >> 
+    >> setMethod("SetOfParams", c("characterOrMissing", "integerOrMissing"),
+    >> function(A = c("L", "M", "N"), B = 100L)
+    >> {
+    >> A <- match.arg(A)
+    >> new("SetOfParams", A = A, B = B)
+    >> })
+    >> 
+    >> SetOfParams(B = 500L)
+    >> Error in match.arg(A) : argument "A" is missing, with no default.
+    >> 
+    >> How can I avoid the error about A having no default? I thought I specified
+    >> it so that it does have one, which match.arg would set for me if the user
+    >> did not specify one.
+    >> 
+    >> --------------------------------------
+    >> Dario Strbenac
+    >> University of Sydney
+    >> Camperdown NSW 2050
+    >> Australia
+    >> ______________________________________________
+    >> R-package-devel at r-project.org mailing list
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Mon Nov  8 17:03:30 2021
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Mon, 8 Nov 2021 11:03:30 -0500
+Subject: [R-pkg-devel] 
+ R feature suggestion: Duplicated function arguments check
+In-Reply-To: <CALnEB17CMkDvSSBf5WBNnn6wQS9TO6hgJpOVs0jHWd1ysN59_g@mail.gmail.com>
+References: <CALnEB17CMkDvSSBf5WBNnn6wQS9TO6hgJpOVs0jHWd1ysN59_g@mail.gmail.com>
+Message-ID: <105ca26c-d4ef-a327-f872-361b257de84b@gmail.com>
+
+On 08/11/2021 10:29 a.m., Vincent van Hees wrote:
+> Not sure if this is the best place to post this message, as it is more of a
+> suggestion than a question.
+> 
+> When an R function accepts more than a handful of arguments there is the
+> risk that users accidentally provide arguments twice, e.g myfun(A=1, B=2,
+> C=4, D=5, A=7), and if those two values are not the same it can have
+> frustrating side-effects. To catch this I am planning to add a check for
+> duplicated arguments, as shown below, in one of my own functions. I am now
+> wondering whether this would be a useful feature for R itself to operate in
+> the background when running any R function that has more than a certain
+> number of input arguments.
+> 
+> Cheers, Vincent
+> 
+> myfun = function(...) {
+>    #check input arguments for duplicate assignments
+>    input = list(...)
+>    if (length(input) > 0) {
+>      argNames = names(input)
+>      dupArgNames = duplicated(argNames)
+>      if (any(dupArgNames)) {
+>        for (dupi in unique(argNames[dupArgNames])) {
+>          dupArgValues = input[which(argNames %in% dupi)]
+>          if (all(dupArgValues == dupArgValues[[1]])) { # double arguments,
+> but no confusion about what value should be
+>            warning(paste0("\nArgument ", dupi, " has been provided more than
+> once in the same call, which is ambiguous. Please fix."))
+>          } else { # double arguments, and confusion about what value should
+> be,
+>            stop(paste0("\nArgument ", dupi, " has been provided more than
+> once in the same call, which is ambiguous. Please fix."))
+>          }
+>        }
+>      }
+>    }
+>    # rest of code...
+> }
+> 
+
+Could you give an example where this is needed?  If a named argument is 
+duplicated, R will catch that and give an error message:
+
+   > f(a=1, b=2, a=3)
+   Error in f(a = 1, b = 2, a = 3) :
+     formal argument "a" matched by multiple actual arguments
+
+So this can only happen when it is an argument in the ... list that is 
+duplicated.  But usually those are passed to some other function, so 
+something like
+
+   g <- function(...) f(...)
+
+would also catch the duplication in g(a=1, b=2, a=3):
+
+   > g(a=1, b=2, a=3)
+   Error in f(...) :
+     formal argument "a" matched by multiple actual arguments
+
+The only case where I can see this getting by is where you are never 
+using those arguments to match any formal argument, e.g.
+
+   list(a=1, b=2, a=3)
+
+Maybe this should have been made illegal when R was created, but I think 
+it's too late to outlaw now:  I'm sure there are lots of people making 
+use of this.
+
+Or am I missing something?
+
+Duncan Murdoch
+
+
+From georg|@bo@hn@kov @end|ng |rom m@nche@ter@@c@uk  Mon Nov  8 17:12:03 2021
+From: georg|@bo@hn@kov @end|ng |rom m@nche@ter@@c@uk (Georgi Boshnakov)
+Date: Mon, 8 Nov 2021 16:12:03 +0000
+Subject: [R-pkg-devel] match.arg With S4 Methods and Missing Inputs
+In-Reply-To: <24969.17826.71427.966253@stat.math.ethz.ch>
+References: <SYBPR01MB476156C741E83FD0F6C78890CD919@SYBPR01MB4761.ausprd01.prod.outlook.com>
+ <CAPcHnpR2msyvnS8TkFukogAFbfPTHfxDuFMyqtse8BMTh-8kLg@mail.gmail.com>
+ <LO2P265MB58861A4536DA12A65D3935F7AE919@LO2P265MB5886.GBRP265.PROD.OUTLOOK.COM>
+ <24969.17826.71427.966253@stat.math.ethz.ch>
+Message-ID: <LO2P265MB58868865BA69D5D4B544C4D4AE919@LO2P265MB5886.GBRP265.PROD.OUTLOOK.COM>
+
+It turns out that it is not difficult to find, the excerpt below is from help(setMethod). Maybe  mentioning this in help(setGeneric) would be helpful, as well.
+
+Georgi Boshnakov
+
+
+=======
+Method definitions can have default expressions for arguments, but
+     only if the generic function must have _some_ default expression
+     for the same argument. (This restriction is imposed by the way R
+     manages formal arguments.)  If so, and if the corresponding
+     argument is missing in the call to the generic function, the
+     default expression in the method is used.  If the method
+     definition has no default for the argument, then the expression
+     supplied in the definition of the generic function itself is used,
+     but note that this expression will be evaluated using the
+     enclosing environment of the method, not of the generic function.
+     Method selection does not evaluate default expressions.  All
+     actual (non-missing) arguments in the signature of the generic
+     function will be evaluated when a method is selected-when the call
+     to 'standardGeneric(f)' occurs.  Note that specifying class
+     '"missing"' in the signature does not require any default
+     expressions.
+
+-----Original Message-----
+From: Martin Maechler <maechler at stat.math.ethz.ch> 
+Sent: 08 November 2021 15:44
+To: Georgi Boshnakov <georgi.boshnakov at manchester.ac.uk>
+Cc: Andrew Simmons <akwsimmo at gmail.com>; Dario Strbenac <dstr7320 at uni.sydney.edu.au>; r-package-devel at r-project.org
+Subject: Re: [R-pkg-devel] match.arg With S4 Methods and Missing Inputs
+
+>>>>> Georgi Boshnakov 
+>>>>>     on Mon, 8 Nov 2021 09:46:00 +0000 writes:
+
+    > You need to define the generic with a default value for
+    > this parameter. Methods can then have a different default
+    > value for it. 
+    > I remember reading this in S4's documentation but don't remember where.
+
+    > Georgi Boshnakov
+
+interesting ... and would make quite some sense.
+
+Can others confirm / disprove ?
+
+Even as co-author of the "using S4 almost everywhere" package 'Matrix'
+I wouldn't have known this.
+
+If this is seen to be true (I don't have time for checking just now), I think it's something we really *should* add to one or more of the related help pages.
+
+Martin Maechler
+
+
+    > ________________________________
+
+    > Sent: Monday, November 8, 2021 5:37:18 AM
+    > To: Dario Strbenac <dstr7320 at uni.sydney.edu.au>
+    > Cc: r-package-devel at r-project.org <r-package-devel at r-project.org>
+    > Subject: Re: [R-pkg-devel] match.arg With S4 Methods and Missing Inputs
+
+    >> From the line `function(A, B) standardGeneric("SetOfParams")`, A and B will
+    > always have default values of R_MissingArg
+    > Providing default values within the methods does nothing since A and B have
+    > already been initialized before arriving at the method.
+    > You could do something like:
+
+
+    > if (missing(A))
+    > A <- ...
+    > if (missing(B))
+    > B <- ...
+
+
+    > within each method, and that would emulate having default values for A and
+    > B.
+
+    > On Mon, Nov 8, 2021 at 12:00 AM Dario Strbenac <dstr7320 at uni.sydney.edu.au>
+    > wrote:
+
+    >> Good day,
+    >> 
+    >> How can a parameter take a default value from a vector of permitted ones,
+    >> if it is missing?
+    >> 
+    >> setClassUnion("characterOrMissing", c("character", "missing"))
+    >> setClassUnion("integerOrMissing", c("integer", "missing"))
+    >> setClass("SetOfParams", representation(A = "characterOrMissing", B =
+    >> "integer"))
+    >> setGeneric("SetOfParams", function(A, B) standardGeneric("SetOfParams"))
+    >> 
+    >> setMethod("SetOfParams", c("missing", "missing"), function() # Empty constructor
+    >> {
+    >> new("SetOfParams", A = "M", B = 100L)
+    >> })
+    >> 
+    >> setMethod("SetOfParams", c("characterOrMissing", "integerOrMissing"),
+    >> function(A = c("L", "M", "N"), B = 100L)
+    >> {
+    >> A <- match.arg(A)
+    >> new("SetOfParams", A = A, B = B)
+    >> })
+    >> 
+    >> SetOfParams(B = 500L)
+    >> Error in match.arg(A) : argument "A" is missing, with no default.
+    >> 
+    >> How can I avoid the error about A having no default? I thought I specified
+    >> it so that it does have one, which match.arg would set for me if the user
+    >> did not specify one.
+    >> 
+    >> --------------------------------------
+    >> Dario Strbenac
+    >> University of Sydney
+    >> Camperdown NSW 2050
+    >> Australia
+    >> ______________________________________________
+    >> R-package-devel at r-project.org mailing list
+
+
+From @v|gro@@ @end|ng |rom ver|zon@net  Mon Nov  8 17:13:19 2021
+From: @v|gro@@ @end|ng |rom ver|zon@net (Avi Gross)
+Date: Mon, 8 Nov 2021 11:13:19 -0500
+Subject: [R-pkg-devel] 
+ R feature suggestion: Duplicated function arguments check
+In-Reply-To: <105ca26c-d4ef-a327-f872-361b257de84b@gmail.com>
+References: <CALnEB17CMkDvSSBf5WBNnn6wQS9TO6hgJpOVs0jHWd1ysN59_g@mail.gmail.com>
+ <105ca26c-d4ef-a327-f872-361b257de84b@gmail.com>
+Message-ID: <003c01d7d4bb$8bf96830$a3ec3890$@verizon.net>
+
+Duncan,
+
+This may not be the place to discuss this so I will be brief.
+
+The question is whether it should be some kind of error to call a function
+with two named arguments that are the same.
+
+I can think of a perhaps valid use when a function expects to take the first
+few arguments for personal use and then uses ... to pass the rest along to
+other functions it calls.
+
+so in your case, slightly extended:
+
+	f(a=1, b=2, a=3, c=-5)
+
+The function might pass along to another function:
+	other(arg, ...)
+which would be seen as:
+	other(arg, a=3, c=-5)
+
+There can of course be other ways to get this result but probably not as
+simple. And note this can go several layers deep as various functions call
+each other and each has a different need and even meaning for a=something.
+
+Avi
+-----Original Message-----
+From: R-package-devel <r-package-devel-bounces at r-project.org> On Behalf Of
+Duncan Murdoch
+Sent: Monday, November 8, 2021 11:04 AM
+To: Vincent van Hees <vincentvanhees at gmail.com>;
+r-package-devel at r-project.org
+Subject: Re: [R-pkg-devel] R feature suggestion: Duplicated function
+arguments check
+
+On 08/11/2021 10:29 a.m., Vincent van Hees wrote:
+> Not sure if this is the best place to post this message, as it is more 
+> of a suggestion than a question.
+> 
+> When an R function accepts more than a handful of arguments there is 
+> the risk that users accidentally provide arguments twice, e.g 
+> myfun(A=1, B=2, C=4, D=5, A=7), and if those two values are not the 
+> same it can have frustrating side-effects. To catch this I am planning 
+> to add a check for duplicated arguments, as shown below, in one of my 
+> own functions. I am now wondering whether this would be a useful 
+> feature for R itself to operate in the background when running any R 
+> function that has more than a certain number of input arguments.
+> 
+> Cheers, Vincent
+> 
+> myfun = function(...) {
+>    #check input arguments for duplicate assignments
+>    input = list(...)
+>    if (length(input) > 0) {
+>      argNames = names(input)
+>      dupArgNames = duplicated(argNames)
+>      if (any(dupArgNames)) {
+>        for (dupi in unique(argNames[dupArgNames])) {
+>          dupArgValues = input[which(argNames %in% dupi)]
+>          if (all(dupArgValues == dupArgValues[[1]])) { # double 
+> arguments, but no confusion about what value should be
+>            warning(paste0("\nArgument ", dupi, " has been provided 
+> more than once in the same call, which is ambiguous. Please fix."))
+>          } else { # double arguments, and confusion about what value 
+> should be,
+>            stop(paste0("\nArgument ", dupi, " has been provided more 
+> than once in the same call, which is ambiguous. Please fix."))
+>          }
+>        }
+>      }
+>    }
+>    # rest of code...
+> }
+> 
+
+Could you give an example where this is needed?  If a named argument is
+duplicated, R will catch that and give an error message:
+
+   > f(a=1, b=2, a=3)
+   Error in f(a = 1, b = 2, a = 3) :
+     formal argument "a" matched by multiple actual arguments
+
+So this can only happen when it is an argument in the ... list that is
+duplicated.  But usually those are passed to some other function, so
+something like
+
+   g <- function(...) f(...)
+
+would also catch the duplication in g(a=1, b=2, a=3):
+
+   > g(a=1, b=2, a=3)
+   Error in f(...) :
+     formal argument "a" matched by multiple actual arguments
+
+The only case where I can see this getting by is where you are never using
+those arguments to match any formal argument, e.g.
+
+   list(a=1, b=2, a=3)
+
+Maybe this should have been made illegal when R was created, but I think
+it's too late to outlaw now:  I'm sure there are lots of people making use
+of this.
+
+Or am I missing something?
+
+Duncan Murdoch
+
+______________________________________________
+R-package-devel at r-project.org mailing list
+https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+
+From v|ncentv@nhee@ @end|ng |rom gm@||@com  Mon Nov  8 17:24:59 2021
+From: v|ncentv@nhee@ @end|ng |rom gm@||@com (Vincent van Hees)
+Date: Mon, 8 Nov 2021 17:24:59 +0100
+Subject: [R-pkg-devel] 
+ R feature suggestion: Duplicated function arguments check
+In-Reply-To: <105ca26c-d4ef-a327-f872-361b257de84b@gmail.com>
+References: <CALnEB17CMkDvSSBf5WBNnn6wQS9TO6hgJpOVs0jHWd1ysN59_g@mail.gmail.com>
+ <105ca26c-d4ef-a327-f872-361b257de84b@gmail.com>
+Message-ID: <CALnEB14VffYNkBqnBoxfsaS3ZhOcpSyekhi60y3w4x1_0VKscw@mail.gmail.com>
+
+Thanks Duncan, I have tried to make a minimalistic example:
+
+myfun = function(...) {
+  input = list(...)
+  mysum = function(A = c(), B= c()) {
+    return(A+B)
+  }
+  if ("A" %in% names(input) & "B" %in% names(input)) {
+    print(mysum(A = input$A, B = input$B))
+  }
+}
+
+# test:
+> myfun(A = 1, B = 2, B = 4)
+[1] 3
+
+# So, the second B is ignored.
+
+
+
+On Mon, 8 Nov 2021 at 17:03, Duncan Murdoch <murdoch.duncan at gmail.com>
+wrote:
+
+> On 08/11/2021 10:29 a.m., Vincent van Hees wrote:
+> > Not sure if this is the best place to post this message, as it is more
+> of a
+> > suggestion than a question.
+> >
+> > When an R function accepts more than a handful of arguments there is the
+> > risk that users accidentally provide arguments twice, e.g myfun(A=1, B=2,
+> > C=4, D=5, A=7), and if those two values are not the same it can have
+> > frustrating side-effects. To catch this I am planning to add a check for
+> > duplicated arguments, as shown below, in one of my own functions. I am
+> now
+> > wondering whether this would be a useful feature for R itself to operate
+> in
+> > the background when running any R function that has more than a certain
+> > number of input arguments.
+> >
+> > Cheers, Vincent
+> >
+> > myfun = function(...) {
+> >    #check input arguments for duplicate assignments
+> >    input = list(...)
+> >    if (length(input) > 0) {
+> >      argNames = names(input)
+> >      dupArgNames = duplicated(argNames)
+> >      if (any(dupArgNames)) {
+> >        for (dupi in unique(argNames[dupArgNames])) {
+> >          dupArgValues = input[which(argNames %in% dupi)]
+> >          if (all(dupArgValues == dupArgValues[[1]])) { # double
+> arguments,
+> > but no confusion about what value should be
+> >            warning(paste0("\nArgument ", dupi, " has been provided more
+> than
+> > once in the same call, which is ambiguous. Please fix."))
+> >          } else { # double arguments, and confusion about what value
+> should
+> > be,
+> >            stop(paste0("\nArgument ", dupi, " has been provided more than
+> > once in the same call, which is ambiguous. Please fix."))
+> >          }
+> >        }
+> >      }
+> >    }
+> >    # rest of code...
+> > }
+> >
+>
+> Could you give an example where this is needed?  If a named argument is
+> duplicated, R will catch that and give an error message:
+>
+>    > f(a=1, b=2, a=3)
+>    Error in f(a = 1, b = 2, a = 3) :
+>      formal argument "a" matched by multiple actual arguments
+>
+> So this can only happen when it is an argument in the ... list that is
+> duplicated.  But usually those are passed to some other function, so
+> something like
+>
+>    g <- function(...) f(...)
+>
+> would also catch the duplication in g(a=1, b=2, a=3):
+>
+>    > g(a=1, b=2, a=3)
+>    Error in f(...) :
+>      formal argument "a" matched by multiple actual arguments
+>
+> The only case where I can see this getting by is where you are never
+> using those arguments to match any formal argument, e.g.
+>
+>    list(a=1, b=2, a=3)
+>
+> Maybe this should have been made illegal when R was created, but I think
+> it's too late to outlaw now:  I'm sure there are lots of people making
+> use of this.
+>
+> Or am I missing something?
+>
+> Duncan Murdoch
+>
+
+	[[alternative HTML version deleted]]
+
+
+From @v|gro@@ @end|ng |rom ver|zon@net  Mon Nov  8 17:48:46 2021
+From: @v|gro@@ @end|ng |rom ver|zon@net (Avi Gross)
+Date: Mon, 8 Nov 2021 11:48:46 -0500
+Subject: [R-pkg-devel] 
+ R feature suggestion: Duplicated function arguments check
+In-Reply-To: <CALnEB14VffYNkBqnBoxfsaS3ZhOcpSyekhi60y3w4x1_0VKscw@mail.gmail.com>
+References: <CALnEB17CMkDvSSBf5WBNnn6wQS9TO6hgJpOVs0jHWd1ysN59_g@mail.gmail.com>
+ <105ca26c-d4ef-a327-f872-361b257de84b@gmail.com>
+ <CALnEB14VffYNkBqnBoxfsaS3ZhOcpSyekhi60y3w4x1_0VKscw@mail.gmail.com>
+Message-ID: <01ae01d7d4c0$7f4ef7d0$7dece770$@verizon.net>
+
+Vincent,
+
+But is the second being ignored the right result?
+
+In many programming situations, subsequent assignments replace earlier ones.
+And consider the way R allows something like this:
+
+func(a=2, b=3, a=4, c=a*b)
+
+Is it clear how to initialize the default for c as it depends on one value
+of "a" or the other?
+
+Of course, you could just make multiple settings an error rather than
+choosing an arbitrary fix.
+
+R lists are more like a BAG data structure than a SET.
+
+-----Original Message-----
+From: R-package-devel <r-package-devel-bounces at r-project.org> On Behalf Of
+Vincent van Hees
+Sent: Monday, November 8, 2021 11:25 AM
+To: Duncan Murdoch <murdoch.duncan at gmail.com>
+Cc: r-package-devel at r-project.org
+Subject: Re: [R-pkg-devel] R feature suggestion: Duplicated function
+arguments check
+
+Thanks Duncan, I have tried to make a minimalistic example:
+
+myfun = function(...) {
+  input = list(...)
+  mysum = function(A = c(), B= c()) {
+    return(A+B)
+  }
+  if ("A" %in% names(input) & "B" %in% names(input)) {
+    print(mysum(A = input$A, B = input$B))
+  }
+}
+
+# test:
+> myfun(A = 1, B = 2, B = 4)
+[1] 3
+
+# So, the second B is ignored.
+
+
+
+On Mon, 8 Nov 2021 at 17:03, Duncan Murdoch <murdoch.duncan at gmail.com>
+wrote:
+
+> On 08/11/2021 10:29 a.m., Vincent van Hees wrote:
+> > Not sure if this is the best place to post this message, as it is 
+> > more
+> of a
+> > suggestion than a question.
+> >
+> > When an R function accepts more than a handful of arguments there is 
+> > the risk that users accidentally provide arguments twice, e.g 
+> > myfun(A=1, B=2, C=4, D=5, A=7), and if those two values are not the 
+> > same it can have frustrating side-effects. To catch this I am 
+> > planning to add a check for duplicated arguments, as shown below, in 
+> > one of my own functions. I am
+> now
+> > wondering whether this would be a useful feature for R itself to 
+> > operate
+> in
+> > the background when running any R function that has more than a 
+> > certain number of input arguments.
+> >
+> > Cheers, Vincent
+> >
+> > myfun = function(...) {
+> >    #check input arguments for duplicate assignments
+> >    input = list(...)
+> >    if (length(input) > 0) {
+> >      argNames = names(input)
+> >      dupArgNames = duplicated(argNames)
+> >      if (any(dupArgNames)) {
+> >        for (dupi in unique(argNames[dupArgNames])) {
+> >          dupArgValues = input[which(argNames %in% dupi)]
+> >          if (all(dupArgValues == dupArgValues[[1]])) { # double
+> arguments,
+> > but no confusion about what value should be
+> >            warning(paste0("\nArgument ", dupi, " has been provided 
+> > more
+> than
+> > once in the same call, which is ambiguous. Please fix."))
+> >          } else { # double arguments, and confusion about what value
+> should
+> > be,
+> >            stop(paste0("\nArgument ", dupi, " has been provided more 
+> > than once in the same call, which is ambiguous. Please fix."))
+> >          }
+> >        }
+> >      }
+> >    }
+> >    # rest of code...
+> > }
+> >
+>
+> Could you give an example where this is needed?  If a named argument 
+> is duplicated, R will catch that and give an error message:
+>
+>    > f(a=1, b=2, a=3)
+>    Error in f(a = 1, b = 2, a = 3) :
+>      formal argument "a" matched by multiple actual arguments
+>
+> So this can only happen when it is an argument in the ... list that is 
+> duplicated.  But usually those are passed to some other function, so 
+> something like
+>
+>    g <- function(...) f(...)
+>
+> would also catch the duplication in g(a=1, b=2, a=3):
+>
+>    > g(a=1, b=2, a=3)
+>    Error in f(...) :
+>      formal argument "a" matched by multiple actual arguments
+>
+> The only case where I can see this getting by is where you are never 
+> using those arguments to match any formal argument, e.g.
+>
+>    list(a=1, b=2, a=3)
+>
+> Maybe this should have been made illegal when R was created, but I 
+> think it's too late to outlaw now:  I'm sure there are lots of people 
+> making use of this.
+>
+> Or am I missing something?
+>
+> Duncan Murdoch
+>
+
+	[[alternative HTML version deleted]]
+
+______________________________________________
+R-package-devel at r-project.org mailing list
+https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Mon Nov  8 17:53:39 2021
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Mon, 8 Nov 2021 11:53:39 -0500
+Subject: [R-pkg-devel] 
+ R feature suggestion: Duplicated function arguments check
+In-Reply-To: <01ae01d7d4c0$7f4ef7d0$7dece770$@verizon.net>
+References: <CALnEB17CMkDvSSBf5WBNnn6wQS9TO6hgJpOVs0jHWd1ysN59_g@mail.gmail.com>
+ <105ca26c-d4ef-a327-f872-361b257de84b@gmail.com>
+ <CALnEB14VffYNkBqnBoxfsaS3ZhOcpSyekhi60y3w4x1_0VKscw@mail.gmail.com>
+ <01ae01d7d4c0$7f4ef7d0$7dece770$@verizon.net>
+Message-ID: <22cd1b12-f0f3-a711-50b8-567482833d13@gmail.com>
+
+On 08/11/2021 11:48 a.m., Avi Gross via R-package-devel wrote:
+> Vincent,
+> 
+> But is the second being ignored the right result?
+> 
+> In many programming situations, subsequent assignments replace earlier ones.
+> And consider the way R allows something like this:
+> 
+> func(a=2, b=3, a=4, c=a*b)
+> 
+> Is it clear how to initialize the default for c as it depends on one value
+> of "a" or the other?
+
+That c=a*b only works with non-standard tidyverse evaluation.  It causes 
+other problems, e.g. the inability to pass ... properly (see 
+https://github.com/tidyverse/glue/issues/231 for an example).
+
+Duncan Murdoch
+
+> 
+> Of course, you could just make multiple settings an error rather than
+> choosing an arbitrary fix.
+> 
+> R lists are more like a BAG data structure than a SET.
+> 
+> -----Original Message-----
+> From: R-package-devel <r-package-devel-bounces at r-project.org> On Behalf Of
+> Vincent van Hees
+> Sent: Monday, November 8, 2021 11:25 AM
+> To: Duncan Murdoch <murdoch.duncan at gmail.com>
+> Cc: r-package-devel at r-project.org
+> Subject: Re: [R-pkg-devel] R feature suggestion: Duplicated function
+> arguments check
+> 
+> Thanks Duncan, I have tried to make a minimalistic example:
+> 
+> myfun = function(...) {
+>    input = list(...)
+>    mysum = function(A = c(), B= c()) {
+>      return(A+B)
+>    }
+>    if ("A" %in% names(input) & "B" %in% names(input)) {
+>      print(mysum(A = input$A, B = input$B))
+>    }
+> }
+> 
+> # test:
+>> myfun(A = 1, B = 2, B = 4)
+> [1] 3
+> 
+> # So, the second B is ignored.
+> 
+> 
+> 
+> On Mon, 8 Nov 2021 at 17:03, Duncan Murdoch <murdoch.duncan at gmail.com>
+> wrote:
+> 
+>> On 08/11/2021 10:29 a.m., Vincent van Hees wrote:
+>>> Not sure if this is the best place to post this message, as it is
+>>> more
+>> of a
+>>> suggestion than a question.
+>>>
+>>> When an R function accepts more than a handful of arguments there is
+>>> the risk that users accidentally provide arguments twice, e.g
+>>> myfun(A=1, B=2, C=4, D=5, A=7), and if those two values are not the
+>>> same it can have frustrating side-effects. To catch this I am
+>>> planning to add a check for duplicated arguments, as shown below, in
+>>> one of my own functions. I am
+>> now
+>>> wondering whether this would be a useful feature for R itself to
+>>> operate
+>> in
+>>> the background when running any R function that has more than a
+>>> certain number of input arguments.
+>>>
+>>> Cheers, Vincent
+>>>
+>>> myfun = function(...) {
+>>>     #check input arguments for duplicate assignments
+>>>     input = list(...)
+>>>     if (length(input) > 0) {
+>>>       argNames = names(input)
+>>>       dupArgNames = duplicated(argNames)
+>>>       if (any(dupArgNames)) {
+>>>         for (dupi in unique(argNames[dupArgNames])) {
+>>>           dupArgValues = input[which(argNames %in% dupi)]
+>>>           if (all(dupArgValues == dupArgValues[[1]])) { # double
+>> arguments,
+>>> but no confusion about what value should be
+>>>             warning(paste0("\nArgument ", dupi, " has been provided
+>>> more
+>> than
+>>> once in the same call, which is ambiguous. Please fix."))
+>>>           } else { # double arguments, and confusion about what value
+>> should
+>>> be,
+>>>             stop(paste0("\nArgument ", dupi, " has been provided more
+>>> than once in the same call, which is ambiguous. Please fix."))
+>>>           }
+>>>         }
+>>>       }
+>>>     }
+>>>     # rest of code...
+>>> }
+>>>
+>>
+>> Could you give an example where this is needed?  If a named argument
+>> is duplicated, R will catch that and give an error message:
+>>
+>>     > f(a=1, b=2, a=3)
+>>     Error in f(a = 1, b = 2, a = 3) :
+>>       formal argument "a" matched by multiple actual arguments
+>>
+>> So this can only happen when it is an argument in the ... list that is
+>> duplicated.  But usually those are passed to some other function, so
+>> something like
+>>
+>>     g <- function(...) f(...)
+>>
+>> would also catch the duplication in g(a=1, b=2, a=3):
+>>
+>>     > g(a=1, b=2, a=3)
+>>     Error in f(...) :
+>>       formal argument "a" matched by multiple actual arguments
+>>
+>> The only case where I can see this getting by is where you are never
+>> using those arguments to match any formal argument, e.g.
+>>
+>>     list(a=1, b=2, a=3)
+>>
+>> Maybe this should have been made illegal when R was created, but I
+>> think it's too late to outlaw now:  I'm sure there are lots of people
+>> making use of this.
+>>
+>> Or am I missing something?
+>>
+>> Duncan Murdoch
+>>
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+> 
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+
+
+From pro|jcn@@h @end|ng |rom gm@||@com  Mon Nov  8 18:11:51 2021
+From: pro|jcn@@h @end|ng |rom gm@||@com (J C Nash)
+Date: Mon, 8 Nov 2021 12:11:51 -0500
+Subject: [R-pkg-devel] 
+ R feature suggestion: Duplicated function arguments check
+In-Reply-To: <22cd1b12-f0f3-a711-50b8-567482833d13@gmail.com>
+References: <CALnEB17CMkDvSSBf5WBNnn6wQS9TO6hgJpOVs0jHWd1ysN59_g@mail.gmail.com>
+ <105ca26c-d4ef-a327-f872-361b257de84b@gmail.com>
+ <CALnEB14VffYNkBqnBoxfsaS3ZhOcpSyekhi60y3w4x1_0VKscw@mail.gmail.com>
+ <01ae01d7d4c0$7f4ef7d0$7dece770$@verizon.net>
+ <22cd1b12-f0f3-a711-50b8-567482833d13@gmail.com>
+Message-ID: <c94d077a-ca00-21d9-d4db-4e494d0d4ded@gmail.com>
+
+I think this is similar in nature (though not detail) to an issue raised
+on StackOverflow where the OP used "x" in dot args and it clashed with the
+"x" in a numDeriv call in my optimx package. I've got a very early fix (I
+think), though moderators on StackOverflow were unpleasant enough to
+delete my request for the OP to contact me so I could get more
+information to make improvements. Sigh. Developers need conversations
+with users to improve their code.
+
+Re: argument duplication -- In my view, the first goal should be to inform
+the user of the clash. Doing anything further without providing information
+is likely a very bad idea, though discussion of possibilities of action after
+notification is certainly worthwhile.
+
+Best, JN
+
+
+On 2021-11-08 11:53 a.m., Duncan Murdoch wrote:
+> On 08/11/2021 11:48 a.m., Avi Gross via R-package-devel wrote:
+>> Vincent,
+>>
+>> But is the second being ignored the right result?
+>>
+>> In many programming situations, subsequent assignments replace earlier ones.
+>> And consider the way R allows something like this:
+>>
+>> func(a=2, b=3, a=4, c=a*b)
+>>
+>> Is it clear how to initialize the default for c as it depends on one value
+>> of "a" or the other?
+> 
+> That c=a*b only works with non-standard tidyverse evaluation.? It causes other problems, e.g. the inability to pass ... 
+> properly (see https://github.com/tidyverse/glue/issues/231 for an example).
+> 
+> Duncan Murdoch
+> 
+>>
+>> Of course, you could just make multiple settings an error rather than
+>> choosing an arbitrary fix.
+>>
+>> R lists are more like a BAG data structure than a SET.
+>>
+>> -----Original Message-----
+>> From: R-package-devel <r-package-devel-bounces at r-project.org> On Behalf Of
+>> Vincent van Hees
+>> Sent: Monday, November 8, 2021 11:25 AM
+>> To: Duncan Murdoch <murdoch.duncan at gmail.com>
+>> Cc: r-package-devel at r-project.org
+>> Subject: Re: [R-pkg-devel] R feature suggestion: Duplicated function
+>> arguments check
+>>
+>> Thanks Duncan, I have tried to make a minimalistic example:
+>>
+>> myfun = function(...) {
+>> ?? input = list(...)
+>> ?? mysum = function(A = c(), B= c()) {
+>> ???? return(A+B)
+>> ?? }
+>> ?? if ("A" %in% names(input) & "B" %in% names(input)) {
+>> ???? print(mysum(A = input$A, B = input$B))
+>> ?? }
+>> }
+>>
+>> # test:
+>>> myfun(A = 1, B = 2, B = 4)
+>> [1] 3
+>>
+>> # So, the second B is ignored.
+>>
+>>
+>>
+>> On Mon, 8 Nov 2021 at 17:03, Duncan Murdoch <murdoch.duncan at gmail.com>
+>> wrote:
+>>
+>>> On 08/11/2021 10:29 a.m., Vincent van Hees wrote:
+>>>> Not sure if this is the best place to post this message, as it is
+>>>> more
+>>> of a
+>>>> suggestion than a question.
+>>>>
+>>>> When an R function accepts more than a handful of arguments there is
+>>>> the risk that users accidentally provide arguments twice, e.g
+>>>> myfun(A=1, B=2, C=4, D=5, A=7), and if those two values are not the
+>>>> same it can have frustrating side-effects. To catch this I am
+>>>> planning to add a check for duplicated arguments, as shown below, in
+>>>> one of my own functions. I am
+>>> now
+>>>> wondering whether this would be a useful feature for R itself to
+>>>> operate
+>>> in
+>>>> the background when running any R function that has more than a
+>>>> certain number of input arguments.
+>>>>
+>>>> Cheers, Vincent
+>>>>
+>>>> myfun = function(...) {
+>>>> ??? #check input arguments for duplicate assignments
+>>>> ??? input = list(...)
+>>>> ??? if (length(input) > 0) {
+>>>> ????? argNames = names(input)
+>>>> ????? dupArgNames = duplicated(argNames)
+>>>> ????? if (any(dupArgNames)) {
+>>>> ??????? for (dupi in unique(argNames[dupArgNames])) {
+>>>> ????????? dupArgValues = input[which(argNames %in% dupi)]
+>>>> ????????? if (all(dupArgValues == dupArgValues[[1]])) { # double
+>>> arguments,
+>>>> but no confusion about what value should be
+>>>> ??????????? warning(paste0("\nArgument ", dupi, " has been provided
+>>>> more
+>>> than
+>>>> once in the same call, which is ambiguous. Please fix."))
+>>>> ????????? } else { # double arguments, and confusion about what value
+>>> should
+>>>> be,
+>>>> ??????????? stop(paste0("\nArgument ", dupi, " has been provided more
+>>>> than once in the same call, which is ambiguous. Please fix."))
+>>>> ????????? }
+>>>> ??????? }
+>>>> ????? }
+>>>> ??? }
+>>>> ??? # rest of code...
+>>>> }
+>>>>
+>>>
+>>> Could you give an example where this is needed?? If a named argument
+>>> is duplicated, R will catch that and give an error message:
+>>>
+>>> ??? > f(a=1, b=2, a=3)
+>>> ??? Error in f(a = 1, b = 2, a = 3) :
+>>> ????? formal argument "a" matched by multiple actual arguments
+>>>
+>>> So this can only happen when it is an argument in the ... list that is
+>>> duplicated.? But usually those are passed to some other function, so
+>>> something like
+>>>
+>>> ??? g <- function(...) f(...)
+>>>
+>>> would also catch the duplication in g(a=1, b=2, a=3):
+>>>
+>>> ??? > g(a=1, b=2, a=3)
+>>> ??? Error in f(...) :
+>>> ????? formal argument "a" matched by multiple actual arguments
+>>>
+>>> The only case where I can see this getting by is where you are never
+>>> using those arguments to match any formal argument, e.g.
+>>>
+>>> ??? list(a=1, b=2, a=3)
+>>>
+>>> Maybe this should have been made illegal when R was created, but I
+>>> think it's too late to outlaw now:? I'm sure there are lots of people
+>>> making use of this.
+>>>
+>>> Or am I missing something?
+>>>
+>>> Duncan Murdoch
+>>>
+>>
+>> ????[[alternative HTML version deleted]]
+>>
+>> ______________________________________________
+>> R-package-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>>
+>> ______________________________________________
+>> R-package-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>>
+> 
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+
+From n@r@@ @end|ng |rom @t@n|ord@edu  Tue Nov  9 02:54:36 2021
+From: n@r@@ @end|ng |rom @t@n|ord@edu (Balasubramanian Narasimhan)
+Date: Mon, 8 Nov 2021 17:54:36 -0800
+Subject: [R-pkg-devel] How to update the email address of a package
+ maintainer
+Message-ID: <35287e15-7347-ed92-5233-c2300a9ca1ac@stanford.edu>
+
+Is there any way at all to update the email address of the maintainer of 
+a package? (The address of the maintainer of CVXR which is in need of an 
+update for the new SCS solver has changed from? @stanford.edu to 
+@alumni.stanford.edu, with no access to the former.)
+
+-Naras
+
+
+From @|mon@urb@nek @end|ng |rom R-project@org  Tue Nov  9 02:57:55 2021
+From: @|mon@urb@nek @end|ng |rom R-project@org (Simon Urbanek)
+Date: Tue, 9 Nov 2021 14:57:55 +1300
+Subject: [R-pkg-devel] How to update the email address of a package
+ maintainer
+In-Reply-To: <35287e15-7347-ed92-5233-c2300a9ca1ac@stanford.edu>
+References: <35287e15-7347-ed92-5233-c2300a9ca1ac@stanford.edu>
+Message-ID: <E605BC26-5267-492F-905A-9E79927CE1B3@R-project.org>
+
+
+From CRAN Policy:
+
+
+> Explain any change in the maintainer?s email address and if possible send confirmation from the previous address (by a separate email to CRAN-submissions at R-project.org) or explain why it is not possible
+> 
+
+
+Cheers,
+Simon
+
+
+From n@r@@ @end|ng |rom @t@n|ord@edu  Tue Nov  9 03:10:30 2021
+From: n@r@@ @end|ng |rom @t@n|ord@edu (Balasubramanian Narasimhan)
+Date: Mon, 8 Nov 2021 18:10:30 -0800
+Subject: [R-pkg-devel] How to update the email address of a package
+ maintainer
+In-Reply-To: <E605BC26-5267-492F-905A-9E79927CE1B3@R-project.org>
+References: <35287e15-7347-ed92-5233-c2300a9ca1ac@stanford.edu>
+ <E605BC26-5267-492F-905A-9E79927CE1B3@R-project.org>
+Message-ID: <90e15458-d4a0-6e47-2bb4-3b1874d515f9@stanford.edu>
+
+Thank you, Simon!
+
+On 11/8/21 5:57 PM, Simon Urbanek wrote:
+>  From CRAN Policy:
+>
+>
+>> Explain any change in the maintainer?s email address and if possible send confirmation from the previous address (by a separate email to CRAN-submissions at R-project.org) or explain why it is not possible
+>>
+>
+> Cheers,
+> Simon
+>
+
+
+From ext@Thom@@@Ueben@ee @end|ng |rom ex@@o|@com  Tue Nov  9 10:40:23 2021
+From: ext@Thom@@@Ueben@ee @end|ng |rom ex@@o|@com (Thomas Uebensee)
+Date: Tue, 9 Nov 2021 09:40:23 +0000
+Subject: [R-pkg-devel] CRAN submission issues - exasol package
+Message-ID: <d8c713ace5336fe1e8bd2dcba8ba76fce56d31e5.camel@exasol.com>
+
+Hello,
+
+I am trying to submit a new package to CRAN. I have fixed all warnings
+and errors, and have 1 Note remaining, which I can't get rid off.
+Here is the result:
+"
+?New submission
+? 
+? License components with restrictions and base license permitting
+such:
+??? BSD_3_clause + file LICENSE
+? File 'LICENSE':
+??? Copyright (c) 2016, EXASOL AG
+??? 
+??? Redistribution and use in source and binary forms, with or without
+??? modification, are permitted provided that the following conditions
+are
+??? met:
+??? 
+??????? Redistributions of source code must retain the above copyright
+??????? notice, this list of conditions and the following disclaimer.
+??? 
+??????? Redistributions in binary form must reproduce the above
+copyright
+??????? notice, this list of conditions and the following disclaimer in
+??????? the documentation and/or other materials provided with the
+??????? distribution.
+??? 
+??????? Neither the name of the EXASOL AG nor the names of its
+??????? contributors may be used to endorse or promote products derived
+??????? from this software without specific prior written permission.
+??? 
+??? THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+??? "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+??? LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+FOR
+??? A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+COPYRIGHT
+??? HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+INCIDENTAL,
+??? SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+??? LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF
+USE,
+??? DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ANY
+??? THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+??? (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
+USE
+??? OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
+DAMAGE.
+? 
+? Possibly misspelled words in DESCRIPTION:
+??? EXASOL (3:34, 13:18, 14:49, 18:27)
+??? EXASOL's (16:69)
+??? InDB (16:78)
+??? InMemory (18:40)
+??? MPP (18:70)
+??? RDBMS (18:49)
+??? SDK (3:22)
+??? TPC (19:47)
+??? analytical (20:17)
+??? multinode (15:76)
+??? onwards (14:76)
+
+Flavor: r-devel-windows-ix86+x86_64
+Check: compiled code, Result: NOTE
+? File 'exasol/libs/x64/exasol.dll':
+??? Found non-API calls to R: 'R_new_custom_connection',
+'Rf_set_iconv',
+????? 'dummy_fgetc', 'dummy_vfprintf'
+? 
+? Compiled code should not call non-API entry points in R."
+
+
+Here my questions:
+1. Is my understanding correct that I can ignore the "misspelled words"
+in DESCRIPTION?
+2. Regarding the note: "Found non-API calls to R:". Our package uses
+the internal R connection API to exchange data between the EXASOL
+database and R clients. I saw that other packages do that, too; for
+example curl:
+https://github.com/jeroen/curl/blob/395fbcbc13ef7f38167d3837f50c3cad51902068/src/curl.c
+Is there a way to get a waiver for that Note, or is this an impediment
+for a CRAN submission? But if latter, why was it allowed to curl?
+Is there any way to proceed, any alternative public API which does the
+same maybe? (For the sake of completeness here is the source code which
+uses the R connection API:
+https://github.com/exasol/r-exasol/blob/main/src/r_exasol/rconnection/r_reader_connection.cpp
+https://github.com/exasol/r-exasol/blob/main/src/r_exasol/rconnection/r_writer_connection.cpp
+)
+
+I really appreciate any help on this topic!!!
+
+Thanks in advance,
+Thomas
+
+
+From v|ncentv@nhee@ @end|ng |rom gm@||@com  Wed Nov 10 14:59:04 2021
+From: v|ncentv@nhee@ @end|ng |rom gm@||@com (Vincent van Hees)
+Date: Wed, 10 Nov 2021 14:59:04 +0100
+Subject: [R-pkg-devel] 
+ R feature suggestion: Duplicated function arguments check
+In-Reply-To: <CALnEB14VffYNkBqnBoxfsaS3ZhOcpSyekhi60y3w4x1_0VKscw@mail.gmail.com>
+References: <CALnEB17CMkDvSSBf5WBNnn6wQS9TO6hgJpOVs0jHWd1ysN59_g@mail.gmail.com>
+ <105ca26c-d4ef-a327-f872-361b257de84b@gmail.com>
+ <CALnEB14VffYNkBqnBoxfsaS3ZhOcpSyekhi60y3w4x1_0VKscw@mail.gmail.com>
+Message-ID: <CALnEB156rvR1ng1JjWu_Q3aNdd2ipEM32+fZkB7c2QHOZX9vxw@mail.gmail.com>
+
+Thanks for your replies, I only just noticed them as I had daily-digest =
+true and someone seems to have removed my e-mail address when replying to
+the list. Never mind, I have now switched my daily-digest to false.
+
+Yes - The issue is that "myfun(A = 1, B = 2, B = 4)" in the example below
+is ambiguous and only the end-user knows whether B should be 2 or 4.
+Either way, I will just implement my own solution. Just wanted to report
+that I ran into this situation and maybe others too.
+
+Best, Vincent
+
+
+
+On Mon, 8 Nov 2021 at 17:24, Vincent van Hees <vincentvanhees at gmail.com>
+wrote:
+
+> Thanks Duncan, I have tried to make a minimalistic example:
+>
+> myfun = function(...) {
+>   input = list(...)
+>   mysum = function(A = c(), B= c()) {
+>     return(A+B)
+>   }
+>   if ("A" %in% names(input) & "B" %in% names(input)) {
+>     print(mysum(A = input$A, B = input$B))
+>   }
+> }
+>
+> # test:
+> > myfun(A = 1, B = 2, B = 4)
+> [1] 3
+>
+> # So, the second B is ignored.
+>
+>
+>
+> On Mon, 8 Nov 2021 at 17:03, Duncan Murdoch <murdoch.duncan at gmail.com>
+> wrote:
+>
+>> On 08/11/2021 10:29 a.m., Vincent van Hees wrote:
+>> > Not sure if this is the best place to post this message, as it is more
+>> of a
+>> > suggestion than a question.
+>> >
+>> > When an R function accepts more than a handful of arguments there is the
+>> > risk that users accidentally provide arguments twice, e.g myfun(A=1,
+>> B=2,
+>> > C=4, D=5, A=7), and if those two values are not the same it can have
+>> > frustrating side-effects. To catch this I am planning to add a check for
+>> > duplicated arguments, as shown below, in one of my own functions. I am
+>> now
+>> > wondering whether this would be a useful feature for R itself to
+>> operate in
+>> > the background when running any R function that has more than a certain
+>> > number of input arguments.
+>> >
+>> > Cheers, Vincent
+>> >
+>> > myfun = function(...) {
+>> >    #check input arguments for duplicate assignments
+>> >    input = list(...)
+>> >    if (length(input) > 0) {
+>> >      argNames = names(input)
+>> >      dupArgNames = duplicated(argNames)
+>> >      if (any(dupArgNames)) {
+>> >        for (dupi in unique(argNames[dupArgNames])) {
+>> >          dupArgValues = input[which(argNames %in% dupi)]
+>> >          if (all(dupArgValues == dupArgValues[[1]])) { # double
+>> arguments,
+>> > but no confusion about what value should be
+>> >            warning(paste0("\nArgument ", dupi, " has been provided more
+>> than
+>> > once in the same call, which is ambiguous. Please fix."))
+>> >          } else { # double arguments, and confusion about what value
+>> should
+>> > be,
+>> >            stop(paste0("\nArgument ", dupi, " has been provided more
+>> than
+>> > once in the same call, which is ambiguous. Please fix."))
+>> >          }
+>> >        }
+>> >      }
+>> >    }
+>> >    # rest of code...
+>> > }
+>> >
+>>
+>> Could you give an example where this is needed?  If a named argument is
+>> duplicated, R will catch that and give an error message:
+>>
+>>    > f(a=1, b=2, a=3)
+>>    Error in f(a = 1, b = 2, a = 3) :
+>>      formal argument "a" matched by multiple actual arguments
+>>
+>> So this can only happen when it is an argument in the ... list that is
+>> duplicated.  But usually those are passed to some other function, so
+>> something like
+>>
+>>    g <- function(...) f(...)
+>>
+>> would also catch the duplication in g(a=1, b=2, a=3):
+>>
+>>    > g(a=1, b=2, a=3)
+>>    Error in f(...) :
+>>      formal argument "a" matched by multiple actual arguments
+>>
+>> The only case where I can see this getting by is where you are never
+>> using those arguments to match any formal argument, e.g.
+>>
+>>    list(a=1, b=2, a=3)
+>>
+>> Maybe this should have been made illegal when R was created, but I think
+>> it's too late to outlaw now:  I'm sure there are lots of people making
+>> use of this.
+>>
+>> Or am I missing something?
+>>
+>> Duncan Murdoch
+>>
+>
+
+	[[alternative HTML version deleted]]
+
+
