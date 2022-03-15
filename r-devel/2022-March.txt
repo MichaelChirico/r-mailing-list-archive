@@ -1,0 +1,2732 @@
+From m|ch@|2992 @end|ng |rom gm@||@com  Tue Mar  1 08:51:25 2022
+From: m|ch@|2992 @end|ng |rom gm@||@com (=?UTF-8?Q?Micha=C5=82_Bojanowski?=)
+Date: Tue, 1 Mar 2022 08:51:25 +0100
+Subject: [Rd] Making CRAN memory access checks more accessible?
+In-Reply-To: <CAHqSRuTwOWmcqDXxy-JgFUFuoRg1PUP2BO=KQ37PPngPCqgZaw@mail.gmail.com>
+References: <CAByPayEp5sVw1S6mC5Juec9vayGvAsE4V318vRzLLG9d72G0sg@mail.gmail.com>
+ <CAHqSRuTwOWmcqDXxy-JgFUFuoRg1PUP2BO=KQ37PPngPCqgZaw@mail.gmail.com>
+Message-ID: <CAByPayHJTqEB49W27gqW2V_PZ6xGpHx_bCmSfiK7EQzDNCWf7w@mail.gmail.com>
+
+Thank you Bill! I'll test it out.
+That's a kind of instruction I had in mind when I wrote about
+extending the relevant part of "Writing R extensions"...
+Best, Michal
+
+On Mon, Feb 28, 2022 at 8:15 PM Bill Dunlap <williamwdunlap at gmail.com> wrote:
+>
+> valgrind will detect some of the memory issues that UBSAN does.  Here is how you can use valgrind with the gdb debugger on Linux.  Use apt-get to get valgrind and gdb if you have not yet installed them (If you have Windows, install Microsoft's 'wsl2' and Ubuntu Linux and do this in Ubuntu windows.)
+>
+> 1. Configure your R build for valgrind as described in Writing R Extensions section 4.3.2.
+> 2. Run R with
+>     R --debugger=valgrind --debugger-args="--track-origins=yes --vgdb=full --vgdb-error=0"
+> and any other R command line arguments you like (I often use --quiet and --no-save).
+> You should see something like the following printed
+>   ==238== TO DEBUG THIS PROCESS USING GDB: start GDB like this
+>   ==238==   /path/to/gdb /home/bill/R-devel/R-build/bin/exec/R
+>   ==238== and then give GDB the following command
+>   ==238==   target remote | /usr/lib/x86_64-linux-gnu/valgrind/../../bin/vgdb --pid=238
+>   ==238== --pid is optional if only one valgrind process is running
+> 3.  In another window run gdb with that path to .../exec/R as its only command line argument.
+> 4.  On my copy of Ubuntu 20.04, vgdb is not in /usr/lib/... but is in /usr/bin so
+>    target remote | vgdb
+> at the (gdb) prompt generally starts vgdb, valgrind's client for gdb.  Set any break points you would like then issue the
+>    continue
+> command.
+>
+> At this point R in the first window should start running.  It will break to the debugger when valgrind detects a problem or when any of your breakpoints are hit.  Control-C in the R window will also break to the debugger.
+>
+> The usual gdb commands will work.  There are some extra "monitor" commands supported
+> by vgdb.  E.g., at the (gdb) prompt
+>    monitor leak-check full
+> will describe all the memory leaks detected since the last time you asked about them.
+> Look in
+>    https://valgrind.org/docs/manual/mc-manual.html#mc-manual.monitor-commands
+> for other useful monitor commands.
+>
+> -Bill
+>
+> On Fri, Feb 25, 2022 at 8:31 AM Micha? Bojanowski <michal2992 at gmail.com> wrote:
+>>
+>> Dear colleagues,
+>>
+>> Two days after successfully submitting a package to CRAN I received a
+>> message about "additional issues" with the package's C++ code
+>> (clang-UBSAN to be precise) with a two-week deadline to resolve. While
+>> attempting to somewhat blind-foldedly fix the problem I was wondering
+>> whether it is sensible and feasible for base R to:
+>>
+>> 1. Implement/expose all these memory-related tests (c.f.
+>> https://cran.r-project.org/doc/manuals/r-release/R-exts.html#Checking-memory-access)
+>> to package developers e.g. via options to R CMD check, much like
+>> --use-gct or --use-valgrind are already? Or via a script etc.?
+>>
+>> or
+>>
+>> 2. Expand the chapter
+>> https://cran.r-project.org/doc/manuals/r-release/R-exts.html#Checking-memory-access
+>> with unequivocal and straightforward instructions how to setup and run
+>> these tests locally on different platforms? I believe that the current
+>> version of the manual is inaccessible to anybody but hardcore C/C++
+>> developers while there is a broader spectrum of ppl able to write some
+>> C without the deep understanding of the internals.
+>>
+>> While I noticed that a similar problem has triggered some heat on
+>> Twitter recently I independently decided to write to you all here to
+>> ask the question above. I believe it might be rather difficult for
+>> package contributors to adhere to tests which they are unable to
+>> execute locally (or by a CI service). Alas, in the end it will end-up
+>> with a developer playing package ping-pong with CRAN maintainers whose
+>> time is a valuable resource.
+>>
+>> Best wishes,
+>> Michal
+>>
+>> ______________________________________________
+>> R-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From m|ch@|2992 @end|ng |rom gm@||@com  Tue Mar  1 09:00:13 2022
+From: m|ch@|2992 @end|ng |rom gm@||@com (=?UTF-8?Q?Micha=C5=82_Bojanowski?=)
+Date: Tue, 1 Mar 2022 09:00:13 +0100
+Subject: [Rd] Making CRAN memory access checks more accessible?
+In-Reply-To: <1c51885d-3e45-566b-1e17-deb5930672b3@gmail.com>
+References: <CAByPayEp5sVw1S6mC5Juec9vayGvAsE4V318vRzLLG9d72G0sg@mail.gmail.com>
+ <bdd4a70d-e39e-d2a6-47da-63d43b316817@gmail.com>
+ <CAByPayEfxi73tSA8MBYs1V5BX_XHb-N9PCEj+ksbPq9jWfi2xg@mail.gmail.com>
+ <1c51885d-3e45-566b-1e17-deb5930672b3@gmail.com>
+Message-ID: <CAByPayFEYin2DXvv67dP7sF4L7rjvftwgz__n40D9BDxc1SF1Q@mail.gmail.com>
+
+On Mon, Feb 28, 2022 at 11:06 AM Tomas Kalibera
+<tomas.kalibera at gmail.com> wrote:
+>
+> On 2/26/22 00:49, Micha? Bojanowski wrote:
+> > Ha! I was not aware of R-hub having this. Thank you!
+>
+> If you can't find the cause of the problem from the reports, you can
+> also ask for help e.g. on R-pkg-devel. Others may be able to help
+> identifying the cause in the code or possibly have useful suggestions
+> for cleanups/simplifications, which will eventually lead to fixing also
+> the reported issue.
+
+Ideally I'd prefer to be able to run a test locally before "harassing"
+other people on the internet, but that's a good point Tomas, thank
+you. For some reason the existence of r-pkg-devel escaped me...
+Best, Michal
+
+
+From henr|k@bengt@@on @end|ng |rom gm@||@com  Tue Mar  1 19:38:57 2022
+From: henr|k@bengt@@on @end|ng |rom gm@||@com (Henrik Bengtsson)
+Date: Tue, 1 Mar 2022 10:38:57 -0800
+Subject: [Rd] message(<cond>) and warning(<cond>) circumvent calling
+ handlers and signal the original class, e.g. an error
+Message-ID: <CAFDcVCTBnYeL_7Gi17b8azZXyybTK7LZ380bb8Ko5EaqB2R0ow@mail.gmail.com>
+
+Hi, in help("message", package = "base"), we can read:
+
+Description: 'message' is used for generating 'simple' diagnostic
+messages which are neither warnings nor errors, but nevertheless
+represented as conditions.
+
+>From this, I conclude that message() should generate a condition that
+are neither warning nor errors.
+
+However, the following signals a condition of class 'error':
+
+> e <- simpleError("boom!\n")
+> message(e)
+boom!
+
+This can be seen if we do:
+
+> res <- tryCatch(message(e), condition = identity)
+> res
+<simpleError: boom!
+
+This stems from message(e) using signalCondition(e) internally.
+
+Another problem with this behavior is that message(e) cannot be suppressed:
+
+> suppressMessages(message(e))
+boom!
+
+or captured with calling handlers, e.g.
+
+> res <- withCallingHandlers(message(e), condition = identity)
+boom!
+> res
+NULL
+
+If we replace e <- simpleError("boom") with e <-
+simpleWarning("careful"), we see a similar behavior.  These problems
+exist also with warning(e).  The current behaviors prevent functions
+from capturing and relaying message(<error>), message(<warning>), and
+warning(<error>).
+
+I'm happy to post a bug report to <https://bugs.r-project.org/>.
+
+/Henrik
+
+PS. BTW, it looks like some recent "..." tweaks to the warning() and
+stop() code could be applied also to message().
+
+
+From r-deve| @end|ng |rom @ker@t|ng@de  Tue Mar  1 20:05:27 2022
+From: r-deve| @end|ng |rom @ker@t|ng@de (Andreas Kersting)
+Date: Tue, 01 Mar 2022 20:05:27 +0100 (CET)
+Subject: [Rd] message(<cond>) and warning(<cond>) circumvent calling
+ handlers and signal the original class, e.g. an error
+In-Reply-To: <CAFDcVCTBnYeL_7Gi17b8azZXyybTK7LZ380bb8Ko5EaqB2R0ow@mail.gmail.com>
+Message-ID: <E1nP7oN-0003Tr-FD@rmmprod07.runbox>
+
+Hi,
+
+There is the same issue with stop():
+
+> w <- simpleWarning("careful")
+> tryCatch(stop(w), condition = identity)
+<simpleWarning: careful>
+
+I very recently stumbled upon this, when a warning was re-raised as an error, which was then not caught by an outer try():
+
+> try(
++   tryCatch(warning("careful"), warning = function(w) stop(w)),
++   silent = TRUE
++ )
+Error in doTryCatch(return(expr), name, parentenv, handler) : careful
+
+I would also like to see this behavior changed. I think that stop() should always signal an error, warning() a warning and message() a message.
+
+Best,
+Andreas
+
+2022-03-01 19:38 GMT+01:00 "Henrik Bengtsson" <henrik.bengtsson at gmail.com>:
+> Hi, in help("message", package = "base"), we can read:
+> 
+> Description: 'message' is used for generating 'simple' diagnostic
+> messages which are neither warnings nor errors, but nevertheless
+> represented as conditions.
+> 
+> From this, I conclude that message() should generate a condition that
+> are neither warning nor errors.
+> 
+> However, the following signals a condition of class 'error':
+> 
+>> e <- simpleError("boom!\n")
+>> message(e)
+> boom!
+> 
+> This can be seen if we do:
+> 
+>> res <- tryCatch(message(e), condition = identity)
+>> res
+> <simpleError: boom!
+> 
+> This stems from message(e) using signalCondition(e) internally.
+> 
+> Another problem with this behavior is that message(e) cannot be suppressed:
+> 
+>> suppressMessages(message(e))
+> boom!
+> 
+> or captured with calling handlers, e.g.
+> 
+>> res <- withCallingHandlers(message(e), condition = identity)
+> boom!
+>> res
+> NULL
+> 
+> If we replace e <- simpleError("boom") with e <-
+> simpleWarning("careful"), we see a similar behavior.  These problems
+> exist also with warning(e).  The current behaviors prevent functions
+> from capturing and relaying message(<error>), message(<warning>), and
+> warning(<error>).
+> 
+> I'm happy to post a bug report to <https://bugs.r-project.org/>.
+> 
+> /Henrik
+> 
+> PS. BTW, it looks like some recent "..." tweaks to the warning() and
+> stop() code could be applied also to message().
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+> 
+
+From iuke-tier@ey m@iii@g oii uiow@@edu  Wed Mar  2 00:12:45 2022
+From: iuke-tier@ey m@iii@g oii uiow@@edu (iuke-tier@ey m@iii@g oii uiow@@edu)
+Date: Tue, 1 Mar 2022 17:12:45 -0600 (CST)
+Subject: [Rd] 
+ [External] Re: message(<cond>) and warning(<cond>) circumvent
+ calling handlers and signal the original class, e.g. an error
+In-Reply-To: <E1nP7oN-0003Tr-FD@rmmprod07.runbox>
+References: <E1nP7oN-0003Tr-FD@rmmprod07.runbox>
+Message-ID: <973da75e-79ed-aee-19a0-8a4fe1c5ad8@uiowa.edu>
+
+This is behaving as documented and as intended. If you want to
+call stop() with a condition argument and you want to have that
+condition handled as an error then you need to make sure that your
+condition inherits from "error". One way to do this would be to define
+something like
+
+warningToError <- function(w)
+    errorCondition(conditionMessage(w),
+                   warning = w,
+ 		  class = "warningToError")
+
+and use stop(warningToError(w)).
+
+If you call stop() with a condition argument then that is the
+condition stop() will signal, regardless of its class. I can't at the
+moment think of a good reason why I would want to call stop() with a
+warning condition argument, and I suspect most cases where that
+happens would be mistakes. So checking in stop() that a condition
+argument inherits from "error" and signaling a warning, or maybe an
+error, if it does not might be worth considering (with analogous
+changes for warning() and message()).
+
+The condition system separates the signaling protocol from the process
+of determining handlers. Signaling itself is done by
+signalCondition().  message() and warning() signal a condition with a
+muffle restart available, and return if the condition is not handled.
+stop() is guaranteed not to return; if the condition is not handled,
+then it invokes the default error handler, which will not return. None
+of these currently look at the class of the condition.
+signalCondition() looks at the condition's class to find out what
+handlers are available. It will invoke error handlers for error
+conditions and warning handlers for warning conditions.  It does not
+know or care about whether it was called from stop(), warning(),
+message(), or some other way.
+
+The most common high-level usage of stop(), warning(), or message() is
+to call them with a string and possibly some additional arguments used
+to create a message. In these cases a condition object of class
+"error" for stop(), "warning" for warning(), and "message" for message
+is created implicitly and signaled.
+
+Calling these functions with a condition argument is using lower level
+functionality, which gives more power but also means users need to
+understand what they are doing. In particular, users who want to call
+stop() with a condition argument _and_ want handlers for error
+conditions to be used need to make sure that the class of the
+condition they signal inherits from "error".
+
+Best,
+
+luke
+
+On Tue, 1 Mar 2022, Andreas Kersting wrote:
+
+> Hi,
+>
+> There is the same issue with stop():
+>
+>> w <- simpleWarning("careful")
+>> tryCatch(stop(w), condition = identity)
+> <simpleWarning: careful>
+>
+> I very recently stumbled upon this, when a warning was re-raised as an error, which was then not caught by an outer try():
+>
+>> try(
+> +   tryCatch(warning("careful"), warning = function(w) stop(w)),
+> +   silent = TRUE
+> + )
+> Error in doTryCatch(return(expr), name, parentenv, handler) : careful
+>
+> I would also like to see this behavior changed. I think that stop() should always signal an error, warning() a warning and message() a message.
+>
+> Best,
+> Andreas
+>
+> 2022-03-01 19:38 GMT+01:00 "Henrik Bengtsson" <henrik.bengtsson at gmail.com>:
+>> Hi, in help("message", package = "base"), we can read:
+>>
+>> Description: 'message' is used for generating 'simple' diagnostic
+>> messages which are neither warnings nor errors, but nevertheless
+>> represented as conditions.
+>>
+>> From this, I conclude that message() should generate a condition that
+>> are neither warning nor errors.
+>>
+>> However, the following signals a condition of class 'error':
+>>
+>>> e <- simpleError("boom!\n")
+>>> message(e)
+>> boom!
+>>
+>> This can be seen if we do:
+>>
+>>> res <- tryCatch(message(e), condition = identity)
+>>> res
+>> <simpleError: boom!
+>>
+>> This stems from message(e) using signalCondition(e) internally.
+>>
+>> Another problem with this behavior is that message(e) cannot be suppressed:
+>>
+>>> suppressMessages(message(e))
+>> boom!
+>>
+>> or captured with calling handlers, e.g.
+>>
+>>> res <- withCallingHandlers(message(e), condition = identity)
+>> boom!
+>>> res
+>> NULL
+>>
+>> If we replace e <- simpleError("boom") with e <-
+>> simpleWarning("careful"), we see a similar behavior.  These problems
+>> exist also with warning(e).  The current behaviors prevent functions
+>> from capturing and relaying message(<error>), message(<warning>), and
+>> warning(<error>).
+>>
+>> I'm happy to post a bug report to <https://bugs.r-project.org/>.
+>>
+>> /Henrik
+>>
+>> PS. BTW, it looks like some recent "..." tweaks to the warning() and
+>> stop() code could be applied also to message().
+>>
+>> ______________________________________________
+>> R-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-devel
+>>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+
+-- 
+Luke Tierney
+Ralph E. Wareham Professor of Mathematical Sciences
+University of Iowa                  Phone:             319-335-3386
+Department of Statistics and        Fax:               319-335-3017
+    Actuarial Science
+241 Schaeffer Hall                  email:   luke-tierney at uiowa.edu
+Iowa City, IA 52242                 WWW:  http://www.stat.uiowa.edu
+
+
+From henr|k@bengt@@on @end|ng |rom gm@||@com  Wed Mar  2 03:54:33 2022
+From: henr|k@bengt@@on @end|ng |rom gm@||@com (Henrik Bengtsson)
+Date: Tue, 1 Mar 2022 18:54:33 -0800
+Subject: [Rd] 
+ [External] Re: message(<cond>) and warning(<cond>) circumvent
+ calling handlers and signal the original class, e.g. an error
+In-Reply-To: <973da75e-79ed-aee-19a0-8a4fe1c5ad8@uiowa.edu>
+References: <E1nP7oN-0003Tr-FD@rmmprod07.runbox>
+ <973da75e-79ed-aee-19a0-8a4fe1c5ad8@uiowa.edu>
+Message-ID: <CAFDcVCRpKxShKar1+orJ9TBEM=ruvVCK9Jq0SFOzuO_sfQuyeg@mail.gmail.com>
+
+Thank you, Luke.  I discovered this problem last year, where a user
+reported that their use of message(<error>) in futures would not work
+the same way as without futures. The issue is that the future
+framework captures the error condition and relays it, rather than
+outputting the message string, which happens if you don't capture the
+error condition. Today there was another similar report from another
+package using futures. They both had in common that they use
+
+res <- tryCatch({
+  some_fcn(x)
+}, error = function(e) {
+  message(e)
+  NA
+})
+
+to return a missing value on errors, while outputting the error
+message string to inform the user on the error.  I've been informing
+them to instead use
+
+  message(conditionMessage(e))
+
+in this case. Your reply confirms this, and I can now confidently say
+that using message(e) is incorrect here.
+
+I think the help pages on message, warning, and stop could be more
+explicit on this behavior.
+
+My preference would be that it is an error if calling message(cond)
+with !inherits(cond, "message"), calling warning(cond) with
+!inherits(cond, "warning"), and stop(cond) with !inherits(cond,
+"error").  But, maybe there are valid arguments for allowing such use
+cases.
+
+Thanks,
+
+Henrik
+
+On Tue, Mar 1, 2022 at 3:12 PM <luke-tierney at uiowa.edu> wrote:
+>
+> This is behaving as documented and as intended. If you want to
+> call stop() with a condition argument and you want to have that
+> condition handled as an error then you need to make sure that your
+> condition inherits from "error". One way to do this would be to define
+> something like
+>
+> warningToError <- function(w)
+>     errorCondition(conditionMessage(w),
+>                    warning = w,
+>                   class = "warningToError")
+>
+> and use stop(warningToError(w)).
+>
+> If you call stop() with a condition argument then that is the
+> condition stop() will signal, regardless of its class. I can't at the
+> moment think of a good reason why I would want to call stop() with a
+> warning condition argument, and I suspect most cases where that
+> happens would be mistakes. So checking in stop() that a condition
+> argument inherits from "error" and signaling a warning, or maybe an
+> error, if it does not might be worth considering (with analogous
+> changes for warning() and message()).
+>
+> The condition system separates the signaling protocol from the process
+> of determining handlers. Signaling itself is done by
+> signalCondition().  message() and warning() signal a condition with a
+> muffle restart available, and return if the condition is not handled.
+> stop() is guaranteed not to return; if the condition is not handled,
+> then it invokes the default error handler, which will not return. None
+> of these currently look at the class of the condition.
+> signalCondition() looks at the condition's class to find out what
+> handlers are available. It will invoke error handlers for error
+> conditions and warning handlers for warning conditions.  It does not
+> know or care about whether it was called from stop(), warning(),
+> message(), or some other way.
+>
+> The most common high-level usage of stop(), warning(), or message() is
+> to call them with a string and possibly some additional arguments used
+> to create a message. In these cases a condition object of class
+> "error" for stop(), "warning" for warning(), and "message" for message
+> is created implicitly and signaled.
+>
+> Calling these functions with a condition argument is using lower level
+> functionality, which gives more power but also means users need to
+> understand what they are doing. In particular, users who want to call
+> stop() with a condition argument _and_ want handlers for error
+> conditions to be used need to make sure that the class of the
+> condition they signal inherits from "error".
+>
+> Best,
+>
+> luke
+>
+> On Tue, 1 Mar 2022, Andreas Kersting wrote:
+>
+> > Hi,
+> >
+> > There is the same issue with stop():
+> >
+> >> w <- simpleWarning("careful")
+> >> tryCatch(stop(w), condition = identity)
+> > <simpleWarning: careful>
+> >
+> > I very recently stumbled upon this, when a warning was re-raised as an error, which was then not caught by an outer try():
+> >
+> >> try(
+> > +   tryCatch(warning("careful"), warning = function(w) stop(w)),
+> > +   silent = TRUE
+> > + )
+> > Error in doTryCatch(return(expr), name, parentenv, handler) : careful
+> >
+> > I would also like to see this behavior changed. I think that stop() should always signal an error, warning() a warning and message() a message.
+> >
+> > Best,
+> > Andreas
+> >
+> > 2022-03-01 19:38 GMT+01:00 "Henrik Bengtsson" <henrik.bengtsson at gmail.com>:
+> >> Hi, in help("message", package = "base"), we can read:
+> >>
+> >> Description: 'message' is used for generating 'simple' diagnostic
+> >> messages which are neither warnings nor errors, but nevertheless
+> >> represented as conditions.
+> >>
+> >> From this, I conclude that message() should generate a condition that
+> >> are neither warning nor errors.
+> >>
+> >> However, the following signals a condition of class 'error':
+> >>
+> >>> e <- simpleError("boom!\n")
+> >>> message(e)
+> >> boom!
+> >>
+> >> This can be seen if we do:
+> >>
+> >>> res <- tryCatch(message(e), condition = identity)
+> >>> res
+> >> <simpleError: boom!
+> >>
+> >> This stems from message(e) using signalCondition(e) internally.
+> >>
+> >> Another problem with this behavior is that message(e) cannot be suppressed:
+> >>
+> >>> suppressMessages(message(e))
+> >> boom!
+> >>
+> >> or captured with calling handlers, e.g.
+> >>
+> >>> res <- withCallingHandlers(message(e), condition = identity)
+> >> boom!
+> >>> res
+> >> NULL
+> >>
+> >> If we replace e <- simpleError("boom") with e <-
+> >> simpleWarning("careful"), we see a similar behavior.  These problems
+> >> exist also with warning(e).  The current behaviors prevent functions
+> >> from capturing and relaying message(<error>), message(<warning>), and
+> >> warning(<error>).
+> >>
+> >> I'm happy to post a bug report to <https://bugs.r-project.org/>.
+> >>
+> >> /Henrik
+> >>
+> >> PS. BTW, it looks like some recent "..." tweaks to the warning() and
+> >> stop() code could be applied also to message().
+> >>
+> >> ______________________________________________
+> >> R-devel at r-project.org mailing list
+> >> https://stat.ethz.ch/mailman/listinfo/r-devel
+> >>
+> > ______________________________________________
+> > R-devel at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-devel
+> >
+>
+> --
+> Luke Tierney
+> Ralph E. Wareham Professor of Mathematical Sciences
+> University of Iowa                  Phone:             319-335-3386
+> Department of Statistics and        Fax:               319-335-3017
+>     Actuarial Science
+> 241 Schaeffer Hall                  email:   luke-tierney at uiowa.edu
+> Iowa City, IA 52242                 WWW:  http://www.stat.uiowa.edu
+
+
+From r|p|ey @end|ng |rom @t@t@@ox@@c@uk  Wed Mar  2 11:57:07 2022
+From: r|p|ey @end|ng |rom @t@t@@ox@@c@uk (Prof Brian Ripley)
+Date: Wed, 2 Mar 2022 10:57:07 +0000
+Subject: [Rd] Making CRAN memory access checks more accessible?
+In-Reply-To: <CAHqSRuTwOWmcqDXxy-JgFUFuoRg1PUP2BO=KQ37PPngPCqgZaw@mail.gmail.com>
+References: <CAByPayEp5sVw1S6mC5Juec9vayGvAsE4V318vRzLLG9d72G0sg@mail.gmail.com>
+ <CAHqSRuTwOWmcqDXxy-JgFUFuoRg1PUP2BO=KQ37PPngPCqgZaw@mail.gmail.com>
+Message-ID: <f3d235c0-01a9-f920-2b2e-d85096369e7a@stats.ox.ac.uk>
+
+On 28/02/2022 19:15, Bill Dunlap wrote:
+> valgrind will detect some of the memory issues that UBSAN does.  
+
+Only very few.  None of the current 43 CRAN packages with UBSAN issues 
+have them detected by valgrind ... the valgrind overlap is more with 
+ASAN issues (see 
+https://github.com/google/sanitizers/wiki/AddressSanitizerComparisonOfMemoryTools).
+
+The UB sanitizer is heavily tied to the compiler.  This has meant that 
+new versions of gcc have found more and more issues and (most 
+pertinently here) recent versions of clang find about twice as many 
+issues as gcc 10/11.
+
+UBSAN in theory runs on quite a range of platforms --- 
+https://clang.llvm.org/docs/UndefinedBehaviorSanitizer.html#supported-platforms 
+-- which unfortunately does not say for which CPUs on those OS.  (Also, 
+that is about LLVM clang and not Apple clang as normally used on macOS. 
+  And gcc seems only to point to LLVM documentation for supported 
+platforms, but its implementation clearly differs.)
+
+
+-- 
+Brian D. Ripley,                  ripley at stats.ox.ac.uk
+Emeritus Professor of Applied Statistics, University of Oxford
+
+
+From henr|k@bengt@@on @end|ng |rom gm@||@com  Thu Mar  3 05:13:00 2022
+From: henr|k@bengt@@on @end|ng |rom gm@||@com (Henrik Bengtsson)
+Date: Wed, 2 Mar 2022 20:13:00 -0800
+Subject: [Rd] strsplit() and final empty values
+In-Reply-To: <CAC0O-5f1U2m8ji=4UMWNBFwW7DFU72L1eNyo6nJN0sBpbcCPdw@mail.gmail.com>
+References: <CAC0O-5f1U2m8ji=4UMWNBFwW7DFU72L1eNyo6nJN0sBpbcCPdw@mail.gmail.com>
+Message-ID: <CAFDcVCTPUqygyNHsKJYp=UAGhFcjOigrtsjno-=J+9T7=dLN8w@mail.gmail.com>
+
+Here's an example clarifying the issue:
+
+> strsplit("a:b:c:d", split = ":", fixed = TRUE)
+[[1]]
+[1] "a" "b" "c" "d"
+
+> strsplit("a:b:c:", split = ":", fixed = TRUE)
+[[1]]
+[1] "a" "b" "c"
+
+I also ran into this a few times, and I agree that this complicated
+things when you need to preserve that last empty element.  Instead of
+changing the default behavior, which would probably break lots of
+existing code relying on it, one could introduce a new,
+backward-compatible argument `drop = TRUE`, e.g.
+
+> strsplit("a:b:c:", split = ":", fixed = TRUE, drop = FALSE)
+[[1]]
+[1] "a" "b" "c" ""
+
+My $.02
+
+/Henrik
+
+
+
+On Sat, Feb 26, 2022 at 6:39 AM Dzmitry Batrakou <d.batrakou at gmail.com> wrote:
+>
+> Hello,
+>
+> I would like to suggest changing the behaviour of the strsplit() function
+> with multiple trailing empty values. Currently, `strsplit(x = 'value::',
+> split = ':')` produces a list of length 2 ('value',''). This behaviour is
+> documented in the manual (penultimate example), however, I would argue, is
+> illogical and can lead to unexpected parsing results. One example is
+> splitting delimited value strings into a table.
+>
+> Regards,
+> Dzmitry
+>
+>         [[alternative HTML version deleted]]
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From d@b@tr@kou @end|ng |rom gm@||@com  Thu Mar  3 09:57:54 2022
+From: d@b@tr@kou @end|ng |rom gm@||@com (Dzmitry Batrakou)
+Date: Thu, 3 Mar 2022 08:57:54 +0000
+Subject: [Rd] strsplit() and final empty values
+In-Reply-To: <CAFDcVCTPUqygyNHsKJYp=UAGhFcjOigrtsjno-=J+9T7=dLN8w@mail.gmail.com>
+References: <CAC0O-5f1U2m8ji=4UMWNBFwW7DFU72L1eNyo6nJN0sBpbcCPdw@mail.gmail.com>
+ <CAFDcVCTPUqygyNHsKJYp=UAGhFcjOigrtsjno-=J+9T7=dLN8w@mail.gmail.com>
+Message-ID: <CAC0O-5dYgPxHmaBsbyiW9-aXjjAqQ7Wn16FF2N+LsHiyw0efhA@mail.gmail.com>
+
+Alternatively, the man page for the strsplit() could include the following
+(or a better phrased version):
+
+"
+Note that the trailing empty values will be trimmed (see penultimate
+example). A way around this is to use
+> read.table(text = paste(strings.to.split, collapse = "\n"), sep = split)
+"
+
+Dzmitry
+
+On Thu, 3 Mar 2022 at 04:13, Henrik Bengtsson <henrik.bengtsson at gmail.com>
+wrote:
+
+> Here's an example clarifying the issue:
+>
+> > strsplit("a:b:c:d", split = ":", fixed = TRUE)
+> [[1]]
+> [1] "a" "b" "c" "d"
+>
+> > strsplit("a:b:c:", split = ":", fixed = TRUE)
+> [[1]]
+> [1] "a" "b" "c"
+>
+> I also ran into this a few times, and I agree that this complicated
+> things when you need to preserve that last empty element.  Instead of
+> changing the default behavior, which would probably break lots of
+> existing code relying on it, one could introduce a new,
+> backward-compatible argument `drop = TRUE`, e.g.
+>
+> > strsplit("a:b:c:", split = ":", fixed = TRUE, drop = FALSE)
+> [[1]]
+> [1] "a" "b" "c" ""
+>
+> My $.02
+>
+> /Henrik
+>
+>
+>
+> On Sat, Feb 26, 2022 at 6:39 AM Dzmitry Batrakou <d.batrakou at gmail.com>
+> wrote:
+> >
+> > Hello,
+> >
+> > I would like to suggest changing the behaviour of the strsplit() function
+> > with multiple trailing empty values. Currently, `strsplit(x = 'value::',
+> > split = ':')` produces a list of length 2 ('value',''). This behaviour is
+> > documented in the manual (penultimate example), however, I would argue,
+> is
+> > illogical and can lead to unexpected parsing results. One example is
+> > splitting delimited value strings into a table.
+> >
+> > Regards,
+> > Dzmitry
+> >
+> >         [[alternative HTML version deleted]]
+> >
+> > ______________________________________________
+> > R-devel at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+
+	[[alternative HTML version deleted]]
+
+
+From mu@che|||j2 @end|ng |rom gm@||@com  Thu Mar  3 17:04:05 2022
+From: mu@che|||j2 @end|ng |rom gm@||@com (John Muschelli)
+Date: Thu, 3 Mar 2022 11:04:05 -0500
+Subject: [Rd] Floating Point with POSIXct
+Message-ID: <CAFsq6G_cp=6pyh7CEe=rLUK47i+9LqtTyyK5zwjsdcNKnVigVg@mail.gmail.com>
+
+I see in ?POSIXct and I'm trying to understand the note:
+> Classes "POSIXct" and "POSIXlt" are able to express fractions of a second. (Conversion of fractions between the two forms may not be exact, but will have better than microsecond accuracy.)
+
+Mainly, I'm trying to understand printing of POSIXct with fractional
+seconds.  I see print.POSIXct calls format.POSIXct and eventually
+calls format.POSIXlt, which then takes into account `digits.secs` for
+printing. The format uses %OS3, which strptime indicates (* added):
+
+> Specific to R is %OSn, which for output gives the seconds *truncated* to 0 <= n <= 6 decimal places (and if %OS is not followed by a digit, it uses the setting of getOption("digits.secs"), or if that is unset, n = 0).
+
+So I'm seeing it truncates the seconds to 3 digits, so I think that is
+why the below is printing 0.024.
+
+I think this is especially relevant even if you set
+`options(digits.secs = 6)`, then the code in
+format.POSIXlt would still return np=3 as the following condition
+would break at i = 3
+
+            for (i in seq_len(np) - 1L) if (all(abs(secs - round(secs,
+                i)) < 1e-06)) {
+                np <- i
+                break
+            }
+
+as sub_seconds - round(sub_seconds,3) < 1e-06.   This seems to be
+expected behavior given the docs, but would any consider this a bug?
+
+
+Example:
+
+options(digits.secs = 4)
+x = structure(947016000.025, class = c("POSIXct", "POSIXt"), tzone = "UTC")
+summary(x, digits = 20)
+#>                      Min.                   1st Qu.                    Median
+#> "2000-01-04 20:00:00.024" "2000-01-04 20:00:00.024" "2000-01-04 20:00:00.024"
+#>                      Mean                   3rd Qu.                      Max.
+#> "2000-01-04 20:00:00.024" "2000-01-04 20:00:00.024" "2000-01-04 20:00:00.024"
+x
+#> [1] "2000-01-04 20:00:00.024 UTC"
+format.POSIXct(x, format = "%Y-%m-%d %H:%M:%OS3")
+#> [1] "2000-01-04 20:00:00.024"
+format.POSIXct(x, format = "%Y-%m-%d %H:%M:%OS4")
+#> [1] "2000-01-04 20:00:00.0249"
+sub_seconds = as.numeric(x) %% 1
+sub_seconds
+#> [1] 0.02499998
+round(sub_seconds, 3)
+#> [1] 0.025
+
+rounded = as.POSIXct(
+  floor(as.numeric(x)) +
+    round(as.numeric(x) %% 1, 3),
+  origin = "1970-01-01")
+rounded
+#> [1] "2000-01-04 20:00:00.024 UTC"
+as.numeric(rounded) %% 1
+#> [1] 0.02499998
+
+R.version
+               _
+platform       x86_64-pc-linux-gnu
+arch           x86_64
+os             linux-gnu
+system         x86_64, linux-gnu
+status
+major          4
+minor          1.2
+year           2021
+month          11
+day            01
+svn rev        81115
+language       R
+version.string R version 4.1.2 (2021-11-01)
+nickname       Bird Hippie
+
+
+
+Best,
+John
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Thu Mar  3 17:52:40 2022
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Thu, 3 Mar 2022 17:52:40 +0100
+Subject: [Rd] Floating Point with POSIXct
+In-Reply-To: <CAFsq6G_cp=6pyh7CEe=rLUK47i+9LqtTyyK5zwjsdcNKnVigVg@mail.gmail.com>
+References: <CAFsq6G_cp=6pyh7CEe=rLUK47i+9LqtTyyK5zwjsdcNKnVigVg@mail.gmail.com>
+Message-ID: <25120.62040.753761.512280@stat.math.ethz.ch>
+
+>>>>> John Muschelli 
+>>>>>     on Thu, 3 Mar 2022 11:04:05 -0500 writes:
+>>>>> John Muschelli 
+>>>>>     on Thu, 3 Mar 2022 11:04:05 -0500 writes:
+
+    > I see in ?POSIXct and I'm trying to understand the note:
+    >> Classes "POSIXct" and "POSIXlt" are able to express fractions of a second. (Conversion of fractions between the two forms may not be exact, but will have better than microsecond accuracy.)
+
+    > Mainly, I'm trying to understand printing of POSIXct with fractional
+    > seconds.  I see print.POSIXct calls format.POSIXct and eventually
+    > calls format.POSIXlt, which then takes into account `digits.secs` for
+    > printing. The format uses %OS3, which strptime indicates (* added):
+
+    >> Specific to R is %OSn, which for output gives the seconds *truncated* to 0 <= n <= 6 decimal places (and if %OS is not followed by a digit, it uses the setting of getOption("digits.secs"), or if that is unset, n = 0).
+
+    > So I'm seeing it truncates the seconds to 3 digits, so I think that is
+    > why the below is printing 0.024.
+
+    > I think this is especially relevant even if you set
+    > `options(digits.secs = 6)`, then the code in
+    > format.POSIXlt would still return np=3 as the following condition
+    > would break at i = 3
+
+    > for (i in seq_len(np) - 1L) 
+    >   if (all(abs(secs - round(secs, > i)) < 1e-06)) {
+    >     np <- i
+    >     break
+    > }
+
+    > as sub_seconds - round(sub_seconds,3) < 1e-06.   This seems to be
+    > expected behavior given the docs, but would any consider this a bug?
+
+
+    > Example:
+
+    > options(digits.secs = 4)
+    > x = structure(947016000.025, class = c("POSIXct", "POSIXt"), tzone = "UTC")
+
+I think you've fallen into the R FAQ 7.31 trap :
+
+> ct <- 947016000.025
+> ct %% 1
+[1] 0.02499998
+>
+
+Of course, the issue may still be somewhat interesting, ...
+
+Yes, POSIXct is of limited precision and I think the help page
+you mentioned did document that that's one reason for using
+POSIXlt instead, as there, sub second accuracy can be much better.
+
+But FAQ 7.31 and the fact that all numbers are base 2 and in
+base 2,  no decimal   <n>.025   can be represented in full accuracy.
+
+Also, as you've noticed the R POSIX[cl]t  code just truncates,
+i.e. rounds towards 0 unconditionally, and I tend to agree that it
+should rather round than truncate.
+
+But we should carefully separate the issues here, from the
+underlying inherent FAQ 7.31 truth that most decimal numbers in
+a computer are not quite what they look like ...
+
+Martin Maechler
+ETH Zurich and  R Core Team (also author of the CRAN package 'round')
+
+
+    > summary(x, digits = 20)
+    > #>                      Min.                   1st Qu.                    Median
+    > #> "2000-01-04 20:00:00.024" "2000-01-04 20:00:00.024" "2000-01-04 20:00:00.024"
+    > #>                      Mean                   3rd Qu.                      Max.
+    > #> "2000-01-04 20:00:00.024" "2000-01-04 20:00:00.024" "2000-01-04 20:00:00.024"
+    > x
+    > #> [1] "2000-01-04 20:00:00.024 UTC"
+    > format.POSIXct(x, format = "%Y-%m-%d %H:%M:%OS3")
+    > #> [1] "2000-01-04 20:00:00.024"
+    > format.POSIXct(x, format = "%Y-%m-%d %H:%M:%OS4")
+    > #> [1] "2000-01-04 20:00:00.0249"
+    > sub_seconds = as.numeric(x) %% 1
+    > sub_seconds
+    > #> [1] 0.02499998
+    > round(sub_seconds, 3)
+    > #> [1] 0.025
+
+    > rounded = as.POSIXct(
+    > floor(as.numeric(x)) +
+    > round(as.numeric(x) %% 1, 3),
+    > origin = "1970-01-01")
+    > rounded
+    > #> [1] "2000-01-04 20:00:00.024 UTC"
+    > as.numeric(rounded) %% 1
+    > #> [1] 0.02499998
+
+    > R.version
+    > _
+    > platform       x86_64-pc-linux-gnu
+    > arch           x86_64
+    > os             linux-gnu
+    > system         x86_64, linux-gnu
+    > status
+    > major          4
+    > minor          1.2
+    > year           2021
+    > month          11
+    > day            01
+    > svn rev        81115
+    > language       R
+    > version.string R version 4.1.2 (2021-11-01)
+    > nickname       Bird Hippie
+
+
+
+    > Best,
+    > John
+
+    > ______________________________________________
+    > R-devel at r-project.org mailing list
+    > https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From mu@che|||j2 @end|ng |rom gm@||@com  Thu Mar  3 18:22:32 2022
+From: mu@che|||j2 @end|ng |rom gm@||@com (John Muschelli)
+Date: Thu, 3 Mar 2022 12:22:32 -0500
+Subject: [Rd] Floating Point with POSIXct
+In-Reply-To: <25120.62040.753761.512280@stat.math.ethz.ch>
+References: <CAFsq6G_cp=6pyh7CEe=rLUK47i+9LqtTyyK5zwjsdcNKnVigVg@mail.gmail.com>
+ <25120.62040.753761.512280@stat.math.ethz.ch>
+Message-ID: <CAFsq6G_va8iJSgY4pmp=xESMmxg4WX8+6fSabqUEDVTVObvphQ@mail.gmail.com>
+
+Martin - I agree that the floating point representation of 0.025 is a
+piece of the puzzle, but yes the heart was whether format/%OS3 should
+potentially round vs. truncate.  As it's spelled out in ?strptime that
+it will truncate, there is no bug per se, but simply unexpected
+behavior and I wanted to know if that was the intent in this case.
+Best,
+John
+
+On Thu, Mar 3, 2022 at 11:52 AM Martin Maechler
+<maechler at stat.math.ethz.ch> wrote:
+>
+> >>>>> John Muschelli
+> >>>>>     on Thu, 3 Mar 2022 11:04:05 -0500 writes:
+> >>>>> John Muschelli
+> >>>>>     on Thu, 3 Mar 2022 11:04:05 -0500 writes:
+>
+>     > I see in ?POSIXct and I'm trying to understand the note:
+>     >> Classes "POSIXct" and "POSIXlt" are able to express fractions of a second. (Conversion of fractions between the two forms may not be exact, but will have better than microsecond accuracy.)
+>
+>     > Mainly, I'm trying to understand printing of POSIXct with fractional
+>     > seconds.  I see print.POSIXct calls format.POSIXct and eventually
+>     > calls format.POSIXlt, which then takes into account `digits.secs` for
+>     > printing. The format uses %OS3, which strptime indicates (* added):
+>
+>     >> Specific to R is %OSn, which for output gives the seconds *truncated* to 0 <= n <= 6 decimal places (and if %OS is not followed by a digit, it uses the setting of getOption("digits.secs"), or if that is unset, n = 0).
+>
+>     > So I'm seeing it truncates the seconds to 3 digits, so I think that is
+>     > why the below is printing 0.024.
+>
+>     > I think this is especially relevant even if you set
+>     > `options(digits.secs = 6)`, then the code in
+>     > format.POSIXlt would still return np=3 as the following condition
+>     > would break at i = 3
+>
+>     > for (i in seq_len(np) - 1L)
+>     >   if (all(abs(secs - round(secs, > i)) < 1e-06)) {
+>     >     np <- i
+>     >     break
+>     > }
+>
+>     > as sub_seconds - round(sub_seconds,3) < 1e-06.   This seems to be
+>     > expected behavior given the docs, but would any consider this a bug?
+>
+>
+>     > Example:
+>
+>     > options(digits.secs = 4)
+>     > x = structure(947016000.025, class = c("POSIXct", "POSIXt"), tzone = "UTC")
+>
+> I think you've fallen into the R FAQ 7.31 trap :
+>
+> > ct <- 947016000.025
+> > ct %% 1
+> [1] 0.02499998
+> >
+>
+> Of course, the issue may still be somewhat interesting, ...
+>
+> Yes, POSIXct is of limited precision and I think the help page
+> you mentioned did document that that's one reason for using
+> POSIXlt instead, as there, sub second accuracy can be much better.
+>
+> But FAQ 7.31 and the fact that all numbers are base 2 and in
+> base 2,  no decimal   <n>.025   can be represented in full accuracy.
+>
+> Also, as you've noticed the R POSIX[cl]t  code just truncates,
+> i.e. rounds towards 0 unconditionally, and I tend to agree that it
+> should rather round than truncate.
+>
+> But we should carefully separate the issues here, from the
+> underlying inherent FAQ 7.31 truth that most decimal numbers in
+> a computer are not quite what they look like ...
+>
+> Martin Maechler
+> ETH Zurich and  R Core Team (also author of the CRAN package 'round')
+>
+>
+>     > summary(x, digits = 20)
+>     > #>                      Min.                   1st Qu.                    Median
+>     > #> "2000-01-04 20:00:00.024" "2000-01-04 20:00:00.024" "2000-01-04 20:00:00.024"
+>     > #>                      Mean                   3rd Qu.                      Max.
+>     > #> "2000-01-04 20:00:00.024" "2000-01-04 20:00:00.024" "2000-01-04 20:00:00.024"
+>     > x
+>     > #> [1] "2000-01-04 20:00:00.024 UTC"
+>     > format.POSIXct(x, format = "%Y-%m-%d %H:%M:%OS3")
+>     > #> [1] "2000-01-04 20:00:00.024"
+>     > format.POSIXct(x, format = "%Y-%m-%d %H:%M:%OS4")
+>     > #> [1] "2000-01-04 20:00:00.0249"
+>     > sub_seconds = as.numeric(x) %% 1
+>     > sub_seconds
+>     > #> [1] 0.02499998
+>     > round(sub_seconds, 3)
+>     > #> [1] 0.025
+>
+>     > rounded = as.POSIXct(
+>     > floor(as.numeric(x)) +
+>     > round(as.numeric(x) %% 1, 3),
+>     > origin = "1970-01-01")
+>     > rounded
+>     > #> [1] "2000-01-04 20:00:00.024 UTC"
+>     > as.numeric(rounded) %% 1
+>     > #> [1] 0.02499998
+>
+>     > R.version
+>     > _
+>     > platform       x86_64-pc-linux-gnu
+>     > arch           x86_64
+>     > os             linux-gnu
+>     > system         x86_64, linux-gnu
+>     > status
+>     > major          4
+>     > minor          1.2
+>     > year           2021
+>     > month          11
+>     > day            01
+>     > svn rev        81115
+>     > language       R
+>     > version.string R version 4.1.2 (2021-11-01)
+>     > nickname       Bird Hippie
+>
+>
+>
+>     > Best,
+>     > John
+>
+>     > ______________________________________________
+>     > R-devel at r-project.org mailing list
+>     > https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From henr|k@bengt@@on @end|ng |rom gm@||@com  Thu Mar  3 20:27:11 2022
+From: henr|k@bengt@@on @end|ng |rom gm@||@com (Henrik Bengtsson)
+Date: Thu, 3 Mar 2022 11:27:11 -0800
+Subject: [Rd] strsplit() and final empty values
+In-Reply-To: <CAC0O-5dYgPxHmaBsbyiW9-aXjjAqQ7Wn16FF2N+LsHiyw0efhA@mail.gmail.com>
+References: <CAC0O-5f1U2m8ji=4UMWNBFwW7DFU72L1eNyo6nJN0sBpbcCPdw@mail.gmail.com>
+ <CAFDcVCTPUqygyNHsKJYp=UAGhFcjOigrtsjno-=J+9T7=dLN8w@mail.gmail.com>
+ <CAC0O-5dYgPxHmaBsbyiW9-aXjjAqQ7Wn16FF2N+LsHiyw0efhA@mail.gmail.com>
+Message-ID: <CAFDcVCSj-i012Fhtkpmk2bNfCu7+4C-JnvJxvD=upsmHJQM7sA@mail.gmail.com>
+
+On Thu, Mar 3, 2022 at 12:58 AM Dzmitry Batrakou <d.batrakou at gmail.com> wrote:
+>
+> Alternatively, the man page for the strsplit() could include the following (or a better phrased version):
+>
+> "
+> Note that the trailing empty values will be trimmed (see penultimate example). A way around this is to use
+> > read.table(text = paste(strings.to.split, collapse = "\n"), sep = split)
+
+Another workaround is to append another split symbol (or string) to
+the end of the string you're splitting, e.g.
+
+> strsplit(paste0("a:b:c:", split <- ":"), split = split, fixed = TRUE)
+[[1]]
+[1] "a" "b" "c" ""
+
+/Henrik
+
+> "
+>
+> Dzmitry
+>
+> On Thu, 3 Mar 2022 at 04:13, Henrik Bengtsson <henrik.bengtsson at gmail.com> wrote:
+>>
+>> Here's an example clarifying the issue:
+>>
+>> > strsplit("a:b:c:d", split = ":", fixed = TRUE)
+>> [[1]]
+>> [1] "a" "b" "c" "d"
+>>
+>> > strsplit("a:b:c:", split = ":", fixed = TRUE)
+>> [[1]]
+>> [1] "a" "b" "c"
+>>
+>> I also ran into this a few times, and I agree that this complicated
+>> things when you need to preserve that last empty element.  Instead of
+>> changing the default behavior, which would probably break lots of
+>> existing code relying on it, one could introduce a new,
+>> backward-compatible argument `drop = TRUE`, e.g.
+>>
+>> > strsplit("a:b:c:", split = ":", fixed = TRUE, drop = FALSE)
+>> [[1]]
+>> [1] "a" "b" "c" ""
+>>
+>> My $.02
+>>
+>> /Henrik
+>>
+>>
+>>
+>> On Sat, Feb 26, 2022 at 6:39 AM Dzmitry Batrakou <d.batrakou at gmail.com> wrote:
+>> >
+>> > Hello,
+>> >
+>> > I would like to suggest changing the behaviour of the strsplit() function
+>> > with multiple trailing empty values. Currently, `strsplit(x = 'value::',
+>> > split = ':')` produces a list of length 2 ('value',''). This behaviour is
+>> > documented in the manual (penultimate example), however, I would argue, is
+>> > illogical and can lead to unexpected parsing results. One example is
+>> > splitting delimited value strings into a table.
+>> >
+>> > Regards,
+>> > Dzmitry
+>> >
+>> >         [[alternative HTML version deleted]]
+>> >
+>> > ______________________________________________
+>> > R-devel at r-project.org mailing list
+>> > https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Thu Mar  3 20:38:28 2022
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Thu, 3 Mar 2022 14:38:28 -0500
+Subject: [Rd] Floating Point with POSIXct
+In-Reply-To: <25120.62040.753761.512280@stat.math.ethz.ch>
+References: <CAFsq6G_cp=6pyh7CEe=rLUK47i+9LqtTyyK5zwjsdcNKnVigVg@mail.gmail.com>
+ <25120.62040.753761.512280@stat.math.ethz.ch>
+Message-ID: <139a95ec-5f5a-59e0-9791-9b6dd4541d96@gmail.com>
+
+On 03/03/2022 11:52 a.m., Martin Maechler wrote:
+>>>>>> John Muschelli
+>>>>>>      on Thu, 3 Mar 2022 11:04:05 -0500 writes:
+>>>>>> John Muschelli
+>>>>>>      on Thu, 3 Mar 2022 11:04:05 -0500 writes:
+> 
+>      > I see in ?POSIXct and I'm trying to understand the note:
+>      >> Classes "POSIXct" and "POSIXlt" are able to express fractions of a second. (Conversion of fractions between the two forms may not be exact, but will have better than microsecond accuracy.)
+> 
+>      > Mainly, I'm trying to understand printing of POSIXct with fractional
+>      > seconds.  I see print.POSIXct calls format.POSIXct and eventually
+>      > calls format.POSIXlt, which then takes into account `digits.secs` for
+>      > printing. The format uses %OS3, which strptime indicates (* added):
+> 
+>      >> Specific to R is %OSn, which for output gives the seconds *truncated* to 0 <= n <= 6 decimal places (and if %OS is not followed by a digit, it uses the setting of getOption("digits.secs"), or if that is unset, n = 0).
+> 
+>      > So I'm seeing it truncates the seconds to 3 digits, so I think that is
+>      > why the below is printing 0.024.
+> 
+>      > I think this is especially relevant even if you set
+>      > `options(digits.secs = 6)`, then the code in
+>      > format.POSIXlt would still return np=3 as the following condition
+>      > would break at i = 3
+> 
+>      > for (i in seq_len(np) - 1L)
+>      >   if (all(abs(secs - round(secs, > i)) < 1e-06)) {
+>      >     np <- i
+>      >     break
+>      > }
+> 
+>      > as sub_seconds - round(sub_seconds,3) < 1e-06.   This seems to be
+>      > expected behavior given the docs, but would any consider this a bug?
+> 
+> 
+>      > Example:
+> 
+>      > options(digits.secs = 4)
+>      > x = structure(947016000.025, class = c("POSIXct", "POSIXt"), tzone = "UTC")
+> 
+> I think you've fallen into the R FAQ 7.31 trap :
+> 
+>> ct <- 947016000.025
+>> ct %% 1
+> [1] 0.02499998
+>>
+> 
+> Of course, the issue may still be somewhat interesting, ...
+> 
+> Yes, POSIXct is of limited precision and I think the help page
+> you mentioned did document that that's one reason for using
+> POSIXlt instead, as there, sub second accuracy can be much better.
+> 
+> But FAQ 7.31 and the fact that all numbers are base 2 and in
+> base 2,  no decimal   <n>.025   can be represented in full accuracy.
+> 
+> Also, as you've noticed the R POSIX[cl]t  code just truncates,
+> i.e. rounds towards 0 unconditionally, and I tend to agree that it
+> should rather round than truncate.
+
+If you print the hour and minute at 01:59:59, you get 1 and 59, not 2 
+and 0.  That may be the motivation for doing the same for fractional 
+seconds.  Should 1:59:59.9 really print as 2:00:00?
+
+Duncan Murdoch
+> 
+> But we should carefully separate the issues here, from the
+> underlying inherent FAQ 7.31 truth that most decimal numbers in
+> a computer are not quite what they look like ...
+> 
+> Martin Maechler
+> ETH Zurich and  R Core Team (also author of the CRAN package 'round')
+> 
+> 
+>      > summary(x, digits = 20)
+>      > #>                      Min.                   1st Qu.                    Median
+>      > #> "2000-01-04 20:00:00.024" "2000-01-04 20:00:00.024" "2000-01-04 20:00:00.024"
+>      > #>                      Mean                   3rd Qu.                      Max.
+>      > #> "2000-01-04 20:00:00.024" "2000-01-04 20:00:00.024" "2000-01-04 20:00:00.024"
+>      > x
+>      > #> [1] "2000-01-04 20:00:00.024 UTC"
+>      > format.POSIXct(x, format = "%Y-%m-%d %H:%M:%OS3")
+>      > #> [1] "2000-01-04 20:00:00.024"
+>      > format.POSIXct(x, format = "%Y-%m-%d %H:%M:%OS4")
+>      > #> [1] "2000-01-04 20:00:00.0249"
+>      > sub_seconds = as.numeric(x) %% 1
+>      > sub_seconds
+>      > #> [1] 0.02499998
+>      > round(sub_seconds, 3)
+>      > #> [1] 0.025
+> 
+>      > rounded = as.POSIXct(
+>      > floor(as.numeric(x)) +
+>      > round(as.numeric(x) %% 1, 3),
+>      > origin = "1970-01-01")
+>      > rounded
+>      > #> [1] "2000-01-04 20:00:00.024 UTC"
+>      > as.numeric(rounded) %% 1
+>      > #> [1] 0.02499998
+> 
+>      > R.version
+>      > _
+>      > platform       x86_64-pc-linux-gnu
+>      > arch           x86_64
+>      > os             linux-gnu
+>      > system         x86_64, linux-gnu
+>      > status
+>      > major          4
+>      > minor          1.2
+>      > year           2021
+>      > month          11
+>      > day            01
+>      > svn rev        81115
+>      > language       R
+>      > version.string R version 4.1.2 (2021-11-01)
+>      > nickname       Bird Hippie
+> 
+> 
+> 
+>      > Best,
+>      > John
+> 
+>      > ______________________________________________
+>      > R-devel at r-project.org mailing list
+>      > https://stat.ethz.ch/mailman/listinfo/r-devel
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From mu@che|||j2 @end|ng |rom gm@||@com  Thu Mar  3 21:07:35 2022
+From: mu@che|||j2 @end|ng |rom gm@||@com (John Muschelli)
+Date: Thu, 3 Mar 2022 15:07:35 -0500
+Subject: [Rd] Floating Point with POSIXct
+In-Reply-To: <139a95ec-5f5a-59e0-9791-9b6dd4541d96@gmail.com>
+References: <CAFsq6G_cp=6pyh7CEe=rLUK47i+9LqtTyyK5zwjsdcNKnVigVg@mail.gmail.com>
+ <25120.62040.753761.512280@stat.math.ethz.ch>
+ <139a95ec-5f5a-59e0-9791-9b6dd4541d96@gmail.com>
+Message-ID: <CAFsq6G_OQZDkBXMqS5o18wyy2hutmnu2LtDD-hvpcSHC365ZdA@mail.gmail.com>
+
+That?s a good point. I think that?s fair and why rounding may not be the
+appropriate default.  Oddly enough, I think 1:59:60 may be more appropriate
+though wrong.  The way the seconds are separated in POSIXlt however, I
+don?t think that would ever happen, but the big downside would be if that
+would round to 1:59:59.00
+
+On Thu, Mar 3, 2022 at 2:38 PM Duncan Murdoch <murdoch.duncan at gmail.com>
+wrote:
+
+> On 03/03/2022 11:52 a.m., Martin Maechler wrote:
+> >>>>>> John Muschelli
+> >>>>>>      on Thu, 3 Mar 2022 11:04:05 -0500 writes:
+> >>>>>> John Muschelli
+> >>>>>>      on Thu, 3 Mar 2022 11:04:05 -0500 writes:
+> >
+> >      > I see in ?POSIXct and I'm trying to understand the note:
+> >      >> Classes "POSIXct" and "POSIXlt" are able to express fractions of
+> a second. (Conversion of fractions between the two forms may not be exact,
+> but will have better than microsecond accuracy.)
+> >
+> >      > Mainly, I'm trying to understand printing of POSIXct with
+> fractional
+> >      > seconds.  I see print.POSIXct calls format.POSIXct and eventually
+> >      > calls format.POSIXlt, which then takes into account `digits.secs`
+> for
+> >      > printing. The format uses %OS3, which strptime indicates (*
+> added):
+> >
+> >      >> Specific to R is %OSn, which for output gives the seconds
+> *truncated* to 0 <= n <= 6 decimal places (and if %OS is not followed by a
+> digit, it uses the setting of getOption("digits.secs"), or if that is
+> unset, n = 0).
+> >
+> >      > So I'm seeing it truncates the seconds to 3 digits, so I think
+> that is
+> >      > why the below is printing 0.024.
+> >
+> >      > I think this is especially relevant even if you set
+> >      > `options(digits.secs = 6)`, then the code in
+> >      > format.POSIXlt would still return np=3 as the following condition
+> >      > would break at i = 3
+> >
+> >      > for (i in seq_len(np) - 1L)
+> >      >   if (all(abs(secs - round(secs, > i)) < 1e-06)) {
+> >      >     np <- i
+> >      >     break
+> >      > }
+> >
+> >      > as sub_seconds - round(sub_seconds,3) < 1e-06.   This seems to be
+> >      > expected behavior given the docs, but would any consider this a
+> bug?
+> >
+> >
+> >      > Example:
+> >
+> >      > options(digits.secs = 4)
+> >      > x = structure(947016000.025, class = c("POSIXct", "POSIXt"),
+> tzone = "UTC")
+> >
+> > I think you've fallen into the R FAQ 7.31 trap :
+> >
+> >> ct <- 947016000.025
+> >> ct %% 1
+> > [1] 0.02499998
+> >>
+> >
+> > Of course, the issue may still be somewhat interesting, ...
+> >
+> > Yes, POSIXct is of limited precision and I think the help page
+> > you mentioned did document that that's one reason for using
+> > POSIXlt instead, as there, sub second accuracy can be much better.
+> >
+> > But FAQ 7.31 and the fact that all numbers are base 2 and in
+> > base 2,  no decimal   <n>.025   can be represented in full accuracy.
+> >
+> > Also, as you've noticed the R POSIX[cl]t  code just truncates,
+> > i.e. rounds towards 0 unconditionally, and I tend to agree that it
+> > should rather round than truncate.
+>
+> If you print the hour and minute at 01:59:59, you get 1 and 59, not 2
+> and 0.  That may be the motivation for doing the same for fractional
+> seconds.  Should 1:59:59.9 really print as 2:00:00?
+>
+> Duncan Murdoch
+> >
+> > But we should carefully separate the issues here, from the
+> > underlying inherent FAQ 7.31 truth that most decimal numbers in
+> > a computer are not quite what they look like ...
+> >
+> > Martin Maechler
+> > ETH Zurich and  R Core Team (also author of the CRAN package 'round')
+> >
+> >
+> >      > summary(x, digits = 20)
+> >      > #>                      Min.                   1st Qu.
+>         Median
+> >      > #> "2000-01-04 20:00:00.024" "2000-01-04 20:00:00.024"
+> "2000-01-04 20:00:00.024"
+> >      > #>                      Mean                   3rd Qu.
+>           Max.
+> >      > #> "2000-01-04 20:00:00.024" "2000-01-04 20:00:00.024"
+> "2000-01-04 20:00:00.024"
+> >      > x
+> >      > #> [1] "2000-01-04 20:00:00.024 UTC"
+> >      > format.POSIXct(x, format = "%Y-%m-%d %H:%M:%OS3")
+> >      > #> [1] "2000-01-04 20:00:00.024"
+> >      > format.POSIXct(x, format = "%Y-%m-%d %H:%M:%OS4")
+> >      > #> [1] "2000-01-04 20:00:00.0249"
+> >      > sub_seconds = as.numeric(x) %% 1
+> >      > sub_seconds
+> >      > #> [1] 0.02499998
+> >      > round(sub_seconds, 3)
+> >      > #> [1] 0.025
+> >
+> >      > rounded = as.POSIXct(
+> >      > floor(as.numeric(x)) +
+> >      > round(as.numeric(x) %% 1, 3),
+> >      > origin = "1970-01-01")
+> >      > rounded
+> >      > #> [1] "2000-01-04 20:00:00.024 UTC"
+> >      > as.numeric(rounded) %% 1
+> >      > #> [1] 0.02499998
+> >
+> >      > R.version
+> >      > _
+> >      > platform       x86_64-pc-linux-gnu
+> >      > arch           x86_64
+> >      > os             linux-gnu
+> >      > system         x86_64, linux-gnu
+> >      > status
+> >      > major          4
+> >      > minor          1.2
+> >      > year           2021
+> >      > month          11
+> >      > day            01
+> >      > svn rev        81115
+> >      > language       R
+> >      > version.string R version 4.1.2 (2021-11-01)
+> >      > nickname       Bird Hippie
+> >
+> >
+> >
+> >      > Best,
+> >      > John
+> >
+> >      > ______________________________________________
+> >      > R-devel at r-project.org mailing list
+> >      > https://stat.ethz.ch/mailman/listinfo/r-devel
+> >
+> > ______________________________________________
+> > R-devel at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+> --
+Best,
+John
+
+	[[alternative HTML version deleted]]
+
+
+From iuke-tier@ey m@iii@g oii uiow@@edu  Thu Mar  3 21:10:08 2022
+From: iuke-tier@ey m@iii@g oii uiow@@edu (iuke-tier@ey m@iii@g oii uiow@@edu)
+Date: Thu, 3 Mar 2022 14:10:08 -0600 (CST)
+Subject: [Rd] 
+ [External] Re: message(<cond>) and warning(<cond>) circumvent
+ calling handlers and signal the original class, e.g. an error
+In-Reply-To: <CAFDcVCRpKxShKar1+orJ9TBEM=ruvVCK9Jq0SFOzuO_sfQuyeg@mail.gmail.com>
+References: <E1nP7oN-0003Tr-FD@rmmprod07.runbox>
+ <973da75e-79ed-aee-19a0-8a4fe1c5ad8@uiowa.edu>
+ <CAFDcVCRpKxShKar1+orJ9TBEM=ruvVCK9Jq0SFOzuO_sfQuyeg@mail.gmail.com>
+Message-ID: <2abb1c47-1269-83f5-61f-5cd456ba2d13@uiowa.edu>
+
+I'll look into what effect adding stopifnot(inherits(cond, "error"))
+and similar to the others has on CRAN/BIOC packages. Probably won't
+get there for a while though.
+
+Best,
+
+luke
+
+On Wed, 2 Mar 2022, Henrik Bengtsson wrote:
+
+> Thank you, Luke.  I discovered this problem last year, where a user
+> reported that their use of message(<error>) in futures would not work
+> the same way as without futures. The issue is that the future
+> framework captures the error condition and relays it, rather than
+> outputting the message string, which happens if you don't capture the
+> error condition. Today there was another similar report from another
+> package using futures. They both had in common that they use
+>
+> res <- tryCatch({
+>  some_fcn(x)
+> }, error = function(e) {
+>  message(e)
+>  NA
+> })
+>
+> to return a missing value on errors, while outputting the error
+> message string to inform the user on the error.  I've been informing
+> them to instead use
+>
+>  message(conditionMessage(e))
+>
+> in this case. Your reply confirms this, and I can now confidently say
+> that using message(e) is incorrect here.
+>
+> I think the help pages on message, warning, and stop could be more
+> explicit on this behavior.
+>
+> My preference would be that it is an error if calling message(cond)
+> with !inherits(cond, "message"), calling warning(cond) with
+> !inherits(cond, "warning"), and stop(cond) with !inherits(cond,
+> "error").  But, maybe there are valid arguments for allowing such use
+> cases.
+>
+> Thanks,
+>
+> Henrik
+>
+> On Tue, Mar 1, 2022 at 3:12 PM <luke-tierney at uiowa.edu> wrote:
+>>
+>> This is behaving as documented and as intended. If you want to
+>> call stop() with a condition argument and you want to have that
+>> condition handled as an error then you need to make sure that your
+>> condition inherits from "error". One way to do this would be to define
+>> something like
+>>
+>> warningToError <- function(w)
+>>     errorCondition(conditionMessage(w),
+>>                    warning = w,
+>>                   class = "warningToError")
+>>
+>> and use stop(warningToError(w)).
+>>
+>> If you call stop() with a condition argument then that is the
+>> condition stop() will signal, regardless of its class. I can't at the
+>> moment think of a good reason why I would want to call stop() with a
+>> warning condition argument, and I suspect most cases where that
+>> happens would be mistakes. So checking in stop() that a condition
+>> argument inherits from "error" and signaling a warning, or maybe an
+>> error, if it does not might be worth considering (with analogous
+>> changes for warning() and message()).
+>>
+>> The condition system separates the signaling protocol from the process
+>> of determining handlers. Signaling itself is done by
+>> signalCondition().  message() and warning() signal a condition with a
+>> muffle restart available, and return if the condition is not handled.
+>> stop() is guaranteed not to return; if the condition is not handled,
+>> then it invokes the default error handler, which will not return. None
+>> of these currently look at the class of the condition.
+>> signalCondition() looks at the condition's class to find out what
+>> handlers are available. It will invoke error handlers for error
+>> conditions and warning handlers for warning conditions.  It does not
+>> know or care about whether it was called from stop(), warning(),
+>> message(), or some other way.
+>>
+>> The most common high-level usage of stop(), warning(), or message() is
+>> to call them with a string and possibly some additional arguments used
+>> to create a message. In these cases a condition object of class
+>> "error" for stop(), "warning" for warning(), and "message" for message
+>> is created implicitly and signaled.
+>>
+>> Calling these functions with a condition argument is using lower level
+>> functionality, which gives more power but also means users need to
+>> understand what they are doing. In particular, users who want to call
+>> stop() with a condition argument _and_ want handlers for error
+>> conditions to be used need to make sure that the class of the
+>> condition they signal inherits from "error".
+>>
+>> Best,
+>>
+>> luke
+>>
+>> On Tue, 1 Mar 2022, Andreas Kersting wrote:
+>>
+>>> Hi,
+>>>
+>>> There is the same issue with stop():
+>>>
+>>>> w <- simpleWarning("careful")
+>>>> tryCatch(stop(w), condition = identity)
+>>> <simpleWarning: careful>
+>>>
+>>> I very recently stumbled upon this, when a warning was re-raised as an error, which was then not caught by an outer try():
+>>>
+>>>> try(
+>>> +   tryCatch(warning("careful"), warning = function(w) stop(w)),
+>>> +   silent = TRUE
+>>> + )
+>>> Error in doTryCatch(return(expr), name, parentenv, handler) : careful
+>>>
+>>> I would also like to see this behavior changed. I think that stop() should always signal an error, warning() a warning and message() a message.
+>>>
+>>> Best,
+>>> Andreas
+>>>
+>>> 2022-03-01 19:38 GMT+01:00 "Henrik Bengtsson" <henrik.bengtsson at gmail.com>:
+>>>> Hi, in help("message", package = "base"), we can read:
+>>>>
+>>>> Description: 'message' is used for generating 'simple' diagnostic
+>>>> messages which are neither warnings nor errors, but nevertheless
+>>>> represented as conditions.
+>>>>
+>>>> From this, I conclude that message() should generate a condition that
+>>>> are neither warning nor errors.
+>>>>
+>>>> However, the following signals a condition of class 'error':
+>>>>
+>>>>> e <- simpleError("boom!\n")
+>>>>> message(e)
+>>>> boom!
+>>>>
+>>>> This can be seen if we do:
+>>>>
+>>>>> res <- tryCatch(message(e), condition = identity)
+>>>>> res
+>>>> <simpleError: boom!
+>>>>
+>>>> This stems from message(e) using signalCondition(e) internally.
+>>>>
+>>>> Another problem with this behavior is that message(e) cannot be suppressed:
+>>>>
+>>>>> suppressMessages(message(e))
+>>>> boom!
+>>>>
+>>>> or captured with calling handlers, e.g.
+>>>>
+>>>>> res <- withCallingHandlers(message(e), condition = identity)
+>>>> boom!
+>>>>> res
+>>>> NULL
+>>>>
+>>>> If we replace e <- simpleError("boom") with e <-
+>>>> simpleWarning("careful"), we see a similar behavior.  These problems
+>>>> exist also with warning(e).  The current behaviors prevent functions
+>>>> from capturing and relaying message(<error>), message(<warning>), and
+>>>> warning(<error>).
+>>>>
+>>>> I'm happy to post a bug report to <https://bugs.r-project.org/>.
+>>>>
+>>>> /Henrik
+>>>>
+>>>> PS. BTW, it looks like some recent "..." tweaks to the warning() and
+>>>> stop() code could be applied also to message().
+>>>>
+>>>> ______________________________________________
+>>>> R-devel at r-project.org mailing list
+>>>> https://stat.ethz.ch/mailman/listinfo/r-devel
+>>>>
+>>> ______________________________________________
+>>> R-devel at r-project.org mailing list
+>>> https://stat.ethz.ch/mailman/listinfo/r-devel
+>>>
+>>
+>> --
+>> Luke Tierney
+>> Ralph E. Wareham Professor of Mathematical Sciences
+>> University of Iowa                  Phone:             319-335-3386
+>> Department of Statistics and        Fax:               319-335-3017
+>>     Actuarial Science
+>> 241 Schaeffer Hall                  email:   luke-tierney at uiowa.edu
+>> Iowa City, IA 52242                 WWW:  http://www.stat.uiowa.edu
+>
+
+-- 
+Luke Tierney
+Ralph E. Wareham Professor of Mathematical Sciences
+University of Iowa                  Phone:             319-335-3386
+Department of Statistics and        Fax:               319-335-3017
+    Actuarial Science
+241 Schaeffer Hall                  email:   luke-tierney at uiowa.edu
+Iowa City, IA 52242                 WWW:  http://www.stat.uiowa.edu
+
+
+From ht @end|ng |rom he@therturner@net  Fri Mar  4 16:54:50 2022
+From: ht @end|ng |rom he@therturner@net (Heather Turner)
+Date: Fri, 04 Mar 2022 15:54:50 +0000
+Subject: [Rd] Outreachy internships
+Message-ID: <cb21237e-681c-4ab1-af69-f63994ef386d@www.fastmail.com>
+
+Dear All,
+
+As you will have seen, the R Project is participating in Outreachy this year. Hopefully we can give a friendly welcome when candidates start contributing in mid-March to mid-April and during the internship period (May-August). They will work mainly with their mentors, but depending on the project, may interact with some of the wider community here, as guided by their mentor.
+
+Meanwhile, if anyone is interested in (co-)mentoring an intern or proposing a project, we have till March 23 (https://www.outreachy.org/communities/cfp/the-r-project-for-statistical-computing/). We have some project proposals already in the pipeline, but welcome others to get involved! Summary of ideas here: https://github.com/r-devel/rcontribution/issues/15#issuecomment-1050684123 - note we particularly welcome anyone interested in mentoring a project related to translations. Potentially projects can be cross-posted as large GSoC projects, with maximum one person from Outreachy/GSoC selected in the end.
+
+You can email me to discuss further heather at r-project.org.
+
+Best wishes,
+Heather
+	[[alternative HTML version deleted]]
+
+
+From th|@|@@rn| @end|ng |rom gm@||@com  Tue Mar  8 17:24:47 2022
+From: th|@|@@rn| @end|ng |rom gm@||@com (Arni Magnusson)
+Date: Wed, 9 Mar 2022 03:24:47 +1100
+Subject: [Rd] Proposed diff.character() method
+Message-ID: <CANrWemgW5nWHfHi7NJzwe9V2Tj+Y5tWAeK9duCYyNYytDdVYnQ-4636@mail.gmail.com>
+
+Dear R developers,
+
+Recently, I was busy comparing different versions of several packages.
+Tired of going back and forth between R and diff, I created a simple
+file comparison function in R that I found quite useful. For an
+efficient and familiar interface I called it diff.character() and ran
+things like:
+
+  diff("old/R/foo.R", "new/R/foo.R")
+
+Before long, I found the need for a directory-wide comparison and
+added support for:
+
+  diff("old/R", "new/R")
+
+I have now revisited and fine-polished this function to a point where
+I'd like to humbly suggest that diff.character() could be incorporated
+into the base package. See attached files and patch based on the
+current SVN trunk. It can be tested quickly by sourcing diff.R, or by
+building R.
+
+The examples in diff.character.html are somewhat contrived, in the
+absence of good example files to compare. You will probably have
+better example files to compare from your own work.
+
+Clearly, the functionality differs considerably from the default
+diff() method that operates on a single x vector, but in the broad
+sense, they're both about showing differences. For most programmers,
+calling diff() on two files or directories is already a part of muscle
+memory, both intuitive and efficient.
+
+There are a couple of CRAN packages (diffobj, diffR) that can compare
+files but not directories. They have package dependencies and return
+objects that are more complex (S4, HTML) than the plain list returned
+by diff.character().
+
+This basic utility does by no means compete with Meld, Kompare, Emacs
+ediff, or other feature-rich diff applications, and using setdiff() as
+a basis for file comparison can be a somewhat simplistic approach.
+Nevertheless, I think many users may find this a handy tool to quickly
+compare scripts and data files. The method could be implemented
+differently, with fewer or more features, and I'm happy to amend
+according to the R Core Team decision.
+
+In the past, I have proposed additions to core R, some rejected and
+others accepted. This proposal fits a useful tool in a currently
+vacant diff.character() method at a low cost, using relatively few
+lines of base function calls and no compiled code. Its acceptance will
+probably depend on whether members of the R Core Team and/or CRAN Team
+might see it as a useful addition to their toolkit for interactive and
+scripted workflows, including R and CRAN maintenance.
+
+All the best,
+Arni
+
+-------------- next part --------------
+An embedded and charset-unspecified text was scrubbed...
+Name: diff.character.txt
+URL: <https://stat.ethz.ch/pipermail/r-devel/attachments/20220309/e5cc04f3/attachment.txt>
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: diff.character.patch
+Type: text/x-patch
+Size: 9305 bytes
+Desc: not available
+URL: <https://stat.ethz.ch/pipermail/r-devel/attachments/20220309/e5cc04f3/attachment.bin>
+
+From @|mon@urb@nek @end|ng |rom R-project@org  Wed Mar  9 02:50:18 2022
+From: @|mon@urb@nek @end|ng |rom R-project@org (Simon Urbanek)
+Date: Wed, 9 Mar 2022 14:50:18 +1300
+Subject: [Rd] Proposed diff.character() method
+In-Reply-To: <CANrWemgW5nWHfHi7NJzwe9V2Tj+Y5tWAeK9duCYyNYytDdVYnQ-4636@mail.gmail.com>
+References: <CANrWemgW5nWHfHi7NJzwe9V2Tj+Y5tWAeK9duCYyNYytDdVYnQ-4636@mail.gmail.com>
+Message-ID: <F5E097BB-0CDF-4565-BEFD-5977B76C0F3D@R-project.org>
+
+Arni,
+
+I appreciate your idea, but I would argue that you are really writing a new function that has nothing to do with the diff() function in R. diff() computes (variably lagged) differences between elements of a vector, so if you were to even contemplate diff.character, it would certainly have nothing to do with files (since character vectors are not files in the first place).
+
+Therefore I think it's a great idea, but you probably want to start with a function that compares character vectors element by element compare(x, y) and returns something suitable and the write something like file.compare <- function(a, b) compare(readLines(a), readLines(b)). This has nothing to do with the diff() function R, but could be a nice package. Or, you can have a look at diffobj::diffFile().
+
+Cheers,
+Simon
+
+
+> On Mar 9, 2022, at 5:24 AM, Arni Magnusson <thisisarni at gmail.com> wrote:
+> 
+> Dear R developers,
+> 
+> Recently, I was busy comparing different versions of several packages.
+> Tired of going back and forth between R and diff, I created a simple
+> file comparison function in R that I found quite useful. For an
+> efficient and familiar interface I called it diff.character() and ran
+> things like:
+> 
+>  diff("old/R/foo.R", "new/R/foo.R")
+> 
+> Before long, I found the need for a directory-wide comparison and
+> added support for:
+> 
+>  diff("old/R", "new/R")
+> 
+> I have now revisited and fine-polished this function to a point where
+> I'd like to humbly suggest that diff.character() could be incorporated
+> into the base package. See attached files and patch based on the
+> current SVN trunk. It can be tested quickly by sourcing diff.R, or by
+> building R.
+> 
+> The examples in diff.character.html are somewhat contrived, in the
+> absence of good example files to compare. You will probably have
+> better example files to compare from your own work.
+> 
+> Clearly, the functionality differs considerably from the default
+> diff() method that operates on a single x vector, but in the broad
+> sense, they're both about showing differences. For most programmers,
+> calling diff() on two files or directories is already a part of muscle
+> memory, both intuitive and efficient.
+> 
+> There are a couple of CRAN packages (diffobj, diffR) that can compare
+> files but not directories. They have package dependencies and return
+> objects that are more complex (S4, HTML) than the plain list returned
+> by diff.character().
+> 
+> This basic utility does by no means compete with Meld, Kompare, Emacs
+> ediff, or other feature-rich diff applications, and using setdiff() as
+> a basis for file comparison can be a somewhat simplistic approach.
+> Nevertheless, I think many users may find this a handy tool to quickly
+> compare scripts and data files. The method could be implemented
+> differently, with fewer or more features, and I'm happy to amend
+> according to the R Core Team decision.
+> 
+> In the past, I have proposed additions to core R, some rejected and
+> others accepted. This proposal fits a useful tool in a currently
+> vacant diff.character() method at a low cost, using relatively few
+> lines of base function calls and no compiled code. Its acceptance will
+> probably depend on whether members of the R Core Team and/or CRAN Team
+> might see it as a useful addition to their toolkit for interactive and
+> scripted workflows, including R and CRAN maintenance.
+> 
+> All the best,
+> Arni
+> <diff.character.txt><diff.character.patch>______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From j|nghu@zh@o @end|ng |rom hotm@||@com  Thu Mar 10 10:22:23 2022
+From: j|nghu@zh@o @end|ng |rom hotm@||@com (jing hua zhao)
+Date: Thu, 10 Mar 2022 09:22:23 +0000
+Subject: [Rd] Compiling error with glmnet and nloptr
+In-Reply-To: <a6c2a79a-90a5-44d3-926b-9f1e630d9672@www.fastmail.com>
+References: <a9526ce4-0cea-46fc-b1e9-4bfced56aadf@www.fastmail.com>
+ <a6c2a79a-90a5-44d3-926b-9f1e630d9672@www.fastmail.com>
+Message-ID: <CWLP123MB4466801A3CE25E33C2CA5171A50B9@CWLP123MB4466.GBRP123.PROD.OUTLOOK.COM>
+
+Dear All,
+
+I haven't been able to compile the latest glmnet and nloptr from CRAN wth the following error messages,
+
+glmnet:
+
+elnet_exp.cpp:141:59:   required from here
+glmnetpp/include/glmnetpp_bits/elnet_point/gaussian_base.hpp:90:39: error: 'self' was not declared in this scope
+                     [=](auto k) { self().template update<update_type::partial>(k, ab, dem); },
+...
+make: *** [elnet_exp.o] Error 1
+ERROR: compilation failed for package ?glmnet?
+* removing ?/rds/user/jhz22/hpc-work/R/glmnet?
+* restoring previous ?/rds/user/jhz22/hpc-work/R/glmnet?
+
+nloptr:
+
+test-C-API.cpp:108:35: error: call of overloaded 'abs(__gnu_cxx::__alloc_traits<std::allocator<double> >::value_type)' is ambiguous
+     expect_true(abs(res[1] - 8./27) < 1.0e-4);
+ ...
+/usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-6.5.0-dtb6lagchexqdijlx6xgkin3zlfddpzi/include/c++/6.5.0/cstdlib:172:3: note: candidate: long int std::abs(long int)
+   abs(long __i) { return __builtin_labs(__i); }
+   ^~~
+make: *** [test-C-API.o] Error 1
+ERROR: compilation failed for package ?nloptr?
+
+Any suggestions to fix these? I use gcc/6 and have
+
+$ uname -a
+Linux login-e-16 3.10.0-1160.59.1.el7.x86_64 #1 SMP Tue Feb 22 10:57:56 CST 2022 x86_64 x86_64 x86_64 GNU/Linux
+
+Many thanks in advance,
+
+
+Jing Hua
+
+
+	[[alternative HTML version deleted]]
+
+
+From pd@me@ @end|ng |rom cb@@dk  Thu Mar 10 10:41:55 2022
+From: pd@me@ @end|ng |rom cb@@dk (Peter Dalgaard)
+Date: Thu, 10 Mar 2022 09:41:55 +0000
+Subject: [Rd] R 4.1.3 is released
+Message-ID: <3523D985-CFB4-415A-A07F-A8F1A745ED0A@cbs.dk>
+
+The build system rolled up R-4.1.3.tar.gz (codename "One Push-Up") this morning.
+
+The list below details the changes in this release. 
+
+You can get the source code from
+
+https://cran.r-project.org/src/base/R-4/R-4.1.3.tar.gz
+
+or wait for it to be mirrored at a CRAN site nearer to you.
+
+Binaries for various platforms will appear in due course.
+
+
+For the R Core Team,
+
+Peter Dalgaard
+
+
+These are the checksums (md5 and SHA-256) for the freshly created files, in case you wish
+to check that they are uncorrupted:
+
+MD5 (AUTHORS) = 320967884b547734d6279dedbc739dd4
+MD5 (COPYING) = eb723b61539feef013de476e68b5c50a
+MD5 (COPYING.LIB) = a6f89e2100d9b6cdffcea4f398e37343
+MD5 (FAQ) = ade6a3d38fe5e6a456929cae2b94d568
+MD5 (INSTALL) = 7893f754308ca31f1ccf62055090ad7b
+MD5 (NEWS) = 179217ce1f9cd78ecdb2d43c7f555d8d
+MD5 (NEWS.0) = bfcd7c147251b5474d96848c6f57e5a8
+MD5 (NEWS.1) = eb78c4d053ec9c32b815cf0c2ebea801
+MD5 (NEWS.2) = a767f7809324c73c49eaff47d14bce81
+MD5 (NEWS.3) = e55ed2c8a547b827b46e08eb7137ba23
+MD5 (R-latest.tar.gz) = 409bc782b1a42c8247712f6446d7d640
+MD5 (README) = f468f281c919665e276a1b691decbbe6
+MD5 (RESOURCES) = a79b9b338cab09bd665f6b62ac6f455b
+MD5 (THANKS) = 251d20510bfc3cc93b82c5a99f7efcc6
+MD5 (VERSION-INFO.dcf) = 895a0ce812ecbe4ae45fc62c8776a077
+MD5 (R-4/R-4.1.3.tar.gz) = 409bc782b1a42c8247712f6446d7d640
+
+60a0d150e6fc1f424be76ad7b645d236b56e747692a4679f81ce6536c550e949  AUTHORS
+e6d6a009505e345fe949e1310334fcb0747f28dae2856759de102ab66b722cb4  COPYING
+6095e9ffa777dd22839f7801aa845b31c9ed07f3d6bf8a26dc5d2dec8ccc0ef3  COPYING.LIB
+e84c67931e9b925abb9142d4a6b4ef03b7605948bbf384d7e3d2401823c7f1fe  FAQ
+f87461be6cbaecc4dce44ac58e5bd52364b0491ccdadaf846cb9b452e9550f31  INSTALL
+66ccaca407fb45deefca634398e51756a8abd7e993957334e422542064f39533  NEWS
+4e21b62f515b749f80997063fceab626d7258c7d650e81a662ba8e0640f12f62  NEWS.0
+12b30c724117b1b2b11484673906a6dcd48a361f69fc420b36194f9218692d01  NEWS.1
+ba74618bc3f4c0e336dca13d472402a1863d12ba6f7f91a1782bc469ee986f6d  NEWS.2
+1910a2405300b9bc7c76beeb0753a5249cf799afe175ce28f8d782fab723e012  NEWS.3
+15ff5b333c61094060b2a52e9c1d8ec55cc42dd029e39ca22abdaa909526fed6  R-latest.tar.gz
+2fdd3e90f23f32692d4b3a0c0452f2c219a10882033d1774f8cadf25886c3ddc  README
+8b7d3856100220f4555d4d57140829f2e81c27eccec5b441f5dce616e9ec9061  RESOURCES
+c9c7cb32308b4e560a22c858819ade9de524a602abd4e92d1c328c89f8037d73  THANKS
+4918cbcf4824121f35c229b69ba9b5a7fbdeaa4a4a70be23fc48e1ffcdd2f42f  VERSION-INFO.dcf
+1e74ef089b526538bbb658dc189bc3d34d931839e9933415fb2f267fd57b0b69  VERSION-INFO.dcf~
+15ff5b333c61094060b2a52e9c1d8ec55cc42dd029e39ca22abdaa909526fed6  R-4/R-4.1.3.tar.gz
+
+This is the relevant part of the NEWS file
+
+CHANGES IN R 4.1.3:
+
+  NEW FEATURES:
+
+    * The default version of Bioconductor has been changed to 3.14.
+      (This is used by setRepositories and the menus in GUIs.)
+
+  UTILITIES:
+
+    * R CMD check --as-cran has a workaround for a bug in versions of
+      file up to at least 5.41 which mis-identify DBF files last
+      changed in 2022 as executables.
+
+  C-LEVEL FACILITIES:
+
+    * The legacy S-compatibility macros SINGLE_* in R_ext/Constants.h
+      (included by R.h) are deprecated and will be removed in R 4.2.0.
+
+  BUG FIXES:
+
+    * Initialization of self-starting nls() models with initialization
+      functions following the pre-R-4.1.0 API (without the ...
+      argument) works again for now, with a deprecation warning.
+
+    * Fixed quoting of ~autodetect~ in Java setting defaults to avoid
+      inadvertent user lookup due to leading ~, reported in PR#18231 by
+      Harold Gutch.
+
+    * substr(., start, stop) <- v now treats _negative_ stop values
+      correctly.  Reported with a patch in PR#18228 by Brodie Gaslam.
+
+    * Subscripting an array x without dimnames by a
+      length(dim(x))-column character matrix gave "random" non-sense,
+      now an error; reported in PR#18244 by Mikael Jagan.
+
+    * ...names() now matches names(list(...)) closely, fixing PR#18247.
+
+    * all.equal(*, scale = s) now works as intended when length(s) > 1,
+      partly thanks to Michael Chirico's PR#18272.
+
+    * print(x) for long vectors x now also works for named atomic
+      vectors or lists and prints the correct number when reaching the
+      getOption("max.print") limit; partly thanks to a report and
+      proposal by Hugh Parsonage to the R-devel list.
+
+    * all.equal(<selfStart>, *) no longer signals a deprecation
+      warning.
+
+    * reformulate(*, response=r) gives a helpful error message now when
+      length(r) > 1, thanks to Bill Dunlap's PR#18281.
+
+    * Modifying globalCallingHandlers inside withCallingHandlers() now
+      works or fails correctly, thanks to Henrik Bengtsson's PR#18257.
+
+    * hist(<Date>, breaks = "days") and hist(<POSIXt>, breaks = "secs")
+      no longer fail for inputs of length 1.
+
+    * qbeta(.001, .9, .009) and similar cases now converge correctly
+      thanks to Ben Bolker's report in PR#17746.
+
+    * window(x, start, end) no longer wrongly signals "'start' cannot
+      be after 'end'", fixing PR#17527 and PR#18291.
+
+    * data() now checks that its (rarely used) list argument is a
+      character vector - a couple of packages passed other types and
+      gave incorrect results.
+
+    * which() now checks its arr.ind argument is TRUE rather coercing
+      to logical and taking the first element - which gave incorrect
+      results in package code.
+
+    * model.weights() and model.offset() more carefully extract their
+      model components, thanks to Ben Bolker and Tim Taylor's R-devel
+      post.
+
+    * list.files(recursive = TRUE) now shows all broken symlinks
+      (previously, some of them may have been omitted, PR#18296).
+
+-- 
+Peter Dalgaard, Professor,
+Center for Statistics, Copenhagen Business School
+Solbjerg Plads 3, 2000 Frederiksberg, Denmark
+Phone: (+45)38153501
+Office: A 4.23
+Email: pd.mes at cbs.dk  Priv: PDalgd at gmail.com
+
+
+From j|nghu@zh@o @end|ng |rom hotm@||@com  Thu Mar 10 11:45:33 2022
+From: j|nghu@zh@o @end|ng |rom hotm@||@com (jing hua zhao)
+Date: Thu, 10 Mar 2022 10:45:33 +0000
+Subject: [Rd] Compiling error with glmnet and nloptr
+In-Reply-To: <CWLP123MB4466801A3CE25E33C2CA5171A50B9@CWLP123MB4466.GBRP123.PROD.OUTLOOK.COM>
+References: <a9526ce4-0cea-46fc-b1e9-4bfced56aadf@www.fastmail.com>
+ <a6c2a79a-90a5-44d3-926b-9f1e630d9672@www.fastmail.com>
+ <CWLP123MB4466801A3CE25E33C2CA5171A50B9@CWLP123MB4466.GBRP123.PROD.OUTLOOK.COM>
+Message-ID: <CWLP123MB4466719C8B53048B59A0327AA50B9@CWLP123MB4466.GBRP123.PROD.OUTLOOK.COM>
+
+Just a note that I used R 4.1.2 and with R 4.1.3 I had the same issues nevertheless I was able to go through with (not entirely sure preferable) nloptr once abs() is changed into fabs() within ?src/test-C-API.cpp. Thanks. Jing Hua
+
+________________________________
+From: jing hua zhao <jinghuazhao at hotmail.com>
+Sent: 10 March 2022 09:22
+To: R-devel <r-devel at r-project.org>
+Subject: Compiling error with glmnet and nloptr
+
+Dear All,
+
+I haven't been able to compile the latest glmnet and nloptr from CRAN wth the following error messages,
+
+glmnet:
+
+elnet_exp.cpp:141:59:   required from here
+glmnetpp/include/glmnetpp_bits/elnet_point/gaussian_base.hpp:90:39: error: 'self' was not declared in this scope
+                     [=](auto k) { self().template update<update_type::partial>(k, ab, dem); },
+...
+make: *** [elnet_exp.o] Error 1
+ERROR: compilation failed for package ?glmnet?
+* removing ?/rds/user/jhz22/hpc-work/R/glmnet?
+* restoring previous ?/rds/user/jhz22/hpc-work/R/glmnet?
+
+nloptr:
+
+test-C-API.cpp:108:35: error: call of overloaded 'abs(__gnu_cxx::__alloc_traits<std::allocator<double> >::value_type)' is ambiguous
+     expect_true(abs(res[1] - 8./27) < 1.0e-4);
+ ...
+/usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-6.5.0-dtb6lagchexqdijlx6xgkin3zlfddpzi/include/c++/6.5.0/cstdlib:172:3: note: candidate: long int std::abs(long int)
+   abs(long __i) { return __builtin_labs(__i); }
+   ^~~
+make: *** [test-C-API.o] Error 1
+ERROR: compilation failed for package ?nloptr?
+
+Any suggestions to fix these? I use gcc/6 and have
+
+$ uname -a
+Linux login-e-16 3.10.0-1160.59.1.el7.x86_64 #1 SMP Tue Feb 22 10:57:56 CST 2022 x86_64 x86_64 x86_64 GNU/Linux
+
+Many thanks in advance,
+
+
+Jing Hua
+
+
+	[[alternative HTML version deleted]]
+
+
+From j|nghu@zh@o @end|ng |rom hotm@||@com  Thu Mar 10 12:42:59 2022
+From: j|nghu@zh@o @end|ng |rom hotm@||@com (jing hua zhao)
+Date: Thu, 10 Mar 2022 11:42:59 +0000
+Subject: [Rd] Compiling error with glmnet and nloptr
+In-Reply-To: <CWLP123MB4466719C8B53048B59A0327AA50B9@CWLP123MB4466.GBRP123.PROD.OUTLOOK.COM>
+References: <a9526ce4-0cea-46fc-b1e9-4bfced56aadf@www.fastmail.com>
+ <a6c2a79a-90a5-44d3-926b-9f1e630d9672@www.fastmail.com>
+ <CWLP123MB4466801A3CE25E33C2CA5171A50B9@CWLP123MB4466.GBRP123.PROD.OUTLOOK.COM>
+ <CWLP123MB4466719C8B53048B59A0327AA50B9@CWLP123MB4466.GBRP123.PROD.OUTLOOK.COM>
+Message-ID: <CWLP123MB44663E91167442BC585F77F2A50B9@CWLP123MB4466.GBRP123.PROD.OUTLOOK.COM>
+
+Also for now, I commented on self().template update<update_type::full> at lines 59,90 of glmnetpp/include/glmnetpp_bits/elnet_point/gaussian_base.hpp and glmnet also passed , so example(glmnet) gives the familiar results. Ideally, some better solution is preferable. Jing Hua
+________________________________
+From: jing hua zhao <jinghuazhao at hotmail.com>
+Sent: 10 March 2022 10:45
+To: R-devel <r-devel at r-project.org>
+Subject: Re: Compiling error with glmnet and nloptr
+
+Just a note that I used R 4.1.2 and with R 4.1.3 I had the same issues nevertheless I was able to go through with (not entirely sure preferable) nloptr once abs() is changed into fabs() within ?src/test-C-API.cpp. Thanks. Jing Hua
+
+________________________________
+From: jing hua zhao <jinghuazhao at hotmail.com>
+Sent: 10 March 2022 09:22
+To: R-devel <r-devel at r-project.org>
+Subject: Compiling error with glmnet and nloptr
+
+Dear All,
+
+I haven't been able to compile the latest glmnet and nloptr from CRAN wth the following error messages,
+
+glmnet:
+
+elnet_exp.cpp:141:59:   required from here
+glmnetpp/include/glmnetpp_bits/elnet_point/gaussian_base.hpp:90:39: error: 'self' was not declared in this scope
+                     [=](auto k) { self().template update<update_type::partial>(k, ab, dem); },
+...
+make: *** [elnet_exp.o] Error 1
+ERROR: compilation failed for package ?glmnet?
+* removing ?/rds/user/jhz22/hpc-work/R/glmnet?
+* restoring previous ?/rds/user/jhz22/hpc-work/R/glmnet?
+
+nloptr:
+
+test-C-API.cpp:108:35: error: call of overloaded 'abs(__gnu_cxx::__alloc_traits<std::allocator<double> >::value_type)' is ambiguous
+     expect_true(abs(res[1] - 8./27) < 1.0e-4);
+ ...
+/usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-6.5.0-dtb6lagchexqdijlx6xgkin3zlfddpzi/include/c++/6.5.0/cstdlib:172:3: note: candidate: long int std::abs(long int)
+   abs(long __i) { return __builtin_labs(__i); }
+   ^~~
+make: *** [test-C-API.o] Error 1
+ERROR: compilation failed for package ?nloptr?
+
+Any suggestions to fix these? I use gcc/6 and have
+
+$ uname -a
+Linux login-e-16 3.10.0-1160.59.1.el7.x86_64 #1 SMP Tue Feb 22 10:57:56 CST 2022 x86_64 x86_64 x86_64 GNU/Linux
+
+Many thanks in advance,
+
+
+Jing Hua
+
+
+	[[alternative HTML version deleted]]
+
+
+From edd @end|ng |rom deb|@n@org  Thu Mar 10 16:19:05 2022
+From: edd @end|ng |rom deb|@n@org (Dirk Eddelbuettel)
+Date: Thu, 10 Mar 2022 09:19:05 -0600
+Subject: [Rd] Compiling error with glmnet and nloptr
+In-Reply-To: <CWLP123MB44663E91167442BC585F77F2A50B9@CWLP123MB4466.GBRP123.PROD.OUTLOOK.COM>
+References: <a9526ce4-0cea-46fc-b1e9-4bfced56aadf@www.fastmail.com>
+ <a6c2a79a-90a5-44d3-926b-9f1e630d9672@www.fastmail.com>
+ <CWLP123MB4466801A3CE25E33C2CA5171A50B9@CWLP123MB4466.GBRP123.PROD.OUTLOOK.COM>
+ <CWLP123MB4466719C8B53048B59A0327AA50B9@CWLP123MB4466.GBRP123.PROD.OUTLOOK.COM>
+ <CWLP123MB44663E91167442BC585F77F2A50B9@CWLP123MB4466.GBRP123.PROD.OUTLOOK.COM>
+Message-ID: <25130.5865.227799.438607@rob.eddelbuettel.com>
+
+
+Dear jing hua zhao,
+
+You appear to have issues with a particular (pair or single) package; it is
+usually better to contact the author / maintainers of the package.  I help a
+little with nloptr which had its share of similar issues after its recent as
+it (conditionall, if no libnlopr is found) will require cmake, and in a
+fairly recentish flavor.  That can pose issues on systems such as yours which
+identifies itself per the error message as Scientific Linux 
+
+   linux-scientific7-x86_64/gcc-9/gcc-6.5.0
+
+which is actually dead:  https://en.wikipedia.org/wiki/Scientific_Linux
+
+Stepping back, there is a bit of a disconnect between working on old OS
+releases -- sometimes not by choice as your institution, employer, $whoever
+... may make you do that -- yet requiring / desiring / attempting to use
+bleeding-edge newest versions of R or packages.  That can have friction as
+new versions can at times require new tools. The developers try to not
+require it, but sometimes it happens, and usually for a reason (as
+e.g. nloptr need libnlopt which itself relies on cmake).
+
+So if you can, please considering upgrading to a more current and supported
+operating system. For issues specific with a package (as opposed to R and in
+particular development on R) the repository may be a better place than this
+list.
+
+Cheers,  Dirk
+
+-- 
+https://dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From j|nghu@zh@o @end|ng |rom hotm@||@com  Thu Mar 10 16:43:11 2022
+From: j|nghu@zh@o @end|ng |rom hotm@||@com (jing hua zhao)
+Date: Thu, 10 Mar 2022 15:43:11 +0000
+Subject: [Rd] Compiling error with glmnet and nloptr
+In-Reply-To: <25130.5865.227799.438607@rob.eddelbuettel.com>
+References: <a9526ce4-0cea-46fc-b1e9-4bfced56aadf@www.fastmail.com>
+ <a6c2a79a-90a5-44d3-926b-9f1e630d9672@www.fastmail.com>
+ <CWLP123MB4466801A3CE25E33C2CA5171A50B9@CWLP123MB4466.GBRP123.PROD.OUTLOOK.COM>
+ <CWLP123MB4466719C8B53048B59A0327AA50B9@CWLP123MB4466.GBRP123.PROD.OUTLOOK.COM>
+ <CWLP123MB44663E91167442BC585F77F2A50B9@CWLP123MB4466.GBRP123.PROD.OUTLOOK.COM>
+ <25130.5865.227799.438607@rob.eddelbuettel.com>
+Message-ID: <CWLP123MB4466622FCD5DFE1D8B02864BA50B9@CWLP123MB4466.GBRP123.PROD.OUTLOOK.COM>
+
+Hi Dirk,
+
+Thank for your help -- as it is our university HPC system I might forward your information. Even a recent branch here uses CentOS8 which appears to have the same fate -- a lot of object/executable files compiled at SL6 do not work on CenOS8 which is really a nuisance. In this case, I have a bit luck since it does work in both ways,
+
+>  library(help=RcppNLoptExample)
+> testConstrainedProblem("MMA", TRUE)
+Found minimum at f(0.33333,0.2963) = 0.54433105 after 11 function and 22 constraint evaluations.
+[1] 0.3333333 0.2962963
+
+Best regards,
+
+
+JIng Hua
+
+________________________________
+From: Dirk Eddelbuettel <dirk.eddelbuettel at gmail.com> on behalf of Dirk Eddelbuettel <edd at debian.org>
+Sent: 10 March 2022 15:19
+To: jing hua zhao <jinghuazhao at hotmail.com>
+Cc: R-devel <r-devel at r-project.org>
+Subject: Re: [Rd] Compiling error with glmnet and nloptr
+
+
+Dear jing hua zhao,
+
+You appear to have issues with a particular (pair or single) package; it is
+usually better to contact the author / maintainers of the package.  I help a
+little with nloptr which had its share of similar issues after its recent as
+it (conditionall, if no libnlopr is found) will require cmake, and in a
+fairly recentish flavor.  That can pose issues on systems such as yours which
+identifies itself per the error message as Scientific Linux
+
+   linux-scientific7-x86_64/gcc-9/gcc-6.5.0
+
+which is actually dead:  https://en.wikipedia.org/wiki/Scientific_Linux
+
+Stepping back, there is a bit of a disconnect between working on old OS
+releases -- sometimes not by choice as your institution, employer, $whoever
+... may make you do that -- yet requiring / desiring / attempting to use
+bleeding-edge newest versions of R or packages.  That can have friction as
+new versions can at times require new tools. The developers try to not
+require it, but sometimes it happens, and usually for a reason (as
+e.g. nloptr need libnlopt which itself relies on cmake).
+
+So if you can, please considering upgrading to a more current and supported
+operating system. For issues specific with a package (as opposed to R and in
+particular development on R) the repository may be a better place than this
+list.
+
+Cheers,  Dirk
+
+--
+https://dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+	[[alternative HTML version deleted]]
+
+
+From edd @end|ng |rom deb|@n@org  Thu Mar 10 16:59:55 2022
+From: edd @end|ng |rom deb|@n@org (Dirk Eddelbuettel)
+Date: Thu, 10 Mar 2022 09:59:55 -0600
+Subject: [Rd] Compiling error with glmnet and nloptr
+In-Reply-To: <CWLP123MB4466622FCD5DFE1D8B02864BA50B9@CWLP123MB4466.GBRP123.PROD.OUTLOOK.COM>
+References: <a9526ce4-0cea-46fc-b1e9-4bfced56aadf@www.fastmail.com>
+ <a6c2a79a-90a5-44d3-926b-9f1e630d9672@www.fastmail.com>
+ <CWLP123MB4466801A3CE25E33C2CA5171A50B9@CWLP123MB4466.GBRP123.PROD.OUTLOOK.COM>
+ <CWLP123MB4466719C8B53048B59A0327AA50B9@CWLP123MB4466.GBRP123.PROD.OUTLOOK.COM>
+ <CWLP123MB44663E91167442BC585F77F2A50B9@CWLP123MB4466.GBRP123.PROD.OUTLOOK.COM>
+ <25130.5865.227799.438607@rob.eddelbuettel.com>
+ <CWLP123MB4466622FCD5DFE1D8B02864BA50B9@CWLP123MB4466.GBRP123.PROD.OUTLOOK.COM>
+Message-ID: <25130.8315.23880.699072@rob.eddelbuettel.com>
+
+
+Sorry for the typos in the previous email. I really need an editor...
+
+On 10 March 2022 at 15:43, jing hua zhao wrote:
+| Thank for your help -- as it is our university HPC system I might forward your information. Even a recent branch here uses CentOS8 which appears to have the same fate -- a lot of object/executable files compiled at SL6 do not work on CenOS8 which is really a nuisance. In this case, I have a bit luck since it does work in both ways,
+
+Well that's several topics in one. First off, your institution really needs
+to move on from Scientific Linux. Whose main sponsor (Fermi Lab, a few miles
+from me here) went to CentOS, which by now is also dead (lovely how that
+happens ...) so maybe Rocky Linux it will be. I have simpler tastes and
+started using (and then contributing to) Debian as a grad student at a time
+(given that it is 2022 now) when you may not have been born yet :grin: ...
+Ubuntu LTS is a very good (commercially supported, regularly release in two
+year cycles) alternate I use often too.
+
+As for binary incompatibility: that's how it goes. Compilers changes,
+libraries change, applications change, ... so you may be prepared to rebuild
+when you make such upgrades. Such is life: Many programs give you detailed
+notes if you need to or not. E.g. R is pretty good about telling you if you
+do or not not need a rebuild. (For R 4.1.0 last April it was little mixed as
+I recall: "generally no unless you need updated graphics device" which is
+arguably a more refined case. For R 4.2.0 I think we're good too but I will
+be sure to check next month. No changes for R 4.1.3 _today_ as it is just a
+patch release.)
+
+| >  library(help=RcppNLoptExample)
+| > testConstrainedProblem("MMA", TRUE)
+| Found minimum at f(0.33333,0.2963) = 0.54433105 after 11 function and 22 constraint evaluations.
+| [1] 0.3333333 0.2962963
+
+Glad you found working versions, and my NLopt example driver. Also, I
+sometimes recommend going back to older releases which may cover your use
+cases without giving headaches due to new(est) tools.
+
+In any event, let's move this away from r-devel. Maybe come to the
+r-package-devel list which is more specifically on building (and using)
+packages.
+
+Cheers, Dirk
+
+-- 
+https://dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From |reder|k @end|ng |rom o|b@net  Thu Mar 10 17:22:26 2022
+From: |reder|k @end|ng |rom o|b@net (Frederick Eaton)
+Date: Thu, 10 Mar 2022 08:22:26 -0800
+Subject: [Rd] security holes in system2
+Message-ID: <20220310162226.3szcltsazvjywws3@localhost>
+
+Dear R Developers,
+
+The documentation for "system2" only defines "args" as
+
+     args: a character vector of arguments to 'command'.
+
+This encourages the reader to think that R's system2 interface is passing its arguments unchanged to exec().
+
+But I was surprised to find that under the hood, you're just pasting my arguments together and sending them to a subshell to be re-parsed:
+
+     command <- paste(c(env, shQuote(command), args), collapse = " ")
+
+What horror! Please fix or document the fact that system2 executes its ARGUMENTS and not just the command.
+
+Aside from being relevant to data scientists, it's a big security hole. It means that, in some cases, something that looks like plain text in my R code will end up being executed as a command on my system, which seems dangerous to me.
+
+     > my_data=c("<(>&2 echo oops)")
+     > system2("echo",args=my_data)
+     /dev/fd/63
+     oops
+
+Thank you,
+
+Frederick
+
+
+From kry|ov@r00t @end|ng |rom gm@||@com  Sun Mar 13 13:47:36 2022
+From: kry|ov@r00t @end|ng |rom gm@||@com (Ivan Krylov)
+Date: Sun, 13 Mar 2022 15:47:36 +0300
+Subject: [Rd] Bundling MathJax
+Message-ID: <20220313154736.7301b31f@Tarkus>
+
+Hello R-devel,
+
+I appreciate the efforts devoted towards improving equation typography
+in HTML manuals. Since MathML lost its status as the way to express
+mathematics on the web after its removal from Google Chrome in 2013,
+MathJax and KaTeX are probably the best options left: both TtH [1] and
+HeVeA [2] don't render math quite as well and likely don't do anything
+about accessibility of the resulting equations (which seems to be the
+reason to focus on the HTML documentation in the first place).
+
+Having seen r81881 [3], I would like to suggest bundling MathJax
+together with R instead of loading it from the Internet. Every now and
+then, I work from places with spotty Internet connection (e.g. mobile
+network on a train). If R defaults to downloading a file every time
+Rd2HTML is called, that would be very inconvenient to me, especially
+since the requests for external JavaScript could intermittently fail
+or take a long time to load, resulting in partially failed renders.
+
+For now, R documentation can be viewed without access to external
+resources (admittedly, not counting the use of external \figure{} and
+other Rd macros by packages, which is rare). I think that's a major
+strength of R and I would like to help preserve it.
+
+-- 
+Best regards,
+Ivan
+
+[1] http://hutchinson.belmont.ma.us/tth/in_action.html
+
+[2] http://hevea.inria.fr/examples/test/suite.html
+
+[3]
+https://github.com/r-devel/r-svn/commit/55e013251cbaf8942d34820f1854c9cfc38e097b
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Sun Mar 13 15:05:18 2022
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Sun, 13 Mar 2022 10:05:18 -0400
+Subject: [Rd] Bundling MathJax
+In-Reply-To: <20220313154736.7301b31f@Tarkus>
+References: <20220313154736.7301b31f@Tarkus>
+Message-ID: <88e9a902-d25e-315f-7034-1b0fb0aaa4ab@gmail.com>
+
+On 13/03/2022 8:47 a.m., Ivan Krylov wrote:
+> Hello R-devel,
+> 
+> I appreciate the efforts devoted towards improving equation typography
+> in HTML manuals. Since MathML lost its status as the way to express
+> mathematics on the web after its removal from Google Chrome in 2013,
+> MathJax and KaTeX are probably the best options left: both TtH [1] and
+> HeVeA [2] don't render math quite as well and likely don't do anything
+> about accessibility of the resulting equations (which seems to be the
+> reason to focus on the HTML documentation in the first place).
+> 
+> Having seen r81881 [3], I would like to suggest bundling MathJax
+> together with R instead of loading it from the Internet. Every now and
+> then, I work from places with spotty Internet connection (e.g. mobile
+> network on a train). If R defaults to downloading a file every time
+> Rd2HTML is called, that would be very inconvenient to me, especially
+> since the requests for external JavaScript could intermittently fail
+> or take a long time to load, resulting in partially failed renders.
+> 
+> For now, R documentation can be viewed without access to external
+> resources (admittedly, not counting the use of external \figure{} and
+> other Rd macros by packages, which is rare). I think that's a major
+> strength of R and I would like to help preserve it.
+> 
+
+An issue related to this was faced by the mathjaxr package:  The file 
+used for display is usually a minified version of the MathJax source, 
+and Debian didn't consider it close enough to source code to want to 
+distribute it as FOSS.  So if the minified file is included with R, the 
+original source should also be included.
+
+An alternative to this would be to provide a utility to download the 
+minified file.  Users with poor connectivity could do that once and 
+access the local copy thereafter.
+
+Duncan Murdoch
+
+
+From jeroenoom@ @end|ng |rom gm@||@com  Sun Mar 13 15:25:37 2022
+From: jeroenoom@ @end|ng |rom gm@||@com (Jeroen Ooms)
+Date: Sun, 13 Mar 2022 15:25:37 +0100
+Subject: [Rd] Bundling MathJax
+In-Reply-To: <20220313154736.7301b31f@Tarkus>
+References: <20220313154736.7301b31f@Tarkus>
+Message-ID: <CABFfbXsEUSZ5hdV-SdomQNKx1BTCHGFaU4EdgTckHmpyFZn+GQ@mail.gmail.com>
+
+On Sun, Mar 13, 2022 at 1:48 PM Ivan Krylov <krylov.r00t at gmail.com> wrote:
+>
+> Hello R-devel,
+>
+> I appreciate the efforts devoted towards improving equation typography
+> in HTML manuals. Since MathML lost its status as the way to express
+> mathematics on the web after its removal from Google Chrome in 2013,
+> MathJax and KaTeX are probably the best options left: both TtH [1] and
+> HeVeA [2] don't render math quite as well and likely don't do anything
+> about accessibility of the resulting equations (which seems to be the
+> reason to focus on the HTML documentation in the first place).
+>
+> Having seen r81881 [3], I would like to suggest bundling MathJax
+> together with R instead of loading it from the Internet. Every now and
+> then, I work from places with spotty Internet connection (e.g. mobile
+> network on a train). If R defaults to downloading a file every time
+> Rd2HTML is called, that would be very inconvenient to me, especially
+> since the requests for external JavaScript could intermittently fail
+> or take a long time to load, resulting in partially failed renders.
+
+An alternative, more robust method is to render the math-to-html in R
+using the katex R package. This way no JavaScript library needs to be
+included in the html manual pages, merely a small katex css file with
+some styling, which is much lighter and safer to load in manual pages
+(and probably more feasible to bundle with R).
+
+For an example, see: https://docs.ropensci.org/katex/reference/math_to_rd.html
+
+
+From deep@y@n@@@rk@r @end|ng |rom gm@||@com  Sun Mar 13 16:22:26 2022
+From: deep@y@n@@@rk@r @end|ng |rom gm@||@com (Deepayan Sarkar)
+Date: Sun, 13 Mar 2022 20:52:26 +0530
+Subject: [Rd] Bundling MathJax
+In-Reply-To: <20220313154736.7301b31f@Tarkus>
+References: <20220313154736.7301b31f@Tarkus>
+Message-ID: <CADfFDC4Dn5E_JkebhdpzbtH0J8qaf9mgQu_BKpXDqLNd0VXA_A@mail.gmail.com>
+
+On Sun, Mar 13, 2022 at 6:18 PM Ivan Krylov <krylov.r00t at gmail.com> wrote:
+>
+> Hello R-devel,
+>
+> I appreciate the efforts devoted towards improving equation typography
+> in HTML manuals. Since MathML lost its status as the way to express
+> mathematics on the web after its removal from Google Chrome in 2013,
+> MathJax and KaTeX are probably the best options left: both TtH [1] and
+> HeVeA [2] don't render math quite as well and likely don't do anything
+> about accessibility of the resulting equations (which seems to be the
+> reason to focus on the HTML documentation in the first place).
+>
+> Having seen r81881 [3], I would like to suggest bundling MathJax
+> together with R instead of loading it from the Internet. Every now and
+> then, I work from places with spotty Internet connection (e.g. mobile
+> network on a train). If R defaults to downloading a file every time
+> Rd2HTML is called, that would be very inconvenient to me, especially
+> since the requests for external JavaScript could intermittently fail
+> or take a long time to load, resulting in partially failed renders.
+
+Usually browser caching should avoid multiple downloads, shouldn't it?
+
+> For now, R documentation can be viewed without access to external
+> resources (admittedly, not counting the use of external \figure{} and
+> other Rd macros by packages, which is rare). I think that's a major
+> strength of R and I would like to help preserve it.
+
+Bundling is something we considered (and is still a possibility), but
+ended up not doing mainly because it's more than just a single file.
+E.g., these are the files bundled by mathjaxr:
+
+https://github.com/wviechtb/mathjaxr/tree/master/src/mathjax/es5
+
+Would it be reasonable to use the installation provided by mathjaxr
+instead, if it is available?
+
+Best,
+-Deepayan
+
+> --
+> Best regards,
+> Ivan
+>
+> [1] http://hutchinson.belmont.ma.us/tth/in_action.html
+>
+> [2] http://hevea.inria.fr/examples/test/suite.html
+>
+> [3]
+> https://github.com/r-devel/r-svn/commit/55e013251cbaf8942d34820f1854c9cfc38e097b
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From deep@y@n@@@rk@r @end|ng |rom gm@||@com  Sun Mar 13 16:29:22 2022
+From: deep@y@n@@@rk@r @end|ng |rom gm@||@com (Deepayan Sarkar)
+Date: Sun, 13 Mar 2022 20:59:22 +0530
+Subject: [Rd] Bundling MathJax
+In-Reply-To: <88e9a902-d25e-315f-7034-1b0fb0aaa4ab@gmail.com>
+References: <20220313154736.7301b31f@Tarkus>
+ <88e9a902-d25e-315f-7034-1b0fb0aaa4ab@gmail.com>
+Message-ID: <CADfFDC4sN+QeHc1T5kqKRuJn30Jjw5aNiqS8_XTf=e-ctPUnOw@mail.gmail.com>
+
+On Sun, Mar 13, 2022 at 7:35 PM Duncan Murdoch <murdoch.duncan at gmail.com> wrote:
+>
+> On 13/03/2022 8:47 a.m., Ivan Krylov wrote:
+> > Hello R-devel,
+> >
+> > I appreciate the efforts devoted towards improving equation typography
+> > in HTML manuals. Since MathML lost its status as the way to express
+> > mathematics on the web after its removal from Google Chrome in 2013,
+> > MathJax and KaTeX are probably the best options left: both TtH [1] and
+> > HeVeA [2] don't render math quite as well and likely don't do anything
+> > about accessibility of the resulting equations (which seems to be the
+> > reason to focus on the HTML documentation in the first place).
+> >
+> > Having seen r81881 [3], I would like to suggest bundling MathJax
+> > together with R instead of loading it from the Internet. Every now and
+> > then, I work from places with spotty Internet connection (e.g. mobile
+> > network on a train). If R defaults to downloading a file every time
+> > Rd2HTML is called, that would be very inconvenient to me, especially
+> > since the requests for external JavaScript could intermittently fail
+> > or take a long time to load, resulting in partially failed renders.
+> >
+> > For now, R documentation can be viewed without access to external
+> > resources (admittedly, not counting the use of external \figure{} and
+> > other Rd macros by packages, which is rare). I think that's a major
+> > strength of R and I would like to help preserve it.
+> >
+>
+> An issue related to this was faced by the mathjaxr package:  The file
+> used for display is usually a minified version of the MathJax source,
+> and Debian didn't consider it close enough to source code to want to
+> distribute it as FOSS.  So if the minified file is included with R, the
+> original source should also be included.
+>
+> An alternative to this would be to provide a utility to download the
+> minified file.  Users with poor connectivity could do that once and
+> access the local copy thereafter.
+
+Would this really work? Wouldn't you also need the supplementary files
+such as fonts (relative to the main js file)?
+
+-Deepayan
+
+> Duncan Murdoch
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Sun Mar 13 17:02:25 2022
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Sun, 13 Mar 2022 12:02:25 -0400
+Subject: [Rd] Bundling MathJax
+In-Reply-To: <CADfFDC4sN+QeHc1T5kqKRuJn30Jjw5aNiqS8_XTf=e-ctPUnOw@mail.gmail.com>
+References: <20220313154736.7301b31f@Tarkus>
+ <88e9a902-d25e-315f-7034-1b0fb0aaa4ab@gmail.com>
+ <CADfFDC4sN+QeHc1T5kqKRuJn30Jjw5aNiqS8_XTf=e-ctPUnOw@mail.gmail.com>
+Message-ID: <669c539a-998e-68e7-9929-cedf41ba128a@gmail.com>
+
+On 13/03/2022 11:29 a.m., Deepayan Sarkar wrote:
+> On Sun, Mar 13, 2022 at 7:35 PM Duncan Murdoch <murdoch.duncan at gmail.com> wrote:
+>>
+>> On 13/03/2022 8:47 a.m., Ivan Krylov wrote:
+>>> Hello R-devel,
+>>>
+>>> I appreciate the efforts devoted towards improving equation typography
+>>> in HTML manuals. Since MathML lost its status as the way to express
+>>> mathematics on the web after its removal from Google Chrome in 2013,
+>>> MathJax and KaTeX are probably the best options left: both TtH [1] and
+>>> HeVeA [2] don't render math quite as well and likely don't do anything
+>>> about accessibility of the resulting equations (which seems to be the
+>>> reason to focus on the HTML documentation in the first place).
+>>>
+>>> Having seen r81881 [3], I would like to suggest bundling MathJax
+>>> together with R instead of loading it from the Internet. Every now and
+>>> then, I work from places with spotty Internet connection (e.g. mobile
+>>> network on a train). If R defaults to downloading a file every time
+>>> Rd2HTML is called, that would be very inconvenient to me, especially
+>>> since the requests for external JavaScript could intermittently fail
+>>> or take a long time to load, resulting in partially failed renders.
+>>>
+>>> For now, R documentation can be viewed without access to external
+>>> resources (admittedly, not counting the use of external \figure{} and
+>>> other Rd macros by packages, which is rare). I think that's a major
+>>> strength of R and I would like to help preserve it.
+>>>
+>>
+>> An issue related to this was faced by the mathjaxr package:  The file
+>> used for display is usually a minified version of the MathJax source,
+>> and Debian didn't consider it close enough to source code to want to
+>> distribute it as FOSS.  So if the minified file is included with R, the
+>> original source should also be included.
+>>
+>> An alternative to this would be to provide a utility to download the
+>> minified file.  Users with poor connectivity could do that once and
+>> access the local copy thereafter.
+> 
+> Would this really work? Wouldn't you also need the supplementary files
+> such as fonts (relative to the main js file)?
+
+Sorry, my memory was bad.  It wasn't just one minified file, it was 
+multiple minified files.  You can see what was included before the 
+Debian complaint here:
+
+ 
+https://github.com/wviechtb/mathjaxr/tree/81201dc1d5851928b208f2575d6d992229bd9eaf
+
+Your suggestion of optionally using an installed copy of the mathjaxr 
+package seems ideal.
+
+Duncan Murdoch
+
+
