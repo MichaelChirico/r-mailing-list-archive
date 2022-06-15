@@ -1,0 +1,520 @@
+From jo@ec|@ud|o@|@r|@ @end|ng |rom gm@||@com  Sat Jun  4 05:43:39 2022
+From: jo@ec|@ud|o@|@r|@ @end|ng |rom gm@||@com (jcfaria)
+Date: Sat, 04 Jun 2022 03:43:39 +0000
+Subject: [Rd] Writing Extensions for R under Windows: is it better for GUIs
+ to communicate with R via Rgui.exe, Rterm.exe or R.dll?
+Message-ID: <emcfa70b95-004c-45fb-8936-55133f137688@dell>
+
+Writing Extensions for R under Windows: is it better for GUIs to 
+communicate with R via Rgui.exe, Rterm.exe or R.dll?
+
+In the construction of extensions (GUIs) for R, in the establishment of 
+communication, according to the options below:
+
+1- Rgui.exe (via Windows API) vs. R.dll (embedded R)
+2- Rterm.exe (via IPC) vs. R.dll (embedded R)
+
+What are the advantages and disadvantages in each case?
+
+I would like to take advantage of the email to thank Tomas Kalibera for 
+his efforts in solving the problems
+of R 4.2.0 communication and the Tinn-R project. Once fixed the issues 
+in R that surfaced
+due to using GraphApp (cross-platform GUI Library in C for Windows) it 
+was possible to fix the communication issues in Tinn-R
+with Rterm.exe and Rgui.exe. Version 9.01.XX.XX with the corrections 
+will be released soon. At the moment we are in
+extensive testing phase.
+
+Thanks in advance,
+///\\\///\\\///\\\///\\\///\\\///\\\///\\\///\\\///\\\///\\\
+Jose Claudio Faria
+UESC/DCET/Brasil
+joseclaudio.faria at gmail.com
+Telefones:
+55(73)3680.5545 - UESC
+55(73)99966.9100 - VIVO
+///\\\///\\\///\\\///\\\///\\\///\\\///\\\///\\\///\\\///\\\
+If you have software to deal with statistics, you have arms,
+if you have good software, you have arms and legs,
+if you have software like R, you have arms, legs and wings...
+the height of your flight depends only on you.
+
+	[[alternative HTML version deleted]]
+
+
+From m|ch@e|ch|r|co4 @end|ng |rom gm@||@com  Tue Jun  7 08:09:29 2022
+From: m|ch@e|ch|r|co4 @end|ng |rom gm@||@com (Michael Chirico)
+Date: Mon, 6 Jun 2022 23:09:29 -0700
+Subject: [Rd] trace() an S3-classed function in .GlobalEnv
+Message-ID: <CAPRVBcwOh0zst8mGTCfYXK6OXdGViGHUOiV5A8NhV4Lh6eo2gQ@mail.gmail.com>
+
+Consider:
+
+foo <- function() {
+  invisible(1 + 1)
+}
+trace(foo, quote(message("traced")), print=FALSE)
+foo()
+# traced
+
+But with a minimal change:
+
+class(foo) <- "bar"
+trace(foo, quote(message("traced")), print=FALSE)
+# Constructing traceable class ?barWithTrace?
+# Error in .classEnv(className) :
+#   unable to find an environment containing class ?bar?
+
+I don't see anything like this mentioned in ?trace (nor does a Google
+search turn up more than a handful of references to this error),
+and from trying to debug what trace() is doing, we arrive to the error line[1]:
+
+.makeTraceClass(traceClass, class(original))  #
+methods:::.makeTraceClass("barWithTrace", "bar")
+
+I don't quite follow what's going on here, but it looks like trace()
+is trying to determine an S4 class definition for "bar", but isS4(bar)
+is FALSE.
+
+I can (apparently -- not sure if there are as yet-unseen downstream
+consequences) work around the issue by unsetting the class, tracing,
+then re-setting:
+
+class(foo) <- NULL
+trace(foo, quote(message("traced")), print=FALSE)
+class(foo) <- "bar"
+
+But obviously this is a bit clunky. Is this a bug, or am I missing something?
+
+Mike C
+
+[1] https://github.com/r-devel/r-svn/blob/e2a64a4e14adbc4e9e8635eaa8cbd2835ce1d764/src/library/methods/R/trace.R#L240
+
+
+From @eb@@t|@n@kr@ntz @end|ng |rom gr@du@te|n@t|tute@ch  Tue Jun  7 20:44:39 2022
+From: @eb@@t|@n@kr@ntz @end|ng |rom gr@du@te|n@t|tute@ch (Sebastian Martin Krantz)
+Date: Tue, 7 Jun 2022 20:44:39 +0200
+Subject: [Rd] R CMD Check should allow packages with C and C++ and OpenMP
+ without generating a NOTE
+Message-ID: <CAOsNuxCte7DOu5kBjH44CxeJnR=bHr7DVAZZk=rQ9M_J5502qA@mail.gmail.com>
+
+Dear Developers,
+
+I have the following issue with my package collapse:
+https://github.com/SebKrantz/collapse,
+whose code base is 34.5% C code and 28.3% C++, and to which I now want to
+add OpenMP multithreading and send it to CRAN. For this I have set up a
+Makevars file with
+
+PKG_CFLAGS = $(SHLIB_OPENMP_CFLAGS)
+PKG_CXXFLAGS = $(SHLIB_OPENMP_CXXFLAGS)
+PKG_LIBS = $(SHLIB_OPENMP_CXXFLAGS)
+
+as linking is through C++ via Rcpp. The problem is that this generates a
+NOTE on R CMD Check:
+
+src/Makevars: SHLIB_OPENMP_CFLAGS is included in PKG_CFLAGS but not in
+PKG_LIBS
+
+If I alternatively put
+
+PKG_LIBS = $(SHLIB_OPENMP_CXXFLAGS) $(SHLIB_OPENMP_CFLAGS)
+
+I get another NOTE stating that this is not portable. Finally putting
+
+PKG_LIBS = $(SHLIB_OPENMP_CFLAGS)
+
+gives a note (or warning) that linking is through C++. CRAN maintainers
+have not engaged constructively with me on the issue, but I do believe this
+is an issue requiring constructive engagement i.e. I believe R CMD Check
+should be adjusted to allow for such a configuration, and possibly some
+instructions should be added to the Writing R Extensions Manual. I have
+also asked Dirk Eddelbuettel (
+https://github.com/SebKrantz/collapse/issues/258) who agrees that this is
+an upstream issue. I am happy for any proactive comments or suggestions.
+
+Best regards,
+
+Sebastian Krantz
+
+	[[alternative HTML version deleted]]
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Wed Jun  8 12:44:21 2022
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Wed, 8 Jun 2022 12:44:21 +0200
+Subject: [Rd] trace() an S3-classed function in .GlobalEnv
+In-Reply-To: <CAPRVBcwOh0zst8mGTCfYXK6OXdGViGHUOiV5A8NhV4Lh6eo2gQ@mail.gmail.com>
+References: <CAPRVBcwOh0zst8mGTCfYXK6OXdGViGHUOiV5A8NhV4Lh6eo2gQ@mail.gmail.com>
+Message-ID: <25248.32133.650644.55624@stat.math.ethz.ch>
+
+>>>>> Michael Chirico 
+>>>>>     on Mon, 6 Jun 2022 23:09:29 -0700 writes:
+
+    > Consider:
+
+    > foo <- function() {
+    > invisible(1 + 1)
+    > }
+    > trace(foo, quote(message("traced")), print=FALSE)
+    > foo()
+    > # traced
+
+    > But with a minimal change:
+
+    > class(foo) <- "bar"
+    > trace(foo, quote(message("traced")), print=FALSE)
+    > # Constructing traceable class ?barWithTrace?
+    > # Error in .classEnv(className) :
+    > #   unable to find an environment containing class ?bar?
+
+    > I don't see anything like this mentioned in ?trace (nor does a Google
+    > search turn up more than a handful of references to this error),
+    > and from trying to debug what trace() is doing, we arrive to the error line[1]:
+
+    > .makeTraceClass(traceClass, class(original))  #
+    > methods:::.makeTraceClass("barWithTrace", "bar")
+
+    > I don't quite follow what's going on here, but it looks like trace()
+    > is trying to determine an S4 class definition for "bar", but isS4(bar)
+    > is FALSE.
+
+    > I can (apparently -- not sure if there are as yet-unseen downstream
+    > consequences) work around the issue by unsetting the class, tracing,
+    > then re-setting:
+
+    > class(foo) <- NULL
+    > trace(foo, quote(message("traced")), print=FALSE)
+    > class(foo) <- "bar"
+
+    > But obviously this is a bit clunky. Is this a bug, or am I missing something?
+
+Just a short note of  semi-confirmation:
+
+At the time S4 generics and methods were introduced into R,
+trace() was made much more flexible, notably to be able to trace
+S4 methods.
+
+It can well be that it originally also worked for functions with
+an explicit S3 class, but as such functions are very rare, it
+could well be you've found a bug, namely that trace() assumes
+that if a function has a non-trivial class, it must be an S4
+one.
+
+... and I know you know how to report bugs ;-)
+
+Thank you in advance!
+Martin
+
+    > Mike C
+
+    > [1] https://github.com/r-devel/r-svn/blob/e2a64a4e14adbc4e9e8635eaa8cbd2835ce1d764/src/library/methods/R/trace.R#L240
+
+    > ______________________________________________
+    > R-devel at r-project.org mailing list
+    > https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From @eb@@t|@n@kr@ntz @end|ng |rom gr@du@te|n@t|tute@ch  Wed Jun  8 14:00:15 2022
+From: @eb@@t|@n@kr@ntz @end|ng |rom gr@du@te|n@t|tute@ch (Sebastian Martin Krantz)
+Date: Wed, 8 Jun 2022 14:00:15 +0200
+Subject: [Rd] 
+ R CMD Check should allow packages with C and C++ and OpenMP
+ without generating a NOTE
+In-Reply-To: <CAOsNuxCte7DOu5kBjH44CxeJnR=bHr7DVAZZk=rQ9M_J5502qA@mail.gmail.com>
+References: <CAOsNuxCte7DOu5kBjH44CxeJnR=bHr7DVAZZk=rQ9M_J5502qA@mail.gmail.com>
+Message-ID: <CAOsNuxDjhYQQ4127NicL+2vR3mj66rvwcKVm7-r9FsKzRB8jwA@mail.gmail.com>
+
+For the record: it seems a simple text-substitution approach in the
+Makevars file solves the issue, e.g. to have a package combining C, C++ and
+OpenMP, your Makevars file could look like this:
+
+PKG_CFLAGS = $($(subst OPENMP,OPENMP_CFLAGS,SHLIB_OPENMP))
+PKG_CXXFLAGS = $(SHLIB_OPENMP_CXXFLAGS)
+PKG_LIBS = $(SHLIB_OPENMP_CXXFLAGS)
+
+where $($(subst OPENMP,OPENMP_CFLAGS,SHLIB_OPENMP)) substitutes
+OPENMP_CFLAGS for OPENMP, thus reconstructing SHLIB_OPENMP_CFLAGS and
+avoiding errors from static code analysis on R CMD Check.
+
+Needless to say this is not very elegant and it would be great if R CMD
+Check could be adjusted.
+
+Best regards,
+
+Sebastian
+
+On Tue, 7 Jun 2022 at 20:44, Sebastian Martin Krantz <
+sebastian.krantz at graduateinstitute.ch> wrote:
+
+> Dear Developers,
+>
+> I have the following issue with my package collapse:
+> https://github.com/SebKrantz/collapse,
+> whose code base is 34.5% C code and 28.3% C++, and to which I now want to
+> add OpenMP multithreading and send it to CRAN. For this I have set up a
+> Makevars file with
+>
+> PKG_CFLAGS = $(SHLIB_OPENMP_CFLAGS)
+> PKG_CXXFLAGS = $(SHLIB_OPENMP_CXXFLAGS)
+> PKG_LIBS = $(SHLIB_OPENMP_CXXFLAGS)
+>
+> as linking is through C++ via Rcpp. The problem is that this generates a
+> NOTE on R CMD Check:
+>
+> src/Makevars: SHLIB_OPENMP_CFLAGS is included in PKG_CFLAGS but not in
+> PKG_LIBS
+>
+> If I alternatively put
+>
+> PKG_LIBS = $(SHLIB_OPENMP_CXXFLAGS) $(SHLIB_OPENMP_CFLAGS)
+>
+> I get another NOTE stating that this is not portable. Finally putting
+>
+> PKG_LIBS = $(SHLIB_OPENMP_CFLAGS)
+>
+> gives a note (or warning) that linking is through C++. CRAN maintainers
+> have not engaged constructively with me on the issue, but I do believe this
+> is an issue requiring constructive engagement i.e. I believe R CMD Check
+> should be adjusted to allow for such a configuration, and possibly some
+> instructions should be added to the Writing R Extensions Manual. I have
+> also asked Dirk Eddelbuettel (
+> https://github.com/SebKrantz/collapse/issues/258) who agrees that this is
+> an upstream issue. I am happy for any proactive comments or suggestions.
+>
+> Best regards,
+>
+> Sebastian Krantz
+>
+>
+>
+>
+>
+
+	[[alternative HTML version deleted]]
+
+
+From @cott @end|ng |rom p@tchmypc@com  Wed Jun  8 14:36:10 2022
+From: @cott @end|ng |rom p@tchmypc@com (Scott McAllister)
+Date: Wed, 8 Jun 2022 12:36:10 +0000
+Subject: [Rd] Unsigned binary
+Message-ID: <MW4PR12MB5665254214EE4D218F76D6A0A3A49@MW4PR12MB5665.namprd12.prod.outlook.com>
+
+Good afternoon
+
+Are you aware that the current release of R for Windows (4.2.0) is unsigned? Do you have any plans to rectify this ?
+
+Thanks,
+
+Scott McAllister - Support Engineer
+Rate Your Experience: Great<https://patchmypc.com/customer-feedback-scott> | Good<https://patchmypc.com/customer-feedback-scott> | Poor<https://patchmypc.com/customer-feedback-scott>
+Support Session: 30 Minutes<https://patchmypc.com/scott-30-minute-session> | 60 Minutes<https://patchmypc.com/scott-60-minute-session>
+Learn More: Live Demo<https://patchmypc.com/schedule-live-demo> | Setup Call<https://patchmypc.com/schedule-setup-call> | Review Call<https://patchmypc.com/environment-review-call> | Trial<https://patchmypc.com/free-trial> | Quote<https://patchmypc.com/request-quote>
+Follow Us: Twitter<https://patchmypc.com/twitter> | LinkedIn<https://patchmypc.com/linkedin>
+Sales and Support: + 1-866-343-3083
+[Sent from Front]
+
+	[[alternative HTML version deleted]]
+
+
+From kry|ov@r00t @end|ng |rom gm@||@com  Wed Jun  8 16:57:54 2022
+From: kry|ov@r00t @end|ng |rom gm@||@com (Ivan Krylov)
+Date: Wed, 8 Jun 2022 17:57:54 +0300
+Subject: [Rd] 
+ Writing Extensions for R under Windows: is it better for GUIs
+ to communicate with R via Rgui.exe, Rterm.exe or R.dll?
+In-Reply-To: <emcfa70b95-004c-45fb-8936-55133f137688@dell>
+References: <emcfa70b95-004c-45fb-8936-55133f137688@dell>
+Message-ID: <20220608175754.5dbd228a@arachnoid>
+
+On Sat, 04 Jun 2022 03:43:39 +0000
+jcfaria <joseclaudio.faria at gmail.com> wrote:
+
+> Writing Extensions for R under Windows: is it better for GUIs to 
+> communicate with R via Rgui.exe, Rterm.exe or R.dll?
+
+Well, WRE section 8 is all about linking the GUI to R as a DLL. It does
+mention the alternative approaches like Rserve or DCOM, but such
+interfaces are limited to some extents.
+
+> In the construction of extensions (GUIs) for R, in the establishment
+> of communication, according to the options below:
+> 
+> 1- Rgui.exe (via Windows API) vs. R.dll (embedded R)
+
+Setting aside the fact that Windows API is not cross platform (which
+may be not the point if you're writing a Windows-only GUI), the
+messages that the application accepts and interprets are not a part of
+a documented interface, so while they tend to be stable (because
+Windows is mostly stable in handing the same kinds of messages to the
+applications running there), they may be broken (like in R 4.2.0).
+
+Linking to R.dll has a higher initial cost of setting up (you have to
+write those callbacks, you have to set up R_HOME...), but the interface
+won't be broken without a good reason and a migration plan.
+
+> 2- Rterm.exe (via IPC) vs. R.dll (embedded R)
+
+The console interface might be better understood and more stable than
+passing messages to windows. If you're writing some kind of universal
+interface suitable for different applications, all of which run a
+Run-Eval-Print Loop in the command line, this may be a better approach
+to take instead of linking to them individually. Although not without
+problems [*], this is probably more stable than talking to Rgui.exe by
+means of SendInput().
+
+> What are the advantages and disadvantages in each case?
+
+The advantages of linking to R.dll include being able to set up all
+kinds of callbacks (EditFile, Busy, dataentry/dataviewer/selectlist) to
+make their behaviour fit the theme of your application. The
+disadvantages include a higher initial cost of setting it up and maybe
+having to recompile it for different versions of R.
+
+-- 
+Best regards,
+Ivan
+
+[*] Check out ConEmu <https://conemu.github.io/> source code for
+workarounds they probably amassed for all kinds of applications that
+would otherwise prefer to be running in the standard console window.
+
+
+From m|ch@e|ch|r|co4 @end|ng |rom gm@||@com  Wed Jun  8 19:12:25 2022
+From: m|ch@e|ch|r|co4 @end|ng |rom gm@||@com (Michael Chirico)
+Date: Wed, 8 Jun 2022 10:12:25 -0700
+Subject: [Rd] trace() an S3-classed function in .GlobalEnv
+In-Reply-To: <25248.32133.650644.55624@stat.math.ethz.ch>
+References: <CAPRVBcwOh0zst8mGTCfYXK6OXdGViGHUOiV5A8NhV4Lh6eo2gQ@mail.gmail.com>
+ <25248.32133.650644.55624@stat.math.ethz.ch>
+Message-ID: <CAPRVBczpqRsvqcUaFMdC333_iYo4w7+M+i6hVGU59ZZ0Vn0+kQ@mail.gmail.com>
+
+Thanks, that seems like a reasonable assessment.
+
+Also worth noting that tracing wipes out a function's attributes,
+which is also not documented:
+
+foo = function(x) {
+  invisible(1 + 1)
+}
+attr(foo, "bar") <- 2
+
+trace(foo, quote(message('traced')))
+names(attributes(foo))
+# [1] "original" "source"   "class"
+
+PS one day I hope to master the dark art of choosing r-devel or
+bugzilla for issues :)
+
+On Wed, Jun 8, 2022 at 3:44 AM Martin Maechler
+<maechler at stat.math.ethz.ch> wrote:
+>
+> >>>>> Michael Chirico
+> >>>>>     on Mon, 6 Jun 2022 23:09:29 -0700 writes:
+>
+>     > Consider:
+>
+>     > foo <- function() {
+>     > invisible(1 + 1)
+>     > }
+>     > trace(foo, quote(message("traced")), print=FALSE)
+>     > foo()
+>     > # traced
+>
+>     > But with a minimal change:
+>
+>     > class(foo) <- "bar"
+>     > trace(foo, quote(message("traced")), print=FALSE)
+>     > # Constructing traceable class ?barWithTrace?
+>     > # Error in .classEnv(className) :
+>     > #   unable to find an environment containing class ?bar?
+>
+>     > I don't see anything like this mentioned in ?trace (nor does a Google
+>     > search turn up more than a handful of references to this error),
+>     > and from trying to debug what trace() is doing, we arrive to the error line[1]:
+>
+>     > .makeTraceClass(traceClass, class(original))  #
+>     > methods:::.makeTraceClass("barWithTrace", "bar")
+>
+>     > I don't quite follow what's going on here, but it looks like trace()
+>     > is trying to determine an S4 class definition for "bar", but isS4(bar)
+>     > is FALSE.
+>
+>     > I can (apparently -- not sure if there are as yet-unseen downstream
+>     > consequences) work around the issue by unsetting the class, tracing,
+>     > then re-setting:
+>
+>     > class(foo) <- NULL
+>     > trace(foo, quote(message("traced")), print=FALSE)
+>     > class(foo) <- "bar"
+>
+>     > But obviously this is a bit clunky. Is this a bug, or am I missing something?
+>
+> Just a short note of  semi-confirmation:
+>
+> At the time S4 generics and methods were introduced into R,
+> trace() was made much more flexible, notably to be able to trace
+> S4 methods.
+>
+> It can well be that it originally also worked for functions with
+> an explicit S3 class, but as such functions are very rare, it
+> could well be you've found a bug, namely that trace() assumes
+> that if a function has a non-trivial class, it must be an S4
+> one.
+>
+> ... and I know you know how to report bugs ;-)
+>
+> Thank you in advance!
+> Martin
+>
+>     > Mike C
+>
+>     > [1] https://github.com/r-devel/r-svn/blob/e2a64a4e14adbc4e9e8635eaa8cbd2835ce1d764/src/library/methods/R/trace.R#L240
+>
+>     > ______________________________________________
+>     > R-devel at r-project.org mailing list
+>     > https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From wo||g@ng@v|echtb@uer @end|ng |rom m@@@tr|chtun|ver@|ty@n|  Thu Jun  9 13:03:10 2022
+From: wo||g@ng@v|echtb@uer @end|ng |rom m@@@tr|chtun|ver@|ty@n| (Viechtbauer, Wolfgang (NP))
+Date: Thu, 9 Jun 2022 11:03:10 +0000
+Subject: [Rd] Behavior of ylim in boxplot() when horizontal=TRUE
+Message-ID: <6677093c725645a68ee92cdf054fdf87@UM-MAIL3214.unimaas.nl>
+
+Hi all,
+
+I just noticed something when using boxplot(). Say we have this boxplot:
+
+boxplot(mpg ~ cyl, data=mtcars, xlab="Cylinders", ylab="Miles per Galon", ylim=c(10,40), log="y")
+
+ylab, ylim, and log="y" are all consistently adjusting things on the y-axis (the numeric 'outcome' variable).
+
+Now let's use horizontal=TRUE:
+
+boxplot(mpg ~ cyl, data=mtcars, las=1, xlab="Miles per Galon", ylab="Cylinders", horizontal=TRUE, ylim=c(10,40), log="x")
+
+Now xlab and log="x" are used to adjust things on the x-axis, but ylim still needs to be used to adjust the range of the numeric 'outcome' variable. Not a big deal, but this seems a bit inconsistent.
+
+Best,
+Wolfgang
+
+
+From pd@|gd @end|ng |rom gm@||@com  Fri Jun 10 14:01:41 2022
+From: pd@|gd @end|ng |rom gm@||@com (peter dalgaard)
+Date: Fri, 10 Jun 2022 14:01:41 +0200
+Subject: [Rd] R 4.2.1 scheduled for June 23
+Message-ID: <492506A5-D562-4E87-BA6C-A25CB185AD57@gmail.com>
+
+Full schedule available on developer.r-project.org in a short while.
+
+-- 
+Peter Dalgaard, Professor,
+Center for Statistics, Copenhagen Business School
+Solbjerg Plads 3, 2000 Frederiksberg, Denmark
+Phone: (+45)38153501
+Office: A 4.23
+Email: pd.mes at cbs.dk  Priv: PDalgd at gmail.com
+
+
