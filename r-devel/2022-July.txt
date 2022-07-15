@@ -1,0 +1,2791 @@
+From pik@pp@@devei m@iii@g oii gm@ii@com  Sun Jul  3 13:02:50 2022
+From: pik@pp@@devei m@iii@g oii gm@ii@com (pik@pp@@devei m@iii@g oii gm@ii@com)
+Date: Sun, 3 Jul 2022 13:02:50 +0200
+Subject: [Rd] Class union of custom classes
+Message-ID: <003001d88ecc$6fa3fbc0$4eebf340$@gmail.com>
+
+Dear all,
+
+ 
+
+This code, mostly copied from the setClassUnion help page, works as
+described in the documentation:
+
+ 
+
+# test 1
+
+setClassUnion("maybeNumber", c("numeric", "logical"))
+
+setClass("withId", contains = "maybeNumber", slots = c(id = "character"))
+
+w1 <- new("withId", 1.2, id = "test 1")
+
+ 
+
+However, the following three tests do not work:
+
+ 
+
+# test 2
+
+setClass("foo", slots = list(xb = "logical"))
+
+setClassUnion("maybeNumber", c("numeric", "foo"))
+
+setClass("withId", contains = "maybeNumber", slots = c(id = "character"))
+
+w1 <- new("withId", 1.2, id = "test 2")
+
+ 
+
+# test 3
+
+setClass("foo", slots = list(xb = "logical"))
+
+setClassUnion("maybeNumber", c("numeric"))
+
+setIs("foo", "maybeNumber")
+
+setClass("withId", contains = "maybeNumber", slots = c(id = "character"))
+
+w1 <- new("withId", 1.2, id = "test 3")
+
+ 
+
+# test 4
+
+setClass("foo", contains = "logical")
+
+setClassUnion("maybeNumber", c("numeric", "foo"))
+
+setClass("withId", contains = "maybeNumber", slots = c(id = "character"))
+
+w1 <- new("withId", 1.2, id = "test 4")
+
+ 
+
+All three return:
+
+ 
+
+  Error in initialize(value, ...) : 
+
+      'initialize' method returned an object of class "numeric" instead of
+the required class "withId"
+
+ 
+
+The error comes from:
+
+ 
+
+traceback()
+
+3: stop(gettextf("'initialize' method returned an object of class %s instead
+of the required class %s", 
+
+       paste(dQuote(class(value)), collapse = ", "),
+dQuote(class(.Object))), 
+
+       domain = NA)
+
+2: initialize(value, ...)
+
+1: new("withId", 1.2, id = "test 2")
+
+ 
+
+I would expect tests 2-4 to work similarly to the first test. Is the above
+error the intended behavior of setClassUnion? I do not see anything that
+would prevent this in the documentation. Is there something I am missing
+here?
+
+ 
+
+Any help would be very much appreciated!
+
+ 
+
+Kind regards,
+
+Pantelis
+
+
+	[[alternative HTML version deleted]]
+
+
+From ezr@ @end|ng |rom |@ndtucker@com  Sun Jul  3 19:56:34 2022
+From: ezr@ @end|ng |rom |@ndtucker@com (Ezra Tucker)
+Date: Sun, 03 Jul 2022 13:56:34 -0400
+Subject: [Rd] Class union of custom classes
+In-Reply-To: <003001d88ecc$6fa3fbc0$4eebf340$@gmail.com>
+References: <003001d88ecc$6fa3fbc0$4eebf340$@gmail.com>
+Message-ID: <31d8cd9d3407a4e52f434b600e9a11b48fca8281.camel@landtucker.com>
+
+Hi Pantelis,
+
+What usually helps me in these kinds of puzzles is splitting out
+(mentally) the s4 part from the s3 part. The first test you mention,
+using the class "withId" has an s3 part of a "maybeNumber" (numeric or
+logical) and an s4 part of a slot "id". Kind of hidden will be a second
+slot, ".Data" which contains the s3 data --The w1 value you get is
+essentially a numeric, and will be subject to numeric methods (ie you
+could do w1 + 2) and it'll add 2 to all of the values in the .Data
+slot.
+
+Test 2:
+part of the reason setClassUnion works in Test 1 is because the member
+classes of withID have the same slots-- both of them are .Data.
+However, the definition of "foo" in this test has one slot, xb, which
+is logical, and no .Data slot/no s3 part. foo and withId have
+incompatable initializers (the "initialize" method for their respective
+classes so that's why you're seeing this error.
+
+Test 3:
+In general, I'd probably avoid using setIs, as it sets an explicit
+relationship between two classes, whether or not it's logical to do so.
+While the initializer for "maybeNumber" ought to complete, because of
+the issues raised above about Test 2, it'll prevent the object from
+being created.
+
+Test 4:
+This one's tricky. A revealing question is, what happens when you try
+
+> w1 <- new("withId", TRUE, id = "test 4")
+
+Error in initialize(value, ...) : 
+  cannot use object of class "logical" in new():  class "withId" does
+not extend that class
+
+wheras if you did
+
+> setClass("withId", slots = c(data = "maybeNumber", id = "character"))
+> w1 <- new("withId", data = new("foo", TRUE), id = "test 4")
+
+it should work properly (or you could do data = 1.2 - it won't
+recognize a value TRUE as being of class foo since it's logical. Your
+withId has to have .Data of class numeric or foo, which themselves have
+incompatible initializers.
+
+Hopefully this helps!
+
+-Ezra
+
+On Sun, 2022-07-03 at 13:02 +0200, pikappa.devel at gmail.com wrote:
+> Dear all,
+> 
+> ?
+> 
+> This code, mostly copied from the setClassUnion help page, works as
+> described in the documentation:
+> 
+> ?
+> 
+> # test 1
+> 
+> setClassUnion("maybeNumber", c("numeric", "logical"))
+> 
+> setClass("withId", contains = "maybeNumber", slots = c(id =
+> "character"))
+> 
+> w1 <- new("withId", 1.2, id = "test 1")
+> 
+> ?
+> 
+> However, the following three tests do not work:
+> 
+> ?
+> 
+> # test 2
+> 
+> setClass("foo", slots = list(xb = "logical"))
+> 
+> setClassUnion("maybeNumber", c("numeric", "foo"))
+> 
+> setClass("withId", contains = "maybeNumber", slots = c(id =
+> "character"))
+> 
+> w1 <- new("withId", 1.2, id = "test 2")
+> 
+> ?
+> 
+> # test 3
+> 
+> setClass("foo", slots = list(xb = "logical"))
+> 
+> setClassUnion("maybeNumber", c("numeric"))
+> 
+> setIs("foo", "maybeNumber")
+> 
+> setClass("withId", contains = "maybeNumber", slots = c(id =
+> "character"))
+> 
+> w1 <- new("withId", 1.2, id = "test 3")
+> 
+> ?
+> 
+> # test 4
+> 
+> setClass("foo", contains = "logical")
+> 
+> setClassUnion("maybeNumber", c("numeric", "foo"))
+> 
+> setClass("withId", contains = "maybeNumber", slots = c(id =
+> "character"))
+> 
+> w1 <- new("withId", 1.2, id = "test 4")
+> 
+> ?
+> 
+> All three return:
+> 
+> ?
+> 
+> ? Error in initialize(value, ...) : 
+> 
+> ????? 'initialize' method returned an object of class "numeric"
+> instead of
+> the required class "withId"
+> 
+> ?
+> 
+> The error comes from:
+> 
+> ?
+> 
+> traceback()
+> 
+> 3: stop(gettextf("'initialize' method returned an object of class %s
+> instead
+> of the required class %s", 
+> 
+> ?????? paste(dQuote(class(value)), collapse = ", "),
+> dQuote(class(.Object))), 
+> 
+> ?????? domain = NA)
+> 
+> 2: initialize(value, ...)
+> 
+> 1: new("withId", 1.2, id = "test 2")
+> 
+> ?
+> 
+> I would expect tests 2-4 to work similarly to the first test. Is the
+> above
+> error the intended behavior of setClassUnion? I do not see anything
+> that
+> would prevent this in the documentation. Is there something I am
+> missing
+> here?
+> 
+> ?
+> 
+> Any help would be very much appreciated!
+> 
+> ?
+> 
+> Kind regards,
+> 
+> Pantelis
+> 
+> 
+> ????????[[alternative HTML version deleted]]
+> 
+> ______________________________________________
+> R-devel at r-project.org?mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From pik@pp@@devei m@iii@g oii gm@ii@com  Tue Jul  5 11:31:31 2022
+From: pik@pp@@devei m@iii@g oii gm@ii@com (pik@pp@@devei m@iii@g oii gm@ii@com)
+Date: Tue, 5 Jul 2022 11:31:31 +0200
+Subject: [Rd] Class union of custom classes
+In-Reply-To: <31d8cd9d3407a4e52f434b600e9a11b48fca8281.camel@landtucker.com>
+References: <003001d88ecc$6fa3fbc0$4eebf340$@gmail.com>
+ <31d8cd9d3407a4e52f434b600e9a11b48fca8281.camel@landtucker.com>
+Message-ID: <001601d89052$032cb810$09862830$@gmail.com>
+
+Hi Ezra,
+
+thanks, this was very helpful! Your answer got me thinking, and I have tried a couple of more approaches. I thought it would be good to document them here in case someone stumbles on this issue in the future.
+
+
+I have tried to define classes with combatible initializers:
+
+> # test 5
++ setClass("foo", contains = "logical")
++ setClass("bar", contains = "logical")
++ setClassUnion("foobar", c("foo", "bar"))
++ setClass("withId", contains = "foobar", slots = c(id = "character"))
++ w1 <- new("withId", new("foo", TRUE), id = "test 5")
+> Error in initialize(value, ...) : 
+  'initialize' method returned an object of class ?foo? instead of the required class ?withId?
+
+> # test 6
++ setClass("foo", slots = list(x = "logical"))
++ setClass("bar", slots = list(x = "logical"))
++ setClassUnion("foobar", c("foo", "bar"))
++ setClass("withId", contains = "foobar", slots = c(id = "character"))
++ w1 <- new("withId", new("foo", x = TRUE), id = "test 6")
+> > Error in initialize(value, ...) : 
+  'initialize' method returned an object of class ?foo? instead of the required class ?withId?
+
+I have also tried to "trick" setClassUnion by naming members of foo and bar .Data:
+
+> # test 7
++ setClass("foo", slots = list(.Data = "logical"))
++ setClass("bar", slots = list(.Data = "logical"))
++ setClassUnion("foobar", c("foo", "bar"))
++ setClass("withId", contains = "foobar", slots = c(id = "character"))
++ w1 <- new("withId", new("foo", .Data = TRUE), id = "test 7")
+Error in initialize(value, ...) : 
+  'initialize' method returned an object of class ?foo? instead of the required class ?withId?
+
+The approach you proposed is the only one that works, but with a catch. The withId class will not have access to foo methods, and wrappers are additionally needed to imitate inheritance. If foo has only a few methods, this approach is maintainable. For now, this is the approach I will follow in the real problem I am dealing with. 
+
+Kind Regards,
+Pantelis
+
+-----Original Message-----
+From: Ezra Tucker <ezra at landtucker.com> 
+Sent: Sunday, July 3, 2022 7:57 PM
+To: pikappa.devel at gmail.com; r-devel at r-project.org
+Subject: Re: [Rd] Class union of custom classes
+
+Hi Pantelis,
+
+What usually helps me in these kinds of puzzles is splitting out
+(mentally) the s4 part from the s3 part. The first test you mention, using the class "withId" has an s3 part of a "maybeNumber" (numeric or
+logical) and an s4 part of a slot "id". Kind of hidden will be a second slot, ".Data" which contains the s3 data --The w1 value you get is essentially a numeric, and will be subject to numeric methods (ie you could do w1 + 2) and it'll add 2 to all of the values in the .Data slot.
+
+Test 2:
+part of the reason setClassUnion works in Test 1 is because the member classes of withID have the same slots-- both of them are .Data.
+However, the definition of "foo" in this test has one slot, xb, which is logical, and no .Data slot/no s3 part. foo and withId have incompatable initializers (the "initialize" method for their respective classes so that's why you're seeing this error.
+
+Test 3:
+In general, I'd probably avoid using setIs, as it sets an explicit relationship between two classes, whether or not it's logical to do so.
+While the initializer for "maybeNumber" ought to complete, because of the issues raised above about Test 2, it'll prevent the object from being created.
+
+Test 4:
+This one's tricky. A revealing question is, what happens when you try
+
+> w1 <- new("withId", TRUE, id = "test 4")
+
+Error in initialize(value, ...) : 
+  cannot use object of class "logical" in new():  class "withId" does not extend that class
+
+wheras if you did
+
+> setClass("withId", slots = c(data = "maybeNumber", id = "character"))
+> w1 <- new("withId", data = new("foo", TRUE), id = "test 4")
+
+it should work properly (or you could do data = 1.2 - it won't recognize a value TRUE as being of class foo since it's logical. Your withId has to have .Data of class numeric or foo, which themselves have incompatible initializers.
+
+Hopefully this helps!
+
+-Ezra
+
+On Sun, 2022-07-03 at 13:02 +0200, pikappa.devel at gmail.com wrote:
+> Dear all,
+> 
+>  
+> 
+> This code, mostly copied from the setClassUnion help page, works as 
+> described in the documentation:
+> 
+>  
+> 
+> # test 1
+> 
+> setClassUnion("maybeNumber", c("numeric", "logical"))
+> 
+> setClass("withId", contains = "maybeNumber", slots = c(id =
+> "character"))
+> 
+> w1 <- new("withId", 1.2, id = "test 1")
+> 
+>  
+> 
+> However, the following three tests do not work:
+> 
+>  
+> 
+> # test 2
+> 
+> setClass("foo", slots = list(xb = "logical"))
+> 
+> setClassUnion("maybeNumber", c("numeric", "foo"))
+> 
+> setClass("withId", contains = "maybeNumber", slots = c(id =
+> "character"))
+> 
+> w1 <- new("withId", 1.2, id = "test 2")
+> 
+>  
+> 
+> # test 3
+> 
+> setClass("foo", slots = list(xb = "logical"))
+> 
+> setClassUnion("maybeNumber", c("numeric"))
+> 
+> setIs("foo", "maybeNumber")
+> 
+> setClass("withId", contains = "maybeNumber", slots = c(id =
+> "character"))
+> 
+> w1 <- new("withId", 1.2, id = "test 3")
+> 
+>  
+> 
+> # test 4
+> 
+> setClass("foo", contains = "logical")
+> 
+> setClassUnion("maybeNumber", c("numeric", "foo"))
+> 
+> setClass("withId", contains = "maybeNumber", slots = c(id =
+> "character"))
+> 
+> w1 <- new("withId", 1.2, id = "test 4")
+> 
+>  
+> 
+> All three return:
+> 
+>  
+> 
+>   Error in initialize(value, ...) : 
+> 
+>       'initialize' method returned an object of class "numeric"
+> instead of
+> the required class "withId"
+> 
+>  
+> 
+> The error comes from:
+> 
+>  
+> 
+> traceback()
+> 
+> 3: stop(gettextf("'initialize' method returned an object of class %s 
+> instead of the required class %s",
+> 
+>        paste(dQuote(class(value)), collapse = ", "), 
+> dQuote(class(.Object))),
+> 
+>        domain = NA)
+> 
+> 2: initialize(value, ...)
+> 
+> 1: new("withId", 1.2, id = "test 2")
+> 
+>  
+> 
+> I would expect tests 2-4 to work similarly to the first test. Is the 
+> above error the intended behavior of setClassUnion? I do not see 
+> anything that would prevent this in the documentation. Is there 
+> something I am missing here?
+> 
+>  
+> 
+> Any help would be very much appreciated!
+> 
+>  
+> 
+> Kind regards,
+> 
+> Pantelis
+> 
+> 
+>         [[alternative HTML version deleted]]
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From r|p|ey @end|ng |rom @t@t@@ox@@c@uk  Thu Jul  7 13:59:57 2022
+From: r|p|ey @end|ng |rom @t@t@@ox@@c@uk (Prof Brian Ripley)
+Date: Thu, 7 Jul 2022 12:59:57 +0100
+Subject: [Rd] 
+ as.Date (and strptime?) does not recognize "&nbsp; " as a blank
+In-Reply-To: <3f6da3f4-5eb2-93f6-5c75-c1f35b40edb8@prodsyse.com>
+References: <ffca1662-3ad3-95b0-b5f9-374dffcd0943@prodsyse.com>
+ <010201819a8e8fd5-5b4a4be1-e8ab-4b0a-9896-c6d03385dbef-000000@eu-west-1.amazonses.com>
+ <3f6da3f4-5eb2-93f6-5c75-c1f35b40edb8@prodsyse.com>
+Message-ID: <9712dcf4-8fd5-cab7-58f6-2ea9fe1e3811@stats.ox.ac.uk>
+
+There is some misunderstanding here.  The space is part of the format 
+specified by SG to as.Date(), which passes it to strptime(). So SG asked 
+to match a space and complained that a different character is not matched!
+
+Reading the documentation of strptime shows
+
+      ?%n? Newline on output, arbitrary whitespace on input.
+      ?%t? Tab on output, arbitrary whitespace on input.
+
+so one might hope that one could use those to specify whitespace instead 
+of ASCII space in the format.  But unfortunately whether a Unicode 
+no-break space (U+00A0) is whitespace is a matter of opinion -- for 
+example the PCRE author changed his a few years back.
+
+We don't have a reproducible example, but my attempt at reproduction 
+suggests that U+00A0 is not regarded as whitespace on the system I used. 
+  We know this to be platform-specific (it uses the C function 
+iswspace): glibc does not regard this as whitespace and the replacement 
+functions used by R on macOS and Windows have followed suit.
+
+In short, ASCII space matches only itself, and the interpretation of 
+'blank' (in regexps) or 'whitespace' (in strptime or regexps) is 
+platform-specific and liable to change.
+
+
+On 25/06/2022 14:13, Spencer Graves wrote:
+> Hi, Maxim et al.:
+> 
+> 
+> On 6/25/22 6:10 AM, Maxim Nazarov wrote:
+>> Hello,
+>>
+>>> When is a space not a space?
+>> I guess the answer is when it is a non-breaking one?..
+>>
+>> We can observe:
+>> ? > charToRaw(textutils::HTMLdecode("&nbsp;"))
+>> ? [1] c2 a0
+>> ? > charToRaw(" ")
+>> ? [1] 20
+>> So one can argue that everything works correctly - `textutils` 
+>> function converts HTML's non-breaking space '&nbsp;' into R's 
+>> non-breaking space '\xa0', while %e format of as.Date expects a 
+>> 'normal' space.
+>> But this is obviously not user-friendly especially since both symbols 
+>> are displayed the same way on the console.
+>> So your options might be to either:
+>> ? * manually change all 'weird' spaces into normal ones with something 
+>> like gsub("\\h", " ", ..., perl = TRUE) - for the list of other weird 
+>> spaces see 
+>> https://www.pcre.org/original/doc/html/pcrepattern.html#genericchartypes
+>> ? * persuade textutils author to change &nbsp; into a normal space 
+>> (they seem to be working with a simple lookup table - 
+>> https://github.com/enricoschumann/textutils/blob/b813c7bd4b55daef5fa7612e3fbfe82962711940/R/char_refs.R#L1465-L1466) 
+>>
+>> ? * persuade R-Core (or submit a PR) to relax expectations of 
+>> as.Date/strptime
+>>
+> 
+>  ????? Thanks for the reply.? Since "this is obviously not 
+> user-friendly", as you noted, I felt a need to bring it to the attention 
+> of this group, and let them decide what if anything they would want to 
+> do about it.
+> 
+> 
+>  ????? In any event, I found a fix for my immediate problem.? It's not 
+> as elegant as yours, but it works.
+> 
+>  ????? Best Wishes,
+>  ????? Spencer
+> 
+> 
+> 
+> 
+>> Kind regards,
+>> Maxim Nazarov
+>>
+>> ----- On Jun 25, 2022, at 8:37 AM, Spencer Graves 
+>> spencer.graves at prodsyse.com wrote:
+>>
+>>> Hello, All:
+>>>
+>>>
+>>> ????? When is a space not a space?
+>>>
+>>>
+>>> ????? Consider the following:
+>>>
+>>>
+>>>> (pblmDate <- textutils::HTMLdecode("&nbsp;2 Mar 2018"))
+>>> [1] " 2 Mar 2018"
+>>>> as.Date(pblmDate, format='%e %b %Y')
+>>> [1] NA
+>>>> as.Date(' 2 Mar 2018', format='%e %b %Y')
+>>> [1] "2018-03-02"
+>>>
+>>>
+>>> ????? Is this a feature or a bug?
+>>>
+>>>
+>>> ????? I can work around it, now that I know what it is, but it took me a
+>>> few hours to diagnose.
+>>>
+>>>
+>>> ????? Thanks,
+>>> ????? Spencer Graves
+>>>
+>>>
+>>> p.s.? I got this from scraping a website with code that had worked for
+>>> me roughly 20 months ago.? I suspect that in the interim, someone
+>>> probably replaced ' 2 Mar 2018' with "&nbsp;2 Mar 2018".
+>>>
+>>> ______________________________________________
+>>> R-devel at r-project.org mailing list
+>>> https://stat.ethz.ch/mailman/listinfo/r-devel
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+-- 
+Brian D. Ripley,                  ripley at stats.ox.ac.uk
+Emeritus Professor of Applied Statistics, University of Oxford
+
+
+From @pencer@gr@ve@ @end|ng |rom prod@y@e@com  Thu Jul  7 14:25:08 2022
+From: @pencer@gr@ve@ @end|ng |rom prod@y@e@com (Spencer Graves)
+Date: Thu, 7 Jul 2022 07:25:08 -0500
+Subject: [Rd] 
+ as.Date (and strptime?) does not recognize "&nbsp; " as a blank
+In-Reply-To: <9712dcf4-8fd5-cab7-58f6-2ea9fe1e3811@stats.ox.ac.uk>
+References: <ffca1662-3ad3-95b0-b5f9-374dffcd0943@prodsyse.com>
+ <010201819a8e8fd5-5b4a4be1-e8ab-4b0a-9896-c6d03385dbef-000000@eu-west-1.amazonses.com>
+ <3f6da3f4-5eb2-93f6-5c75-c1f35b40edb8@prodsyse.com>
+ <9712dcf4-8fd5-cab7-58f6-2ea9fe1e3811@stats.ox.ac.uk>
+Message-ID: <32329f15-c09f-b241-fec3-698053ac2234@prodsyse.com>
+
+Thanks, Prof. Ripley, for your further analysis of this issue.  sg
+
+
+On 7/7/22 6:59 AM, Prof Brian Ripley wrote:
+> There is some misunderstanding here.? The space is part of the format 
+> specified by SG to as.Date(), which passes it to strptime(). So SG asked 
+> to match a space and complained that a different character is not matched!
+> 
+> Reading the documentation of strptime shows
+> 
+>  ???? ?%n? Newline on output, arbitrary whitespace on input.
+>  ???? ?%t? Tab on output, arbitrary whitespace on input.
+> 
+> so one might hope that one could use those to specify whitespace instead 
+> of ASCII space in the format.? But unfortunately whether a Unicode 
+> no-break space (U+00A0) is whitespace is a matter of opinion -- for 
+> example the PCRE author changed his a few years back.
+> 
+> We don't have a reproducible example, but my attempt at reproduction 
+> suggests that U+00A0 is not regarded as whitespace on the system I used. 
+>  ?We know this to be platform-specific (it uses the C function 
+> iswspace): glibc does not regard this as whitespace and the replacement 
+> functions used by R on macOS and Windows have followed suit.
+> 
+> In short, ASCII space matches only itself, and the interpretation of 
+> 'blank' (in regexps) or 'whitespace' (in strptime or regexps) is 
+> platform-specific and liable to change.
+> 
+> 
+> On 25/06/2022 14:13, Spencer Graves wrote:
+>> Hi, Maxim et al.:
+>>
+>>
+>> On 6/25/22 6:10 AM, Maxim Nazarov wrote:
+>>> Hello,
+>>>
+>>>> When is a space not a space?
+>>> I guess the answer is when it is a non-breaking one?..
+>>>
+>>> We can observe:
+>>> ? > charToRaw(textutils::HTMLdecode("&nbsp;"))
+>>> ? [1] c2 a0
+>>> ? > charToRaw(" ")
+>>> ? [1] 20
+>>> So one can argue that everything works correctly - `textutils` 
+>>> function converts HTML's non-breaking space '&nbsp;' into R's 
+>>> non-breaking space '\xa0', while %e format of as.Date expects a 
+>>> 'normal' space.
+>>> But this is obviously not user-friendly especially since both symbols 
+>>> are displayed the same way on the console.
+>>> So your options might be to either:
+>>> ? * manually change all 'weird' spaces into normal ones with 
+>>> something like gsub("\\h", " ", ..., perl = TRUE) - for the list of 
+>>> other weird spaces see 
+>>> https://www.pcre.org/original/doc/html/pcrepattern.html#genericchartypes
+>>> ? * persuade textutils author to change &nbsp; into a normal space 
+>>> (they seem to be working with a simple lookup table - 
+>>> https://github.com/enricoschumann/textutils/blob/b813c7bd4b55daef5fa7612e3fbfe82962711940/R/char_refs.R#L1465-L1466) 
+>>>
+>>> ? * persuade R-Core (or submit a PR) to relax expectations of 
+>>> as.Date/strptime
+>>>
+>>
+>> ?????? Thanks for the reply.? Since "this is obviously not 
+>> user-friendly", as you noted, I felt a need to bring it to the 
+>> attention of this group, and let them decide what if anything they 
+>> would want to do about it.
+>>
+>>
+>> ?????? In any event, I found a fix for my immediate problem.? It's not 
+>> as elegant as yours, but it works.
+>>
+>> ?????? Best Wishes,
+>> ?????? Spencer
+>>
+>>
+>>
+>>
+>>> Kind regards,
+>>> Maxim Nazarov
+>>>
+>>> ----- On Jun 25, 2022, at 8:37 AM, Spencer Graves 
+>>> spencer.graves at prodsyse.com wrote:
+>>>
+>>>> Hello, All:
+>>>>
+>>>>
+>>>> ????? When is a space not a space?
+>>>>
+>>>>
+>>>> ????? Consider the following:
+>>>>
+>>>>
+>>>>> (pblmDate <- textutils::HTMLdecode("&nbsp;2 Mar 2018"))
+>>>> [1] " 2 Mar 2018"
+>>>>> as.Date(pblmDate, format='%e %b %Y')
+>>>> [1] NA
+>>>>> as.Date(' 2 Mar 2018', format='%e %b %Y')
+>>>> [1] "2018-03-02"
+>>>>
+>>>>
+>>>> ????? Is this a feature or a bug?
+>>>>
+>>>>
+>>>> ????? I can work around it, now that I know what it is, but it took 
+>>>> me a
+>>>> few hours to diagnose.
+>>>>
+>>>>
+>>>> ????? Thanks,
+>>>> ????? Spencer Graves
+>>>>
+>>>>
+>>>> p.s.? I got this from scraping a website with code that had worked for
+>>>> me roughly 20 months ago.? I suspect that in the interim, someone
+>>>> probably replaced ' 2 Mar 2018' with "&nbsp;2 Mar 2018".
+>>>>
+>>>> ______________________________________________
+>>>> R-devel at r-project.org mailing list
+>>>> https://stat.ethz.ch/mailman/listinfo/r-devel
+>>
+>> ______________________________________________
+>> R-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-devel
+> 
+>
+
+
+From g@bembecker @end|ng |rom gm@||@com  Thu Jul  7 19:42:34 2022
+From: g@bembecker @end|ng |rom gm@||@com (Gabriel Becker)
+Date: Thu, 7 Jul 2022 10:42:34 -0700
+Subject: [Rd] 
+ as.Date (and strptime?) does not recognize "&nbsp; " as a blank
+In-Reply-To: <b7458796-4406-7da9-c893-db33f819b0a9@prodsyse.com>
+References: <ffca1662-3ad3-95b0-b5f9-374dffcd0943@prodsyse.com>
+ <b7458796-4406-7da9-c893-db33f819b0a9@prodsyse.com>
+Message-ID: <CAD4oTHFEjdms=scxCRsbOXtPLoWBOwCvm=KiF6Q_9hW62nyk5g@mail.gmail.com>
+
+Depends  a bit on what you mean by "automatically". This seems to work for
+me (note this has NOT been extensively tested on different OSes or even in
+different locales/encodings):
+
+library(XML)
+myhtml <- "<html><body><table
+id='hiya'><tr><th>colname</th></tr><tr><td>&nbsp;</td></tr><tr><td>
+</td></tr></table></body></html>"
+doc <- htmlParse(myhtml, asText = TRUE)
+oldway <- readHTMLTable(doc, trim = FALSE)
+
+identical(oldway$hiya$colname[1], oldway$hiya$colname[2]) # FALSE :(
+
+decode_nbsp <- function(x) gsub(rawToChar(as.raw(c(0xc2, 0xa0))), " ", x,
+fixed = TRUE, useBytes = TRUE)
+fancypants <- function(node) decode_nbsp(xmlValue(node))
+newandfancy <- readHTMLTable(doc, trim = FALSE, elFun = fancypants)
+
+identical(newandfancy$hiya$colname[1], newandfancy$hiya$colname[2]) # TRUE
+:D
+
+Best,
+~G
+
+On Fri, Jun 24, 2022 at 11:48 PM Spencer Graves <spencer.graves at prodsyse.com>
+wrote:
+
+> p.s.  Is there a way to get XML::readHTMLTable to automatically convert
+> "&nbsp;" to a normal blank space?
+>
+>
+> On 6/25/22 1:37 AM, Spencer Graves wrote:
+> > Hello, All:
+> >
+> >
+> >        When is a space not a space?
+> >
+> >
+> >        Consider the following:
+> >
+> >
+> >  > (pblmDate <- textutils::HTMLdecode("&nbsp;2 Mar 2018"))
+> > [1] " 2 Mar 2018"
+> >  > as.Date(pblmDate, format='%e %b %Y')
+> > [1] NA
+> >  > as.Date(' 2 Mar 2018', format='%e %b %Y')
+> > [1] "2018-03-02"
+> >
+> >
+> >        Is this a feature or a bug?
+> >
+> >
+> >        I can work around it, now that I know what it is, but it took me
+> > a few hours to diagnose.
+> >
+> >
+> >        Thanks,
+> >        Spencer Graves
+> >
+> >
+> > p.s.  I got this from scraping a website with code that had worked for
+> > me roughly 20 months ago.  I suspect that in the interim, someone
+> > probably replaced ' 2 Mar 2018' with "&nbsp;2 Mar 2018".
+> >
+> > ______________________________________________
+> > R-devel at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+
+	[[alternative HTML version deleted]]
+
+
+From ch|r|com @end|ng |rom goog|e@com  Fri Jul  8 07:17:12 2022
+From: ch|r|com @end|ng |rom goog|e@com (Michael Chirico)
+Date: Thu, 7 Jul 2022 22:17:12 -0700
+Subject: [Rd] stats::poly() stopped working for Date input -- intentional?
+Message-ID: <CAD7Bkx85RaBLdhGiUUTgiyRKkBDv=gH=zLVB_+8bGZV=fP3C3g@mail.gmail.com>
+
+SVN#80126 added rep.difftime, which means rep(as.difftime(0,
+units="secs")) retains the "datetime" class.
+
+A consequence of this is that stats::poly() no longer accepts
+Date/POSIXct input (because poly calls outer() on the de-meaned input,
+which rep()):
+
+# works on R 3.6.3 (and probably everything < 4.1.0)
+#   but on R 4.1.3 (and probably everything >= 4.1.0):
+stats::poly(Sys.Date() - 0:4, 3)
+# Error in Ops.difftime(X, Y, ...) : '^' not defined for "difftime" objects
+
+Is this intentional?
+
+If not, a simple patch is to call 'x <- as.double(x)' before de-meaning.
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Fri Jul  8 16:34:43 2022
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Fri, 8 Jul 2022 16:34:43 +0200
+Subject: [Rd] 
+ stats::poly() stopped working for Date input -- intentional?
+In-Reply-To: <CAD7Bkx85RaBLdhGiUUTgiyRKkBDv=gH=zLVB_+8bGZV=fP3C3g@mail.gmail.com>
+References: <CAD7Bkx85RaBLdhGiUUTgiyRKkBDv=gH=zLVB_+8bGZV=fP3C3g@mail.gmail.com>
+Message-ID: <25288.16515.793861.777833@stat.math.ethz.ch>
+
+>>>>> Michael Chirico via R-devel 
+>>>>>     on Thu, 7 Jul 2022 22:17:12 -0700 writes:
+
+    > SVN#80126 added rep.difftime, which means rep(as.difftime(0,
+    > units="secs")) retains the "datetime" class.
+
+(yes, by me, March 2021), this was fixing PR#18066
+ ==> https://bugs.r-project.org/show_bug.cgi?id=18066 )
+
+Thank you, Michael, for the report!
+
+    > A consequence of this is that stats::poly() no longer accepts
+    > Date/POSIXct input (because poly calls outer() on the de-meaned input,
+    > which rep()):
+
+    > # works on R 3.6.3 (and probably everything < 4.1.0)
+    > #   but on R 4.1.3 (and probably everything >= 4.1.0):
+    > stats::poly(Sys.Date() - 0:4, 3)
+    > # Error in Ops.difftime(X, Y, ...) : '^' not defined for "difftime" objects
+
+    > Is this intentional?
+
+Well, actually I think it was not intentional that  poly()
+worked at all with Date/POSIXct input, ..
+OTOH you *did* encounter it.
+
+Note that 
+
+  > poly(as.Date("2020-2-2") - 0:3, 2,  raw = TRUE)
+  Error in Ops.Date(X, Y, ...) : ^ not defined for "Date" objects
+  > 
+
+happens (I think) in all versions of R, i.e., even before the
+rep() extension.
+
+    > If not, a simple patch is to call 'x <- as.double(x)' before de-meaning.
+
+well, yes, in that branch of the source code.
+... and a similar call for the  raw = TRUE  case.
+
+At first, this seems to make sense to me,
+but actually it will break when someone uses
+
+   poly(<complex>, ..)
+   
+[ Also: what about the "prediction" case  (coef = <specified>) ? 
+  could you use prediction of an lm() for your real use case ? ]
+
+---
+
+Maybe it makes most sense if you open an R bugzilla entry for
+this (including part of our current dialogue).
+
+Thank you again,
+Martin
+
+
+From @nto|ne@|@br| @end|ng |rom gm@||@com  Sun Jul 10 16:00:02 2022
+From: @nto|ne@|@br| @end|ng |rom gm@||@com (Antoine Fabri)
+Date: Sun, 10 Jul 2022 16:00:02 +0200
+Subject: [Rd] Floating point issue
+Message-ID: <CAEKh8uhNTF3RczavV-jh82tK9e=iDr2tzys=wGSk6ZD5e2tndg@mail.gmail.com>
+
+Dear r-devel,
+
+For some numbers, the printed value is not equivalent to the input :
+
+options(scipen = 999)
+## GOOD
+1e24
+#> [1]  999999999999999983222784
+1e24 == 999999999999999983222784
+#> [1] TRUE
+
+## BAD
+1e25
+#> [1] 10000000000000000905969664
+1e25 == 10000000000000000905969664
+#> [1] FALSE
+
+## STILL BAD
+10000000000000000905969664
+#> [1] 10000000000000003053453312
+
+## GOOD AGAIN
+10000000000000003053453312
+#> [1] 10000000000000003053453312
+
+# Additionally
+10000000000000000000000000 == 1e25
+#> [1] FALSE
+
+Are these bugs ?
+
+	[[alternative HTML version deleted]]
+
+
+From edd @end|ng |rom deb|@n@org  Sun Jul 10 16:09:45 2022
+From: edd @end|ng |rom deb|@n@org (Dirk Eddelbuettel)
+Date: Sun, 10 Jul 2022 09:09:45 -0500
+Subject: [Rd] Floating point issue
+In-Reply-To: <CAEKh8uhNTF3RczavV-jh82tK9e=iDr2tzys=wGSk6ZD5e2tndg@mail.gmail.com>
+References: <CAEKh8uhNTF3RczavV-jh82tK9e=iDr2tzys=wGSk6ZD5e2tndg@mail.gmail.com>
+Message-ID: <25290.56745.942106.634125@rob.eddelbuettel.com>
+
+
+On 10 July 2022 at 16:00, Antoine Fabri wrote:
+| Dear r-devel,
+| 
+| For some numbers, the printed value is not equivalent to the input :
+| 
+| options(scipen = 999)
+| ## GOOD
+| 1e24
+| #> [1]  999999999999999983222784
+| 1e24 == 999999999999999983222784
+| #> [1] TRUE
+| 
+| ## BAD
+| 1e25
+| #> [1] 10000000000000000905969664
+| 1e25 == 10000000000000000905969664
+| #> [1] FALSE
+| 
+| ## STILL BAD
+| 10000000000000000905969664
+| #> [1] 10000000000000003053453312
+| 
+| ## GOOD AGAIN
+| 10000000000000003053453312
+| #> [1] 10000000000000003053453312
+| 
+| # Additionally
+| 10000000000000000000000000 == 1e25
+| #> [1] FALSE
+| 
+| Are these bugs ?
+
+No, that is how computers work (with floating point numbers).
+
+Please R FAQ 7.31 "Why doesn?t R think these numbers are equal?" at
+  https://cran.r-project.org/doc/FAQ/R-FAQ.html#Why-doesn_0027t-R-think-these-numbers-are-equal_003f
+and the references therein for more.
+
+Dirk
+
+-- 
+dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From Andre@G||||bert @end|ng |rom chu-rouen@|r  Sun Jul 10 16:28:27 2022
+From: Andre@G||||bert @end|ng |rom chu-rouen@|r (GILLIBERT, Andre)
+Date: Sun, 10 Jul 2022 14:28:27 +0000
+Subject: [Rd] Floating point issue
+In-Reply-To: <25290.56745.942106.634125@rob.eddelbuettel.com>
+References: <CAEKh8uhNTF3RczavV-jh82tK9e=iDr2tzys=wGSk6ZD5e2tndg@mail.gmail.com>,
+ <25290.56745.942106.634125@rob.eddelbuettel.com>
+Message-ID: <cb4678b2d846400194e23034c6cf7674@chu-rouen.fr>
+
+> No, that is how computers work (with floating point numbers).
+
+
+The fact that not all values are representable by floating point does not mean that outputing a number with maximum accuracy, then reading it back, should yield a different number.
+
+
+I would like to point that I cannot reproduce this "bug" on the official R 4.2.0 Windows x86_64 build on an AMD Ryzen 1700 on Windows 10.
+
+
+> 1e25
+[1] 10000000000000000906640224
+> 1e25 == 10000000000000000906640224
+[1] TRUE
+>
+
+I could also test:
+> as.double(as.character(1e25)) == 1e25
+[1] TRUE
+
+For ECMAScript, there is a rule that guarantee that converting a floating point value to a string, and converting back to a floating point value, yields to an equal number.
+https://262.ecma-international.org/5.1/#sec-9.8.1
+
+"If x is any Number value other than ?0, then ToNumber<https://262.ecma-international.org/5.1/#sec-9.3>(ToString<https://262.ecma-international.org/5.1/#sec-9.8>(x)) is exactly the same Number value as x."
+
+
+This avoids some data loss when repeatedly writing/reading floating point values to a text file.
+
+
+Of course, R is a different language, and I do not think that it has such rule. However, this does not mean that this rule is useless or impossible to implement.
+
+
+--
+
+Sincerely
+
+Andr? GILLIBERT
+
+________________________________
+De : R-devel <r-devel-bounces at r-project.org> de la part de Dirk Eddelbuettel <edd at debian.org>
+Envoy? : dimanche 10 juillet 2022 16:09:45
+? : Antoine Fabri
+Cc : R-devel
+Objet : Re: [Rd] Floating point issue
+
+ATTENTION: Cet e-mail provient d?une adresse mail ext?rieure au CHU de Rouen. Ne cliquez pas sur les liens ou n'ouvrez pas les pi?ces jointes ? moins de conna?tre l'exp?diteur et de savoir que le contenu est s?r. En cas de doute, transf?rer le mail ? ? DSI, S?curit? ? pour analyse. Merci de votre vigilance
+
+
+On 10 July 2022 at 16:00, Antoine Fabri wrote:
+| Dear r-devel,
+|
+| For some numbers, the printed value is not equivalent to the input :
+|
+| options(scipen = 999)
+| ## GOOD
+| 1e24
+| #> [1]  999999999999999983222784
+| 1e24 == 999999999999999983222784
+| #> [1] TRUE
+|
+| ## BAD
+| 1e25
+| #> [1] 10000000000000000905969664
+| 1e25 == 10000000000000000905969664
+| #> [1] FALSE
+|
+| ## STILL BAD
+| 10000000000000000905969664
+| #> [1] 10000000000000003053453312
+|
+| ## GOOD AGAIN
+| 10000000000000003053453312
+| #> [1] 10000000000000003053453312
+|
+| # Additionally
+| 10000000000000000000000000 == 1e25
+| #> [1] FALSE
+|
+| Are these bugs ?
+
+No, that is how computers work (with floating point numbers).
+
+Please R FAQ 7.31 "Why doesn?t R think these numbers are equal?" at
+  https://cran.r-project.org/doc/FAQ/R-FAQ.html#Why-doesn_0027t-R-think-these-numbers-are-equal_003f
+and the references therein for more.
+
+Dirk
+
+--
+dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+______________________________________________
+R-devel at r-project.org mailing list
+https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+	[[alternative HTML version deleted]]
+
+
+From |uc@r @end|ng |rom |edor@project@org  Sun Jul 10 16:44:11 2022
+From: |uc@r @end|ng |rom |edor@project@org (=?UTF-8?Q?I=C3=B1aki_Ucar?=)
+Date: Sun, 10 Jul 2022 16:44:11 +0200
+Subject: [Rd] Floating point issue
+In-Reply-To: <cb4678b2d846400194e23034c6cf7674@chu-rouen.fr>
+References: <CAEKh8uhNTF3RczavV-jh82tK9e=iDr2tzys=wGSk6ZD5e2tndg@mail.gmail.com>
+ <25290.56745.942106.634125@rob.eddelbuettel.com>
+ <cb4678b2d846400194e23034c6cf7674@chu-rouen.fr>
+Message-ID: <CALEXWq3F86UV71qzWaUHrZkZb9k8dC2H_OR_cYqzvEf6pFz9hA@mail.gmail.com>
+
+On Sun, 10 Jul 2022 at 16:28, GILLIBERT, Andre
+<Andre.Gillibert at chu-rouen.fr> wrote:
+>
+> > No, that is how computers work (with floating point numbers).
+>
+>
+> The fact that not all values are representable by floating point does not mean that outputing a number with maximum accuracy, then reading it back, should yield a different number.
+>
+>
+> I would like to point that I cannot reproduce this "bug" on the official R 4.2.0 Windows x86_64 build on an AMD Ryzen 1700 on Windows 10.
+
+I cannot reproduce this on a 64-bit Linux build of R 4.1.3 either:
+
+options(scipen = 999)
+1e24
+#> [1]  999999999999999983222784
+1e24 == 999999999999999983222784
+#> [1] TRUE
+
+1e25
+#> [1] 10000000000000000905969664
+1e25 == 10000000000000000905969664
+#> [1] TRUE
+
+10000000000000000905969664
+#> [1] 10000000000000000905969664
+
+10000000000000003053453312
+#> [1] 10000000000000003053453312
+
+10000000000000000000000000 == 1e25
+#> [1] TRUE
+
+-- 
+I?aki ?car
+
+
+From @nto|ne@|@br| @end|ng |rom gm@||@com  Sun Jul 10 17:43:03 2022
+From: @nto|ne@|@br| @end|ng |rom gm@||@com (Antoine Fabri)
+Date: Sun, 10 Jul 2022 17:43:03 +0200
+Subject: [Rd] Floating point issue
+In-Reply-To: <CALEXWq3F86UV71qzWaUHrZkZb9k8dC2H_OR_cYqzvEf6pFz9hA@mail.gmail.com>
+References: <CAEKh8uhNTF3RczavV-jh82tK9e=iDr2tzys=wGSk6ZD5e2tndg@mail.gmail.com>
+ <25290.56745.942106.634125@rob.eddelbuettel.com>
+ <cb4678b2d846400194e23034c6cf7674@chu-rouen.fr>
+ <CALEXWq3F86UV71qzWaUHrZkZb9k8dC2H_OR_cYqzvEf6pFz9hA@mail.gmail.com>
+Message-ID: <CAEKh8ujbqCpL8Dv8OiB0LtHFsk+80gxU4ivPoqRKbLdfJLKc_A@mail.gmail.com>
+
+He is my session info :
+
+R version 4.1.3 (2022-03-10)
+Platform: aarch64-apple-darwin20 (64-bit)
+Running under: macOS Monterey 12.0.1
+
+Le dim. 10 juil. 2022 ? 16:44, I?aki Ucar <iucar at fedoraproject.org> a
+?crit :
+
+> On Sun, 10 Jul 2022 at 16:28, GILLIBERT, Andre
+> <Andre.Gillibert at chu-rouen.fr> wrote:
+> >
+> > > No, that is how computers work (with floating point numbers).
+> >
+> >
+> > The fact that not all values are representable by floating point does
+> not mean that outputing a number with maximum accuracy, then reading it
+> back, should yield a different number.
+> >
+> >
+> > I would like to point that I cannot reproduce this "bug" on the official
+> R 4.2.0 Windows x86_64 build on an AMD Ryzen 1700 on Windows 10.
+>
+> I cannot reproduce this on a 64-bit Linux build of R 4.1.3 either:
+>
+> options(scipen = 999)
+> 1e24
+> #> [1]  999999999999999983222784
+> 1e24 == 999999999999999983222784
+> #> [1] TRUE
+>
+> 1e25
+> #> [1] 10000000000000000905969664
+> 1e25 == 10000000000000000905969664
+> #> [1] TRUE
+>
+> 10000000000000000905969664
+> #> [1] 10000000000000000905969664
+>
+> 10000000000000003053453312
+> #> [1] 10000000000000003053453312
+>
+> 10000000000000000000000000 == 1e25
+> #> [1] TRUE
+>
+> --
+> I?aki ?car
+>
+
+	[[alternative HTML version deleted]]
+
+
+From ru|pb@rr@d@@ @end|ng |rom @@po@pt  Sun Jul 10 20:46:26 2022
+From: ru|pb@rr@d@@ @end|ng |rom @@po@pt (Rui Barradas)
+Date: Sun, 10 Jul 2022 19:46:26 +0100
+Subject: [Rd] Floating point issue
+In-Reply-To: <CALEXWq3F86UV71qzWaUHrZkZb9k8dC2H_OR_cYqzvEf6pFz9hA@mail.gmail.com>
+References: <CAEKh8uhNTF3RczavV-jh82tK9e=iDr2tzys=wGSk6ZD5e2tndg@mail.gmail.com>
+ <25290.56745.942106.634125@rob.eddelbuettel.com>
+ <cb4678b2d846400194e23034c6cf7674@chu-rouen.fr>
+ <CALEXWq3F86UV71qzWaUHrZkZb9k8dC2H_OR_cYqzvEf6pFz9hA@mail.gmail.com>
+Message-ID: <a48ab1cd-43b5-0810-2a29-3b0e892b3d00@sapo.pt>
+
+Hello,
+
+R 4.2.1 on Windows 11, sessionInfo() at end.
+
+I cannot reproduce this either.
+
+
+op <- options(scipen = 999)
+
+1e24
+# [1]  999999999999999983202404
+1e24 == 999999999999999983222784
+# [1] TRUE
+
+1e25
+# [1] 10000000000000000906640224
+1e25 == 10000000000000000905969664
+# [1] TRUE
+
+10000000000000000905969664
+# [1] 10000000000000000906640224
+
+10000000000000003053453312
+# [1] 10000000000000003053648442
+
+10000000000000000000000000 == 1e25
+# [1] TRUE
+
+options(op)
+
+sessionInfo()
+R version 4.2.1 (2022-06-23 ucrt)
+Platform: x86_64-w64-mingw32/x64 (64-bit)
+Running under: Windows 10 x64 (build 22000)
+
+Matrix products: default
+
+locale:
+[1] LC_COLLATE=Portuguese_Portugal.utf8 
+LC_CTYPE=Portuguese_Portugal.utf8
+[3] LC_MONETARY=Portuguese_Portugal.utf8 LC_NUMERIC=C 
+
+[5] LC_TIME=Portuguese_Portugal.utf8
+
+attached base packages:
+[1] stats     graphics  grDevices utils     datasets  methods   base
+
+loaded via a namespace (and not attached):
+[1] compiler_4.2.1
+
+
+Hope this helps,
+
+Rui Barradas
+
+?s 15:44 de 10/07/2022, I?aki Ucar escreveu:
+> On Sun, 10 Jul 2022 at 16:28, GILLIBERT, Andre
+> <Andre.Gillibert at chu-rouen.fr> wrote:
+>>
+>>> No, that is how computers work (with floating point numbers).
+>>
+>>
+>> The fact that not all values are representable by floating point does not mean that outputing a number with maximum accuracy, then reading it back, should yield a different number.
+>>
+>>
+>> I would like to point that I cannot reproduce this "bug" on the official R 4.2.0 Windows x86_64 build on an AMD Ryzen 1700 on Windows 10.
+> 
+> I cannot reproduce this on a 64-bit Linux build of R 4.1.3 either:
+> 
+> options(scipen = 999)
+> 1e24
+> #> [1]  999999999999999983222784
+> 1e24 == 999999999999999983222784
+> #> [1] TRUE
+> 
+> 1e25
+> #> [1] 10000000000000000905969664
+> 1e25 == 10000000000000000905969664
+> #> [1] TRUE
+> 
+> 10000000000000000905969664
+> #> [1] 10000000000000000905969664
+> 
+> 10000000000000003053453312
+> #> [1] 10000000000000003053453312
+> 
+> 10000000000000000000000000 == 1e25
+> #> [1] TRUE
+>
+
+
+From w||||@mwdun|@p @end|ng |rom gm@||@com  Sun Jul 10 22:23:22 2022
+From: w||||@mwdun|@p @end|ng |rom gm@||@com (Bill Dunlap)
+Date: Sun, 10 Jul 2022 13:23:22 -0700
+Subject: [Rd] Floating point issue
+In-Reply-To: <CAEKh8uhNTF3RczavV-jh82tK9e=iDr2tzys=wGSk6ZD5e2tndg@mail.gmail.com>
+References: <CAEKh8uhNTF3RczavV-jh82tK9e=iDr2tzys=wGSk6ZD5e2tndg@mail.gmail.com>
+Message-ID: <CAHqSRuTN7iU2ngvr2JoEiqZCrogY8GL3ssKY2vvUZstWCydzKw@mail.gmail.com>
+
+The following function, 'bitC' from ?numToBits, displays the bits in a
+double precision number, separated into the sign bit, the 11 exponent bits,
+and the 52 bits in the mantissa.  I've shown the results with your numbers
+from R-2.4.0 on my Windows 11 Lenovo laptop: what do you get?
+
+> bitC <- function(x) noquote(vapply(as.double(x), function(x) { # split
+one double
++     b <- substr(as.character(rev(numToBits(x))), 2L, 2L)
++     paste0(c(b[1L], " ", b[2:12], " | ", b[13:64]), collapse = "")
++   }, ""))
+> bitC(10^25)
+# [1] 0 10001010010 | 0000100010110010101000101100001010000000001010010001
+> bitC(10000000000000000905969664)
+# [1] 0 10001010010 | 0000100010110010101000101100001010000000001010010001
+> bitC(10000000000000000905969664 - 10^25)
+# [1] 0 00000000000 | 0000000000000000000000000000000000000000000000000000
+> bitC(1e25)
+# [1] 0 10001010010 | 0000100010110010101000101100001010000000001010010001
+
+-Bill
+
+On Sun, Jul 10, 2022 at 7:00 AM Antoine Fabri <antoine.fabri at gmail.com>
+wrote:
+
+> Dear r-devel,
+>
+> For some numbers, the printed value is not equivalent to the input :
+>
+> options(scipen = 999)
+> ## GOOD
+> 1e24
+> #> [1]  999999999999999983222784
+> 1e24 == 999999999999999983222784
+> #> [1] TRUE
+>
+> ## BAD
+> 1e25
+> #> [1] 10000000000000000905969664
+> 1e25 == 10000000000000000905969664
+> #> [1] FALSE
+>
+> ## STILL BAD
+> 10000000000000000905969664
+> #> [1] 10000000000000003053453312
+>
+> ## GOOD AGAIN
+> 10000000000000003053453312
+> #> [1] 10000000000000003053453312
+>
+> # Additionally
+> 10000000000000000000000000 == 1e25
+> #> [1] FALSE
+>
+> Are these bugs ?
+>
+>         [[alternative HTML version deleted]]
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+
+	[[alternative HTML version deleted]]
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Sun Jul 10 22:34:17 2022
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Sun, 10 Jul 2022 16:34:17 -0400
+Subject: [Rd] Floating point issue
+In-Reply-To: <CAEKh8uhNTF3RczavV-jh82tK9e=iDr2tzys=wGSk6ZD5e2tndg@mail.gmail.com>
+References: <CAEKh8uhNTF3RczavV-jh82tK9e=iDr2tzys=wGSk6ZD5e2tndg@mail.gmail.com>
+Message-ID: <a60d515f-81c4-7dcc-67f3-a962210db427@gmail.com>
+
+Here's a similar question that may give you some ideas for dealing with 
+this:
+
+https://stackoverflow.com/q/72899973/2554330
+
+Duncan Murdoch
+
+On 10/07/2022 10:00 a.m., Antoine Fabri wrote:
+> Dear r-devel,
+> 
+> For some numbers, the printed value is not equivalent to the input :
+> 
+> options(scipen = 999)
+> ## GOOD
+> 1e24
+> #> [1]  999999999999999983222784
+> 1e24 == 999999999999999983222784
+> #> [1] TRUE
+> 
+> ## BAD
+> 1e25
+> #> [1] 10000000000000000905969664
+> 1e25 == 10000000000000000905969664
+> #> [1] FALSE
+> 
+> ## STILL BAD
+> 10000000000000000905969664
+> #> [1] 10000000000000003053453312
+> 
+> ## GOOD AGAIN
+> 10000000000000003053453312
+> #> [1] 10000000000000003053453312
+> 
+> # Additionally
+> 10000000000000000000000000 == 1e25
+> #> [1] FALSE
+> 
+> Are these bugs ?
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From edd @end|ng |rom deb|@n@org  Sun Jul 10 22:50:45 2022
+From: edd @end|ng |rom deb|@n@org (Dirk Eddelbuettel)
+Date: Sun, 10 Jul 2022 15:50:45 -0500
+Subject: [Rd] Floating point issue
+In-Reply-To: <a60d515f-81c4-7dcc-67f3-a962210db427@gmail.com>
+References: <CAEKh8uhNTF3RczavV-jh82tK9e=iDr2tzys=wGSk6ZD5e2tndg@mail.gmail.com>
+ <a60d515f-81c4-7dcc-67f3-a962210db427@gmail.com>
+Message-ID: <25291.15269.602194.667541@rob.eddelbuettel.com>
+
+
+On 10 July 2022 at 16:34, Duncan Murdoch wrote:
+| Here's a similar question that may give you some ideas for dealing with 
+| this:
+| 
+| https://stackoverflow.com/q/72899973/2554330
+
+Good find, but that's his own question (see the profile) and he choose to
+cross-post. Which is generally discouraged. 
+
+Dirk
+
+-- 
+dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From @nto|ne@|@br| @end|ng |rom gm@||@com  Sun Jul 10 23:38:51 2022
+From: @nto|ne@|@br| @end|ng |rom gm@||@com (Antoine Fabri)
+Date: Sun, 10 Jul 2022 23:38:51 +0200
+Subject: [Rd] Floating point issue
+In-Reply-To: <CAHqSRuTN7iU2ngvr2JoEiqZCrogY8GL3ssKY2vvUZstWCydzKw@mail.gmail.com>
+References: <CAEKh8uhNTF3RczavV-jh82tK9e=iDr2tzys=wGSk6ZD5e2tndg@mail.gmail.com>
+ <CAHqSRuTN7iU2ngvr2JoEiqZCrogY8GL3ssKY2vvUZstWCydzKw@mail.gmail.com>
+Message-ID: <CAEKh8ujziLSCxAEc1dmxJQMf5Kcpq2hO0yx+Tuyp4s98WuCeuA@mail.gmail.com>
+
+Thanks, I get the exact same results as yours
+
+``` r
+bitC <- function(x) noquote(vapply(as.double(x), function(x) { # split one
+double
+  b <- substr(as.character(rev(numToBits(x))), 2L, 2L)
+      paste0(c(b[1L], " ", b[2:12], " | ", b[13:64]), collapse = "")
+    }, ""))
+bitC(10^25)
+#> [1] 0 10001010010 | 0000100010110010101000101100001010000000001010010001
+bitC(10000000000000000905969664)
+#> [1] 0 10001010010 | 0000100010110010101000101100001010000000001010010010
+bitC(10000000000000000905969664 - 10^25)
+#> [1] 0 10000011110 | 0000000000000000000000000000000000000000000000000000
+bitC(1e25)
+#> [1] 0 10001010010 | 0000100010110010101000101100001010000000001010010001
+```
+
+<sup>Created on 2022-07-10 by the [reprex package](
+https://reprex.tidyverse.org) (v2.0.1)</sup>
+
+Le dim. 10 juil. 2022 ? 22:23, Bill Dunlap <williamwdunlap at gmail.com> a
+?crit :
+
+> The following function, 'bitC' from ?numToBits, displays the bits in a
+> double precision number, separated into the sign bit, the 11 exponent bits,
+> and the 52 bits in the mantissa.  I've shown the results with your numbers
+> from R-2.4.0 on my Windows 11 Lenovo laptop: what do you get?
+>
+> > bitC <- function(x) noquote(vapply(as.double(x), function(x) { # split
+> one double
+> +     b <- substr(as.character(rev(numToBits(x))), 2L, 2L)
+> +     paste0(c(b[1L], " ", b[2:12], " | ", b[13:64]), collapse = "")
+> +   }, ""))
+> > bitC(10^25)
+> # [1] 0 10001010010 | 0000100010110010101000101100001010000000001010010001
+> > bitC(10000000000000000905969664)
+> # [1] 0 10001010010 | 0000100010110010101000101100001010000000001010010001
+> > bitC(10000000000000000905969664 - 10^25)
+> # [1] 0 00000000000 | 0000000000000000000000000000000000000000000000000000
+> > bitC(1e25)
+> # [1] 0 10001010010 | 0000100010110010101000101100001010000000001010010001
+>
+> -Bill
+>
+> On Sun, Jul 10, 2022 at 7:00 AM Antoine Fabri <antoine.fabri at gmail.com>
+> wrote:
+>
+>> Dear r-devel,
+>>
+>> For some numbers, the printed value is not equivalent to the input :
+>>
+>> options(scipen = 999)
+>> ## GOOD
+>> 1e24
+>> #> [1]  999999999999999983222784
+>> 1e24 == 999999999999999983222784
+>> #> [1] TRUE
+>>
+>> ## BAD
+>> 1e25
+>> #> [1] 10000000000000000905969664
+>> 1e25 == 10000000000000000905969664
+>> #> [1] FALSE
+>>
+>> ## STILL BAD
+>> 10000000000000000905969664
+>> #> [1] 10000000000000003053453312
+>>
+>> ## GOOD AGAIN
+>> 10000000000000003053453312
+>> #> [1] 10000000000000003053453312
+>>
+>> # Additionally
+>> 10000000000000000000000000 == 1e25
+>> #> [1] FALSE
+>>
+>> Are these bugs ?
+>>
+>>         [[alternative HTML version deleted]]
+>>
+>> ______________________________________________
+>> R-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-devel
+>>
+>
+
+	[[alternative HTML version deleted]]
+
+
+From edd @end|ng |rom deb|@n@org  Mon Jul 11 00:21:48 2022
+From: edd @end|ng |rom deb|@n@org (Dirk Eddelbuettel)
+Date: Sun, 10 Jul 2022 17:21:48 -0500
+Subject: [Rd] Floating point issue
+In-Reply-To: <CAEKh8ujbqCpL8Dv8OiB0LtHFsk+80gxU4ivPoqRKbLdfJLKc_A@mail.gmail.com>
+References: <CAEKh8uhNTF3RczavV-jh82tK9e=iDr2tzys=wGSk6ZD5e2tndg@mail.gmail.com>
+ <25290.56745.942106.634125@rob.eddelbuettel.com>
+ <cb4678b2d846400194e23034c6cf7674@chu-rouen.fr>
+ <CALEXWq3F86UV71qzWaUHrZkZb9k8dC2H_OR_cYqzvEf6pFz9hA@mail.gmail.com>
+ <CAEKh8ujbqCpL8Dv8OiB0LtHFsk+80gxU4ivPoqRKbLdfJLKc_A@mail.gmail.com>
+Message-ID: <25291.20732.178923.721408@rob.eddelbuettel.com>
+
+
+On 10 July 2022 at 17:43, Antoine Fabri wrote:
+| He is my session info :
+| 
+| R version 4.1.3 (2022-03-10)
+| Platform: aarch64-apple-darwin20 (64-bit)
+| Running under: macOS Monterey 12.0.1
+
+Along with the different session infos posted by numerous people who are
+unable to replicate your issue (myself included) and a bit more off-line
+thinking about I started to suspect you may have an M1 chip. Which this
+confirms.
+
+Tomas and Simon had a deep dive into possible floating point concerns in
+
+  https://blog.r-project.org/2020/11/02/will-r-work-on-apple-silicon/index.html
+
+I also seem to recall that it was also said somewhere (though apparently not
+in that post) that the M1 does not have long double. Post such as this one
+
+  https://developer.apple.com/forums/thread/673482
+
+seem to suggest that 80 bit accuracy is Intel specific -- so this may in fact
+be an issue of sailing too close to the hardware boundary.
+
+Dirk
+
+-- 
+dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From brod|e@g@@|@m @end|ng |rom y@hoo@com  Mon Jul 11 03:10:29 2022
+From: brod|e@g@@|@m @end|ng |rom y@hoo@com (Brodie Gaslam)
+Date: Sun, 10 Jul 2022 21:10:29 -0400
+Subject: [Rd] Floating point issue
+In-Reply-To: <CAEKh8ujziLSCxAEc1dmxJQMf5Kcpq2hO0yx+Tuyp4s98WuCeuA@mail.gmail.com>
+References: <CAEKh8uhNTF3RczavV-jh82tK9e=iDr2tzys=wGSk6ZD5e2tndg@mail.gmail.com>
+ <CAHqSRuTN7iU2ngvr2JoEiqZCrogY8GL3ssKY2vvUZstWCydzKw@mail.gmail.com>
+ <CAEKh8ujziLSCxAEc1dmxJQMf5Kcpq2hO0yx+Tuyp4s98WuCeuA@mail.gmail.com>
+Message-ID: <1af830d4-73cb-b48b-77d2-de0c74aa1f8e@yahoo.com>
+
+The results are not exactly the same.  Notice that on Bill's system the 
+bit pattern of 10^25 and 10000000000000000905969664 are the same, but 
+not so on yours.  So there is a mismatch happening on parsing between 
+your M1 mac and other's systems.
+
+This is the main thing I wanted to point out.  But since I'm here I'm 
+going to add some additional lazily researched speculation.
+
+As Dirk points out, M1 does not have long double, and if you look at 
+what I think is responsible for parsing of numbers like the ones we're 
+discussing here, we see[1]:
+
+     double R_strtod5(const char *str, char **endptr, char dec,
+     		 Rboolean NA, int exact)
+     {
+         LDOUBLE ans = 0.0;
+
+IIRC long double on systems that implement it as 80 bits (most that have 
+x87 coprocessors) has 63-4 bits of precision, vs 53 for 64 bit long 
+double.  Roughly speaking, that's 19-20 digits of base 10 precision for 
+long double, vs 15-16 for 64 bit double.  Then:
+
+     > substr(rep("10000000000000000905969664", 2),  c(1, 1), c(16, 20))
+     [1] "1000000000000000"     "10000000000000000905"
+
+Again, I have not carefully researched this, but it seems likely that 
+parsing is producing different a different outcome in this case because 
+the intermediate values generated can be kept at higher precision on 
+systems with 80 bit long doubles prior to coercing to double for the 
+final result.
+
+IIRC, if you need invertible deparsing/parsing I think you can use:
+
+     deparse(1e25, control=c('hexNumeric'))
+
+Although I don't have an 80-bit-less system to test on (and I am too 
+lazy to recompile R without long double to test).
+
+Best,
+
+B.
+
+[1]: https://github.com/r-devel/r-svn/blob/master/src/main/util.c#L1993
+
+
+
+On 7/10/22 5:38 PM, Antoine Fabri wrote:
+> Thanks, I get the exact same results as yours
+> 
+> ``` r
+> bitC <- function(x) noquote(vapply(as.double(x), function(x) { # split one
+> double
+>    b <- substr(as.character(rev(numToBits(x))), 2L, 2L)
+>        paste0(c(b[1L], " ", b[2:12], " | ", b[13:64]), collapse = "")
+>      }, ""))
+> bitC(10^25)
+> #> [1] 0 10001010010 | 0000100010110010101000101100001010000000001010010001
+> bitC(10000000000000000905969664)
+> #> [1] 0 10001010010 | 0000100010110010101000101100001010000000001010010010
+> bitC(10000000000000000905969664 - 10^25)
+> #> [1] 0 10000011110 | 0000000000000000000000000000000000000000000000000000
+> bitC(1e25)
+> #> [1] 0 10001010010 | 0000100010110010101000101100001010000000001010010001
+> ```
+> 
+> <sup>Created on 2022-07-10 by the [reprex package](
+> https://reprex.tidyverse.org) (v2.0.1)</sup>
+> 
+> Le dim. 10 juil. 2022 ? 22:23, Bill Dunlap <williamwdunlap at gmail.com> a
+> ?crit :
+> 
+>> The following function, 'bitC' from ?numToBits, displays the bits in a
+>> double precision number, separated into the sign bit, the 11 exponent bits,
+>> and the 52 bits in the mantissa.  I've shown the results with your numbers
+>> from R-2.4.0 on my Windows 11 Lenovo laptop: what do you get?
+>>
+>>> bitC <- function(x) noquote(vapply(as.double(x), function(x) { # split
+>> one double
+>> +     b <- substr(as.character(rev(numToBits(x))), 2L, 2L)
+>> +     paste0(c(b[1L], " ", b[2:12], " | ", b[13:64]), collapse = "")
+>> +   }, ""))
+>>> bitC(10^25)
+>> # [1] 0 10001010010 | 0000100010110010101000101100001010000000001010010001
+>>> bitC(10000000000000000905969664)
+>> # [1] 0 10001010010 | 0000100010110010101000101100001010000000001010010001
+>>> bitC(10000000000000000905969664 - 10^25)
+>> # [1] 0 00000000000 | 0000000000000000000000000000000000000000000000000000
+>>> bitC(1e25)
+>> # [1] 0 10001010010 | 0000100010110010101000101100001010000000001010010001
+>>
+>> -Bill
+>>
+>> On Sun, Jul 10, 2022 at 7:00 AM Antoine Fabri <antoine.fabri at gmail.com>
+>> wrote:
+>>
+>>> Dear r-devel,
+>>>
+>>> For some numbers, the printed value is not equivalent to the input :
+>>>
+>>> options(scipen = 999)
+>>> ## GOOD
+>>> 1e24
+>>> #> [1]  999999999999999983222784
+>>> 1e24 == 999999999999999983222784
+>>> #> [1] TRUE
+>>>
+>>> ## BAD
+>>> 1e25
+>>> #> [1] 10000000000000000905969664
+>>> 1e25 == 10000000000000000905969664
+>>> #> [1] FALSE
+>>>
+>>> ## STILL BAD
+>>> 10000000000000000905969664
+>>> #> [1] 10000000000000003053453312
+>>>
+>>> ## GOOD AGAIN
+>>> 10000000000000003053453312
+>>> #> [1] 10000000000000003053453312
+>>>
+>>> # Additionally
+>>> 10000000000000000000000000 == 1e25
+>>> #> [1] FALSE
+>>>
+>>> Are these bugs ?
+>>>
+>>>          [[alternative HTML version deleted]]
+>>>
+>>> ______________________________________________
+>>> R-devel at r-project.org mailing list
+>>> https://stat.ethz.ch/mailman/listinfo/r-devel
+>>>
+>>
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From w||||@mwdun|@p @end|ng |rom gm@||@com  Mon Jul 11 03:14:24 2022
+From: w||||@mwdun|@p @end|ng |rom gm@||@com (Bill Dunlap)
+Date: Sun, 10 Jul 2022 18:14:24 -0700
+Subject: [Rd] Floating point issue
+In-Reply-To: <CAEKh8ujziLSCxAEc1dmxJQMf5Kcpq2hO0yx+Tuyp4s98WuCeuA@mail.gmail.com>
+References: <CAEKh8uhNTF3RczavV-jh82tK9e=iDr2tzys=wGSk6ZD5e2tndg@mail.gmail.com>
+ <CAHqSRuTN7iU2ngvr2JoEiqZCrogY8GL3ssKY2vvUZstWCydzKw@mail.gmail.com>
+ <CAEKh8ujziLSCxAEc1dmxJQMf5Kcpq2hO0yx+Tuyp4s98WuCeuA@mail.gmail.com>
+Message-ID: <CAHqSRuSS0yHxFP44MSj2cp_zNkhyz5Q=F-D6WCac0GmLOpkYoA@mail.gmail.com>
+
+You said you got the same results as I did.  Not so, the parsing of the
+long numeric differs in the last bit of the mantissa.
+
+(A=Antoine, B=Bill):
+
+bitC(10^25)
+#A [1] 0 10001010010 | 0000100010110010101000101100001010000000001010010001
+#B [1] 0 10001010010 | 0000100010110010101000101100001010000000001010010001
+
+bitC(10000000000000000905969664)
+#A [1] 0 10001010010 | 0000100010110010101000101100001010000000001010010010
+#B [1] 0 10001010010 | 0000100010110010101000101100001010000000001010010001
+
+bitC(10000000000000000905969664 - 10^25)
+#A [1] 0 10000011110 | 0000000000000000000000000000000000000000000000000000
+#B [1] 0 00000000000 | 0000000000000000000000000000000000000000000000000000
+
+On Sun, Jul 10, 2022 at 2:39 PM Antoine Fabri <antoine.fabri at gmail.com>
+wrote:
+
+> Thanks, I get the exact same results as yours
+>
+> ``` r
+> bitC <- function(x) noquote(vapply(as.double(x), function(x) { # split one
+> double
+>   b <- substr(as.character(rev(numToBits(x))), 2L, 2L)
+>       paste0(c(b[1L], " ", b[2:12], " | ", b[13:64]), collapse = "")
+>     }, ""))
+> bitC(10^25)
+> #> [1] 0 10001010010 | 0000100010110010101000101100001010000000001010010001
+> bitC(10000000000000000905969664)
+> #> [1] 0 10001010010 | 0000100010110010101000101100001010000000001010010010
+> bitC(10000000000000000905969664 - 10^25)
+> #> [1] 0 10000011110 | 0000000000000000000000000000000000000000000000000000
+> bitC(1e25)
+> #> [1] 0 10001010010 | 0000100010110010101000101100001010000000001010010001
+> ```
+>
+> <sup>Created on 2022-07-10 by the [reprex package](
+> https://reprex.tidyverse.org) (v2.0.1)</sup>
+>
+> Le dim. 10 juil. 2022 ? 22:23, Bill Dunlap <williamwdunlap at gmail.com> a
+> ?crit :
+>
+>> The following function, 'bitC' from ?numToBits, displays the bits in a
+>> double precision number, separated into the sign bit, the 11 exponent bits,
+>> and the 52 bits in the mantissa.  I've shown the results with your numbers
+>> from R-2.4.0 on my Windows 11 Lenovo laptop: what do you get?
+>>
+>> > bitC <- function(x) noquote(vapply(as.double(x), function(x) { # split
+>> one double
+>> +     b <- substr(as.character(rev(numToBits(x))), 2L, 2L)
+>> +     paste0(c(b[1L], " ", b[2:12], " | ", b[13:64]), collapse = "")
+>> +   }, ""))
+>> > bitC(10^25)
+>> # [1] 0 10001010010 | 0000100010110010101000101100001010000000001010010001
+>> > bitC(10000000000000000905969664)
+>> # [1] 0 10001010010 | 0000100010110010101000101100001010000000001010010001
+>> > bitC(10000000000000000905969664 - 10^25)
+>> # [1] 0 00000000000 | 0000000000000000000000000000000000000000000000000000
+>> > bitC(1e25)
+>> # [1] 0 10001010010 | 0000100010110010101000101100001010000000001010010001
+>>
+>> -Bill
+>>
+>> On Sun, Jul 10, 2022 at 7:00 AM Antoine Fabri <antoine.fabri at gmail.com>
+>> wrote:
+>>
+>>> Dear r-devel,
+>>>
+>>> For some numbers, the printed value is not equivalent to the input :
+>>>
+>>> options(scipen = 999)
+>>> ## GOOD
+>>> 1e24
+>>> #> [1]  999999999999999983222784
+>>> 1e24 == 999999999999999983222784
+>>> #> [1] TRUE
+>>>
+>>> ## BAD
+>>> 1e25
+>>> #> [1] 10000000000000000905969664
+>>> 1e25 == 10000000000000000905969664
+>>> #> [1] FALSE
+>>>
+>>> ## STILL BAD
+>>> 10000000000000000905969664
+>>> #> [1] 10000000000000003053453312
+>>>
+>>> ## GOOD AGAIN
+>>> 10000000000000003053453312
+>>> #> [1] 10000000000000003053453312
+>>>
+>>> # Additionally
+>>> 10000000000000000000000000 == 1e25
+>>> #> [1] FALSE
+>>>
+>>> Are these bugs ?
+>>>
+>>>         [[alternative HTML version deleted]]
+>>>
+>>> ______________________________________________
+>>> R-devel at r-project.org mailing list
+>>> https://stat.ethz.ch/mailman/listinfo/r-devel
+>>>
+>>
+
+	[[alternative HTML version deleted]]
+
+
+From @nto|ne@|@br| @end|ng |rom gm@||@com  Mon Jul 11 09:30:08 2022
+From: @nto|ne@|@br| @end|ng |rom gm@||@com (Antoine Fabri)
+Date: Mon, 11 Jul 2022 09:30:08 +0200
+Subject: [Rd] Floating point issue
+In-Reply-To: <CAHqSRuSS0yHxFP44MSj2cp_zNkhyz5Q=F-D6WCac0GmLOpkYoA@mail.gmail.com>
+References: <CAEKh8uhNTF3RczavV-jh82tK9e=iDr2tzys=wGSk6ZD5e2tndg@mail.gmail.com>
+ <CAHqSRuTN7iU2ngvr2JoEiqZCrogY8GL3ssKY2vvUZstWCydzKw@mail.gmail.com>
+ <CAEKh8ujziLSCxAEc1dmxJQMf5Kcpq2hO0yx+Tuyp4s98WuCeuA@mail.gmail.com>
+ <CAHqSRuSS0yHxFP44MSj2cp_zNkhyz5Q=F-D6WCac0GmLOpkYoA@mail.gmail.com>
+Message-ID: <CAEKh8uhStaAt3V-qu_5N4CpoMpDsTk7tDwaE-rQxw8h_u5qLbw@mail.gmail.com>
+
+Indeed, apologies for the oversight
+
+On Mon, 11 Jul 2022, 03:14 Bill Dunlap, <williamwdunlap at gmail.com> wrote:
+
+> You said you got the same results as I did.  Not so, the parsing of the
+> long numeric differs in the last bit of the mantissa.
+>
+> (A=Antoine, B=Bill):
+>
+> bitC(10^25)
+> #A [1] 0 10001010010 | 0000100010110010101000101100001010000000001010010001
+> #B [1] 0 10001010010 | 0000100010110010101000101100001010000000001010010001
+>
+> bitC(10000000000000000905969664)
+> #A [1] 0 10001010010 | 0000100010110010101000101100001010000000001010010010
+> #B [1] 0 10001010010 | 0000100010110010101000101100001010000000001010010001
+>
+> bitC(10000000000000000905969664 - 10^25)
+> #A [1] 0 10000011110 | 0000000000000000000000000000000000000000000000000000
+> #B [1] 0 00000000000 | 0000000000000000000000000000000000000000000000000000
+>
+> On Sun, Jul 10, 2022 at 2:39 PM Antoine Fabri <antoine.fabri at gmail.com>
+> wrote:
+>
+>> Thanks, I get the exact same results as yours
+>>
+>> ``` r
+>> bitC <- function(x) noquote(vapply(as.double(x), function(x) { # split
+>> one double
+>>   b <- substr(as.character(rev(numToBits(x))), 2L, 2L)
+>>       paste0(c(b[1L], " ", b[2:12], " | ", b[13:64]), collapse = "")
+>>     }, ""))
+>> bitC(10^25)
+>> #> [1] 0 10001010010 |
+>> 0000100010110010101000101100001010000000001010010001
+>> bitC(10000000000000000905969664)
+>> #> [1] 0 10001010010 |
+>> 0000100010110010101000101100001010000000001010010010
+>> bitC(10000000000000000905969664 - 10^25)
+>> #> [1] 0 10000011110 |
+>> 0000000000000000000000000000000000000000000000000000
+>> bitC(1e25)
+>> #> [1] 0 10001010010 |
+>> 0000100010110010101000101100001010000000001010010001
+>> ```
+>>
+>> <sup>Created on 2022-07-10 by the [reprex package](
+>> https://reprex.tidyverse.org) (v2.0.1)</sup>
+>>
+>> Le dim. 10 juil. 2022 ? 22:23, Bill Dunlap <williamwdunlap at gmail.com> a
+>> ?crit :
+>>
+>>> The following function, 'bitC' from ?numToBits, displays the bits in a
+>>> double precision number, separated into the sign bit, the 11 exponent bits,
+>>> and the 52 bits in the mantissa.  I've shown the results with your numbers
+>>> from R-2.4.0 on my Windows 11 Lenovo laptop: what do you get?
+>>>
+>>> > bitC <- function(x) noquote(vapply(as.double(x), function(x) { # split
+>>> one double
+>>> +     b <- substr(as.character(rev(numToBits(x))), 2L, 2L)
+>>> +     paste0(c(b[1L], " ", b[2:12], " | ", b[13:64]), collapse = "")
+>>> +   }, ""))
+>>> > bitC(10^25)
+>>> # [1] 0 10001010010 |
+>>> 0000100010110010101000101100001010000000001010010001
+>>> > bitC(10000000000000000905969664)
+>>> # [1] 0 10001010010 |
+>>> 0000100010110010101000101100001010000000001010010001
+>>> > bitC(10000000000000000905969664 - 10^25)
+>>> # [1] 0 00000000000 |
+>>> 0000000000000000000000000000000000000000000000000000
+>>> > bitC(1e25)
+>>> # [1] 0 10001010010 |
+>>> 0000100010110010101000101100001010000000001010010001
+>>>
+>>> -Bill
+>>>
+>>> On Sun, Jul 10, 2022 at 7:00 AM Antoine Fabri <antoine.fabri at gmail.com>
+>>> wrote:
+>>>
+>>>> Dear r-devel,
+>>>>
+>>>> For some numbers, the printed value is not equivalent to the input :
+>>>>
+>>>> options(scipen = 999)
+>>>> ## GOOD
+>>>> 1e24
+>>>> #> [1]  999999999999999983222784
+>>>> 1e24 == 999999999999999983222784
+>>>> #> [1] TRUE
+>>>>
+>>>> ## BAD
+>>>> 1e25
+>>>> #> [1] 10000000000000000905969664
+>>>> 1e25 == 10000000000000000905969664
+>>>> #> [1] FALSE
+>>>>
+>>>> ## STILL BAD
+>>>> 10000000000000000905969664
+>>>> #> [1] 10000000000000003053453312
+>>>>
+>>>> ## GOOD AGAIN
+>>>> 10000000000000003053453312
+>>>> #> [1] 10000000000000003053453312
+>>>>
+>>>> # Additionally
+>>>> 10000000000000000000000000 == 1e25
+>>>> #> [1] FALSE
+>>>>
+>>>> Are these bugs ?
+>>>>
+>>>>         [[alternative HTML version deleted]]
+>>>>
+>>>> ______________________________________________
+>>>> R-devel at r-project.org mailing list
+>>>> https://stat.ethz.ch/mailman/listinfo/r-devel
+>>>>
+>>>
+
+	[[alternative HTML version deleted]]
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Mon Jul 11 10:24:58 2022
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Mon, 11 Jul 2022 10:24:58 +0200
+Subject: [Rd] Floating point issue
+In-Reply-To: <1af830d4-73cb-b48b-77d2-de0c74aa1f8e@yahoo.com>
+References: <CAEKh8uhNTF3RczavV-jh82tK9e=iDr2tzys=wGSk6ZD5e2tndg@mail.gmail.com>
+ <CAHqSRuTN7iU2ngvr2JoEiqZCrogY8GL3ssKY2vvUZstWCydzKw@mail.gmail.com>
+ <CAEKh8ujziLSCxAEc1dmxJQMf5Kcpq2hO0yx+Tuyp4s98WuCeuA@mail.gmail.com>
+ <1af830d4-73cb-b48b-77d2-de0c74aa1f8e@yahoo.com>
+Message-ID: <25291.56922.730383.931706@stat.math.ethz.ch>
+
+>>>>> Brodie Gaslam via R-devel 
+>>>>>     on Sun, 10 Jul 2022 21:10:29 -0400 writes:
+
+    > The results are not exactly the same.  Notice that on Bill's system the 
+    > bit pattern of 10^25 and 10000000000000000905969664 are the same, but 
+    > not so on yours.  So there is a mismatch happening on parsing between 
+    > your M1 mac and other's systems.
+
+    > This is the main thing I wanted to point out.  But since I'm here I'm 
+    > going to add some additional lazily researched speculation.
+
+    > As Dirk points out, M1 does not have long double, and if you look at 
+    > what I think is responsible for parsing of numbers like the ones we're 
+    > discussing here, we see[1]:
+
+    > double R_strtod5(const char *str, char **endptr, char dec,
+    >                  Rboolean NA, int exact)
+    > {
+    >      LDOUBLE ans = 0.0;
+
+    > IIRC long double on systems that implement it as 80 bits (most that have 
+    > x87 coprocessors) has 63-4 bits of precision, vs 53 for 64 bit long 
+    > double.  Roughly speaking, that's 19-20 digits of base 10 precision for 
+    > long double, vs 15-16 for 64 bit double.  Then:
+
+    >> substr(rep("10000000000000000905969664", 2),  c(1, 1), c(16, 20))
+    > [1] "1000000000000000"     "10000000000000000905"
+
+    > Again, I have not carefully researched this, but it seems likely that 
+    > parsing is producing different a different outcome in this case because 
+    > the intermediate values generated can be kept at higher precision on 
+    > systems with 80 bit long doubles prior to coercing to double for the 
+    > final result.
+
+    > IIRC, if you need invertible deparsing/parsing I think you can use:
+
+    > deparse(1e25, control=c('hexNumeric'))
+
+    > Although I don't have an 80-bit-less system to test on (and I am too 
+    > lazy to recompile R without long double to test).
+
+    > Best,
+    > B.
+
+    > [1]: https://github.com/r-devel/r-svn/blob/master/src/main/util.c#L1993
+
+An excellent analysis, thank you, Brodie and Bill Dunlap.
+
+10 days ago I also had a colleague at ETH, involved in teaching stats,
+wanting to submit a bug report about a model fit in nlme which
+gave different results (well, a confidence interval of a
+correlation which was not at all significant (and estimated
+close to zero) changed from +/-0.45 to +/-0.85 ...
+... and when I asked for sessionInfo() etc,
+the result was that on the  M1  the result differed from all
+other platforms.
+I did not go into further analysis, but I know that nlme does
+*not* use any LDOUBLE | long double  but still, the M1 was less
+accurate than any other platform... and I also could not see this
+(the wider conf.ints) when I used a version of R configured with
+
+   configure --disable-long-double  
+
+[If anyone is interested I can provide the repr.ex. R code.]
+
+>From my current experiences, I dare to say that the M1 with all
+its speed is just a tad less reliable numerically than the
+Intel/AMD floating point implementations..
+
+Martin
+
+
+
+
+    > On 7/10/22 5:38 PM, Antoine Fabri wrote:
+    >> Thanks, I get the exact same results as yours
+    >> 
+    >> ``` r
+    >> bitC <- function(x) noquote(vapply(as.double(x), function(x) { # split one
+    >> double
+    >> b <- substr(as.character(rev(numToBits(x))), 2L, 2L)
+    >> paste0(c(b[1L], " ", b[2:12], " | ", b[13:64]), collapse = "")
+    >> }, ""))
+    >> bitC(10^25)
+    >> #> [1] 0 10001010010 | 0000100010110010101000101100001010000000001010010001
+    >> bitC(10000000000000000905969664)
+    >> #> [1] 0 10001010010 | 0000100010110010101000101100001010000000001010010010
+    >> bitC(10000000000000000905969664 - 10^25)
+    >> #> [1] 0 10000011110 | 0000000000000000000000000000000000000000000000000000
+    >> bitC(1e25)
+    >> #> [1] 0 10001010010 | 0000100010110010101000101100001010000000001010010001
+    >> ```
+    >> 
+    >> <sup>Created on 2022-07-10 by the [reprex package](
+    >> https://reprex.tidyverse.org) (v2.0.1)</sup>
+    >> 
+    >> Le dim. 10 juil. 2022 ? 22:23, Bill Dunlap <williamwdunlap at gmail.com> a
+    >> ?crit :
+    >> 
+    >>> The following function, 'bitC' from ?numToBits, displays the bits in a
+    >>> double precision number, separated into the sign bit, the 11 exponent bits,
+    >>> and the 52 bits in the mantissa.  I've shown the results with your numbers
+    >>> from R-2.4.0 on my Windows 11 Lenovo laptop: what do you get?
+    >>> 
+    >>>> bitC <- function(x) noquote(vapply(as.double(x), function(x) { # split
+    >>> one double
+    >>> +     b <- substr(as.character(rev(numToBits(x))), 2L, 2L)
+    >>> +     paste0(c(b[1L], " ", b[2:12], " | ", b[13:64]), collapse = "")
+    >>> +   }, ""))
+    >>>> bitC(10^25)
+    >>> # [1] 0 10001010010 | 0000100010110010101000101100001010000000001010010001
+    >>>> bitC(10000000000000000905969664)
+    >>> # [1] 0 10001010010 | 0000100010110010101000101100001010000000001010010001
+    >>>> bitC(10000000000000000905969664 - 10^25)
+    >>> # [1] 0 00000000000 | 0000000000000000000000000000000000000000000000000000
+    >>>> bitC(1e25)
+    >>> # [1] 0 10001010010 | 0000100010110010101000101100001010000000001010010001
+    >>> 
+    >>> -Bill
+    >>> 
+    >>> On Sun, Jul 10, 2022 at 7:00 AM Antoine Fabri <antoine.fabri at gmail.com>
+    >>> wrote:
+    >>> 
+    >>>> Dear r-devel,
+    >>>> 
+    >>>> For some numbers, the printed value is not equivalent to the input :
+    >>>> 
+    >>>> options(scipen = 999)
+    >>>> ## GOOD
+    >>>> 1e24
+    >>>> #> [1]  999999999999999983222784
+    >>>> 1e24 == 999999999999999983222784
+    >>>> #> [1] TRUE
+    >>>> 
+    >>>> ## BAD
+    >>>> 1e25
+    >>>> #> [1] 10000000000000000905969664
+    >>>> 1e25 == 10000000000000000905969664
+    >>>> #> [1] FALSE
+    >>>> 
+    >>>> ## STILL BAD
+    >>>> 10000000000000000905969664
+    >>>> #> [1] 10000000000000003053453312
+    >>>> 
+    >>>> ## GOOD AGAIN
+    >>>> 10000000000000003053453312
+    >>>> #> [1] 10000000000000003053453312
+    >>>> 
+    >>>> # Additionally
+    >>>> 10000000000000000000000000 == 1e25
+    >>>> #> [1] FALSE
+    >>>> 
+    >>>> Are these bugs ?
+    >>>> 
+    >>>> [[alternative HTML version deleted]]
+    >>>> 
+    >>>> ______________________________________________
+    >>>> R-devel at r-project.org mailing list
+    >>>> https://stat.ethz.ch/mailman/listinfo/r-devel
+    >>>> 
+    >>> 
+    >> 
+    >> [[alternative HTML version deleted]]
+    >> 
+    >> ______________________________________________
+    >> R-devel at r-project.org mailing list
+    >> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+    > ______________________________________________
+    > R-devel at r-project.org mailing list
+    > https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From Andre@G||||bert @end|ng |rom chu-rouen@|r  Mon Jul 11 13:48:51 2022
+From: Andre@G||||bert @end|ng |rom chu-rouen@|r (GILLIBERT, Andre)
+Date: Mon, 11 Jul 2022 11:48:51 +0000
+Subject: [Rd] Floating point issue
+In-Reply-To: <25291.56922.730383.931706@stat.math.ethz.ch>
+References: <CAEKh8uhNTF3RczavV-jh82tK9e=iDr2tzys=wGSk6ZD5e2tndg@mail.gmail.com>
+ <CAHqSRuTN7iU2ngvr2JoEiqZCrogY8GL3ssKY2vvUZstWCydzKw@mail.gmail.com>
+ <CAEKh8ujziLSCxAEc1dmxJQMf5Kcpq2hO0yx+Tuyp4s98WuCeuA@mail.gmail.com>
+ <1af830d4-73cb-b48b-77d2-de0c74aa1f8e@yahoo.com>,
+ <25291.56922.730383.931706@stat.math.ethz.ch>
+Message-ID: <d771640ceb564817af3c7bdfdf0deff2@chu-rouen.fr>
+
+
+> From my current experiences, I dare to say that the M1 with all
+> its speed is just a tad less reliable numerically than the
+> Intel/AMD floating point implementations..
+
+
+80 bits floating point (FP) numbers are great, but I think we cannot rely on it for the future.
+I expect, the marketshare of ARM CPUs to grow. It's hard to predict, but ARM may spread in desktop computers in a timeframe of 10 years, and I would not expect it to gain extended precision FP.
+Moreover, performance of FP80 is not a priority of Intel. FP80 in recent Intel microprocessors are very slow when using special representations (NaN, NA, Inf, -Inf) or denormal numbers.
+
+Therefore, it may be wise to update R algorithms to make them work quite well with 64 bits FP.
+
+--
+Sincerely
+Andr? GILLIBERT
+
+	[[alternative HTML version deleted]]
+
+
+From t@r@@@z@kh@rko @end|ng |rom uzh@ch  Mon Jul 11 18:30:57 2022
+From: t@r@@@z@kh@rko @end|ng |rom uzh@ch (Taras Zakharko)
+Date: Mon, 11 Jul 2022 18:30:57 +0200
+Subject: [Rd] Floating point issue
+In-Reply-To: <d771640ceb564817af3c7bdfdf0deff2@chu-rouen.fr>
+References: <CAEKh8uhNTF3RczavV-jh82tK9e=iDr2tzys=wGSk6ZD5e2tndg@mail.gmail.com>
+ <CAHqSRuTN7iU2ngvr2JoEiqZCrogY8GL3ssKY2vvUZstWCydzKw@mail.gmail.com>
+ <CAEKh8ujziLSCxAEc1dmxJQMf5Kcpq2hO0yx+Tuyp4s98WuCeuA@mail.gmail.com>
+ <1af830d4-73cb-b48b-77d2-de0c74aa1f8e@yahoo.com>
+ <25291.56922.730383.931706@stat.math.ethz.ch>
+ <d771640ceb564817af3c7bdfdf0deff2@chu-rouen.fr>
+Message-ID: <A0D607EB-1C74-40D7-A0A1-C7277E017964@uzh.ch>
+
+To be pedantic, the C standard does not guarantee that long double offers more precision than double. If R?s internal FP/decimal conversion routines produce a different result on platforms that support Intel's 80-bit precision vs. platforms that don?t, I would classify this as a bug in R. Available precision can affect numerical properties of algorithms but should not affect things like decimal to binary or via versa conversion ? it either produces the accurate enough number or it doesn?t. 
+
+As a side note, I agree with Andre that relying on Intel?s extended precision in this day an age is not a good idea. This is a legacy feature from over forty years ago, x86 CPUs have been using SSE instructions for floating point computation for over a decade. The x87 instructions are slow and prevent compiler optimisations. Overall, I believe that R would benefit from dropping this legacy cruft. Not that there are too many places where it is used from what I see? 
+
+Best, 
+
+? Taras Zakharko
+
+
+
+> On 11 Jul 2022, at 13:48, GILLIBERT, Andre <Andre.Gillibert at chu-rouen.fr> wrote:
+> 
+> 
+>> From my current experiences, I dare to say that the M1 with all
+>> its speed is just a tad less reliable numerically than the
+>> Intel/AMD floating point implementations..
+> 
+> 
+> 80 bits floating point (FP) numbers are great, but I think we cannot rely on it for the future.
+> I expect, the marketshare of ARM CPUs to grow. It's hard to predict, but ARM may spread in desktop computers in a timeframe of 10 years, and I would not expect it to gain extended precision FP.
+> Moreover, performance of FP80 is not a priority of Intel. FP80 in recent Intel microprocessors are very slow when using special representations (NaN, NA, Inf, -Inf) or denormal numbers.
+> 
+> Therefore, it may be wise to update R algorithms to make them work quite well with 64 bits FP.
+> 
+> --
+> Sincerely
+> Andr? GILLIBERT
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From @|mon@urb@nek @end|ng |rom R-project@org  Tue Jul 12 03:02:01 2022
+From: @|mon@urb@nek @end|ng |rom R-project@org (Simon Urbanek)
+Date: Tue, 12 Jul 2022 13:02:01 +1200
+Subject: [Rd] Floating point issue
+In-Reply-To: <CAEKh8uhNTF3RczavV-jh82tK9e=iDr2tzys=wGSk6ZD5e2tndg@mail.gmail.com>
+References: <CAEKh8uhNTF3RczavV-jh82tK9e=iDr2tzys=wGSk6ZD5e2tndg@mail.gmail.com>
+Message-ID: <C16B8B5F-5A2E-40B9-BFAF-95F5B52DB030@R-project.org>
+
+I don?t think there is any guarantee that unrepresentable numbers are parsed into defined patterns, because printing is done by the OS while parsing is done by R. The way R parses decimal numbers[1] is simply by using the obvious res = res * 10 + digit and it can be easily checked that for doubles the representation such obtained from 10000000000000000905969664 is 0x1.08b2a2c280292p+83 (see below if you want to see it yourself) which is not the same as 10^25 which is 0x1.08b2a2c280291p+83. This is true on all platforms, it is not specific to M1. The only difference is if your were to use a different type you can obtain a different result - and that is not well-defined (e.g. long doubles have no guarantees at all as of the precision).  Note that the decimal string above would require 83-bits of precision which is not representable.
+
+(BTW: to make it even more fun, if you were to use double res = 1; repeat(25) res = res * 10; in C, so the naive computation of the original 10^25 you?d get 9999999999999998758486016 and 0x1.08b2a2c28029p+83)
+
+Given that printing is done by the OS and parsing by R, I don?t think R guarantees anything. If you want representable number you?d use the binary representation (sprintf(?%a?) or hex-mode deparse as noted). One could argue that it could make sense to change it one way or another - either having R do it all or having the OS do it all. In the latter case one may obtain more consistent results (e.g. system stdtod() yields the original value even on M1), but it would be OS-specific. In the former R could impose its own guarantees - but currently it does not.
+
+Cheers,
+Simon
+
+[1] - https://github.com/r-devel/r-svn/blob/97c0a73f1758d09088c200f924d27b362d55ccdc/src/main/util.c#L2094
+
+
+#include <stdio.h>
+#include <math.h>
+#include <stdlib.h>
+
+int main() {
+  const char *str = "10000000000000000905969664", *c = str;
+  double ans = 0;
+  while (*c) {
+    ans = 10 * ans + (*(c++) - '0');
+    printf("%a\n", ans);
+  }
+  printf("atof: %a\n", atof(str));
+  double pow1025 = pow(10.0, 25);
+  printf("--\n10^25:\n%25.f\n%a\n", pow1025, pow1025);
+  return 0;
+}
+
+0x1p+0
+0x1.4p+3
+0x1.9p+6
+0x1.f4p+9
+0x1.388p+13
+0x1.86ap+16
+0x1.e848p+19
+0x1.312dp+23
+0x1.7d784p+26
+0x1.dcd65p+29
+0x1.2a05f2p+33
+0x1.74876e8p+36
+0x1.d1a94a2p+39
+0x1.2309ce54p+43
+0x1.6bcc41e9p+46
+0x1.c6bf52634p+49
+0x1.1c37937e08p+53
+0x1.6345785d8a001p+56
+0x1.bc16d674ec801p+59
+0x1.158e460913d01p+63
+0x1.5af1d78b58c41p+66
+0x1.b1ae4d6e2ef51p+69
+0x1.0f0cf064dd593p+73
+0x1.52d02c7e14af8p+76
+0x1.a784379d99db6p+79
+0x1.08b2a2c280292p+83
+atof: 0x1.08b2a2c280291p+83
+--
+10^25:
+10000000000000000905969664
+0x1.08b2a2c280291p+83
+
+
+> On 11/07/2022, at 02:00, Antoine Fabri <antoine.fabri at gmail.com> wrote:
+> 
+> Dear r-devel,
+> 
+> For some numbers, the printed value is not equivalent to the input :
+> 
+> options(scipen = 999)
+> ## GOOD
+> 1e24
+> #> [1]  999999999999999983222784
+> 1e24 == 999999999999999983222784
+> #> [1] TRUE
+> 
+> ## BAD
+> 1e25
+> #> [1] 10000000000000000905969664
+> 1e25 == 10000000000000000905969664
+> #> [1] FALSE
+> 
+> ## STILL BAD
+> 10000000000000000905969664
+> #> [1] 10000000000000003053453312
+> 
+> ## GOOD AGAIN
+> 10000000000000003053453312
+> #> [1] 10000000000000003053453312
+> 
+> # Additionally
+> 10000000000000000000000000 == 1e25
+> #> [1] FALSE
+> 
+> Are these bugs ?
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+> 
+
+
+From @d|rk@e @end|ng |rom g@m@@com  Tue Jul 12 03:37:15 2022
+From: @d|rk@e @end|ng |rom g@m@@com (Steven Dirkse)
+Date: Mon, 11 Jul 2022 21:37:15 -0400
+Subject: [Rd] Floating point issue
+In-Reply-To: <A0D607EB-1C74-40D7-A0A1-C7277E017964@uzh.ch>
+References: <CAEKh8uhNTF3RczavV-jh82tK9e=iDr2tzys=wGSk6ZD5e2tndg@mail.gmail.com>
+ <CAHqSRuTN7iU2ngvr2JoEiqZCrogY8GL3ssKY2vvUZstWCydzKw@mail.gmail.com>
+ <CAEKh8ujziLSCxAEc1dmxJQMf5Kcpq2hO0yx+Tuyp4s98WuCeuA@mail.gmail.com>
+ <1af830d4-73cb-b48b-77d2-de0c74aa1f8e@yahoo.com>
+ <25291.56922.730383.931706@stat.math.ethz.ch>
+ <d771640ceb564817af3c7bdfdf0deff2@chu-rouen.fr>
+ <A0D607EB-1C74-40D7-A0A1-C7277E017964@uzh.ch>
+Message-ID: <CAHiA-Znwuh_BDyYq8r8foxn-TvqsfCtrkZS5K09C3gsmrNXG=g@mail.gmail.com>
+
+Hi,
+
+Taras makes several good points, especially this one:
+
+On Mon, Jul 11, 2022 at 12:31 PM Taras Zakharko <taras.zakharko at uzh.ch>
+wrote:
+
+>  Available precision can affect numerical properties of algorithms but
+> should not affect things like decimal to binary or via versa conversion ?
+> it either produces the accurate enough number or it doesn?t.
+
+
+This is a key point: there is no need to rely on platform-specific
+properties of floating-point representations or operations to get correct
+(*) decimal-to-binary or binary-to-decimal conversions.  These tasks can be
+done correctly in a way that uses only the guarantees provided by IEEE
+floats or doubles, and some additional work using big integers (something
+like GNU MP) in some cases.  There are freely-available libraries to do
+the conversions in a platform-independent, correct, efficient way.  An even
+easier solution in one direction is strtod(): decades ago it was not 100%
+correct but I haven't seen any flaws in recent versions of GLIBC or on
+Windows.  Certainly strtod can be relied on to do a better job than
+"multiply-by-10 and add the next digit".
+
+(*) What is correct?  The easy direction is decimal to binary, staying in
+the range of positive normalized numbers.  There are a finite number of
+rational numbers that are exactly representable as IEEE doubles.  The
+correct double representation of a decimal number (also a rational) is that
+IEEE double that is closest.  In the event of a tie, use the round-to-even
+rule.
+
+
+As a side note, I agree with Andre that relying on Intel?s extended
+> precision in this day an age is not a good idea. This is a legacy feature
+> from over forty years ago, x86 CPUs have been using SSE instructions for
+> floating point computation for over a decade. The x87 instructions are slow
+> and prevent compiler optimisations. Overall, I believe that R would benefit
+> from dropping this legacy cruft. Not that there are too many places where
+> it is used from what I see?
+>
+> Best,
+>
+> ? Taras Zakharko
+>
+>
+>
+> > On 11 Jul 2022, at 13:48, GILLIBERT, Andre <Andre.Gillibert at chu-rouen.fr>
+> wrote:
+> >
+> >
+> >> From my current experiences, I dare to say that the M1 with all
+> >> its speed is just a tad less reliable numerically than the
+> >> Intel/AMD floating point implementations..
+> >
+> >
+> > 80 bits floating point (FP) numbers are great, but I think we cannot
+> rely on it for the future.
+> > I expect, the marketshare of ARM CPUs to grow. It's hard to predict, but
+> ARM may spread in desktop computers in a timeframe of 10 years, and I would
+> not expect it to gain extended precision FP.
+> > Moreover, performance of FP80 is not a priority of Intel. FP80 in recent
+> Intel microprocessors are very slow when using special representations
+> (NaN, NA, Inf, -Inf) or denormal numbers.
+> >
+> > Therefore, it may be wise to update R algorithms to make them work quite
+> well with 64 bits FP.
+> >
+> > --
+> > Sincerely
+> > Andr? GILLIBERT
+> >
+> >       [[alternative HTML version deleted]]
+> >
+> > ______________________________________________
+> > R-devel at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+
+
+-- 
+Steven Dirkse, Ph.D.
+GAMS Development Corp.
+office: 202.342.0180
+
+	[[alternative HTML version deleted]]
+
+
+From t@r@@@z@kh@rko @end|ng |rom uzh@ch  Tue Jul 12 09:17:43 2022
+From: t@r@@@z@kh@rko @end|ng |rom uzh@ch (Taras Zakharko)
+Date: Tue, 12 Jul 2022 09:17:43 +0200
+Subject: [Rd] Floating point issue
+In-Reply-To: <C16B8B5F-5A2E-40B9-BFAF-95F5B52DB030@R-project.org>
+References: <CAEKh8uhNTF3RczavV-jh82tK9e=iDr2tzys=wGSk6ZD5e2tndg@mail.gmail.com>
+ <C16B8B5F-5A2E-40B9-BFAF-95F5B52DB030@R-project.org>
+Message-ID: <720A901B-D6CF-4D35-9FFA-206DF2F06CD6@uzh.ch>
+
+Simon, 
+
+I think the issue is rather that we have a representable number that is not correctly parsed by R. Step by step: 
+
+The mentioned number 1e25 is, as you say, not representable in IEEE 754 double precision, with two closest representable numbers being
+
+ 10000000000000000905969664 (bit pattern 0 10001010010 0000100010110010101000101100001010000000001010010001)
+
+and
+
+ 9999999999999998758486016 (bit patterns 0 10001010010 0000100010110010101000101100001010000000001010010000)
+
+So the fact that 1e25 gets printed out as 10000000000000000905969664 makes perfect sense ? it?s the closest number that can be represented. Which is exactly what one expects and also the usual guarantee ? unrepresentable number literals are supposed to be parsed to a closest representable number. This is a problem that can be (and has been) solved correctly and reliably, so there is no reason why R wouldn?t offer the same guarantee here. 
+
+But let?s get to the actual problem. If you type in 10000000000000000905969664 into R on an Apple Silicon machine you will get 
+
+  10000000000000003053453312 (bit pattern 0 10001010010 0000100010110010101000101100001010000000001010010010)
+
+Which is the next double in the sequence and not a correct way to parse the number.  
+
+So unless I made a mistake somewhere it indeed looks like a bug in R?s number parsing code. It produces the expected, correctly rounded result for a non-representable 1e25, but is one bit off for the precisely representable 10000000000000000905969664
+
+And BTW, I have tried the same with C and Swift, and it works as expected, i.e. in C 
+
+  assert(10000000000000000000000000.0 == 10000000000000000905969664.0 );
+
+
+Best, 
+
+  Taras 
+
+
+
+> On 12 Jul 2022, at 03:02, Simon Urbanek <simon.urbanek at R-project.org> wrote:
+> 
+> I don?t think there is any guarantee that unrepresentable numbers are parsed into defined patterns, because printing is done by the OS while parsing is done by R. The way R parses decimal numbers[1] is simply by using the obvious res = res * 10 + digit and it can be easily checked that for doubles the representation such obtained from 10000000000000000905969664 is 0x1.08b2a2c280292p+83 (see below if you want to see it yourself) which is not the same as 10^25 which is 0x1.08b2a2c280291p+83. This is true on all platforms, it is not specific to M1. The only difference is if your were to use a different type you can obtain a different result - and that is not well-defined (e.g. long doubles have no guarantees at all as of the precision).  Note that the decimal string above would require 83-bits of precision which is not representable.
+> 
+> (BTW: to make it even more fun, if you were to use double res = 1; repeat(25) res = res * 10; in C, so the naive computation of the original 10^25 you?d get 9999999999999998758486016 and 0x1.08b2a2c28029p+83)
+> 
+> Given that printing is done by the OS and parsing by R, I don?t think R guarantees anything. If you want representable number you?d use the binary representation (sprintf(?%a?) or hex-mode deparse as noted). One could argue that it could make sense to change it one way or another - either having R do it all or having the OS do it all. In the latter case one may obtain more consistent results (e.g. system stdtod() yields the original value even on M1), but it would be OS-specific. In the former R could impose its own guarantees - but currently it does not.
+> 
+> Cheers,
+> Simon
+> 
+> [1] - https://github.com/r-devel/r-svn/blob/97c0a73f1758d09088c200f924d27b362d55ccdc/src/main/util.c#L2094
+> 
+> 
+> #include <stdio.h>
+> #include <math.h>
+> #include <stdlib.h>
+> 
+> int main() {
+>  const char *str = "10000000000000000905969664", *c = str;
+>  double ans = 0;
+>  while (*c) {
+>    ans = 10 * ans + (*(c++) - '0');
+>    printf("%a\n", ans);
+>  }
+>  printf("atof: %a\n", atof(str));
+>  double pow1025 = pow(10.0, 25);
+>  printf("--\n10^25:\n%25.f\n%a\n", pow1025, pow1025);
+>  return 0;
+> }
+> 
+> 0x1p+0
+> 0x1.4p+3
+> 0x1.9p+6
+> 0x1.f4p+9
+> 0x1.388p+13
+> 0x1.86ap+16
+> 0x1.e848p+19
+> 0x1.312dp+23
+> 0x1.7d784p+26
+> 0x1.dcd65p+29
+> 0x1.2a05f2p+33
+> 0x1.74876e8p+36
+> 0x1.d1a94a2p+39
+> 0x1.2309ce54p+43
+> 0x1.6bcc41e9p+46
+> 0x1.c6bf52634p+49
+> 0x1.1c37937e08p+53
+> 0x1.6345785d8a001p+56
+> 0x1.bc16d674ec801p+59
+> 0x1.158e460913d01p+63
+> 0x1.5af1d78b58c41p+66
+> 0x1.b1ae4d6e2ef51p+69
+> 0x1.0f0cf064dd593p+73
+> 0x1.52d02c7e14af8p+76
+> 0x1.a784379d99db6p+79
+> 0x1.08b2a2c280292p+83
+> atof: 0x1.08b2a2c280291p+83
+> --
+> 10^25:
+> 10000000000000000905969664
+> 0x1.08b2a2c280291p+83
+> 
+> 
+>> On 11/07/2022, at 02:00, Antoine Fabri <antoine.fabri at gmail.com> wrote:
+>> 
+>> Dear r-devel,
+>> 
+>> For some numbers, the printed value is not equivalent to the input :
+>> 
+>> options(scipen = 999)
+>> ## GOOD
+>> 1e24
+>> #> [1]  999999999999999983222784
+>> 1e24 == 999999999999999983222784
+>> #> [1] TRUE
+>> 
+>> ## BAD
+>> 1e25
+>> #> [1] 10000000000000000905969664
+>> 1e25 == 10000000000000000905969664
+>> #> [1] FALSE
+>> 
+>> ## STILL BAD
+>> 10000000000000000905969664
+>> #> [1] 10000000000000003053453312
+>> 
+>> ## GOOD AGAIN
+>> 10000000000000003053453312
+>> #> [1] 10000000000000003053453312
+>> 
+>> # Additionally
+>> 10000000000000000000000000 == 1e25
+>> #> [1] FALSE
+>> 
+>> Are these bugs ?
+>> 
+>> 	[[alternative HTML version deleted]]
+>> 
+>> ______________________________________________
+>> R-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-devel
+>> 
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+	[[alternative HTML version deleted]]
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Tue Jul 12 11:40:25 2022
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Tue, 12 Jul 2022 11:40:25 +0200
+Subject: [Rd] Floating point issue
+In-Reply-To: <25291.56922.730383.931706@stat.math.ethz.ch>
+References: <CAEKh8uhNTF3RczavV-jh82tK9e=iDr2tzys=wGSk6ZD5e2tndg@mail.gmail.com>
+ <CAHqSRuTN7iU2ngvr2JoEiqZCrogY8GL3ssKY2vvUZstWCydzKw@mail.gmail.com>
+ <CAEKh8ujziLSCxAEc1dmxJQMf5Kcpq2hO0yx+Tuyp4s98WuCeuA@mail.gmail.com>
+ <1af830d4-73cb-b48b-77d2-de0c74aa1f8e@yahoo.com>
+ <25291.56922.730383.931706@stat.math.ethz.ch>
+Message-ID: <25293.16777.227441.534787@stat.math.ethz.ch>
+
+>>>>> Martin Maechler 
+>>>>>     on Mon, 11 Jul 2022 10:24:58 +0200 writes:
+
+[............]
+
+    > 10 days ago I also had a colleague at ETH, involved in teaching stats,
+    > wanting to submit a bug report about a model fit in nlme which
+    > gave different results (well, a confidence interval of a
+    > correlation which was not at all significant (and estimated
+    > close to zero) changed from +/-0.45 to +/-0.85 ...
+
+(that was all the case, indeed)
+
+    > ... and when I asked for sessionInfo() etc,
+    > the result was that on the  M1  the result differed from all
+    > other platforms.
+
+when now rechecking and looking at the example, I've found to my
+embarrassment, that the above paragraph (which *was* our conclusion)
+has really not been the case.
+Rather, as I've now reconfirmed, it seems that *only* on Windows
+(from the platforms we looked at), the result differed from the others.
+
+I.e., my nlme - example has been completely irrelevant to the
+discussion here.
+I do apologize!
+
+Martin
+
+
+From hugh@p@r@on@ge @end|ng |rom gm@||@com  Wed Jul 13 01:19:22 2022
+From: hugh@p@r@on@ge @end|ng |rom gm@||@com (Hugh Parsonage)
+Date: Wed, 13 Jul 2022 09:19:22 +1000
+Subject: [Rd] Recommended change to CheckLazyDataCompression section in WRE
+Message-ID: <CAJmOi+PQowhEudmDGtDZ9T24BGP2zs7yQm5jWOBzXo46RoA3CQ@mail.gmail.com>
+
+Thank you for the helpful function in WRE. I recommend the following
+changes to avoid inadvertent errors
+
+CheckLazyDataCompression <- function(pkg)
+{
+    pkg_name <- sub("_.*", "", basename(pkg))   # in case pkg is in a
+different directory
+    lib <- tempfile(); dir.create(lib)
+    zs <- c("gzip", "bzip2", "xz")
+    res <- double(3); names(res) <- zs   # is a double vector
+    for (z in zs) {
+        opts <- c(paste0("--data-compress=", z),
+                  "--no-libs", "--no-help", "--no-demo", "--no-exec",
+"--no-test-load")
+        install.packages(pkg, lib, INSTALL_opts = opts, repos = NULL,
+quiet = TRUE, type = "source")  # otherwise an error on Windows
+        res[z] <- file.size(file.path(lib, pkg_name, "data", "Rdata.rdb"))
+    }
+    ceiling(res/1024)
+}
+
+Relatedly, the footnote (currently 24) says:
+> For all the CRAN packages tested, either gz or bzip2 provided a very substantial reduction in installed size.
+
+I believe this should be "xz or bzip2"
+
+Finally, I also note the sentence in the same section
+
+"Lazy-loading is not supported for very large datasets (those which
+when serialized exceed 2GB, the limit for the format on 32-bit
+platforms)"
+
+Is this still applicable?
+
+Best,
+
+Hugh.
+
+
