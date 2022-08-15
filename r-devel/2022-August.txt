@@ -1,0 +1,633 @@
+From ch|r|com @end|ng |rom goog|e@com  Tue Aug  2 00:27:10 2022
+From: ch|r|com @end|ng |rom goog|e@com (Michael Chirico)
+Date: Mon, 1 Aug 2022 15:27:10 -0700
+Subject: [Rd] Should invisible() get signature x=NULL?
+Message-ID: <CAD7Bkx-H+-Xe=SFZbBE3Zgw89Dy--uA4nzcQO9U7obzHjSxeHg@mail.gmail.com>
+
+I think most experienced R users are familiar with return(invisible())
+being used as shorthand for return(invisible(NULL)).
+
+However, this NULL default is not documented anywhere -- we have to
+dive into src/main/print.c:do_invisible to source this behavior.
+
+Is this lack of documentation intentional? Otherwise, should the
+signature be updated to reflect this default?
+
+invisible <- function(x = NULL) .Primitive("invisible")
+
+Otherwise, should this default be mentioned in ?invisible ?
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Tue Aug  2 02:08:53 2022
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Mon, 1 Aug 2022 20:08:53 -0400
+Subject: [Rd] Should invisible() get signature x=NULL?
+In-Reply-To: <CAD7Bkx-H+-Xe=SFZbBE3Zgw89Dy--uA4nzcQO9U7obzHjSxeHg@mail.gmail.com>
+References: <CAD7Bkx-H+-Xe=SFZbBE3Zgw89Dy--uA4nzcQO9U7obzHjSxeHg@mail.gmail.com>
+Message-ID: <02ae40ec-4824-7594-131f-b9cea33c8915@gmail.com>
+
+On 01/08/2022 6:27 p.m., Michael Chirico via R-devel wrote:
+> I think most experienced R users are familiar with return(invisible())
+> being used as shorthand for return(invisible(NULL)).
+
+I'm not sure that's true... the R sources themselves are inconsistent 
+about using invisible() vs invisible(NULL).
+
+> However, this NULL default is not documented anywhere -- we have to
+> dive into src/main/print.c:do_invisible to source this behavior.
+> 
+> Is this lack of documentation intentional? Otherwise, should the
+> signature be updated to reflect this default?
+> 
+> invisible <- function(x = NULL) .Primitive("invisible")
+> 
+> Otherwise, should this default be mentioned in ?invisible ?
+
+But documenting it seems wise.
+
+Duncan Murdoch
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Tue Aug  2 09:26:12 2022
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Tue, 2 Aug 2022 09:26:12 +0200
+Subject: [Rd] Should invisible() get signature x=NULL?
+In-Reply-To: <02ae40ec-4824-7594-131f-b9cea33c8915@gmail.com>
+References: <CAD7Bkx-H+-Xe=SFZbBE3Zgw89Dy--uA4nzcQO9U7obzHjSxeHg@mail.gmail.com>
+ <02ae40ec-4824-7594-131f-b9cea33c8915@gmail.com>
+Message-ID: <25320.53652.284203.674733@stat.math.ethz.ch>
+
+>>>>> Duncan Murdoch 
+>>>>>     on Mon, 1 Aug 2022 20:08:53 -0400 writes:
+
+    > On 01/08/2022 6:27 p.m., Michael Chirico via R-devel
+    > wrote:
+    >> I think most experienced R users are familiar with
+    >> return(invisible()) being used as shorthand for
+    >> return(invisible(NULL)).
+
+    > I'm not sure that's true... the R sources themselves are
+    > inconsistent about using invisible() vs invisible(NULL).
+
+Well, they *are* identical in what they return, but to me there *is* a
+stylistic difference:  The latter emphasizes the return value to
+be NULL.
+
+    >> However, this NULL default is not documented anywhere --
+    >> we have to dive into src/main/print.c:do_invisible to
+    >> source this behavior.
+    >> 
+    >> Is this lack of documentation intentional? Otherwise,
+    >> should the signature be updated to reflect this default?
+    >> 
+    >> invisible <- function(x = NULL) .Primitive("invisible")
+    >> 
+    >> Otherwise, should this default be mentioned in ?invisible
+    >> ?
+
+    > But documenting it seems wise.
+
+    > Duncan Murdoch
+
+I prefer to agree with Michael that the "fake" argument list (*)
+should be updated to 'x = NULL'.
+
+*) Primitive functions have no formal arguments.  We have
+ provided artificially constructed formal arguments mainly for
+ printing, only "relatively recently".
+ E.g., in R 2.0.0, we still had
+
+> invisible
+.Primitive("invisible")
+
+
+Martin
+
+--
+Martin Maechler
+ETH Zurich  and  R Core team
+
+
+From @|ex@nder@keth @end|ng |rom |venturegroup@com  Wed Aug  3 10:44:55 2022
+From: @|ex@nder@keth @end|ng |rom |venturegroup@com (Alexander Keth)
+Date: Wed, 3 Aug 2022 10:44:55 +0200 (CEST)
+Subject: [Rd] Display lines of code from the top-level script or subscript
+ in non-interactive R Session with Rprof
+Message-ID: <1822065500.11275024.1659516295206@zm-relay01>
+
+Hello there,
+
+
+I am running R in a production environment. My goal is to profile all production jobs, which are run in non interactive R sessions via Rscript, in the form job-xyz ran for xxx amount of time and spend yyy seconds with code execution of line # (for every line of code). In general the R code is run with a main script which calls various subscripts. The jobs make heays use of external packages (e.g. dplyr, DBI, data.table and so on).
+
+I re-installed all packages with --with-keep.source. Subscripts are sourced in the main-script via eval(parse("path/to/subscript.R")) to enable line-profiling with Rprof. The call to Rprof is Rprof("rprof.out", line.profiling = TRUE, memory.profiling = TRUE).
+
+
+Unfotunately, the majority of the code relies on heavy package use (e.g. dplyr, data.table and so on). Thus most of the code lines in Rprof refer to the source-code within those packages and not the 'top-level' source code in the main-script or the subscripts. So far the only solution I came up with is to scrape the Rprof output using the profile package (https://github.com/r-prof/profile), extract the top-level call stack function calls (remove top level eval calls before) and auto-magically match the function calls with the function calls performed in the main-script and subscripts. However, this process is obviously not perfect and very error prone...
+
+
+Is there any better way to do things?
+
+
+Cheers,
+Alex
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Wed Aug  3 13:06:16 2022
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Wed, 3 Aug 2022 07:06:16 -0400
+Subject: [Rd] 
+ Display lines of code from the top-level script or subscript
+ in non-interactive R Session with Rprof
+In-Reply-To: <1822065500.11275024.1659516295206@zm-relay01>
+References: <1822065500.11275024.1659516295206@zm-relay01>
+Message-ID: <2489b597-5af5-9db6-e5e0-66a8071fd540@gmail.com>
+
+On 03/08/2022 4:44 a.m., Alexander Keth via R-devel wrote:
+> Hello there,
+> 
+> 
+> I am running R in a production environment. My goal is to profile all production jobs, which are run in non interactive R sessions via Rscript, in the form job-xyz ran for xxx amount of time and spend yyy seconds with code execution of line # (for every line of code). In general the R code is run with a main script which calls various subscripts. The jobs make heays use of external packages (e.g. dplyr, DBI, data.table and so on).
+> 
+> I re-installed all packages with --with-keep.source. Subscripts are sourced in the main-script via eval(parse("path/to/subscript.R")) to enable line-profiling with Rprof. The call to Rprof is Rprof("rprof.out", line.profiling = TRUE, memory.profiling = TRUE).
+> 
+> 
+> Unfotunately, the majority of the code relies on heavy package use (e.g. dplyr, data.table and so on). Thus most of the code lines in Rprof refer to the source-code within those packages and not the 'top-level' source code in the main-script or the subscripts. So far the only solution I came up with is to scrape the Rprof output using the profile package (https://github.com/r-prof/profile), extract the top-level call stack function calls (remove top level eval calls before) and auto-magically match the function calls with the function calls performed in the main-script and subscripts. However, this process is obviously not perfect and very error prone...
+> 
+> 
+> Is there any better way to do things?
+
+I think reinstalling uninteresting packages --with-keep-source was a 
+mistake.  If you use the standard builds of those, and only keep source 
+in your own code, most of the detail will come from there.
+
+I'm not familiar with the profile package, but the utils::summaryRprof() 
+function with `lines = "show"` will give a display that concentrates on 
+the timing by line in the code that has source references. I think from 
+your description you want to look at the "by.total" table, but maybe you 
+want the "by.line" table.
+
+Duncan Murdoch
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Thu Aug  4 14:48:06 2022
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Thu, 4 Aug 2022 08:48:06 -0400
+Subject: [Rd] Minor error in ?cbind
+Message-ID: <c6ce8ca6-ff8f-4420-4c2a-200fb244356c@stats.uwo.ca>
+
+The help for rbind() and cbind() says in the text that the default for 
+deparse.level is 0, when in fact it is 1.? Here's a patch to fix it.
+
+Duncan Murdoch
+
+
+-------------- next part --------------
+An embedded and charset-unspecified text was scrubbed...
+Name: cbind.patch.txt
+URL: <https://stat.ethz.ch/pipermail/r-devel/attachments/20220804/0c53b210/attachment.txt>
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Thu Aug  4 16:03:24 2022
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Thu, 4 Aug 2022 16:03:24 +0200
+Subject: [Rd] Minor error in ?cbind
+In-Reply-To: <c6ce8ca6-ff8f-4420-4c2a-200fb244356c@stats.uwo.ca>
+References: <c6ce8ca6-ff8f-4420-4c2a-200fb244356c@stats.uwo.ca>
+Message-ID: <25323.53676.470465.743476@stat.math.ethz.ch>
+
+>>>>> Duncan Murdoch 
+>>>>>     on Thu, 4 Aug 2022 08:48:06 -0400 writes:
+
+    > The help for rbind() and cbind() says in the text that the
+    > default for deparse.level is 0, when in fact it is 1.?
+
+Well, that's not what is meant by the current text.
+Note that ";" is semantically almost a ".", and I have always read
+
+     \code{deparse.level = 0} constructs no labels; the default,\cr
+     \code{deparse.level = 1 or 2} constructs labels from the argument
+     names, see the \sQuote{Value} section below.
+
+as
+
+     'deparse.level = 0' constructs no labels; 
+     the default, 'deparse.level = 1 or 2' constructs labels from the argument
+     names, see the _Value_ section below.
+
+so *not* as claiming that the default is deparse.level=0.
+But you are right that the current phrasing should be changed to
+be more clear.  I would like to keep mentioning the default in the
+\arguments{} part, and only change that, e.g., to
+
+     \code{deparse.level = 0} constructs no labels; 
+     the default \code{deparse.level = 1} typically and
+     \code{deparse.level = 2} always construct labels from the argument
+     names, see the \sQuote{Value} section below.
+
+WDYT ?
+
+
+    > Here's a patch to fix it.
+
+    > Duncan Murdoch
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Fri Aug  5 11:53:45 2022
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Fri, 5 Aug 2022 11:53:45 +0200
+Subject: [Rd] 
+ stats::poly() stopped working for Date input -- intentional?
+In-Reply-To: <25288.16515.793861.777833@stat.math.ethz.ch>
+References: <CAD7Bkx85RaBLdhGiUUTgiyRKkBDv=gH=zLVB_+8bGZV=fP3C3g@mail.gmail.com>
+ <25288.16515.793861.777833@stat.math.ethz.ch>
+Message-ID: <25324.59561.734268.80580@stat.math.ethz.ch>
+
+>>>>> Martin Maechler 
+>>>>>     on Fri, 8 Jul 2022 16:34:43 +0200 writes:
+
+>>>>> Michael Chirico via R-devel 
+>>>>>     on Thu, 7 Jul 2022 22:17:12 -0700 writes:
+
+    >> SVN#80126 added rep.difftime, which means
+    >> rep(as.difftime(0, units="secs")) retains the "datetime"
+    >> class.
+
+    > (yes, by me, March 2021), this was fixing PR#18066 ==>
+    > https://bugs.r-project.org/show_bug.cgi?id=18066 )
+
+    > Thank you, Michael, for the report!
+
+    >> A consequence of this is that stats::poly() no longer
+    >> accepts Date/POSIXct input (because poly calls outer() on
+    >> the de-meaned input, which rep()):
+
+    >> # works on R 3.6.3 (and probably everything < 4.1.0) #
+    >> but on R 4.1.3 (and probably everything >= 4.1.0):
+    >> stats::poly(Sys.Date() - 0:4, 3) # Error in
+    >> Ops.difftime(X, Y, ...) : '^' not defined for "difftime"
+    >> objects
+
+    >> Is this intentional?
+
+    > Well, actually I think it was not intentional that poly()
+    > worked at all with Date/POSIXct input, ..  OTOH you *did*
+    > encounter it.
+
+    > Note that
+
+    >> poly(as.Date("2020-2-2") - 0:3, 2, raw = TRUE)
+    >   Error in Ops.Date(X, Y, ...) : ^ not defined for "Date"
+    > objects
+    >> 
+
+    > happens (I think) in all versions of R, i.e., even before
+    > the rep() extension.
+
+    >> If not, a simple patch is to call 'x <- as.double(x)'
+    >> before de-meaning.
+
+    > well, yes, in that branch of the source code.  ... and a
+    > similar call for the raw = TRUE case.
+
+    > At first, this seems to make sense to me, but actually it
+    > will break when someone uses
+
+    >    poly(<complex>, ..)
+   
+    > [ Also: what about the "prediction" case (coef =
+    > <specified>) ?  could you use prediction of an lm() for
+    > your real use case ? ]
+
+    > ---
+
+    > Maybe it makes most sense if you open an R bugzilla entry
+    > for this (including part of our current dialogue).
+
+Even though there hasn't been any such formal bug report,
+I've now committed a change (to R-devel only for the time being,
+svn revision 82681) 
+which re-enables the working of poly() in such cases and even 
+for the  raw=TRUE  case where it had never worked.
+Also, this is now documented.
+
+The only change to the source was the insertion of
+
+    if(is.object(x) && mode(x) == "numeric") x <- as.numeric(x) 
+
+into the body of poly().
+
+
+Thank you once more, Michael, for raising the issue.
+
+Martin
+
+
+From Reece@God|ng @end|ng |rom out|ook@com  Mon Aug  8 18:51:28 2022
+From: Reece@God|ng @end|ng |rom out|ook@com (Reece Goding)
+Date: Mon, 8 Aug 2022 16:51:28 +0000
+Subject: [Rd] Is the behaviour of sample's prob = NULL default argument
+ undocumented?
+Message-ID: <LO2P123MB1920AE1680B3BDB0AD2F102F8A639@LO2P123MB1920.GBRP123.PROD.OUTLOOK.COM>
+
+Hello,
+
+Does the documentation for sample never say what happens if you leave the prob argument NULL?
+
+This might be a job for R-help, but pride has me hoping that I'm missing something very technical rather than very obvious.
+
+Thanks,
+Reece Goding
+
+From m@rc_@chw@rtz @end|ng |rom me@com  Mon Aug  8 19:13:06 2022
+From: m@rc_@chw@rtz @end|ng |rom me@com (Marc Schwartz)
+Date: Mon, 8 Aug 2022 13:13:06 -0400
+Subject: [Rd] 
+ =?utf-8?q?Is_the_behaviour_of_sample=27s_prob_=3D_NULL_defa?=
+ =?utf-8?q?ult_argument_undocumented=3F?=
+In-Reply-To: <LO2P123MB1920AE1680B3BDB0AD2F102F8A639@LO2P123MB1920.GBRP123.PROD.OUTLOOK.COM>
+References: <LO2P123MB1920AE1680B3BDB0AD2F102F8A639@LO2P123MB1920.GBRP123.PROD.OUTLOOK.COM>
+Message-ID: <etPan.62f14422.4d6fca3f.2622@me.com>
+
+Hi,
+
+In the Details section of ?sample, the 6th paragraph begins with the following sentence:
+
+"The optional prob argument can be used to give a vector of weights for obtaining the elements of the vector being sampled."
+
+Since the argument is optional, it would imply that the default behavior is for an equal weighting of the elements in the source vector.
+
+Regards,
+
+Marc Schwartz
+
+
+On August 8, 2022 at 12:51:28 PM, Reece Goding (reece.goding at outlook.com (mailto:reece.goding at outlook.com)) wrote:
+
+> Hello,
+>
+> Does the documentation for sample never say what happens if you leave the prob argument NULL?
+>
+> This might be a job for R-help, but pride has me hoping that I'm missing something very technical rather than very obvious.
+>
+> Thanks,
+> Reece Goding
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From r-deve| @end|ng |rom @ker@t|ng@de  Tue Aug  9 17:40:22 2022
+From: r-deve| @end|ng |rom @ker@t|ng@de (Andreas Kersting)
+Date: Tue, 09 Aug 2022 17:40:22 +0200 (CEST)
+Subject: [Rd] get() promise to missing arg
+Message-ID: <E1oLRLC-0004nt-Tw@rmmprod07.runbox>
+
+Hi,
+
+Please consider the following:
+
+> e <- new.env()
+> delayedAssign("p", quote(expr = ), assign.env = e)
+> e$m <- quote(expr = )
+> identical(e$m, e$p)
+[1] TRUE
+> 
+> get("p", e)
+
+> get("m", e)
+Error in get("m", e) : argument "m" is missing, with no default
+
+Although objects m and p are identical(), get() behaves differently for them (in R version 4.2.1). Is this intended?
+
+I stumbled across this in the context of utils:::print.ls_str(), which fails when encountering a promise to the missing arg:
+
+> ls.str(e)
+m : <missing>
+p : Error in inherits(o, "error") : argument "o" is missing, with no default
+
+Best,
+Andreas
+
+From d@v|@ @end|ng |rom r@tud|o@com  Tue Aug  9 20:26:08 2022
+From: d@v|@ @end|ng |rom r@tud|o@com (Davis Vaughan)
+Date: Tue, 9 Aug 2022 14:26:08 -0400
+Subject: [Rd] Should `as.difftime()` convert integer input to double?
+Message-ID: <CABzLhzys2eihd7MuvKuFZyBCkjzA+shdM1H0R=r1a1mQ_5CMnw@mail.gmail.com>
+
+Hi all,
+
+Currently, `as.difftime()` with an integer input will produce a difftime
+object that internally is built on an integer vector, i.e.:
+
+x <- as.difftime(1L, units = "secs")
+typeof(x)
+#> [1] "integer"
+
+x <- as.difftime(1, units = "secs")
+typeof(x)
+#> [1] "double"
+
+I feel like difftime objects should always be built on *double* vectors.
+There are a few reasons I feel like this should be true:
+
+- There is an `as.double.difftime()` method, but no `as.integer.difftime()`
+method, which implies something about what the underlying storage type is
+assumed to be.
+
+- AFAIK, there is no other way to produce a difftime object with integer
+storage using the exposed API (aside from abusing the internal .difftime()
+helper). Even `.Date(1L) - .Date(1L)` produces a difftime with double
+storage.
+
+- `seq.Date()` used to be able to produce dates with integer storage, but
+as of recently even that edge case has been altered to always produce dates
+with double storage. So a change to also force difftime to have double
+storage would feel consistent with that.
+https://github.com/wch/r-source/commit/0762ee983813c4df9b93f6b5ee52c910dcd3ab39
+
+It looks like a patch to `as.difftime()` would be fairly straightforward
+(i.e. ensuring that integer input is coerced to double), so I'd be happy to
+attempt one if someone else agrees that this should be changed.
+
+Thanks,
+Davis
+
+	[[alternative HTML version deleted]]
+
+
+From w||||@mwdun|@p @end|ng |rom gm@||@com  Tue Aug  9 21:10:53 2022
+From: w||||@mwdun|@p @end|ng |rom gm@||@com (Bill Dunlap)
+Date: Tue, 9 Aug 2022 12:10:53 -0700
+Subject: [Rd] Should `as.difftime()` convert integer input to double?
+In-Reply-To: <CABzLhzys2eihd7MuvKuFZyBCkjzA+shdM1H0R=r1a1mQ_5CMnw@mail.gmail.com>
+References: <CABzLhzys2eihd7MuvKuFZyBCkjzA+shdM1H0R=r1a1mQ_5CMnw@mail.gmail.com>
+Message-ID: <CAHqSRuS=c9TvbCKqwqB9GcGHVek5O9djgN0yJXzb9GpdfEvEJg@mail.gmail.com>
+
+Forcing difftime's payload to be numeric would avoid anomalies like
+
+> as.difftime(123456789L, units="secs") * 100L
+Time difference of NA secs
+Warning message:
+In e2 * unclass(e1) : NAs produced by integer overflow
+> as.difftime(123456789, units="secs") * 100L
+Time difference of 12345678900 secs
+
+Note that there are packages (e.g., fst, a serialization package) which can
+(in C++ code) understand and create difftimes with integer payloads, so you
+may have trouble completely getting rid of such things.
+
+-Bill
+
+On Tue, Aug 9, 2022 at 11:26 AM Davis Vaughan <davis at rstudio.com> wrote:
+
+> Hi all,
+>
+> Currently, `as.difftime()` with an integer input will produce a difftime
+> object that internally is built on an integer vector, i.e.:
+>
+> x <- as.difftime(1L, units = "secs")
+> typeof(x)
+> #> [1] "integer"
+>
+> x <- as.difftime(1, units = "secs")
+> typeof(x)
+> #> [1] "double"
+>
+> I feel like difftime objects should always be built on *double* vectors.
+> There are a few reasons I feel like this should be true:
+>
+> - There is an `as.double.difftime()` method, but no `as.integer.difftime()`
+> method, which implies something about what the underlying storage type is
+> assumed to be.
+>
+> - AFAIK, there is no other way to produce a difftime object with integer
+> storage using the exposed API (aside from abusing the internal .difftime()
+> helper). Even `.Date(1L) - .Date(1L)` produces a difftime with double
+> storage.
+>
+> - `seq.Date()` used to be able to produce dates with integer storage, but
+> as of recently even that edge case has been altered to always produce dates
+> with double storage. So a change to also force difftime to have double
+> storage would feel consistent with that.
+>
+> https://github.com/wch/r-source/commit/0762ee983813c4df9b93f6b5ee52c910dcd3ab39
+>
+> It looks like a patch to `as.difftime()` would be fairly straightforward
+> (i.e. ensuring that integer input is coerced to double), so I'd be happy to
+> attempt one if someone else agrees that this should be changed.
+>
+> Thanks,
+> Davis
+>
+>         [[alternative HTML version deleted]]
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+
+	[[alternative HTML version deleted]]
+
+
+From therne@u @end|ng |rom m@yo@edu  Sat Aug 13 13:20:28 2022
+From: therne@u @end|ng |rom m@yo@edu (Therneau, Terry M., Ph.D.)
+Date: Sat, 13 Aug 2022 06:20:28 -0500
+Subject: [Rd] makepredictcall
+Message-ID: <ff6a6b$ieem7q@ironport10.mayo.edu>
+
+I'm trying to better understand makepredictcall.? The method for ns() starts with the 
+following very cryptic comment and line of code:
+ ??? ## check must work correctly when call is a symbol, both for quote(ns) and quote(t1):
+ ??? if(as.character(call)[1L] == "ns" || (is.call(call) && identical(eval(call[[1L]]), 
+ns))) {
+
+The phrase "t1" appears no where else in the src/library/splines/R, and there is nothing 
+relevant in stats/R either? (t1 gets used as a temp variable in 2 subfunctions).
+So, what is the purpose of this line of code?
+
+I can see that if a user typed?? zed <- ns, then used 'zed' in their call, that the right 
+hand clause would then be true but not the left; but why worry about that case?
+
+Terry T.
+
+ ?PS (The help file isn't very helpful for creating such a method BTW.? It tells why you 
+should make one, and what happens if you get it right, but nothing on how.)
+
+-- 
+Terry M Therneau, PhD
+Department of Quantitative Health Sciences
+Mayo Clinic
+therneau at mayo.edu
+
+"TERR-ree THUR-noh"
+
+	[[alternative HTML version deleted]]
+
+
+From bbo|ker @end|ng |rom gm@||@com  Sat Aug 13 18:52:21 2022
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Sat, 13 Aug 2022 12:52:21 -0400
+Subject: [Rd] makepredictcall
+In-Reply-To: <ff6a6b$ieem7q@ironport10.mayo.edu>
+References: <ff6a6b$ieem7q@ironport10.mayo.edu>
+Message-ID: <e23ade4f-1acb-480e-02b9-9a441b686563@gmail.com>
+
+   Well, going to git blame (too lazy to remember how to do it in svn) 
+finds this commit
+
+https://github.com/wch/r-source/commit/4c800c6f3dd61a07c763af744f08b6f411b1f877
+
+with the commit message " c74663 failed for symbol [example(censboot, 
+package="boot")] => be more careful"
+
+  Going to ?boot::censboot and searching for predict() finds this fragment:
+
+   t1 <- ns(d$thickness, df=4)
+   cox <- coxph(Surv(d$time, d$status == 1) ~ t1+strata(d$ulcer))
+   ind <- !duplicated(d$thickness)
+   u <- d$thickness[!ind]
+   eta <- cox$linear.predictors[!ind]
+   sp <- smooth.spline(u, eta, df=20)
+   th <- seq(from = 0.25, to = 10, by = 0.25)
+   predict(sp, th)$y
+
+which is exactly the use case that you identified, with "t1" as the 
+culprit. (It's definitely confusing that "t1" is called out in the code 
+comments, with no obvious referent ...)
+
+  It has long been my opinion that the machinery of makepredictcall is 
+poorly documented (but of course I haven't done my part and submitted 
+documentation patches for consideration ...)
+
+   cheers
+    Ben Bolker
+
+
+
+On 8/13/22 7:20 AM, Therneau, Terry M., Ph.D. via R-devel wrote:
+> I'm trying to better understand makepredictcall.? The method for ns() starts with the
+> following very cryptic comment and line of code:
+>   ??? ## check must work correctly when call is a symbol, both for quote(ns) and quote(t1):
+>   ??? if(as.character(call)[1L] == "ns" || (is.call(call) && identical(eval(call[[1L]]),
+> ns))) {
+> 
+> The phrase "t1" appears no where else in the src/library/splines/R, and there is nothing
+> relevant in stats/R either? (t1 gets used as a temp variable in 2 subfunctions).
+> So, what is the purpose of this line of code?
+> 
+> I can see that if a user typed?? zed <- ns, then used 'zed' in their call, that the right
+> hand clause would then be true but not the left; but why worry about that case?
+> 
+> Terry T.
+> 
+>   ?PS (The help file isn't very helpful for creating such a method BTW.? It tells why you
+> should make one, and what happens if you get it right, but nothing on how.)
+> 
+
+-- 
+Dr. Benjamin Bolker
+Professor, Mathematics & Statistics and Biology, McMaster University
+Director, School of Computational Science and Engineering
+Graduate chair, Mathematics & Statistics
+
+
