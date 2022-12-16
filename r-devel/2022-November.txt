@@ -1,0 +1,2353 @@
+From @tevem@rt|n041 @end|ng |rom gm@||@com  Wed Nov  2 02:26:26 2022
+From: @tevem@rt|n041 @end|ng |rom gm@||@com (Steve Martin)
+Date: Tue, 1 Nov 2022 21:26:26 -0400
+Subject: [Rd] unsplit() mangles attributes
+Message-ID: <CAP=dwz_nERk37W4ybjO7R1Y+C+UTZ+pan+oZVyGDnYa861yZ=w@mail.gmail.com>
+
+Hello,
+
+Unsplitting a named vector that's been split sets all the names as missing.
+
+x <- 1:12
+names(x) <- letters[x]
+f <- gl(2, 6)
+
+unsplit(split(x, f), f)
+<NA> <NA> <NA> <NA> <NA> <NA> <NA> <NA> <NA> <NA> <NA> <NA>
+   1    2    3    4    5    6    7    8    9   10   11   12
+
+The unsplit() function correctly deals with row names when unsplitting
+a split data frame, and the same approach preserves regular names as
+well. Here's a stripped-down version of unsplit() that keeps names:
+
+unsplit_with_names <- function(value, f) {
+  len <- length(f)
+  x <- value[[1L]][rep(NA_integer_, len)] # names get lost here...
+  split(x, f) <- value
+  has_names <- !is.null(names(value[[1L]]))
+  if (has_names) {
+    split(names(x), f) <- lapply(value, names) # so add them back here
+  }
+  x
+}
+
+unsplit_with_names(split(x, f), f)
+ a  b  c  d  e  f  g  h  i  j  k  l
+ 1  2  3  4  5  6  7  8  9 10 11 12
+
+I plan on reporting this on bugzilla, with a more general fix, but
+would first like to see if I'm missing anything, and check that my
+reasoning is clear.
+
+It seems that names are the only attribute for unclassed vectors that
+survive the default method of split(), and so I think the above
+version of unsplit() replaces all the attributes it can for unclassed
+vectors.
+
+I'm less confident about classed vectors, as unsplit() isn't generic
+and potentially needs to deal with objects. Dates and factors work
+fine, as it seems they can only lose names; this is addressed with the
+above version of unsplit(). But are there other attributes for classed
+objects that may get lost with unsplit? Can my fix above cause
+problems for certain classes? (Note that I didn't use the recursion
+that unsplit() uses for data frames, as that relies on names not
+themselves having names.)
+
+The real challenge is that unsplit need not have all the information
+about the original object it's trying to put back together. Take the
+case of a vector with a dim attribute.
+
+y <- matrix(x, 3, 4, dimnames = list(letters[1:3], letters[1:4]))
+
+unsplit(split(y, f), f)
+[1]  1  2  3  4  5  6  7  8  9 10 11 12
+
+A possible solution is for split() to record the attributes of its
+argument for later use by unsplit(). Again, consider some
+stripped-down alternatives:
+
+split_with_attr <- function(x, f) {
+  res <- split(x, f)
+  structure(res, original.attr = attributes(x))
+}
+
+unsplit_with_attr <- function(value, f) {
+  len <- length(f)
+  x <- value[[1L]][rep(NA_integer_, len)]
+  split(x, f) <- value
+  attributes(x) <- attr(value, "original.attr")
+  x
+}
+
+unsplit_with_attr(split_with_attr(y, f), f)
+  a b c  d
+a 1 4 7 10
+b 2 5 8 11
+c 3 6 9 12
+
+But this seems complicated, and may muck up existing code. It would be
+much easier if I can just restrict attention to restoring lost names
+for unclassed vectors :)
+
+Any thoughts are much appreciated.
+
+Thanks,
+Steve
+
+
+From dd@|thorp @end|ng |rom protonm@||@com  Wed Nov  2 13:30:43 2022
+From: dd@|thorp @end|ng |rom protonm@||@com (Dan Dalthorp)
+Date: Wed, 02 Nov 2022 12:30:43 +0000
+Subject: [Rd] as.Date without "origin"
+Message-ID: <EKNZOOr0Xk-P1uT_HZiKSmlTniaWJ9qxbkQAdiT-WTIadalBDTvhObEvUFCj_yZEXiO1_mImOaOMtS-gxB3Rc5rcCUyeUZY9KTpuq-Yd89U=@protonmail.com>
+
+The new (2022-10-11 r83083 ucrt) as.Date function returns a date rather than an error when called without "origin" specified.
+
+# previous versions of R
+as.Date(0)
+# Error in as.Date.numeric(0) : 'origin' must be supplied
+
+# new:
+as.Date(0)
+# [1] "1970-01-01"
+
+This is at odds with the help file, which gives:
+
+origin
+
+aDateobject, or something which can be coerced byas.Date(origin, ...)to such an object.
+
+And:
+as.Datewill accept numeric data (the number of days since an epoch), butonlyiforiginis supplied.
+
+The behavior described in the help file and implemented in previous versions seems more reasonable than returning a date with an arbitrary "origin". In any case, in the r-devel there is a mismatch between the function and its description.
+
+-Dan
+	[[alternative HTML version deleted]]
+
+
+From @pencer@gr@ve@ @end|ng |rom prod@y@e@com  Wed Nov  2 14:20:55 2022
+From: @pencer@gr@ve@ @end|ng |rom prod@y@e@com (Spencer Graves)
+Date: Wed, 2 Nov 2022 08:20:55 -0500
+Subject: [Rd] as.Date without "origin"
+In-Reply-To: <EKNZOOr0Xk-P1uT_HZiKSmlTniaWJ9qxbkQAdiT-WTIadalBDTvhObEvUFCj_yZEXiO1_mImOaOMtS-gxB3Rc5rcCUyeUZY9KTpuq-Yd89U=@protonmail.com>
+References: <EKNZOOr0Xk-P1uT_HZiKSmlTniaWJ9qxbkQAdiT-WTIadalBDTvhObEvUFCj_yZEXiO1_mImOaOMtS-gxB3Rc5rcCUyeUZY9KTpuq-Yd89U=@protonmail.com>
+Message-ID: <345b7101-f116-e6aa-b8cf-522f68ed5638@prodsyse.com>
+
+	  I've felt that "as.Date" should default to origin "1970-01-01", so I 
+added a modification to Ecfun:
+
+
+Ecfun::as.Date1970(0)
+
+
+	  If R-devel chose to change the default on this, I would happily 
+deprecate Ecfun::as.Date1970 in favor of base::as.Date ;-)
+
+
+	  I would therefore support changing the documentation to match the new 
+behavior.
+
+
+	  Spencer Graves
+
+
+On 11/2/22 7:30 AM, Dan Dalthorp via R-devel wrote:
+> The new (2022-10-11 r83083 ucrt) as.Date function returns a date rather than an error when called without "origin" specified.
+> 
+> # previous versions of R
+> as.Date(0)
+> # Error in as.Date.numeric(0) : 'origin' must be supplied
+> 
+> # new:
+> as.Date(0)
+> # [1] "1970-01-01"
+> 
+> This is at odds with the help file, which gives:
+> 
+> origin
+> 
+> aDateobject, or something which can be coerced byas.Date(origin, ...)to such an object.
+> 
+> And:
+> as.Datewill accept numeric data (the number of days since an epoch), butonlyiforiginis supplied.
+> 
+> The behavior described in the help file and implemented in previous versions seems more reasonable than returning a date with an arbitrary "origin". In any case, in the r-devel there is a mismatch between the function and its description.
+> 
+> -Dan
+> 	[[alternative HTML version deleted]]
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From dd@|thorp @end|ng |rom protonm@||@com  Wed Nov  2 14:38:51 2022
+From: dd@|thorp @end|ng |rom protonm@||@com (Dan Dalthorp)
+Date: Wed, 02 Nov 2022 13:38:51 +0000
+Subject: [Rd] as.Date without "origin"
+In-Reply-To: <345b7101-f116-e6aa-b8cf-522f68ed5638@prodsyse.com>
+References: <EKNZOOr0Xk-P1uT_HZiKSmlTniaWJ9qxbkQAdiT-WTIadalBDTvhObEvUFCj_yZEXiO1_mImOaOMtS-gxB3Rc5rcCUyeUZY9KTpuq-Yd89U=@protonmail.com>
+ <345b7101-f116-e6aa-b8cf-522f68ed5638@prodsyse.com>
+Message-ID: <UVIu3zmRKG3oM__PzasW3vvKTYxIrBpYeoHDaghpllF9-_HuAAPEmQbDweRrMj3_KrKDjbmOI5EySuBKOt_0vQsOJRLcmO7w20rqi5MSo6I=@protonmail.com>
+
+I don't see a compelling rationale for changing the default behavior as.Date to deviate from the wholly reasonable status quo of "as.Date will accept numeric data (the number of days since an epoch), but only if origin is supplied." That has been the expectation for a long, long time. 
+
+In any case, the manual should match the behavior.
+
+-DHD
+
+
+
+
+------- Original Message -------
+On Wednesday, November 2nd, 2022 at 6:20 AM, Spencer Graves <spencer.graves at prodsyse.com> wrote:
+
+
+> 
+> 
+> I've felt that "as.Date" should default to origin "1970-01-01", so I
+> added a modification to Ecfun:
+> 
+> 
+> Ecfun::as.Date1970(0)
+> 
+> 
+> If R-devel chose to change the default on this, I would happily
+> deprecate Ecfun::as.Date1970 in favor of base::as.Date ;-)
+> 
+> 
+> I would therefore support changing the documentation to match the new
+> behavior.
+> 
+> 
+> Spencer Graves
+> 
+> 
+> On 11/2/22 7:30 AM, Dan Dalthorp via R-devel wrote:
+> 
+> > The new (2022-10-11 r83083 ucrt) as.Date function returns a date rather than an error when called without "origin" specified.
+> > 
+> > # previous versions of R
+> > as.Date(0)
+> > # Error in as.Date.numeric(0) : 'origin' must be supplied
+> > 
+> > # new:
+> > as.Date(0)
+> > # [1] "1970-01-01"
+> > 
+> > This is at odds with the help file, which gives:
+> > 
+> > origin
+> > 
+> > aDateobject, or something which can be coerced byas.Date(origin, ...)to such an object.
+> > 
+> > And:
+> > as.Datewill accept numeric data (the number of days since an epoch), butonlyiforiginis supplied.
+> > 
+> > The behavior described in the help file and implemented in previous versions seems more reasonable than returning a date with an arbitrary "origin". In any case, in the r-devel there is a mismatch between the function and its description.
+> > 
+> > -Dan
+> > [[alternative HTML version deleted]]
+> > 
+> > ______________________________________________
+> > R-devel at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From pd@|gd @end|ng |rom gm@||@com  Wed Nov  2 16:30:23 2022
+From: pd@|gd @end|ng |rom gm@||@com (peter dalgaard)
+Date: Wed, 2 Nov 2022 16:30:23 +0100
+Subject: [Rd] as.Date without "origin"
+In-Reply-To: <UVIu3zmRKG3oM__PzasW3vvKTYxIrBpYeoHDaghpllF9-_HuAAPEmQbDweRrMj3_KrKDjbmOI5EySuBKOt_0vQsOJRLcmO7w20rqi5MSo6I=@protonmail.com>
+References: <EKNZOOr0Xk-P1uT_HZiKSmlTniaWJ9qxbkQAdiT-WTIadalBDTvhObEvUFCj_yZEXiO1_mImOaOMtS-gxB3Rc5rcCUyeUZY9KTpuq-Yd89U=@protonmail.com>
+ <345b7101-f116-e6aa-b8cf-522f68ed5638@prodsyse.com>
+ <UVIu3zmRKG3oM__PzasW3vvKTYxIrBpYeoHDaghpllF9-_HuAAPEmQbDweRrMj3_KrKDjbmOI5EySuBKOt_0vQsOJRLcmO7w20rqi5MSo6I=@protonmail.com>
+Message-ID: <70B582E7-760C-4517-9DF6-817E5A3BE19E@gmail.com>
+
+This is in R-devel, mind you, i.e., unreleased and quite possibly unfinished work.
+
+No released version of R does this. E.g.,
+
+> as.Date(0)
+Error in as.Date.numeric(0) : 'origin' must be supplied
+> version
+               _                                          
+platform       x86_64-apple-darwin21.6.0                  
+arch           x86_64                                     
+os             darwin21.6.0                               
+system         x86_64, darwin21.6.0                       
+status         Patched                                    
+major          4                                          
+minor          2.2                                        
+year           2022                                       
+month          11                                         
+day            02                                         
+svn rev        83236                                      
+language       R                                          
+version.string R version 4.2.2 Patched (2022-11-02 r83236)
+nickname       Innocent and Trusting                      
+
+
+> On 2 Nov 2022, at 14:38 , Dan Dalthorp via R-devel <r-devel at r-project.org> wrote:
+> 
+> I don't see a compelling rationale for changing the default behavior as.Date to deviate from the wholly reasonable status quo of "as.Date will accept numeric data (the number of days since an epoch), but only if origin is supplied." That has been the expectation for a long, long time. 
+> 
+> In any case, the manual should match the behavior.
+> 
+> -DHD
+> 
+> 
+> 
+> 
+> ------- Original Message -------
+> On Wednesday, November 2nd, 2022 at 6:20 AM, Spencer Graves <spencer.graves at prodsyse.com> wrote:
+> 
+> 
+>> 
+>> 
+>> I've felt that "as.Date" should default to origin "1970-01-01", so I
+>> added a modification to Ecfun:
+>> 
+>> 
+>> Ecfun::as.Date1970(0)
+>> 
+>> 
+>> If R-devel chose to change the default on this, I would happily
+>> deprecate Ecfun::as.Date1970 in favor of base::as.Date ;-)
+>> 
+>> 
+>> I would therefore support changing the documentation to match the new
+>> behavior.
+>> 
+>> 
+>> Spencer Graves
+>> 
+>> 
+>> On 11/2/22 7:30 AM, Dan Dalthorp via R-devel wrote:
+>> 
+>>> The new (2022-10-11 r83083 ucrt) as.Date function returns a date rather than an error when called without "origin" specified.
+>>> 
+>>> # previous versions of R
+>>> as.Date(0)
+>>> # Error in as.Date.numeric(0) : 'origin' must be supplied
+>>> 
+>>> # new:
+>>> as.Date(0)
+>>> # [1] "1970-01-01"
+>>> 
+>>> This is at odds with the help file, which gives:
+>>> 
+>>> origin
+>>> 
+>>> aDateobject, or something which can be coerced byas.Date(origin, ...)to such an object.
+>>> 
+>>> And:
+>>> as.Datewill accept numeric data (the number of days since an epoch), butonlyiforiginis supplied.
+>>> 
+>>> The behavior described in the help file and implemented in previous versions seems more reasonable than returning a date with an arbitrary "origin". In any case, in the r-devel there is a mismatch between the function and its description.
+>>> 
+>>> -Dan
+>>> [[alternative HTML version deleted]]
+>>> 
+>>> ______________________________________________
+>>> R-devel at r-project.org mailing list
+>>> https://stat.ethz.ch/mailman/listinfo/r-devel
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+-- 
+Peter Dalgaard, Professor,
+Center for Statistics, Copenhagen Business School
+Solbjerg Plads 3, 2000 Frederiksberg, Denmark
+Phone: (+45)38153501
+Office: A 4.23
+Email: pd.mes at cbs.dk  Priv: PDalgd at gmail.com
+
+
+From dd@|thorp @end|ng |rom protonm@||@com  Wed Nov  2 16:49:32 2022
+From: dd@|thorp @end|ng |rom protonm@||@com (Dan Dalthorp)
+Date: Wed, 02 Nov 2022 15:49:32 +0000
+Subject: [Rd] as.Date without "origin"
+In-Reply-To: <70B582E7-760C-4517-9DF6-817E5A3BE19E@gmail.com>
+References: <EKNZOOr0Xk-P1uT_HZiKSmlTniaWJ9qxbkQAdiT-WTIadalBDTvhObEvUFCj_yZEXiO1_mImOaOMtS-gxB3Rc5rcCUyeUZY9KTpuq-Yd89U=@protonmail.com>
+ <345b7101-f116-e6aa-b8cf-522f68ed5638@prodsyse.com>
+ <UVIu3zmRKG3oM__PzasW3vvKTYxIrBpYeoHDaghpllF9-_HuAAPEmQbDweRrMj3_KrKDjbmOI5EySuBKOt_0vQsOJRLcmO7w20rqi5MSo6I=@protonmail.com>
+ <70B582E7-760C-4517-9DF6-817E5A3BE19E@gmail.com>
+Message-ID: <MiWEUOFgZSdx-aqszTl8AL9bYv-XDP45KRgb2R13cDCd3RQOi3g21zGKCAOg42v4R2RHdHTtsjqtbFYRqvPwlA8zsbd2GvF4dtWtMugCvso=@protonmail.com>
+
+Of course. But the broken as.Date in R-devel breaks one of my packages, so I'm getting threats of the package being removed from CRAN in a few days if the breakage is not resolved.
+
+DHD
+
+
+
+
+------- Original Message -------
+On Wednesday, November 2nd, 2022 at 8:30 AM, peter dalgaard <pdalgd at gmail.com> wrote:
+
+
+> 
+> 
+> This is in R-devel, mind you, i.e., unreleased and quite possibly unfinished work.
+> 
+> No released version of R does this. E.g.,
+> 
+> > as.Date(0)
+> 
+> Error in as.Date.numeric(0) : 'origin' must be supplied
+> 
+> > version
+> 
+> _
+> platform x86_64-apple-darwin21.6.0
+> arch x86_64
+> os darwin21.6.0
+> system x86_64, darwin21.6.0
+> status Patched
+> major 4
+> minor 2.2
+> year 2022
+> month 11
+> day 02
+> svn rev 83236
+> language R
+> version.string R version 4.2.2 Patched (2022-11-02 r83236)
+> nickname Innocent and Trusting
+> 
+> > On 2 Nov 2022, at 14:38 , Dan Dalthorp via R-devel r-devel at r-project.org wrote:
+> > 
+> > I don't see a compelling rationale for changing the default behavior as.Date to deviate from the wholly reasonable status quo of "as.Date will accept numeric data (the number of days since an epoch), but only if origin is supplied." That has been the expectation for a long, long time.
+> > 
+> > In any case, the manual should match the behavior.
+> > 
+> > -DHD
+> > 
+> > ------- Original Message -------
+> > On Wednesday, November 2nd, 2022 at 6:20 AM, Spencer Graves spencer.graves at prodsyse.com wrote:
+> > 
+> > > I've felt that "as.Date" should default to origin "1970-01-01", so I
+> > > added a modification to Ecfun:
+> > > 
+> > > Ecfun::as.Date1970(0)
+> > > 
+> > > If R-devel chose to change the default on this, I would happily
+> > > deprecate Ecfun::as.Date1970 in favor of base::as.Date ;-)
+> > > 
+> > > I would therefore support changing the documentation to match the new
+> > > behavior.
+> > > 
+> > > Spencer Graves
+> > > 
+> > > On 11/2/22 7:30 AM, Dan Dalthorp via R-devel wrote:
+> > > 
+> > > > The new (2022-10-11 r83083 ucrt) as.Date function returns a date rather than an error when called without "origin" specified.
+> > > > 
+> > > > # previous versions of R
+> > > > as.Date(0)
+> > > > # Error in as.Date.numeric(0) : 'origin' must be supplied
+> > > > 
+> > > > # new:
+> > > > as.Date(0)
+> > > > # [1] "1970-01-01"
+> > > > 
+> > > > This is at odds with the help file, which gives:
+> > > > 
+> > > > origin
+> > > > 
+> > > > aDateobject, or something which can be coerced byas.Date(origin, ...)to such an object.
+> > > > 
+> > > > And:
+> > > > as.Datewill accept numeric data (the number of days since an epoch), butonlyiforiginis supplied.
+> > > > 
+> > > > The behavior described in the help file and implemented in previous versions seems more reasonable than returning a date with an arbitrary "origin". In any case, in the r-devel there is a mismatch between the function and its description.
+> > > > 
+> > > > -Dan
+> > > > [[alternative HTML version deleted]]
+> > > > 
+> > > > ______________________________________________
+> > > > R-devel at r-project.org mailing list
+> > > > https://stat.ethz.ch/mailman/listinfo/r-devel
+> > 
+> > ______________________________________________
+> > R-devel at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-devel
+> 
+> 
+> --
+> Peter Dalgaard, Professor,
+> Center for Statistics, Copenhagen Business School
+> Solbjerg Plads 3, 2000 Frederiksberg, Denmark
+> Phone: (+45)38153501
+> Office: A 4.23
+> Email: pd.mes at cbs.dk Priv: PDalgd at gmail.com
+
+
+From JAR@uh @end|ng |rom web@de  Wed Nov  2 21:47:41 2022
+From: JAR@uh @end|ng |rom web@de (Johannes Rauh)
+Date: Wed, 2 Nov 2022 21:47:41 +0100
+Subject: [Rd] as.Date without "origin"
+In-Reply-To: <UVIu3zmRKG3oM__PzasW3vvKTYxIrBpYeoHDaghpllF9-_HuAAPEmQbDweRrMj3_KrKDjbmOI5EySuBKOt_0vQsOJRLcmO7w20rqi5MSo6I=@protonmail.com>
+References: <EKNZOOr0Xk-P1uT_HZiKSmlTniaWJ9qxbkQAdiT-WTIadalBDTvhObEvUFCj_yZEXiO1_mImOaOMtS-gxB3Rc5rcCUyeUZY9KTpuq-Yd89U=@protonmail.com>
+ <345b7101-f116-e6aa-b8cf-522f68ed5638@prodsyse.com>
+ <UVIu3zmRKG3oM__PzasW3vvKTYxIrBpYeoHDaghpllF9-_HuAAPEmQbDweRrMj3_KrKDjbmOI5EySuBKOt_0vQsOJRLcmO7w20rqi5MSo6I=@protonmail.com>
+Message-ID: <trinity-944275fc-476b-4c4d-b8db-bbf3ef907154-1667422061742@3c-app-webde-bap25>
+
+Dear all,
+
+I would throw in my vote to have origin = "1970-01-01" as a default in as.Date().  Why?  Well, in fact, the "converse" function as.numeric() does have an implicit default:
+
+> as.numeric(Sys.Date())
+[1] 19298
+
+In fact, as.numeric seems to not even have a method for class "Date", and so as.numeric() does not even have an argument "origin" or the like.
+
+In any case, when using Date objects, it may happen that the result is of clas numeric. For example:
+
+> ifelse(TRUE, Sys.Date(), Sys.Date() + 1)
+[1] 19298
+
+So, in order to transform the result back to class "Date" using as.Date(), I always need to remember the universal default origin 1970-01-01 and I need to write it out explicitly.
+
+I find that rather inconvenient, and so having the default origin as a default would make very much sense to me here.
+
+Of course, for that particular example, it would also help me if ifelse() would properly handle Date vectors.
+
+Best
+Johannes
+
+> Gesendet: Mittwoch, 02. November 2022 um 14:38 Uhr
+> Von: "Dan Dalthorp via R-devel" <r-devel at r-project.org>
+> An: "Spencer Graves" <spencer.graves at prodsyse.com>
+> Cc: "r-devel at r-project.org" <r-devel at r-project.org>
+> Betreff: Re: [Rd] as.Date without "origin"
+>
+> I don't see a compelling rationale for changing the default behavior as.Date to deviate from the wholly reasonable status quo of "as.Date will accept numeric data (the number of days since an epoch), but only if origin is supplied." That has been the expectation for a long, long time.
+>
+> In any case, the manual should match the behavior.
+>
+> -DHD
+>
+>
+>
+>
+> ------- Original Message -------
+> On Wednesday, November 2nd, 2022 at 6:20 AM, Spencer Graves <spencer.graves at prodsyse.com> wrote:
+>
+>
+> >
+> >
+> > I've felt that "as.Date" should default to origin "1970-01-01", so I
+> > added a modification to Ecfun:
+> >
+> >
+> > Ecfun::as.Date1970(0)
+> >
+> >
+> > If R-devel chose to change the default on this, I would happily
+> > deprecate Ecfun::as.Date1970 in favor of base::as.Date ;-)
+> >
+> >
+> > I would therefore support changing the documentation to match the new
+> > behavior.
+> >
+> >
+> > Spencer Graves
+> >
+> >
+> > On 11/2/22 7:30 AM, Dan Dalthorp via R-devel wrote:
+> >
+> > > The new (2022-10-11 r83083 ucrt) as.Date function returns a date rather than an error when called without "origin" specified.
+> > >
+> > > # previous versions of R
+> > > as.Date(0)
+> > > # Error in as.Date.numeric(0) : 'origin' must be supplied
+> > >
+> > > # new:
+> > > as.Date(0)
+> > > # [1] "1970-01-01"
+> > >
+> > > This is at odds with the help file, which gives:
+> > >
+> > > origin
+> > >
+> > > aDateobject, or something which can be coerced byas.Date(origin, ...)to such an object.
+> > >
+> > > And:
+> > > as.Datewill accept numeric data (the number of days since an epoch), butonlyiforiginis supplied.
+> > >
+> > > The behavior described in the help file and implemented in previous versions seems more reasonable than returning a date with an arbitrary "origin". In any case, in the r-devel there is a mismatch between the function and its description.
+> > >
+> > > -Dan
+> > > [[alternative HTML version deleted]]
+> > >
+> > > ______________________________________________
+> > > R-devel at r-project.org mailing list
+> > > https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+
+
+From ru|pb@rr@d@@ @end|ng |rom @@po@pt  Wed Nov  2 23:32:19 2022
+From: ru|pb@rr@d@@ @end|ng |rom @@po@pt (Rui Barradas)
+Date: Wed, 2 Nov 2022 22:32:19 +0000
+Subject: [Rd] as.Date without "origin"
+In-Reply-To: <trinity-944275fc-476b-4c4d-b8db-bbf3ef907154-1667422061742@3c-app-webde-bap25>
+References: <EKNZOOr0Xk-P1uT_HZiKSmlTniaWJ9qxbkQAdiT-WTIadalBDTvhObEvUFCj_yZEXiO1_mImOaOMtS-gxB3Rc5rcCUyeUZY9KTpuq-Yd89U=@protonmail.com>
+ <345b7101-f116-e6aa-b8cf-522f68ed5638@prodsyse.com>
+ <UVIu3zmRKG3oM__PzasW3vvKTYxIrBpYeoHDaghpllF9-_HuAAPEmQbDweRrMj3_KrKDjbmOI5EySuBKOt_0vQsOJRLcmO7w20rqi5MSo6I=@protonmail.com>
+ <trinity-944275fc-476b-4c4d-b8db-bbf3ef907154-1667422061742@3c-app-webde-bap25>
+Message-ID: <9022e3ef-90e7-be8d-546c-a72b14f73568@sapo.pt>
+
+?s 20:47 de 02/11/2022, Johannes Rauh escreveu:
+> Dear all,
+> 
+> I would throw in my vote to have origin = "1970-01-01" as a default in as.Date().  Why?  Well, in fact, the "converse" function as.numeric() does have an implicit default:
+> 
+>> as.numeric(Sys.Date())
+> [1] 19298
+> 
+> In fact, as.numeric seems to not even have a method for class "Date", and so as.numeric() does not even have an argument "origin" or the like.
+> 
+> In any case, when using Date objects, it may happen that the result is of clas numeric. For example:
+> 
+>> ifelse(TRUE, Sys.Date(), Sys.Date() + 1)
+> [1] 19298
+> 
+> So, in order to transform the result back to class "Date" using as.Date(), I always need to remember the universal default origin 1970-01-01 and I need to write it out explicitly.
+> 
+> I find that rather inconvenient, and so having the default origin as a default would make very much sense to me here.
+> 
+> Of course, for that particular example, it would also help me if ifelse() would properly handle Date vectors.
+> 
+> Best
+> Johannes
+> 
+>> Gesendet: Mittwoch, 02. November 2022 um 14:38 Uhr
+>> Von: "Dan Dalthorp via R-devel" <r-devel at r-project.org>
+>> An: "Spencer Graves" <spencer.graves at prodsyse.com>
+>> Cc: "r-devel at r-project.org" <r-devel at r-project.org>
+>> Betreff: Re: [Rd] as.Date without "origin"
+>>
+>> I don't see a compelling rationale for changing the default behavior as.Date to deviate from the wholly reasonable status quo of "as.Date will accept numeric data (the number of days since an epoch), but only if origin is supplied." That has been the expectation for a long, long time.
+>>
+>> In any case, the manual should match the behavior.
+>>
+>> -DHD
+>>
+>>
+>>
+>>
+>> ------- Original Message -------
+>> On Wednesday, November 2nd, 2022 at 6:20 AM, Spencer Graves <spencer.graves at prodsyse.com> wrote:
+>>
+>>
+>>>
+>>>
+>>> I've felt that "as.Date" should default to origin "1970-01-01", so I
+>>> added a modification to Ecfun:
+>>>
+>>>
+>>> Ecfun::as.Date1970(0)
+>>>
+>>>
+>>> If R-devel chose to change the default on this, I would happily
+>>> deprecate Ecfun::as.Date1970 in favor of base::as.Date ;-)
+>>>
+>>>
+>>> I would therefore support changing the documentation to match the new
+>>> behavior.
+>>>
+>>>
+>>> Spencer Graves
+>>>
+>>>
+>>> On 11/2/22 7:30 AM, Dan Dalthorp via R-devel wrote:
+>>>
+>>>> The new (2022-10-11 r83083 ucrt) as.Date function returns a date rather than an error when called without "origin" specified.
+>>>>
+>>>> # previous versions of R
+>>>> as.Date(0)
+>>>> # Error in as.Date.numeric(0) : 'origin' must be supplied
+>>>>
+>>>> # new:
+>>>> as.Date(0)
+>>>> # [1] "1970-01-01"
+>>>>
+>>>> This is at odds with the help file, which gives:
+>>>>
+>>>> origin
+>>>>
+>>>> aDateobject, or something which can be coerced byas.Date(origin, ...)to such an object.
+>>>>
+>>>> And:
+>>>> as.Datewill accept numeric data (the number of days since an epoch), butonlyiforiginis supplied.
+>>>>
+>>>> The behavior described in the help file and implemented in previous versions seems more reasonable than returning a date with an arbitrary "origin". In any case, in the r-devel there is a mismatch between the function and its description.
+>>>>
+>>>> -Dan
+>>>> [[alternative HTML version deleted]]
+>>>>
+>>>> ______________________________________________
+>>>> R-devel at r-project.org mailing list
+>>>> https://stat.ethz.ch/mailman/listinfo/r-devel
+>>
+>> ______________________________________________
+>> R-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-devel
+>>
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+Hello,
+
+ifelse does properly handle Date objects. From its documentation:
+
+
+Usage
+ifelse(test, yes, no)
+[...]
+Value
+A vector of the same length and attributes (including dimensions and 
+"class") as test and data values from the values of yes or no.
+
+
+In your example test = TRUE and yes = Sys.Date() so the return value is
+
+
+class(ifelse(TRUE, Sys.Date(), Sys.Date() + 1))
+# [1] "numeric"
+
+class(ifelse(TRUE, Sys.Date(), Sys.Date() + 1L))
+# [1] "numeric"
+
+
+This is expected behavior.
+I was expecting class "integer", not "numeric" but this too is 
+documented in ?Dates section Details 2nd paragraph.
+
+
+It is intended that the date should be an integer, but this is not 
+enforced in the internal representation. Fractional days will be ignored 
+when printing. It is possible to produce fractional days via the mean 
+method or by adding or subtracting (see Ops.Date).
+
+
+Hope this helps,
+
+Rui Barradas
+
+
+From @pencer@gr@ve@ @end|ng |rom prod@y@e@com  Wed Nov  2 23:38:04 2022
+From: @pencer@gr@ve@ @end|ng |rom prod@y@e@com (Spencer Graves)
+Date: Wed, 2 Nov 2022 17:38:04 -0500
+Subject: [Rd] as.Date without "origin"
+In-Reply-To: <9022e3ef-90e7-be8d-546c-a72b14f73568@sapo.pt>
+References: <EKNZOOr0Xk-P1uT_HZiKSmlTniaWJ9qxbkQAdiT-WTIadalBDTvhObEvUFCj_yZEXiO1_mImOaOMtS-gxB3Rc5rcCUyeUZY9KTpuq-Yd89U=@protonmail.com>
+ <345b7101-f116-e6aa-b8cf-522f68ed5638@prodsyse.com>
+ <UVIu3zmRKG3oM__PzasW3vvKTYxIrBpYeoHDaghpllF9-_HuAAPEmQbDweRrMj3_KrKDjbmOI5EySuBKOt_0vQsOJRLcmO7w20rqi5MSo6I=@protonmail.com>
+ <trinity-944275fc-476b-4c4d-b8db-bbf3ef907154-1667422061742@3c-app-webde-bap25>
+ <9022e3ef-90e7-be8d-546c-a72b14f73568@sapo.pt>
+Message-ID: <5221d3c5-3f42-027a-a225-6288f6a9c788@prodsyse.com>
+
+
+
+On 11/2/22 5:32 PM, Rui Barradas wrote:
+> ?s 20:47 de 02/11/2022, Johannes Rauh escreveu:
+>> Dear all,
+>>
+>> I would throw in my vote to have origin = "1970-01-01" as a default in 
+>> as.Date().? Why?? Well, in fact, the "converse" function as.numeric() 
+>> does have an implicit default:
+>>
+>>> as.numeric(Sys.Date())
+>> [1] 19298
+>>
+>> In fact, as.numeric seems to not even have a method for class "Date", 
+>> and so as.numeric() does not even have an argument "origin" or the like.
+>>
+>> In any case, when using Date objects, it may happen that the result is 
+>> of clas numeric. For example:
+>>
+>>> ifelse(TRUE, Sys.Date(), Sys.Date() + 1)
+>> [1] 19298
+>>
+>> So, in order to transform the result back to class "Date" using 
+>> as.Date(), I always need to remember the universal default origin 
+>> 1970-01-01 and I need to write it out explicitly.
+>>
+>> I find that rather inconvenient, and so having the default origin as a 
+>> default would make very much sense to me here.
+>>
+>> Of course, for that particular example, it would also help me if 
+>> ifelse() would properly handle Date vectors.
+>>
+>> Best
+>> Johannes
+>>
+>>> Gesendet: Mittwoch, 02. November 2022 um 14:38 Uhr
+>>> Von: "Dan Dalthorp via R-devel" <r-devel at r-project.org>
+>>> An: "Spencer Graves" <spencer.graves at prodsyse.com>
+>>> Cc: "r-devel at r-project.org" <r-devel at r-project.org>
+>>> Betreff: Re: [Rd] as.Date without "origin"
+>>>
+>>> I don't see a compelling rationale for changing the default behavior 
+>>> as.Date to deviate from the wholly reasonable status quo of "as.Date 
+>>> will accept numeric data (the number of days since an epoch), but 
+>>> only if origin is supplied." That has been the expectation for a 
+>>> long, long time.
+>>>
+>>> In any case, the manual should match the behavior.
+>>>
+>>> -DHD
+>>>
+>>>
+>>>
+>>>
+>>> ------- Original Message -------
+>>> On Wednesday, November 2nd, 2022 at 6:20 AM, Spencer Graves 
+>>> <spencer.graves at prodsyse.com> wrote:
+>>>
+>>>
+>>>>
+>>>>
+>>>> I've felt that "as.Date" should default to origin "1970-01-01", so I
+>>>> added a modification to Ecfun:
+>>>>
+>>>>
+>>>> Ecfun::as.Date1970(0)
+>>>>
+>>>>
+>>>> If R-devel chose to change the default on this, I would happily
+>>>> deprecate Ecfun::as.Date1970 in favor of base::as.Date ;-)
+>>>>
+>>>>
+>>>> I would therefore support changing the documentation to match the new
+>>>> behavior.
+>>>>
+>>>>
+>>>> Spencer Graves
+>>>>
+>>>>
+>>>> On 11/2/22 7:30 AM, Dan Dalthorp via R-devel wrote:
+>>>>
+>>>>> The new (2022-10-11 r83083 ucrt) as.Date function returns a date 
+>>>>> rather than an error when called without "origin" specified.
+>>>>>
+>>>>> # previous versions of R
+>>>>> as.Date(0)
+>>>>> # Error in as.Date.numeric(0) : 'origin' must be supplied
+>>>>>
+>>>>> # new:
+>>>>> as.Date(0)
+>>>>> # [1] "1970-01-01"
+>>>>>
+>>>>> This is at odds with the help file, which gives:
+>>>>>
+>>>>> origin
+>>>>>
+>>>>> aDateobject, or something which can be coerced byas.Date(origin, 
+>>>>> ...)to such an object.
+>>>>>
+>>>>> And:
+>>>>> as.Datewill accept numeric data (the number of days since an 
+>>>>> epoch), butonlyiforiginis supplied.
+>>>>>
+>>>>> The behavior described in the help file and implemented in previous 
+>>>>> versions seems more reasonable than returning a date with an 
+>>>>> arbitrary "origin". In any case, in the r-devel there is a mismatch 
+>>>>> between the function and its description.
+>>>>>
+>>>>> -Dan
+>>>>> [[alternative HTML version deleted]]
+>>>>>
+>>>>> ______________________________________________
+>>>>> R-devel at r-project.org mailing list
+>>>>> https://stat.ethz.ch/mailman/listinfo/r-devel
+>>>
+>>> ______________________________________________
+>>> R-devel at r-project.org mailing list
+>>> https://stat.ethz.ch/mailman/listinfo/r-devel
+>>>
+>>
+>> ______________________________________________
+>> R-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-devel
+> 
+> Hello,
+> 
+> ifelse does properly handle Date objects. From its documentation:
+> 
+> 
+> Usage
+> ifelse(test, yes, no)
+> [...]
+> Value
+> A vector of the same length and attributes (including dimensions and 
+> "class") as test and data values from the values of yes or no.
+> 
+> 
+> In your example test = TRUE and yes = Sys.Date() so the return value is
+> 
+> 
+> class(ifelse(TRUE, Sys.Date(), Sys.Date() + 1))
+> # [1] "numeric"
+> 
+> class(ifelse(TRUE, Sys.Date(), Sys.Date() + 1L))
+> # [1] "numeric"
+> 
+> 
+> This is expected behavior.
+> I was expecting class "integer", not "numeric" but this too is 
+> documented in ?Dates section Details 2nd paragraph.
+> 
+> 
+> It is intended that the date should be an integer, but this is not 
+> enforced in the internal representation. Fractional days will be ignored 
+> when printing. It is possible to produce fractional days via the mean 
+> method or by adding or subtracting (see Ops.Date).
+
+
+I routinely use fractional days with class "Date".  I hope I can 
+continue to do so.  Thanks, Spencer Graves
+> 
+> 
+> Hope this helps,
+> 
+> Rui Barradas
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From @|mon@urb@nek @end|ng |rom R-project@org  Thu Nov  3 08:28:57 2022
+From: @|mon@urb@nek @end|ng |rom R-project@org (Simon Urbanek)
+Date: Thu, 3 Nov 2022 20:28:57 +1300
+Subject: [Rd] as.Date without "origin"
+In-Reply-To: <UVIu3zmRKG3oM__PzasW3vvKTYxIrBpYeoHDaghpllF9-_HuAAPEmQbDweRrMj3_KrKDjbmOI5EySuBKOt_0vQsOJRLcmO7w20rqi5MSo6I=@protonmail.com>
+References: <EKNZOOr0Xk-P1uT_HZiKSmlTniaWJ9qxbkQAdiT-WTIadalBDTvhObEvUFCj_yZEXiO1_mImOaOMtS-gxB3Rc5rcCUyeUZY9KTpuq-Yd89U=@protonmail.com>
+ <345b7101-f116-e6aa-b8cf-522f68ed5638@prodsyse.com>
+ <UVIu3zmRKG3oM__PzasW3vvKTYxIrBpYeoHDaghpllF9-_HuAAPEmQbDweRrMj3_KrKDjbmOI5EySuBKOt_0vQsOJRLcmO7w20rqi5MSo6I=@protonmail.com>
+Message-ID: <C95D613E-8B9A-4878-BB29-23D1479CF5A5@R-project.org>
+
+Dan,
+
+as.Date() and as.POSIXct() have been updated to allow replacement of the hidden functions .POSIXct() and .Date() which were the only way to correctly convert the numeric representation of the objects as Johannes explained. Given that this is a very common operation (especially with POSIXct) it makes sense to not rely on hidden functions and will allow us to possibly deprecate them. And as Peter pointed out, this is R-devel so manuals won't be necessarily updated until the full functionality is implemented and this is part of a larger overhaul of the date/time functions which has not been finished yet.
+
+Cheers,
+Simon
+
+
+
+> On Nov 3, 2022, at 2:38 AM, Dan Dalthorp via R-devel <r-devel at r-project.org> wrote:
+> 
+> I don't see a compelling rationale for changing the default behavior as.Date to deviate from the wholly reasonable status quo of "as.Date will accept numeric data (the number of days since an epoch), but only if origin is supplied." That has been the expectation for a long, long time. 
+> 
+> In any case, the manual should match the behavior.
+> 
+> -DHD
+> 
+> 
+> 
+> 
+> ------- Original Message -------
+> On Wednesday, November 2nd, 2022 at 6:20 AM, Spencer Graves <spencer.graves at prodsyse.com> wrote:
+> 
+> 
+>> 
+>> 
+>> I've felt that "as.Date" should default to origin "1970-01-01", so I
+>> added a modification to Ecfun:
+>> 
+>> 
+>> Ecfun::as.Date1970(0)
+>> 
+>> 
+>> If R-devel chose to change the default on this, I would happily
+>> deprecate Ecfun::as.Date1970 in favor of base::as.Date ;-)
+>> 
+>> 
+>> I would therefore support changing the documentation to match the new
+>> behavior.
+>> 
+>> 
+>> Spencer Graves
+>> 
+>> 
+>> On 11/2/22 7:30 AM, Dan Dalthorp via R-devel wrote:
+>> 
+>>> The new (2022-10-11 r83083 ucrt) as.Date function returns a date rather than an error when called without "origin" specified.
+>>> 
+>>> # previous versions of R
+>>> as.Date(0)
+>>> # Error in as.Date.numeric(0) : 'origin' must be supplied
+>>> 
+>>> # new:
+>>> as.Date(0)
+>>> # [1] "1970-01-01"
+>>> 
+>>> This is at odds with the help file, which gives:
+>>> 
+>>> origin
+>>> 
+>>> aDateobject, or something which can be coerced byas.Date(origin, ...)to such an object.
+>>> 
+>>> And:
+>>> as.Datewill accept numeric data (the number of days since an epoch), butonlyiforiginis supplied.
+>>> 
+>>> The behavior described in the help file and implemented in previous versions seems more reasonable than returning a date with an arbitrary "origin". In any case, in the r-devel there is a mismatch between the function and its description.
+>>> 
+>>> -Dan
+>>> [[alternative HTML version deleted]]
+>>> 
+>>> ______________________________________________
+>>> R-devel at r-project.org mailing list
+>>> https://stat.ethz.ch/mailman/listinfo/r-devel
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+> 
+
+
+From therne@u @end|ng |rom m@yo@edu  Thu Nov  3 19:05:41 2022
+From: therne@u @end|ng |rom m@yo@edu (Therneau, Terry M., Ph.D.)
+Date: Thu, 03 Nov 2022 13:05:41 -0500
+Subject: [Rd] as.Date withoug "origin"
+Message-ID: <ff6a6b$iuo1bs@ironport10.mayo.edu>
+
+Add my name to those who think this is a good change.
+
+As someone who works daily with medical research data, the number of times I have been 
+caugth by failure of statements like
+ ?? as.Date(ifelse( is.na(prog.dt), lastfu.dt, prog.dt)
+is a large annoyance.??? Replace ifelse by any number of selection processes for choosing 
+among ending dates.
+
+Terry T.
+
+-- 
+Terry M Therneau, PhD
+Department of Quantitative Health Sciences
+Mayo Clinic
+therneau at mayo.edu
+
+"TERR-ree THUR-noh"
+
+	[[alternative HTML version deleted]]
+
+
+From @vr@h@m@@d|er @end|ng |rom gm@||@com  Tue Nov  8 17:49:22 2022
+From: @vr@h@m@@d|er @end|ng |rom gm@||@com (Avraham Adler)
+Date: Tue, 8 Nov 2022 16:49:22 +0000
+Subject: [Rd] R-devel 83314 fails datetime3 on Windows
+Message-ID: <CAL6gwn+s_6vOhR1xFhZNfDVDmc16tsM336WzD2DXb99Wu4qcVw@mail.gmail.com>
+
+Hello.
+
+Building 83314 on R using R-tools I get the following failure which
+relates to lines 463--470 in the datetime3.R test:
+
+```
+> ifi3 <- is.finite(dctm3)
+> stopifnot(exprs = {
++     all.equal(dD, dDc, tolerance = 1e-4)
++     (dDm3 - dDcm3)[ifi3] %in% 0:1
++       (dD - dDc  )[ifi]  %in% 0:1
++       (nD - nDc  )[ifi]  %in% 0:1
++     is.na((dD   - dDc  )[!ifi])
++     is.na((dDm3 - dDcm3)[!ifi3])
++ })
+Error: (dDm3 - dDcm3)[ifi3] %in% 0:1 are not all TRUE
+Execution halted
+```
+
+In particular, please note that the first entries in the following two
+vectors differ by one day:
+
+```
+> dDm3
+ [1] "2016-12-06" NA           NA           "2016-12-06" NA
+"2016-04-06" NA           NA           "2016-04-07"
+[10] "2016-12-06" NA           "-Inf"       NA
+> dDcm3
+ [1] "2016-12-07" NA           NA           "2016-12-06" NA
+"2016-04-06" NA           NA           "2016-04-07"
+[10] "2016-12-06" NA           "-Inf"       NA
+```
+Also, in the sessionInfo below, I wonder why my computer returns a
+time zone of Australia/Melbourne when I am based in US/New York
+
+Session Info:
+
+R Under development (unstable) (2022-11-08 r83314 ucrt)
+Platform: x86_64-w64-mingw32/x64 (64-bit)
+Running under: Windows 10 x64 (build 19045)
+
+Matrix products: default
+
+locale:
+[1] LC_COLLATE=English_United States.utf8  LC_CTYPE=English_United
+States.utf8    LC_MONETARY=English_United States.utf8
+[4] LC_NUMERIC=C                           LC_TIME=English_United
+States.utf8
+
+time zone: Australia/Melbourne
+tzcode source: internal
+
+attached base packages:
+[1] stats     graphics  grDevices utils     datasets  methods   base
+
+loaded via a namespace (and not attached):
+[1] compiler_4.3.0
+
+Note that Rblas is based on OpenBLAS 0.3.21
+
+Thank you,
+
+Avi
+
+
+From tim@t@yior m@iii@g oii hidde@eieph@@ts@co@uk  Tue Nov  8 22:55:29 2022
+From: tim@t@yior m@iii@g oii hidde@eieph@@ts@co@uk (tim@t@yior m@iii@g oii hidde@eieph@@ts@co@uk)
+Date: Tue, 8 Nov 2022 21:55:29 +0000 (GMT)
+Subject: [Rd] R blog link on developer page
+Message-ID: <23327077.345337.1667944529976@office.mailbox.org>
+
+The link to the R blog on https://developer.r-project.org/ currently points to the old site (https://developer.r-project.org/Blog/public). Should the link be updated to the new location (https://blog.r-project.org/)?
+ 
+Apologies if this was the wrong list to raise this - please flag if there's a more appropriate one.
+ 
+Tim
+	[[alternative HTML version deleted]]
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Wed Nov  9 11:32:59 2022
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Wed, 9 Nov 2022 11:32:59 +0100
+Subject: [Rd] R blog link on developer page
+In-Reply-To: <23327077.345337.1667944529976@office.mailbox.org>
+References: <23327077.345337.1667944529976@office.mailbox.org>
+Message-ID: <25451.33243.203153.708623@stat.math.ethz.ch>
+
+>>>>> tim taylor 
+>>>>>     on Tue, 8 Nov 2022 21:55:29 +0000 (GMT) writes:
+
+    > The link to the R blog on https://developer.r-project.org/ currently points to the old site (https://developer.r-project.org/Blog/public). Should the link be updated to the new location (https://blog.r-project.org/)?
+    > Apologies if this was the wrong list to raise this - please flag if there's a more appropriate one.
+ 
+    > Tim
+
+Thank you, Tim.
+
+You were right and the change has happened now.
+
+Martin
+
+
+From j@g@nmn2 @end|ng |rom gm@||@com  Wed Nov  9 21:58:52 2022
+From: j@g@nmn2 @end|ng |rom gm@||@com (Mikael Jagan)
+Date: Wed, 9 Nov 2022 15:58:52 -0500
+Subject: [Rd] det(diag(c(NaN, 1))) should be NaN, not 0
+Message-ID: <4d6116fe-ecf0-19c8-d572-4eb1a3631d4c@gmail.com>
+
+Hello,
+
+Currently, determinant(A) calculates the determinant of 'A' by factorizing
+A=LU and computing prod(diag(U)) [or the logarithm of the absolute value].
+The factorization is done by LAPACK routine DGETRF, which gives a status
+code INFO, documented [1] as follows:
+
+*>          INFO is INTEGER
+*>          = 0:  successful exit
+*>          < 0:  if INFO = -i, the i-th argument had an illegal value
+*>          > 0:  if INFO = i, U(i,i) is exactly zero. The factorization
+*>                has been completed, but the factor U is exactly
+*>                singular, and division by zero will occur if it is used
+*>                to solve a system of equations.
+
+Accordingly, when INF0>0, determinant(A) behaves as det(A)=0, _not_ computing
+prod(diag(U)).  The problem here is that DGETRF can _also_ give positive
+INFO for matrices containing NaN, which may very well not be singular for some
+finite value of NaN.
+
+I claim that, when INFO>0, determinant(A) should _not_ behave as det(A)=0
+unconditionally, but rather sometimes (depending on some test) give NaN.
+Here is one case where 0 is really "wrong":
+
+ > (A <- diag(c(NaN, 1)))
+      [,1] [,2]
+[1,]  NaN    0
+[2,]    0    1
+ > det(A)
+[1] 0
+
+R isn't consistent, either:
+
+ > (B <- diag(c(1, NaN)))
+      [,1] [,2]
+[1,]    1    0
+[2,]    0  NaN
+ > det(B)
+[1] NaN
+
+Here, DGETRF _does_ succeed, because it does not "see" the trailing NaN in 'B'.
+
+So: Should R change to better handle the INFO>0 case?  If so, how?
+
+Ideally (I think), the proposed change would give NaN for 'A' and 'B'
+above and 0 for 'C' and 'D' below (both of which really _are_ singular):
+
+ > (C <- matrix(c(NaN, NaN, 0, 0), 2L, 2L))
+      [,1] [,2]
+[1,]  NaN    0
+[2,]  NaN    0
+ > det(C)
+[1] NaN
+ > (D <- t(C))
+      [,1] [,2]
+[1,]  NaN  NaN
+[2,]    0    0
+ > det(D)
+[1] 0
+
+Furthermore, the proposed change should _not_ decrease the performance
+of determinant(A) for nonsingular 'A' ...
+
+For those looking, the relevant C-level function is det_ge_real(),
+defined in R-devel/src/modules/lapack/Lapack.c (at line 1260 in r83320).
+
+Mikael
+
+[1] https://github.com/Reference-LAPACK/lapack/blob/master/SRC/dgetrf.f
+
+
+From j@g@nmn2 @end|ng |rom gm@||@com  Thu Nov 10 19:10:50 2022
+From: j@g@nmn2 @end|ng |rom gm@||@com (Mikael Jagan)
+Date: Thu, 10 Nov 2022 13:10:50 -0500
+Subject: [Rd] solve.default(a, b) should not ignore names(dimnames(.))
+Message-ID: <fb6e26da-a95c-5eec-098c-490bc81d7e1a@gmail.com>
+
+Hello,
+
+Currently, solve.default() is defined such that
+
+ > identical(dimnames(solve.default(a, b)),
+             list(dimnames(a)[[2L]], dimnames(b)[[2L]]))
+
+is always TRUE, i.e., ignoring names(dimnames(a)) and names(dimnames(b)).
+Hence we see:
+
+ > a <- b <- diag(2L)
+ > dimnames(a) <- list(A1 = c("a11", "a12"), A2 = c("a21", "a22"))
+ > dimnames(b) <- list(B1 = c("b11", "b12"), B2 = c("b21", "b22"))
+ > a
+      A2
+A1    a21 a22
+   a11   1   0
+   a12   0   1
+ > b
+      B2
+B1    b21 b22
+   b11   1   0
+   b12   0   1
+ > solve.default(a, b)
+     b21 b22
+a21   1   0
+a22   0   1
+
+I claim that solve.default() should be changed to instead give:
+
+ > identical(dimnames(solve.default(a, b)),
+             c(dimnames(a)[2L], dimnames(b)[2L]))
+
+This would make solve.default() consistent with `%*%`, which
+_does_ respect names(dimnames(.)) :
+
+ > a %*% b
+      B2
+A1    b21 b22
+   a11   1   0
+   a12   0   1
+
+If others agree, then I would submit a minimal patch to the R-level
+solve.default() in src/library/base/R/solve.R and to the C-level
+La_solve() and La_solve_cmplx() in src/modules/lapack/Lapack.c ...
+
+Mikael
+
+
+From j@g@nmn2 @end|ng |rom gm@||@com  Fri Nov 11 05:48:54 2022
+From: j@g@nmn2 @end|ng |rom gm@||@com (Mikael Jagan)
+Date: Thu, 10 Nov 2022 23:48:54 -0500
+Subject: [Rd] solve.default(a, b) should not ignore names(dimnames(.))
+In-Reply-To: <fb6e26da-a95c-5eec-098c-490bc81d7e1a@gmail.com>
+References: <fb6e26da-a95c-5eec-098c-490bc81d7e1a@gmail.com>
+Message-ID: <cbc51d4a-3abb-d639-65c4-348652c11236@gmail.com>
+
+
+
+On 2022-11-10 1:10 pm, Mikael Jagan wrote:
+> Hello,
+> 
+> Currently, solve.default() is defined such that
+> 
+>   > identical(dimnames(solve.default(a, b)),
+>               list(dimnames(a)[[2L]], dimnames(b)[[2L]]))
+> 
+> is always TRUE, i.e., ignoring names(dimnames(a)) and names(dimnames(b)).
+> Hence we see:
+> 
+>   > a <- b <- diag(2L)
+>   > dimnames(a) <- list(A1 = c("a11", "a12"), A2 = c("a21", "a22"))
+>   > dimnames(b) <- list(B1 = c("b11", "b12"), B2 = c("b21", "b22"))
+>   > a
+>        A2
+> A1    a21 a22
+>     a11   1   0
+>     a12   0   1
+>   > b
+>        B2
+> B1    b21 b22
+>     b11   1   0
+>     b12   0   1
+>   > solve.default(a, b)
+>       b21 b22
+> a21   1   0
+> a22   0   1
+> 
+> I claim that solve.default() should be changed to instead give:
+> 
+>   > identical(dimnames(solve.default(a, b)),
+>               c(dimnames(a)[2L], dimnames(b)[2L]))
+> 
+> This would make solve.default() consistent with `%*%`, which
+> _does_ respect names(dimnames(.)) :
+> 
+>   > a %*% b
+>        B2
+> A1    b21 b22
+>     a11   1   0
+>     a12   0   1
+> 
+> If others agree, then I would submit a minimal patch to the R-level
+> solve.default() in src/library/base/R/solve.R and to the C-level
+> La_solve() and La_solve_cmplx() in src/modules/lapack/Lapack.c ...
+> 
+
+Well, taking a closer look, I see more related issues, which might
+be considered simultaneously.  (Sorry if this is too much for one thread.)
+
+* qr.solve(a, b) and solve.qr(qr(a), b) also ignore names(dimnames(.))
+
+   > qr.solve(a, b)
+       b21 b22
+   a21   1   0
+   a22   0   1
+   > solve.qr(qr(a), b)
+       b21 b22
+   a21   1   0
+   a22   0   1
+
+
+* dimnames(qr.solve(a)) and dimnames(solve.qr(qr(a))) do not agree
+   with dimnames(solve.default(a)), i.e., when 'b' is missing
+
+   > solve.default(a)
+       a11 a12
+   a21   1   0
+   a22   0   1
+   > qr.solve(a)
+       [,1] [,2]
+   a21    1    0
+   a22    0    1
+   > solve.qr(qr(a))
+       [,1] [,2]
+   a21    1    0
+   a22    0    1
+
+
+* More controversially: qr.qy(qr, y) and qr.qty(qr, y) are currently
+   documented as retaining the 'dimnames' of 'y', and they _do_.  But
+   _conventionally_ the rownames of matrix products are taken from the
+   first factor, in this case 'Q'.  It is not currently documented what
+   the 'dimnames' of the implicitly stored 'Q' and 'R' factors should be,
+   leading to inconsistencies like this:
+
+   > a
+        A2
+   A1    a21 a22
+     a11   1   0
+     a12   0   1
+   > qr.Q(qr(a)) %*% qr.R(qr(a))
+         A2
+          a21 a22
+     [1,]   1   0
+     [2,]   0   1
+
+   Hence I propose to enforce {and partly document} the following:
+   1. that Q=qr.Q(qr(X)) gets the rownames of X and NULL colnames
+   2. that R=qr.R(qr(X)) gets the (permuted) colnames of X and NULL rownames
+   3. that dimnames(qr.qy (qr(X), y)) <=> dimnames(  Q  %*% y)
+   4. that dimnames(qr.qty(qr(X), y)) <=> dimnames(t(Q) %*% y)
+
+   I'm not sure what the level of disruption on CRAN would be,
+   but internal consistency here would certainly be nice ...
+
+> Mikael
+
+
+From ch@riie@g@o m@iii@g oii shikokuchuo@@et  Sun Nov 13 12:44:16 2022
+From: ch@riie@g@o m@iii@g oii shikokuchuo@@et (ch@riie@g@o m@iii@g oii shikokuchuo@@et)
+Date: Sun, 13 Nov 2022 11:44:16 +0000
+Subject: [Rd] R_GetCurrentEnv() not working as intended
+In-Reply-To: <51be8f23-d595-eb4d-9e0c-1b3f49b23a59@shikokuchuo.net>
+References: <51be8f23-d595-eb4d-9e0c-1b3f49b23a59@shikokuchuo.net>
+Message-ID: <c39614311353b6ada6e7c5c592a4ed64@shikokuchuo.net>
+
+Perhaps my original question was too complicated, so I will just ask: is anyone using R_GetCurrentEnv() in their C code? If so, grateful if you could point me to an example where it is working for you.
+
+I have searched Github and only come across a couple of trivial uses as an argument to Rf_eval(), where it probably returns the global environment, with the result being indistinguishable in normal use.
+
+Thanks,
+
+Charlie
+
+October 22, 2022 12:52 AM, "Charlie Gao" <charlie.gao at shikokuchuo.net> wrote:
+
+> Dear all,
+> 
+> I am attempting to use `R_GetCurrentEnv()` to return the current environment within C code, but it
+> seems to always return the global environment.
+> 
+> Specifically, I would like to use it as an argument to R_NewEnv() so it is created with the correct
+> enclosing environment. I also have functions in the environment that reference symbols in the
+> closure and I would also like to use `R_GetCurrentEnv()` as an argument to `SET_CLOENV()`.
+> 
+> My workaround at the moment is to pass `environment()` as one of the arguments to the `.Call()`.
+> For the actual code I am referring to:
+> 
+> https://github.com/shikokuchuo/nanonext/blob/main/src/aio.c#L516-L535
+> 
+> where I am currently passing `environment()` as 'clo' whereas ideally I would be able to use
+> `R_GetCurrentEnv()` instead.
+> 
+> There is an open Bugzilla report from 2020 that says `R_GetCurrentEnv()` only returns the base
+> namespace from within a `.Call()`, however I see that the proposed patch has already been adopted
+> in the R source.
+> 
+> It seems that the function was introduced (fairly) recently in R 3.6, presumably for such uses. I
+> would like to know if this is not the case or else confirmation that this is an outstanding bug.
+> 
+> Thanks,
+> 
+> Charlie
+
+
+From ch@riie@g@o m@iii@g oii shikokuchuo@@et  Mon Nov 14 10:35:05 2022
+From: ch@riie@g@o m@iii@g oii shikokuchuo@@et (ch@riie@g@o m@iii@g oii shikokuchuo@@et)
+Date: Mon, 14 Nov 2022 09:35:05 +0000
+Subject: [Rd] R_GetCurrentEnv() not working as intended
+In-Reply-To: <CAJf4E3qbeiTozFg=MdteJLqCmM6Bte1hWzthnWQ6V71bM+18sQ@mail.gmail.com>
+References: <CAJf4E3qbeiTozFg=MdteJLqCmM6Bte1hWzthnWQ6V71bM+18sQ@mail.gmail.com>
+ <51be8f23-d595-eb4d-9e0c-1b3f49b23a59@shikokuchuo.net>
+ <c39614311353b6ada6e7c5c592a4ed64@shikokuchuo.net>
+Message-ID: <1448db9333163e7bfde63aa3a03a8495@shikokuchuo.net>
+
+Hi Lionel,
+
+I had indeed seen your Bugzilla, but must have misread the R source as I thought it had already been adopted.
+
+Thanks for sharing the workaround as well, it is interesting. As I can pass in `environment()` to my `.Call()`, I suspect there is not much difference given the call to `Rf_eval()` at the end of the workaround.
+
+Let's hope your patch gets reviewed and adopted.
+
+Thanks,
+
+Charlie
+
+November 14, 2022 8:55 AM, "Lionel Henry" <lionel at posit.co> wrote:
+
+> Hello,
+> 
+> This function currently does not work when called from `.Call()`.
+> This is reported with a patch at
+> https://bugs.r-project.org/show_bug.cgi?id=17839
+> 
+> In the meantime, you can use this stopgap implementation:
+> 
+> https://github.com/tidyverse/purrr/blob/55c9a8ab8788d878ce9e8e80b867139e46d15395/src/conditions.c#L6
+> L34
+> 
+> Best,
+> Lionel
+> 
+> On 11/13/22, Charlie Gao via R-devel <r-devel at r-project.org> wrote:
+> 
+>> Perhaps my original question was too complicated, so I will just ask: is
+>> anyone using R_GetCurrentEnv() in their C code? If so, grateful if you could
+>> point me to an example where it is working for you.
+>> 
+>> I have searched Github and only come across a couple of trivial uses as an
+>> argument to Rf_eval(), where it probably returns the global environment,
+>> with the result being indistinguishable in normal use.
+>> 
+>> Thanks,
+>> 
+>> Charlie
+>> 
+>> October 22, 2022 12:52 AM, "Charlie Gao" <charlie.gao at shikokuchuo.net>
+>> wrote:
+>> 
+>>> Dear all,
+>>> 
+>>> I am attempting to use `R_GetCurrentEnv()` to return the current
+>>> environment within C code, but it
+>>> seems to always return the global environment.
+>>> 
+>>> Specifically, I would like to use it as an argument to R_NewEnv() so it is
+>>> created with the correct
+>>> enclosing environment. I also have functions in the environment that
+>>> reference symbols in the
+>>> closure and I would also like to use `R_GetCurrentEnv()` as an argument to
+>>> `SET_CLOENV()`.
+>>> 
+>>> My workaround at the moment is to pass `environment()` as one of the
+>>> arguments to the `.Call()`.
+>>> For the actual code I am referring to:
+>>> 
+>>> https://github.com/shikokuchuo/nanonext/blob/main/src/aio.c#L516-L535
+>>> 
+>>> where I am currently passing `environment()` as 'clo' whereas ideally I
+>>> would be able to use
+>>> `R_GetCurrentEnv()` instead.
+>>> 
+>>> There is an open Bugzilla report from 2020 that says `R_GetCurrentEnv()`
+>>> only returns the base
+>>> namespace from within a `.Call()`, however I see that the proposed patch
+>>> has already been adopted
+>>> in the R source.
+>>> 
+>>> It seems that the function was introduced (fairly) recently in R 3.6,
+>>> presumably for such uses. I
+>>> would like to know if this is not the case or else confirmation that this
+>>> is an outstanding bug.
+>>> 
+>>> Thanks,
+>>> 
+>>> Charlie
+>> 
+>> ______________________________________________
+>> R-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From ||one| @end|ng |rom po@|t@co  Mon Nov 14 09:55:52 2022
+From: ||one| @end|ng |rom po@|t@co (Lionel Henry)
+Date: Mon, 14 Nov 2022 09:55:52 +0100
+Subject: [Rd] R_GetCurrentEnv() not working as intended
+In-Reply-To: <c39614311353b6ada6e7c5c592a4ed64@shikokuchuo.net>
+References: <51be8f23-d595-eb4d-9e0c-1b3f49b23a59@shikokuchuo.net>
+ <c39614311353b6ada6e7c5c592a4ed64@shikokuchuo.net>
+Message-ID: <CAJf4E3qbeiTozFg=MdteJLqCmM6Bte1hWzthnWQ6V71bM+18sQ@mail.gmail.com>
+
+Hello,
+
+This function currently does not work when called from `.Call()`.
+This is reported with a patch at
+https://bugs.r-project.org/show_bug.cgi?id=17839
+
+In the meantime, you can use this stopgap implementation:
+
+https://github.com/tidyverse/purrr/blob/55c9a8ab8788d878ce9e8e80b867139e46d15395/src/conditions.c#L6-L34
+
+Best,
+Lionel
+
+On 11/13/22, Charlie Gao via R-devel <r-devel at r-project.org> wrote:
+> Perhaps my original question was too complicated, so I will just ask: is
+> anyone using R_GetCurrentEnv() in their C code? If so, grateful if you could
+> point me to an example where it is working for you.
+>
+> I have searched Github and only come across a couple of trivial uses as an
+> argument to Rf_eval(), where it probably returns the global environment,
+> with the result being indistinguishable in normal use.
+>
+> Thanks,
+>
+> Charlie
+>
+> October 22, 2022 12:52 AM, "Charlie Gao" <charlie.gao at shikokuchuo.net>
+> wrote:
+>
+>> Dear all,
+>>
+>> I am attempting to use `R_GetCurrentEnv()` to return the current
+>> environment within C code, but it
+>> seems to always return the global environment.
+>>
+>> Specifically, I would like to use it as an argument to R_NewEnv() so it is
+>> created with the correct
+>> enclosing environment. I also have functions in the environment that
+>> reference symbols in the
+>> closure and I would also like to use `R_GetCurrentEnv()` as an argument to
+>> `SET_CLOENV()`.
+>>
+>> My workaround at the moment is to pass `environment()` as one of the
+>> arguments to the `.Call()`.
+>> For the actual code I am referring to:
+>>
+>> https://github.com/shikokuchuo/nanonext/blob/main/src/aio.c#L516-L535
+>>
+>> where I am currently passing `environment()` as 'clo' whereas ideally I
+>> would be able to use
+>> `R_GetCurrentEnv()` instead.
+>>
+>> There is an open Bugzilla report from 2020 that says `R_GetCurrentEnv()`
+>> only returns the base
+>> namespace from within a `.Call()`, however I see that the proposed patch
+>> has already been adopted
+>> in the R source.
+>>
+>> It seems that the function was introduced (fairly) recently in R 3.6,
+>> presumably for such uses. I
+>> would like to know if this is not the case or else confirmation that this
+>> is an outstanding bug.
+>>
+>> Thanks,
+>>
+>> Charlie
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Sat Nov 26 14:54:02 2022
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Sat, 26 Nov 2022 08:54:02 -0500
+Subject: [Rd] Concordances in R Markdown
+Message-ID: <a07f82a4-17c1-c64b-15a9-4155b4504ee5@gmail.com>
+
+I submitted some code to support concordances to R-devel, and wrote this 
+blog article about it:
+
+   https://blog.r-project.org/2022/10/20/concordances/index.html
+
+(Concordances are links from a source file to pre-processed output from 
+Sweave or knitr.)
+
+In the article I said "as far as I know, Pandoc doesn?t support any way 
+to relate input lines to output lines", and asked to be corrected if 
+that was wrong.  I was corrected!  Heather Turner pointed me in the 
+direction of this:
+
+  https://github.com/jgm/pandoc/issues/4565#issuecomment-749294039
+
+She also worked out the initial details of how to make use of it. 
+Thanks Heather!
+
+I have now put together a package called RmdConcord (see 
+https://github.com/dmurdoch/RmdConcord) which exports R Markdown drivers 
+that incorporate concordances.  This means that previewers like TeXworks 
+that support Synctex will now synchronize the output with the true 
+input, which makes editing a lot easier.  If you have complaints from 
+HTML Tidy about your vignettes, they should also refer to the original 
+source now.
+
+The package requires changes to the knitr package to support 
+concordances in R Markdown documents, and to the backports package to 
+support the R-devel concordance additions in earlier versions of R. 
+I've submitted pull requests to both packages to include these changes, 
+but in the meantime, you will need to install my devel versions of them:
+
+   devtools::install_github("dmurdoch/backports")
+   devtools::install_github("dmurdoch/knitr")
+   devtools::install_github("dmurdoch/RmdConcord")
+
+If anyone is interested in testing this, I'd appreciate bug reports and 
+suggestions.
+
+Duncan Murdoch
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Mon Nov 28 12:09:36 2022
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Mon, 28 Nov 2022 06:09:36 -0500
+Subject: [Rd] Concordances in R Markdown
+In-Reply-To: <a07f82a4-17c1-c64b-15a9-4155b4504ee5@gmail.com>
+References: <a07f82a4-17c1-c64b-15a9-4155b4504ee5@gmail.com>
+Message-ID: <0f6104b1-947b-e6be-c62f-166451272851@gmail.com>
+
+Two quick updates:
+
+I will (probably) merge the Markdown support code into the patchDVI 
+package (currently in the RmdConcord branch), instead of creating a new 
+package.  So install instructions should be:
+
+    devtools::install_github("dmurdoch/backports")
+    devtools::install_github("dmurdoch/knitr")
+    devtools::install_github("dmurdoch/patchDVI at RmdConcord")
+
+I need to finish some integration with patchDVI and finalize my decision 
+before merging that code into the main branch of patchDVI, but it's 
+basically working now.
+
+Secondly, with John Nash's help, I've identified some important 
+limitations of the current Pandoc support.  Most importantly, Markdown 
+citations (e.g. [@doe99]) are not handled.  Apparently this extension is 
+being worked on, but there's no predicted completion date.  All the 
+limitations that I know about are now documented in the patchDVI vignette.
+
+Duncan Murdoch
+
+On 26/11/2022 8:54 a.m., Duncan Murdoch wrote:
+> I submitted some code to support concordances to R-devel, and wrote this
+> blog article about it:
+> 
+>     https://blog.r-project.org/2022/10/20/concordances/index.html
+> 
+> (Concordances are links from a source file to pre-processed output from
+> Sweave or knitr.)
+> 
+> In the article I said "as far as I know, Pandoc doesn?t support any way
+> to relate input lines to output lines", and asked to be corrected if
+> that was wrong.  I was corrected!  Heather Turner pointed me in the
+> direction of this:
+> 
+>    https://github.com/jgm/pandoc/issues/4565#issuecomment-749294039
+> 
+> She also worked out the initial details of how to make use of it.
+> Thanks Heather!
+> 
+> I have now put together a package called RmdConcord (see
+> https://github.com/dmurdoch/RmdConcord) which exports R Markdown drivers
+> that incorporate concordances.  This means that previewers like TeXworks
+> that support Synctex will now synchronize the output with the true
+> input, which makes editing a lot easier.  If you have complaints from
+> HTML Tidy about your vignettes, they should also refer to the original
+> source now.
+> 
+> The package requires changes to the knitr package to support
+> concordances in R Markdown documents, and to the backports package to
+> support the R-devel concordance additions in earlier versions of R.
+> I've submitted pull requests to both packages to include these changes,
+> but in the meantime, you will need to install my devel versions of them:
+> 
+>     devtools::install_github("dmurdoch/backports")
+>     devtools::install_github("dmurdoch/knitr")
+>     devtools::install_github("dmurdoch/RmdConcord")
+> 
+> If anyone is interested in testing this, I'd appreciate bug reports and
+> suggestions.
+> 
+> Duncan Murdoch
+
+
+From g|eyne@ @end|ng |rom gm@||@com  Mon Nov 28 19:39:23 2022
+From: g|eyne@ @end|ng |rom gm@||@com (Gene Leynes)
+Date: Mon, 28 Nov 2022 12:39:23 -0600
+Subject: [Rd] RTools40 Error - sh: line 1: gcc: command not found
+Message-ID: <CAOBARVi9JV0fJcxjt-=gH3Xa8t6GYFOVKty1EHpm8CodyO+txw@mail.gmail.com>
+
+Hello,
+
+I installed git bash for windows, R, RStudio, and R Tools on a fresh
+Windows 10 machine.
+
+I followed the directions for RTools:
+https://cran.r-project.org/bin/windows/Rtools/rtools40.html
+
+I added RTools to my user path, but I was getting an error when
+installing jsonlite from source (even though it could find "make"
+correctly). So, I tried the .Renviron method, and that didn't work either.
+
+I was getting errors like this:
+
+> install.packages("jsonlite", type = "source")
+--- Please select a CRAN mirror for use in this session ---
+trying URL 'https://cloud.r-project.org/src/contrib/jsonlite_1.8.3.tar.gz'
+Content type 'application/x-gzip' length 1053099 bytes (1.0 MB)
+downloaded 1.0 MB
+
+
+* installing *source* package 'jsonlite' ...
+** package 'jsonlite' successfully unpacked and MD5 sums checked
+** using staged installation
+** libs
+gcc  -I"C:/Users/XXXXXXX/AppData/Local/Programs/R/R-42~1.2/include"
+-DNDEBUG -Iyajl/api
+ -I"c:/rtools42/x86_64-w64-mingw32.static.posix/include"
+-D__USE_MINGW_ANSI_STDIO   -O2 -Wall  -std=gnu99 -mfpmath=sse -msse2
+-mstackrealign  -c base64.c -o base64.o
+sh: line 1: gcc: command not found
+make: *** [C:/Users/ XXXXXXX
+/AppData/Local/Programs/R/R-42~1.2/etc/x64/Makeconf:253:
+base64.o] Error 127
+ERROR: compilation failed for package 'jsonlite'
+* removing
+'C:/Users/375492/AppData/Local/Programs/R/R-4.2.2/library/jsonlite'
+
+
+The downloaded source packages are in
+        ?C:\Users\ XXXXXXX
+\AppData\Local\Temp\RtmpeCLXit\downloaded_packages?
+Warning message:
+In install.packages("jsonlite", type = "source") :
+  installation of package ?jsonlite? had non-zero exit status
+
+
+I can't reproduce this part, but at one point it said that gcc wasn't found
+in C:\rtools40\mingw_64\bin (not sure where the underscore was, but it had
+an underscore)
+
+I noticed that my folder is named C:\rtools40\mingw64\bin
+
+That gave me the idea to add C:\rtools40\mingw64\bin to my user path which
+resolved the issues. Adding that to the path allowed me to compile from
+source, etc. Fixed RStudio and the R GUI (whatever we call it now).
+
+TLDR: I think there's a bug in the installer or something that creating an
+incompatible path name with an underscore, or the instructions are missing
+the advice to add C:\rtools40\mingw{WIN}\bin to the path.
+
+
+
+Somewhat related:
+
+By the way, I think adding RTools to the user path is the superior option
+for Windows users, and I would like to propose an edit to that
+documentation.
+
+First, it will help avoid complications for users who may
+experience different paths for ~ depending on network availability.
+
+Second, it is a more standard way to edit the path and helps users learn
+what's going on with the path and makes R less of a mysterious "exception
+to the rule". No other program uses ~/.Renviron to edit the path.
+
+Although it's worth mentioning the option to create ~/.Renviorn, it
+shouldn't be the primary instruction.
+
+Would it be possible to create a pull request for those edits? I don't know
+where that documentation is maintained.
+
+
+Thank you, and I hope you all are doing well.
+
+	[[alternative HTML version deleted]]
+
+
+From @|mon@urb@nek @end|ng |rom R-project@org  Mon Nov 28 22:54:12 2022
+From: @|mon@urb@nek @end|ng |rom R-project@org (Simon Urbanek)
+Date: Tue, 29 Nov 2022 10:54:12 +1300
+Subject: [Rd] RTools40 Error - sh: line 1: gcc: command not found
+In-Reply-To: <CAOBARVi9JV0fJcxjt-=gH3Xa8t6GYFOVKty1EHpm8CodyO+txw@mail.gmail.com>
+References: <CAOBARVi9JV0fJcxjt-=gH3Xa8t6GYFOVKty1EHpm8CodyO+txw@mail.gmail.com>
+Message-ID: <3E9F1E02-93E4-4B46-9774-D5BC9D505BB0@R-project.org>
+
+Gene,
+
+I believe you have the wrong page - the link you listed is for an old version of R (4.0-4.1) - the current one (for 4.2.x) is
+
+https://cran.r-project.org/bin/windows/Rtools/rtools42/rtools.html
+
+Cheers,
+Simon
+
+
+> On 29/11/2022, at 7:39 AM, Gene Leynes <gleynes at gmail.com> wrote:
+> 
+> Hello,
+> 
+> I installed git bash for windows, R, RStudio, and R Tools on a fresh
+> Windows 10 machine.
+> 
+> I followed the directions for RTools:
+> https://cran.r-project.org/bin/windows/Rtools/rtools40.html
+> 
+> I added RTools to my user path, but I was getting an error when
+> installing jsonlite from source (even though it could find "make"
+> correctly). So, I tried the .Renviron method, and that didn't work either.
+> 
+> I was getting errors like this:
+> 
+>> install.packages("jsonlite", type = "source")
+> --- Please select a CRAN mirror for use in this session ---
+> trying URL 'https://cloud.r-project.org/src/contrib/jsonlite_1.8.3.tar.gz'
+> Content type 'application/x-gzip' length 1053099 bytes (1.0 MB)
+> downloaded 1.0 MB
+> 
+> 
+> * installing *source* package 'jsonlite' ...
+> ** package 'jsonlite' successfully unpacked and MD5 sums checked
+> ** using staged installation
+> ** libs
+> gcc  -I"C:/Users/XXXXXXX/AppData/Local/Programs/R/R-42~1.2/include"
+> -DNDEBUG -Iyajl/api
+> -I"c:/rtools42/x86_64-w64-mingw32.static.posix/include"
+> -D__USE_MINGW_ANSI_STDIO   -O2 -Wall  -std=gnu99 -mfpmath=sse -msse2
+> -mstackrealign  -c base64.c -o base64.o
+> sh: line 1: gcc: command not found
+> make: *** [C:/Users/ XXXXXXX
+> /AppData/Local/Programs/R/R-42~1.2/etc/x64/Makeconf:253:
+> base64.o] Error 127
+> ERROR: compilation failed for package 'jsonlite'
+> * removing
+> 'C:/Users/375492/AppData/Local/Programs/R/R-4.2.2/library/jsonlite'
+> 
+> 
+> The downloaded source packages are in
+>        ?C:\Users\ XXXXXXX
+> \AppData\Local\Temp\RtmpeCLXit\downloaded_packages?
+> Warning message:
+> In install.packages("jsonlite", type = "source") :
+>  installation of package ?jsonlite? had non-zero exit status
+> 
+> 
+> I can't reproduce this part, but at one point it said that gcc wasn't found
+> in C:\rtools40\mingw_64\bin (not sure where the underscore was, but it had
+> an underscore)
+> 
+> I noticed that my folder is named C:\rtools40\mingw64\bin
+> 
+> That gave me the idea to add C:\rtools40\mingw64\bin to my user path which
+> resolved the issues. Adding that to the path allowed me to compile from
+> source, etc. Fixed RStudio and the R GUI (whatever we call it now).
+> 
+> TLDR: I think there's a bug in the installer or something that creating an
+> incompatible path name with an underscore, or the instructions are missing
+> the advice to add C:\rtools40\mingw{WIN}\bin to the path.
+> 
+> 
+> 
+> Somewhat related:
+> 
+> By the way, I think adding RTools to the user path is the superior option
+> for Windows users, and I would like to propose an edit to that
+> documentation.
+> 
+> First, it will help avoid complications for users who may
+> experience different paths for ~ depending on network availability.
+> 
+> Second, it is a more standard way to edit the path and helps users learn
+> what's going on with the path and makes R less of a mysterious "exception
+> to the rule". No other program uses ~/.Renviron to edit the path.
+> 
+> Although it's worth mentioning the option to create ~/.Renviorn, it
+> shouldn't be the primary instruction.
+> 
+> Would it be possible to create a pull request for those edits? I don't know
+> where that documentation is maintained.
+> 
+> 
+> Thank you, and I hope you all are doing well.
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+> 
+
+
+From g|eyne@ @end|ng |rom gm@||@com  Mon Nov 28 23:33:47 2022
+From: g|eyne@ @end|ng |rom gm@||@com (Gene Leynes)
+Date: Mon, 28 Nov 2022 16:33:47 -0600
+Subject: [Rd] RTools40 Error - sh: line 1: gcc: command not found
+In-Reply-To: <3E9F1E02-93E4-4B46-9774-D5BC9D505BB0@R-project.org>
+References: <CAOBARVi9JV0fJcxjt-=gH3Xa8t6GYFOVKty1EHpm8CodyO+txw@mail.gmail.com>
+ <3E9F1E02-93E4-4B46-9774-D5BC9D505BB0@R-project.org>
+Message-ID: <CAOBARVhCJfGTv_7x_OkvN+1whoRegwTKBa9z_gWJqg6kdmXrXA@mail.gmail.com>
+
+Thanks. Not sure how I ended up on 40 instead of 42.
+
+After deleting the 40 version and installing the 42 version, the 42
+installer seemed to create path variables for 40. I just edited that
+however and the jsonlite test worked.
+
+I do think that it would be advisable to tell users to check the path and
+explain what result is desired there. Many users would benefit from knowing
+that they need R's executables and the RTools bin on their path and that
+they can add them via the *user *environment variables, which saves them
+from needing administrative permission (and is better anyway for system
+maintenance).
+
+However, it's less important now that I see that the installer handles it
+for you.
+
+Thank you again.
+
+
+
+
+
+
+On Mon, Nov 28, 2022 at 3:54 PM Simon Urbanek <simon.urbanek at r-project.org>
+wrote:
+
+> Gene,
+>
+> I believe you have the wrong page - the link you listed is for an old
+> version of R (4.0-4.1) - the current one (for 4.2.x) is
+>
+> https://cran.r-project.org/bin/windows/Rtools/rtools42/rtools.html
+>
+> Cheers,
+> Simon
+>
+>
+> > On 29/11/2022, at 7:39 AM, Gene Leynes <gleynes at gmail.com> wrote:
+> >
+> > Hello,
+> >
+> > I installed git bash for windows, R, RStudio, and R Tools on a fresh
+> > Windows 10 machine.
+> >
+> > I followed the directions for RTools:
+> > https://cran.r-project.org/bin/windows/Rtools/rtools40.html
+> >
+> > I added RTools to my user path, but I was getting an error when
+> > installing jsonlite from source (even though it could find "make"
+> > correctly). So, I tried the .Renviron method, and that didn't work
+> either.
+> >
+> > I was getting errors like this:
+> >
+> >> install.packages("jsonlite", type = "source")
+> > --- Please select a CRAN mirror for use in this session ---
+> > trying URL '
+> https://cloud.r-project.org/src/contrib/jsonlite_1.8.3.tar.gz'
+> > Content type 'application/x-gzip' length 1053099 bytes (1.0 MB)
+> > downloaded 1.0 MB
+> >
+> >
+> > * installing *source* package 'jsonlite' ...
+> > ** package 'jsonlite' successfully unpacked and MD5 sums checked
+> > ** using staged installation
+> > ** libs
+> > gcc  -I"C:/Users/XXXXXXX/AppData/Local/Programs/R/R-42~1.2/include"
+> > -DNDEBUG -Iyajl/api
+> > -I"c:/rtools42/x86_64-w64-mingw32.static.posix/include"
+> > -D__USE_MINGW_ANSI_STDIO   -O2 -Wall  -std=gnu99 -mfpmath=sse -msse2
+> > -mstackrealign  -c base64.c -o base64.o
+> > sh: line 1: gcc: command not found
+> > make: *** [C:/Users/ XXXXXXX
+> > /AppData/Local/Programs/R/R-42~1.2/etc/x64/Makeconf:253:
+> > base64.o] Error 127
+> > ERROR: compilation failed for package 'jsonlite'
+> > * removing
+> > 'C:/Users/375492/AppData/Local/Programs/R/R-4.2.2/library/jsonlite'
+> >
+> >
+> > The downloaded source packages are in
+> >        ?C:\Users\ XXXXXXX
+> > \AppData\Local\Temp\RtmpeCLXit\downloaded_packages?
+> > Warning message:
+> > In install.packages("jsonlite", type = "source") :
+> >  installation of package ?jsonlite? had non-zero exit status
+> >
+> >
+> > I can't reproduce this part, but at one point it said that gcc wasn't
+> found
+> > in C:\rtools40\mingw_64\bin (not sure where the underscore was, but it
+> had
+> > an underscore)
+> >
+> > I noticed that my folder is named C:\rtools40\mingw64\bin
+> >
+> > That gave me the idea to add C:\rtools40\mingw64\bin to my user path
+> which
+> > resolved the issues. Adding that to the path allowed me to compile from
+> > source, etc. Fixed RStudio and the R GUI (whatever we call it now).
+> >
+> > TLDR: I think there's a bug in the installer or something that creating
+> an
+> > incompatible path name with an underscore, or the instructions are
+> missing
+> > the advice to add C:\rtools40\mingw{WIN}\bin to the path.
+> >
+> >
+> >
+> > Somewhat related:
+> >
+> > By the way, I think adding RTools to the user path is the superior option
+> > for Windows users, and I would like to propose an edit to that
+> > documentation.
+> >
+> > First, it will help avoid complications for users who may
+> > experience different paths for ~ depending on network availability.
+> >
+> > Second, it is a more standard way to edit the path and helps users learn
+> > what's going on with the path and makes R less of a mysterious "exception
+> > to the rule". No other program uses ~/.Renviron to edit the path.
+> >
+> > Although it's worth mentioning the option to create ~/.Renviorn, it
+> > shouldn't be the primary instruction.
+> >
+> > Would it be possible to create a pull request for those edits? I don't
+> know
+> > where that documentation is maintained.
+> >
+> >
+> > Thank you, and I hope you all are doing well.
+> >
+> >       [[alternative HTML version deleted]]
+> >
+> > ______________________________________________
+> > R-devel at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-devel
+> >
+>
+>
+
+	[[alternative HTML version deleted]]
+
+
+From tom@@@k@||ber@ @end|ng |rom gm@||@com  Tue Nov 29 13:44:30 2022
+From: tom@@@k@||ber@ @end|ng |rom gm@||@com (Tomas Kalibera)
+Date: Tue, 29 Nov 2022 13:44:30 +0100
+Subject: [Rd] RTools40 Error - sh: line 1: gcc: command not found
+In-Reply-To: <CAOBARVhCJfGTv_7x_OkvN+1whoRegwTKBa9z_gWJqg6kdmXrXA@mail.gmail.com>
+References: <CAOBARVi9JV0fJcxjt-=gH3Xa8t6GYFOVKty1EHpm8CodyO+txw@mail.gmail.com>
+ <3E9F1E02-93E4-4B46-9774-D5BC9D505BB0@R-project.org>
+ <CAOBARVhCJfGTv_7x_OkvN+1whoRegwTKBa9z_gWJqg6kdmXrXA@mail.gmail.com>
+Message-ID: <bf6c8a17-1567-8023-1d49-b29caef4777e@gmail.com>
+
+On 11/28/22 23:33, Gene Leynes wrote:
+> Thanks. Not sure how I ended up on 40 instead of 42.
+>
+> After deleting the 40 version and installing the 42 version, the 42
+> installer seemed to create path variables for 40. I just edited that
+> however and the jsonlite test worked.
+
+Rtools42 is not creating variables for Rtools40, so that shouldn't be 
+the cause.
+
+You can have Rtools40 and Rtools42 both installed on the machine (if 
+needed, e.g. for older versions of R).
+
+> I do think that it would be advisable to tell users to check the path and
+> explain what result is desired there. Many users would benefit from knowing
+> that they need R's executables and the RTools bin on their path and that
+> they can add them via the *user *environment variables, which saves them
+> from needing administrative permission (and is better anyway for system
+> maintenance).
+>
+> However, it's less important now that I see that the installer handles it
+> for you.
+
+Right, the paths don't have to be set manually when using the defaults. 
+For other cases, please see
+
+https://cran.r-project.org/bin/windows/base/howto-R-4.2.html
+
+Best
+Tomas
+
+>
+> Thank you again.
+>
+>
+>
+>
+>
+>
+> On Mon, Nov 28, 2022 at 3:54 PM Simon Urbanek <simon.urbanek at r-project.org>
+> wrote:
+>
+>> Gene,
+>>
+>> I believe you have the wrong page - the link you listed is for an old
+>> version of R (4.0-4.1) - the current one (for 4.2.x) is
+>>
+>> https://cran.r-project.org/bin/windows/Rtools/rtools42/rtools.html
+>>
+>> Cheers,
+>> Simon
+>>
+>>
+>>> On 29/11/2022, at 7:39 AM, Gene Leynes <gleynes at gmail.com> wrote:
+>>>
+>>> Hello,
+>>>
+>>> I installed git bash for windows, R, RStudio, and R Tools on a fresh
+>>> Windows 10 machine.
+>>>
+>>> I followed the directions for RTools:
+>>> https://cran.r-project.org/bin/windows/Rtools/rtools40.html
+>>>
+>>> I added RTools to my user path, but I was getting an error when
+>>> installing jsonlite from source (even though it could find "make"
+>>> correctly). So, I tried the .Renviron method, and that didn't work
+>> either.
+>>> I was getting errors like this:
+>>>
+>>>> install.packages("jsonlite", type = "source")
+>>> --- Please select a CRAN mirror for use in this session ---
+>>> trying URL '
+>> https://cloud.r-project.org/src/contrib/jsonlite_1.8.3.tar.gz'
+>>> Content type 'application/x-gzip' length 1053099 bytes (1.0 MB)
+>>> downloaded 1.0 MB
+>>>
+>>>
+>>> * installing *source* package 'jsonlite' ...
+>>> ** package 'jsonlite' successfully unpacked and MD5 sums checked
+>>> ** using staged installation
+>>> ** libs
+>>> gcc  -I"C:/Users/XXXXXXX/AppData/Local/Programs/R/R-42~1.2/include"
+>>> -DNDEBUG -Iyajl/api
+>>> -I"c:/rtools42/x86_64-w64-mingw32.static.posix/include"
+>>> -D__USE_MINGW_ANSI_STDIO   -O2 -Wall  -std=gnu99 -mfpmath=sse -msse2
+>>> -mstackrealign  -c base64.c -o base64.o
+>>> sh: line 1: gcc: command not found
+>>> make: *** [C:/Users/ XXXXXXX
+>>> /AppData/Local/Programs/R/R-42~1.2/etc/x64/Makeconf:253:
+>>> base64.o] Error 127
+>>> ERROR: compilation failed for package 'jsonlite'
+>>> * removing
+>>> 'C:/Users/375492/AppData/Local/Programs/R/R-4.2.2/library/jsonlite'
+>>>
+>>>
+>>> The downloaded source packages are in
+>>>         ?C:\Users\ XXXXXXX
+>>> \AppData\Local\Temp\RtmpeCLXit\downloaded_packages?
+>>> Warning message:
+>>> In install.packages("jsonlite", type = "source") :
+>>>   installation of package ?jsonlite? had non-zero exit status
+>>>
+>>>
+>>> I can't reproduce this part, but at one point it said that gcc wasn't
+>> found
+>>> in C:\rtools40\mingw_64\bin (not sure where the underscore was, but it
+>> had
+>>> an underscore)
+>>>
+>>> I noticed that my folder is named C:\rtools40\mingw64\bin
+>>>
+>>> That gave me the idea to add C:\rtools40\mingw64\bin to my user path
+>> which
+>>> resolved the issues. Adding that to the path allowed me to compile from
+>>> source, etc. Fixed RStudio and the R GUI (whatever we call it now).
+>>>
+>>> TLDR: I think there's a bug in the installer or something that creating
+>> an
+>>> incompatible path name with an underscore, or the instructions are
+>> missing
+>>> the advice to add C:\rtools40\mingw{WIN}\bin to the path.
+>>>
+>>>
+>>>
+>>> Somewhat related:
+>>>
+>>> By the way, I think adding RTools to the user path is the superior option
+>>> for Windows users, and I would like to propose an edit to that
+>>> documentation.
+>>>
+>>> First, it will help avoid complications for users who may
+>>> experience different paths for ~ depending on network availability.
+>>>
+>>> Second, it is a more standard way to edit the path and helps users learn
+>>> what's going on with the path and makes R less of a mysterious "exception
+>>> to the rule". No other program uses ~/.Renviron to edit the path.
+>>>
+>>> Although it's worth mentioning the option to create ~/.Renviorn, it
+>>> shouldn't be the primary instruction.
+>>>
+>>> Would it be possible to create a pull request for those edits? I don't
+>> know
+>>> where that documentation is maintained.
+>>>
+>>>
+>>> Thank you, and I hope you all are doing well.
+>>>
+>>>        [[alternative HTML version deleted]]
+>>>
+>>> ______________________________________________
+>>> R-devel at r-project.org mailing list
+>>> https://stat.ethz.ch/mailman/listinfo/r-devel
+>>>
+>>
+> 	[[alternative HTML version deleted]]
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From henr|k@bengt@@on @end|ng |rom gm@||@com  Wed Nov 30 23:03:35 2022
+From: henr|k@bengt@@on @end|ng |rom gm@||@com (Henrik Bengtsson)
+Date: Wed, 30 Nov 2022 14:03:35 -0800
+Subject: [Rd] R-devel: toLatex() for sessionInfo needs to escape new 'Time
+ zone' entry
+Message-ID: <CAFDcVCSjtrHNOXMm7zDDau7FgyK=Chv1eTDVafj4hi0tRT6b_Q@mail.gmail.com>
+
+BACKGROUND:
+
+In recent versions of R-devel, sessionInfo() has a 'tzone' element, e.g.
+
+> sessionInfo()$tzone
+[1] "America/Los_Angeles"
+
+
+ISSUE:
+
+Some time zones, like the one above, has an underscore.  This
+underscore is *not* escaped by utils:::toLatex.sessionInfo, e.g.
+
+$ TZ="America/Los_Angeles" Rscript --vanilla -e "toLatex(sessionInfo())"
+\begin{itemize}\raggedright
+  \item R Under development (unstable) (2022-11-30 r83391),
+\verb|x86_64-pc-linux-gnu|
+  \item Locale: \verb|LC_CTYPE=en_US.UTF-8|, \verb|LC_NUMERIC=C|,
+\verb|LC_TIME=en_US.UTF-8|, \verb|LC_COLLATE=en_US.UTF-8|,
+\verb|LC_MONETARY=en_US.UTF-8|, \verb|LC_MESSAGES=en_US.UTF-8|,
+\verb|LC_PAPER=en_US.UTF-8|, \verb|LC_NAME=C|, \verb|LC_ADDRESS=C|,
+\verb|LC_TELEPHONE=C|, \verb|LC_MEASUREMENT=en_US.UTF-8|,
+\verb|LC_IDENTIFICATION=C|
+  \item Time zone America/Los_Angeles
+  \item Running under: \verb|Ubuntu 20.04.5 LTS|
+  \item Matrix products: default
+  \item BLAS:   \verb|/home/hb/software/R-devel/trunk/lib/R/lib/libRblas.so|
+  \item LAPACK: \verb|/home/hb/software/R-devel/trunk/lib/R/lib/libRlapack.so|
+  \item Base packages: base, datasets, graphics, grDevices, methods,
+    stats, utils
+  \item Loaded via a namespace (and not attached): compiler~4.3.0
+\end{itemize}
+
+This causes LaTeX-based vignettes using toLatex(sessionInfo()) to fail
+their LaTeX compilation with an error, e.g.
+
+Error: processing vignette 'mypkg.Rnw' failed with diagnostics:
+Running 'texi2dvi' on 'mypkg.tex' failed.
+LaTeX errors:
+! Missing $ inserted.
+<inserted text>
+                $
+l.684   \item Time zone America/Los_
+                                    Angeles
+! LaTeX Error: Command \item invalid in math mode.
+
+
+SUGGESTION:
+
+To fix this, either escape any underscores, e.g.
+
+  \item Time zone America/Los\_Angeles
+
+or use \verb as done elsewhere:
+
+  \item Time zone \verb|America/Los_Angeles|
+
+/Henrik
+
+

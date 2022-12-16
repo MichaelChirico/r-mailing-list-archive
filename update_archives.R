@@ -15,7 +15,7 @@ for (ii in seq_along(mailing_lists)) {
   this_list = mailing_lists[[ii]]
   outdir = this_list[['name']]
 
-  URL = file.path(URL_BASE, ourdir)
+  URL = file.path(URL_BASE, outdir)
   dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
 
   # Always re-write current period
