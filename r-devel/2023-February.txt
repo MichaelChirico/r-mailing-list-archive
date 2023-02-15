@@ -1,0 +1,2923 @@
+From kry|ov@r00t @end|ng |rom gm@||@com  Sun Feb  5 14:04:25 2023
+From: kry|ov@r00t @end|ng |rom gm@||@com (Ivan Krylov)
+Date: Sun, 5 Feb 2023 16:04:25 +0300
+Subject: [Rd] R2HTML doesn't split paragraphs originating from
+ \Sexpr[results=rd]
+Message-ID: <20230205160425.1e35a036@Tarkus>
+
+Hello,
+
+Here's an example that renders correctly using Rd2txt / Rd2latex / R
+CMD Rd2pdf, but has problems under Rd2HTML:
+
+\name{foo}
+\title{foo}
+\section{foo}{
+  This should be on a separate paragraph
+
+  This should be on a separate paragraph
+
+  This should be on a separate paragraph
+
+  \Sexpr[stage=render,results=rd]{
+    paste(
+      rep('Sexpr: This should be on a separate paragraph', 3),
+      collapse = '\n\n'
+    )
+  }
+}
+
+For the text I've typed manually, there are <p>...</p> tags splitting
+the text separated by empty lines into paragraphs. The \Sexpr return
+value only has newlines, which joints the paragraphs together:
+
+<p>This should be on a separate paragraph
+</p>
+<p>This should be on a separate paragraph
+</p>
+<p>This should be on a separate paragraph
+</p>
+<p>Sexpr: This should be on a separate paragraph
+
+Sexpr: This should be on a separate paragraph
+
+Sexpr: This should be on a separate paragraph
+</p>
+
+addParaBreaks() is prevented from closing the paragraph tag because
+tools:::isBlankLineRd() returns FALSE for blank lines produced by a
+\Sexpr. This happens because utils:::getSrcByte() not 1 for these blank
+lines. That, in turn, is because the source reference for \Sexpr values
+is the whole \Sexpr tag:
+
+# blank line from a \Sexpr
+Rd[[3]][[2]][[9]][[2]]
+# [1] "\n"
+# attr(,"Rd_tag")
+# [1] "TEXT"
+getSrcref(Rd[[3]][[2]][[9]][[2]])
+# \Sexpr[stage=render,results=rd]{
+#   paste(
+#     rep('Sexpr: This should be on a separate paragraph', 3),
+#     collapse = '\n\n'
+#   )
+# }
+
+# artisanal hand-crafted blank line
+Rd[[3]][[2]][[7]]
+# [1] "\n"
+# attr(,"Rd_tag")
+# [1] "TEXT"
+summary(getSrcref(Rd[[3]][[2]][[7]]))
+# <srcref: file "~/foo.Rd" chars 9:1 to 9:1>
+
+I think I understand that tools:::isBlankLineRd requires
+utils:::getSrcByte(x) == 1L because it may be called on things like
+"\\eqn{0}\n" where the terminal "\n" might otherwise be considered a
+"blank line". How to reconcile isBlankLineRd with blank lines not
+directly originating from Rd source?
+
+Rd2latex might have a similar problem (its addParaBreaks() checks for
+isBlankLineRd()), but then it works anyway because Rd rules for
+paragraph breaks on blank lines are the same as in LaTeX.
+
+-- 
+Best regards,
+Ivan
+
+
+From @nto|ne@|@br| @end|ng |rom gm@||@com  Mon Feb  6 15:42:51 2023
+From: @nto|ne@|@br| @end|ng |rom gm@||@com (Antoine Fabri)
+Date: Mon, 6 Feb 2023 15:42:51 +0100
+Subject: [Rd] Unnecessary note when import only used in arg definition
+Message-ID: <CAEKh8ujzyH=Lhd49yc58=1Q4MxiGbjFpfQ13Rp+dEUQFA0Yr8g@mail.gmail.com>
+
+Dear r-devel,
+
+When a package is only used in an argument definition, e.g :
+
+
+f <- function(test = testthat::is_testing()) {
+
+  if (test) 1 else 2
+
+}
+
+
+R CMD CHECK gives us a note: "Namespace in Imports field not imported from:
+'testthat'"
+
+
+This incites me to remove the package from the Imports field but that'll
+make my package brittle.
+
+
+I noted I'm not the first one having the issue (
+https://github.com/r-lib/devtools/issues/2456 ) and I've seen some
+workarounds too, in particular Hadley Wickham suggests in 'R packages' to
+use the following construct :
+
+
+ignore_unused_imports <- *function*() {
+
+  aaapkg::aaa_fun
+
+}
+
+
+That's far from obvious though, and not very satisfying.
+
+Are there any downside to removing this note in this scenario? it makes
+little sense to me and incites wrong behaviour AFAIU.
+
+
+Thanks,
+
+
+Antoine
+
+	[[alternative HTML version deleted]]
+
+
+From kev|nu@hey @end|ng |rom gm@||@com  Mon Feb  6 19:03:07 2023
+From: kev|nu@hey @end|ng |rom gm@||@com (Kevin Ushey)
+Date: Mon, 6 Feb 2023 10:03:07 -0800
+Subject: [Rd] Unnecessary note when import only used in arg definition
+In-Reply-To: <CAEKh8ujzyH=Lhd49yc58=1Q4MxiGbjFpfQ13Rp+dEUQFA0Yr8g@mail.gmail.com>
+References: <CAEKh8ujzyH=Lhd49yc58=1Q4MxiGbjFpfQ13Rp+dEUQFA0Yr8g@mail.gmail.com>
+Message-ID: <CAJXgQP0NhMQYRNqy8SfS4jN-kcVKFinJG4bxfROX_BEbBt5L+Q@mail.gmail.com>
+
+Hi Antoine,
+
+Maybe I'm misunderstanding, but I think the warning is saying that
+you've declared the package dependency in the DESCRIPTION file, but
+you haven't actually imported the package (or any functions) in your
+package NAMESPACE file?
+
+I put together an example package that I think satisfies the point
+you're describing, and I don't see any R CMD check warnings (using R
+4.2.2).
+
+https://github.com/kevinushey/imports.example
+
+As I understand it, if you declare a package dependency in the
+DESCRIPTION file, you need to clarify how you're using the package in
+the NAMESPACE file -- e.g. what symbols you want to import, and so on.
+
+Best,
+Kevin
+
+On Mon, Feb 6, 2023 at 6:43 AM Antoine Fabri <antoine.fabri at gmail.com> wrote:
+>
+> Dear r-devel,
+>
+> When a package is only used in an argument definition, e.g :
+>
+>
+> f <- function(test = testthat::is_testing()) {
+>
+>   if (test) 1 else 2
+>
+> }
+>
+>
+> R CMD CHECK gives us a note: "Namespace in Imports field not imported from:
+> 'testthat'"
+>
+>
+> This incites me to remove the package from the Imports field but that'll
+> make my package brittle.
+>
+>
+> I noted I'm not the first one having the issue (
+> https://github.com/r-lib/devtools/issues/2456 ) and I've seen some
+> workarounds too, in particular Hadley Wickham suggests in 'R packages' to
+> use the following construct :
+>
+>
+> ignore_unused_imports <- *function*() {
+>
+>   aaapkg::aaa_fun
+>
+> }
+>
+>
+> That's far from obvious though, and not very satisfying.
+>
+> Are there any downside to removing this note in this scenario? it makes
+> little sense to me and incites wrong behaviour AFAIU.
+>
+>
+> Thanks,
+>
+>
+> Antoine
+>
+>         [[alternative HTML version deleted]]
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Mon Feb  6 19:59:27 2023
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Mon, 6 Feb 2023 13:59:27 -0500
+Subject: [Rd] Unnecessary note when import only used in arg definition
+In-Reply-To: <CAJXgQP0NhMQYRNqy8SfS4jN-kcVKFinJG4bxfROX_BEbBt5L+Q@mail.gmail.com>
+References: <CAEKh8ujzyH=Lhd49yc58=1Q4MxiGbjFpfQ13Rp+dEUQFA0Yr8g@mail.gmail.com>
+ <CAJXgQP0NhMQYRNqy8SfS4jN-kcVKFinJG4bxfROX_BEbBt5L+Q@mail.gmail.com>
+Message-ID: <e02220d8-9806-09dd-aee3-665479704d6d@gmail.com>
+
+I think the usual rule is that a qualified use of a package is 
+sufficient to suppress the warning without any entry in the NAMESPACE 
+file.  So if there isn't something else going on, Antoine's example 
+illustrates a bug (or at least an inconsistency) in the check code.
+
+Here's a version of your example that doesn't import anything from rlang 
+using the NAMESPACE, but uses it in code:
+
+   https://github.com/dmurdoch/imports.example/tree/explicituse
+
+And here's one like Antoine's, where the only use is in a default value:
+
+   https://github.com/dmurdoch/imports.example/tree/defaultvalue
+
+The first one tests clean, the second one gives the note he was talking 
+about:
+
+  ? checking dependencies in R code ... NOTE
+    Namespace in Imports field not imported from: ?rlang?
+      All declared Imports should be used.
+
+Duncan
+
+On 06/02/2023 1:03 p.m., Kevin Ushey wrote:
+> Hi Antoine,
+> 
+> Maybe I'm misunderstanding, but I think the warning is saying that
+> you've declared the package dependency in the DESCRIPTION file, but
+> you haven't actually imported the package (or any functions) in your
+> package NAMESPACE file?
+> 
+> I put together an example package that I think satisfies the point
+> you're describing, and I don't see any R CMD check warnings (using R
+> 4.2.2).
+> 
+> https://github.com/kevinushey/imports.example
+> 
+> As I understand it, if you declare a package dependency in the
+> DESCRIPTION file, you need to clarify how you're using the package in
+> the NAMESPACE file -- e.g. what symbols you want to import, and so on.
+> 
+> Best,
+> Kevin
+> 
+> On Mon, Feb 6, 2023 at 6:43 AM Antoine Fabri <antoine.fabri at gmail.com> wrote:
+>>
+>> Dear r-devel,
+>>
+>> When a package is only used in an argument definition, e.g :
+>>
+>>
+>> f <- function(test = testthat::is_testing()) {
+>>
+>>    if (test) 1 else 2
+>>
+>> }
+>>
+>>
+>> R CMD CHECK gives us a note: "Namespace in Imports field not imported from:
+>> 'testthat'"
+>>
+>>
+>> This incites me to remove the package from the Imports field but that'll
+>> make my package brittle.
+>>
+>>
+>> I noted I'm not the first one having the issue (
+>> https://github.com/r-lib/devtools/issues/2456 ) and I've seen some
+>> workarounds too, in particular Hadley Wickham suggests in 'R packages' to
+>> use the following construct :
+>>
+>>
+>> ignore_unused_imports <- *function*() {
+>>
+>>    aaapkg::aaa_fun
+>>
+>> }
+>>
+>>
+>> That's far from obvious though, and not very satisfying.
+>>
+>> Are there any downside to removing this note in this scenario? it makes
+>> little sense to me and incites wrong behaviour AFAIU.
+>>
+>>
+>> Thanks,
+>>
+>>
+>> Antoine
+>>
+>>          [[alternative HTML version deleted]]
+>>
+>> ______________________________________________
+>> R-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-devel
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Mon Feb  6 20:31:31 2023
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Mon, 6 Feb 2023 14:31:31 -0500
+Subject: [Rd] Unnecessary note when import only used in arg definition
+In-Reply-To: <e02220d8-9806-09dd-aee3-665479704d6d@gmail.com>
+References: <CAEKh8ujzyH=Lhd49yc58=1Q4MxiGbjFpfQ13Rp+dEUQFA0Yr8g@mail.gmail.com>
+ <CAJXgQP0NhMQYRNqy8SfS4jN-kcVKFinJG4bxfROX_BEbBt5L+Q@mail.gmail.com>
+ <e02220d8-9806-09dd-aee3-665479704d6d@gmail.com>
+Message-ID: <3f099c2c-9b6c-f5f8-5e3e-c7d656be95de@gmail.com>
+
+On 06/02/2023 1:59 p.m., Duncan Murdoch wrote:
+> I think the usual rule is that a qualified use of a package is
+> sufficient to suppress the warning without any entry in the NAMESPACE
+> file.  So if there isn't something else going on, Antoine's example
+> illustrates a bug (or at least an inconsistency) in the check code.
+
+Here's where the problem arises:
+
+https://github.com/r-devel/r-svn/blob/7a2207dad15b8eed8c3d1c5cc49f29d431c289bd/src/library/tools/R/QC.R#L2105
+
+with code
+
+   if(is.call(e) || is.expression(e)) {
+
+While examining a function definition, the arguments are stored in a 
+pairlist.  The test is looking for a call or an expression, and a 
+pairlist isn't any of those, so it skips over it.  I think it would work 
+properly if that line was changed to
+
+   if(is.call(e) || is.expression(e) || is.pairlist(e)) {
+
+because then it would iterate over the arguments, and would find the use 
+of a package in a default value.
+
+Duncan Murdoch
+
+> 
+> Here's a version of your example that doesn't import anything from rlang
+> using the NAMESPACE, but uses it in code:
+> 
+>     https://github.com/dmurdoch/imports.example/tree/explicituse
+> 
+> And here's one like Antoine's, where the only use is in a default value:
+> 
+>     https://github.com/dmurdoch/imports.example/tree/defaultvalue
+> 
+> The first one tests clean, the second one gives the note he was talking
+> about:
+> 
+>    ? checking dependencies in R code ... NOTE
+>      Namespace in Imports field not imported from: ?rlang?
+>        All declared Imports should be used.
+> 
+> Duncan
+> 
+> On 06/02/2023 1:03 p.m., Kevin Ushey wrote:
+>> Hi Antoine,
+>>
+>> Maybe I'm misunderstanding, but I think the warning is saying that
+>> you've declared the package dependency in the DESCRIPTION file, but
+>> you haven't actually imported the package (or any functions) in your
+>> package NAMESPACE file?
+>>
+>> I put together an example package that I think satisfies the point
+>> you're describing, and I don't see any R CMD check warnings (using R
+>> 4.2.2).
+>>
+>> https://github.com/kevinushey/imports.example
+>>
+>> As I understand it, if you declare a package dependency in the
+>> DESCRIPTION file, you need to clarify how you're using the package in
+>> the NAMESPACE file -- e.g. what symbols you want to import, and so on.
+>>
+>> Best,
+>> Kevin
+>>
+>> On Mon, Feb 6, 2023 at 6:43 AM Antoine Fabri <antoine.fabri at gmail.com> wrote:
+>>>
+>>> Dear r-devel,
+>>>
+>>> When a package is only used in an argument definition, e.g :
+>>>
+>>>
+>>> f <- function(test = testthat::is_testing()) {
+>>>
+>>>     if (test) 1 else 2
+>>>
+>>> }
+>>>
+>>>
+>>> R CMD CHECK gives us a note: "Namespace in Imports field not imported from:
+>>> 'testthat'"
+>>>
+>>>
+>>> This incites me to remove the package from the Imports field but that'll
+>>> make my package brittle.
+>>>
+>>>
+>>> I noted I'm not the first one having the issue (
+>>> https://github.com/r-lib/devtools/issues/2456 ) and I've seen some
+>>> workarounds too, in particular Hadley Wickham suggests in 'R packages' to
+>>> use the following construct :
+>>>
+>>>
+>>> ignore_unused_imports <- *function*() {
+>>>
+>>>     aaapkg::aaa_fun
+>>>
+>>> }
+>>>
+>>>
+>>> That's far from obvious though, and not very satisfying.
+>>>
+>>> Are there any downside to removing this note in this scenario? it makes
+>>> little sense to me and incites wrong behaviour AFAIU.
+>>>
+>>>
+>>> Thanks,
+>>>
+>>>
+>>> Antoine
+>>>
+>>>           [[alternative HTML version deleted]]
+>>>
+>>> ______________________________________________
+>>> R-devel at r-project.org mailing list
+>>> https://stat.ethz.ch/mailman/listinfo/r-devel
+>>
+>> ______________________________________________
+>> R-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Mon Feb  6 21:47:16 2023
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Mon, 6 Feb 2023 15:47:16 -0500
+Subject: [Rd] Unnecessary note when import only used in arg definition
+In-Reply-To: <3f099c2c-9b6c-f5f8-5e3e-c7d656be95de@gmail.com>
+References: <CAEKh8ujzyH=Lhd49yc58=1Q4MxiGbjFpfQ13Rp+dEUQFA0Yr8g@mail.gmail.com>
+ <CAJXgQP0NhMQYRNqy8SfS4jN-kcVKFinJG4bxfROX_BEbBt5L+Q@mail.gmail.com>
+ <e02220d8-9806-09dd-aee3-665479704d6d@gmail.com>
+ <3f099c2c-9b6c-f5f8-5e3e-c7d656be95de@gmail.com>
+Message-ID: <62b0a67b-2ce1-5adf-783b-0b462b8f7490@gmail.com>
+
+On 06/02/2023 2:31 p.m., Duncan Murdoch wrote:
+> On 06/02/2023 1:59 p.m., Duncan Murdoch wrote:
+>> I think the usual rule is that a qualified use of a package is
+>> sufficient to suppress the warning without any entry in the NAMESPACE
+>> file.  So if there isn't something else going on, Antoine's example
+>> illustrates a bug (or at least an inconsistency) in the check code.
+> 
+> Here's where the problem arises:
+> 
+> https://github.com/r-devel/r-svn/blob/7a2207dad15b8eed8c3d1c5cc49f29d431c289bd/src/library/tools/R/QC.R#L2105
+
+Whoops, I think that's the wrong location.  I think this is the right one:
+
+ 
+https://github.com/r-devel/r-svn/blob/7a2207dad15b8eed8c3d1c5cc49f29d431c289bd/src/library/tools/R/QC.R#L5754
+
+There are two similar functions in that big source file.
+
+Duncan Murdoch
+
+> with code
+> 
+>     if(is.call(e) || is.expression(e)) {
+> 
+> While examining a function definition, the arguments are stored in a
+> pairlist.  The test is looking for a call or an expression, and a
+> pairlist isn't any of those, so it skips over it.  I think it would work
+> properly if that line was changed to
+> 
+>     if(is.call(e) || is.expression(e) || is.pairlist(e)) {
+> 
+> because then it would iterate over the arguments, and would find the use
+> of a package in a default value.
+> 
+> Duncan Murdoch
+> 
+>>
+>> Here's a version of your example that doesn't import anything from rlang
+>> using the NAMESPACE, but uses it in code:
+>>
+>>      https://github.com/dmurdoch/imports.example/tree/explicituse
+>>
+>> And here's one like Antoine's, where the only use is in a default value:
+>>
+>>      https://github.com/dmurdoch/imports.example/tree/defaultvalue
+>>
+>> The first one tests clean, the second one gives the note he was talking
+>> about:
+>>
+>>     ? checking dependencies in R code ... NOTE
+>>       Namespace in Imports field not imported from: ?rlang?
+>>         All declared Imports should be used.
+>>
+>> Duncan
+>>
+>> On 06/02/2023 1:03 p.m., Kevin Ushey wrote:
+>>> Hi Antoine,
+>>>
+>>> Maybe I'm misunderstanding, but I think the warning is saying that
+>>> you've declared the package dependency in the DESCRIPTION file, but
+>>> you haven't actually imported the package (or any functions) in your
+>>> package NAMESPACE file?
+>>>
+>>> I put together an example package that I think satisfies the point
+>>> you're describing, and I don't see any R CMD check warnings (using R
+>>> 4.2.2).
+>>>
+>>> https://github.com/kevinushey/imports.example
+>>>
+>>> As I understand it, if you declare a package dependency in the
+>>> DESCRIPTION file, you need to clarify how you're using the package in
+>>> the NAMESPACE file -- e.g. what symbols you want to import, and so on.
+>>>
+>>> Best,
+>>> Kevin
+>>>
+>>> On Mon, Feb 6, 2023 at 6:43 AM Antoine Fabri <antoine.fabri at gmail.com> wrote:
+>>>>
+>>>> Dear r-devel,
+>>>>
+>>>> When a package is only used in an argument definition, e.g :
+>>>>
+>>>>
+>>>> f <- function(test = testthat::is_testing()) {
+>>>>
+>>>>      if (test) 1 else 2
+>>>>
+>>>> }
+>>>>
+>>>>
+>>>> R CMD CHECK gives us a note: "Namespace in Imports field not imported from:
+>>>> 'testthat'"
+>>>>
+>>>>
+>>>> This incites me to remove the package from the Imports field but that'll
+>>>> make my package brittle.
+>>>>
+>>>>
+>>>> I noted I'm not the first one having the issue (
+>>>> https://github.com/r-lib/devtools/issues/2456 ) and I've seen some
+>>>> workarounds too, in particular Hadley Wickham suggests in 'R packages' to
+>>>> use the following construct :
+>>>>
+>>>>
+>>>> ignore_unused_imports <- *function*() {
+>>>>
+>>>>      aaapkg::aaa_fun
+>>>>
+>>>> }
+>>>>
+>>>>
+>>>> That's far from obvious though, and not very satisfying.
+>>>>
+>>>> Are there any downside to removing this note in this scenario? it makes
+>>>> little sense to me and incites wrong behaviour AFAIU.
+>>>>
+>>>>
+>>>> Thanks,
+>>>>
+>>>>
+>>>> Antoine
+>>>>
+>>>>            [[alternative HTML version deleted]]
+>>>>
+>>>> ______________________________________________
+>>>> R-devel at r-project.org mailing list
+>>>> https://stat.ethz.ch/mailman/listinfo/r-devel
+>>>
+>>> ______________________________________________
+>>> R-devel at r-project.org mailing list
+>>> https://stat.ethz.ch/mailman/listinfo/r-devel
+>>
+>
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Tue Feb  7 16:22:17 2023
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Tue, 7 Feb 2023 10:22:17 -0500
+Subject: [Rd] Unnecessary note when import only used in arg definition
+In-Reply-To: <CAEKh8ujzyH=Lhd49yc58=1Q4MxiGbjFpfQ13Rp+dEUQFA0Yr8g@mail.gmail.com>
+References: <CAEKh8ujzyH=Lhd49yc58=1Q4MxiGbjFpfQ13Rp+dEUQFA0Yr8g@mail.gmail.com>
+Message-ID: <c1d26ab3-55ae-b8ba-0a5d-ff7454d94db5@gmail.com>
+
+I've submitted a bug report 
+(https://bugs.r-project.org/show_bug.cgi?id=18465) about this, along 
+with a patch to fix it.
+
+Duncan Murdoch
+
+On 06/02/2023 9:42 a.m., Antoine Fabri wrote:
+> Dear r-devel,
+> 
+> When a package is only used in an argument definition, e.g :
+> 
+> 
+> f <- function(test = testthat::is_testing()) {
+> 
+>    if (test) 1 else 2
+> 
+> }
+> 
+> 
+> R CMD CHECK gives us a note: "Namespace in Imports field not imported from:
+> 'testthat'"
+> 
+> 
+> This incites me to remove the package from the Imports field but that'll
+> make my package brittle.
+> 
+> 
+> I noted I'm not the first one having the issue (
+> https://github.com/r-lib/devtools/issues/2456 ) and I've seen some
+> workarounds too, in particular Hadley Wickham suggests in 'R packages' to
+> use the following construct :
+> 
+> 
+> ignore_unused_imports <- *function*() {
+> 
+>    aaapkg::aaa_fun
+> 
+> }
+> 
+> 
+> That's far from obvious though, and not very satisfying.
+> 
+> Are there any downside to removing this note in this scenario? it makes
+> little sense to me and incites wrong behaviour AFAIU.
+> 
+> 
+> Thanks,
+> 
+> 
+> Antoine
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From c@@rd|@g@bor @end|ng |rom gm@||@com  Wed Feb  8 01:13:54 2023
+From: c@@rd|@g@bor @end|ng |rom gm@||@com (=?UTF-8?B?R8OhYm9yIENzw6FyZGk=?=)
+Date: Wed, 8 Feb 2023 01:13:54 +0100
+Subject: [Rd] Compiling R-devel on older Linux distributions,
+ e.g. RHEL / CentOS 7
+Message-ID: <CABtg=KnOdkTL1L3wK=Q7D1vi6ubOz=1vM0r2TY_W498h_HxUqg@mail.gmail.com>
+
+As preparation for the next release, I am trying to compile R devel on
+RHEL / CentOS 7, which is still supported by RedHat until 2024 June.
+There are two issues.
+
+One is that the libcurl version in CentOS 7 is quite old, 7.29.0, and
+R devel now requires 7.32.0, since 83715 about a week ago. This
+requirement is here to stay for R 4.3.0, right?
+
+The second is that the recommended packages are now installed with R
+CMD INSTALL --use-C17, which fails on CentOS 7 with
+
+begin installing recommended package MASS
+* installing *source* package 'MASS' ...
+** package 'MASS' successfully unpacked and MD5 sums checked
+** using non-staged installation
+** libs
+Error: C17 standard requested but CC17 is not defined
+* removing '/root/R-devel/library/MASS'
+
+CentOS 7 has GCC 4.8.5, which does not have a -std=gnu17 option.
+However the commit message of this change in commit 83566 hints that
+this requirement might be temporary. Hence my questions.
+
+Is the C17 requirement temporary or it will be a requirement for R 4.3.0?
+Should I expect any problems if I remove the --use-C17 flag for
+installing the recommended packages?
+
+There are a lot of R users still on RHEL 7, so it would be great to
+know what to expect for the next release.
+
+Thank you,
+G?bor
+
+
+From r|p|ey @end|ng |rom @t@t@@ox@@c@uk  Wed Feb  8 07:05:31 2023
+From: r|p|ey @end|ng |rom @t@t@@ox@@c@uk (Prof Brian Ripley)
+Date: Wed, 8 Feb 2023 06:05:31 +0000
+Subject: [Rd] Compiling R-devel on older Linux distributions,
+ e.g. RHEL / CentOS 7
+In-Reply-To: <CABtg=KnOdkTL1L3wK=Q7D1vi6ubOz=1vM0r2TY_W498h_HxUqg@mail.gmail.com>
+References: <CABtg=KnOdkTL1L3wK=Q7D1vi6ubOz=1vM0r2TY_W498h_HxUqg@mail.gmail.com>
+Message-ID: <920cbd04-cae4-7e8a-2c12-5a9361a459d7@stats.ox.ac.uk>
+
+On 08/02/2023 00:13, G?bor Cs?rdi wrote:
+> As preparation for the next release, I am trying to compile R devel on
+> RHEL / CentOS 7, which is still supported by RedHat until 2024 June.
+> There are two issues.
+> 
+> One is that the libcurl version in CentOS 7 is quite old, 7.29.0, and
+> R devel now requires 7.32.0, since 83715 about a week ago. This
+> requirement is here to stay for R 4.3.0, right?
+
+Unless we revert it.  The comment in the manual says
+
+@c libcurl 7.32.0 was released in Aug 2013
+
+and Centos 7 was released in 2014-07-07, 11 months later.  Do they 
+really never security-patch libcurl?
+
+> The second is that the recommended packages are now installed with R
+> CMD INSTALL --use-C17, which fails on CentOS 7 with
+> 
+> begin installing recommended package MASS
+> * installing *source* package 'MASS' ...
+> ** package 'MASS' successfully unpacked and MD5 sums checked
+> ** using non-staged installation
+> ** libs
+> Error: C17 standard requested but CC17 is not defined
+> * removing '/root/R-devel/library/MASS'
+> 
+> CentOS 7 has GCC 4.8.5, which does not have a -std=gnu17 option.
+> However the commit message of this change in commit 83566 hints that
+> this requirement might be temporary. Hence my questions.
+
+It is temporary -- needed for survival (now updated) and mgcv (awaited). 
+  However,
+
+1) You should be able to set
+
+CC17="gcc -std=gnu11"
+
+in config.site, as C17 is a bug-fixed C11.
+
+2) Centos 7 has later compilers available, and people are going to need 
+them for C++.  The manual says
+
+     ... later compilers are available: for RHEL/Centos 7 look for 
+?devtoolset?.
+
+> Is the C17 requirement temporary or it will be a requirement for R 4.3.0?
+> Should I expect any problems if I remove the --use-C17 flag for
+> installing the recommended packages?
+
+Not with that compiler.
+
+> 
+> There are a lot of R users still on RHEL 7, so it would be great to
+> know what to expect for the next release.
+an D. Ripley,                  ripley at stats.ox.ac.uk
+Emeritus Professor of Applied Statistics, University of Oxford
+
+
+From yugong @end|ng |rom out|ook@com  Wed Feb  8 10:39:18 2023
+From: yugong @end|ng |rom out|ook@com (yu gong)
+Date: Wed, 8 Feb 2023 09:39:18 +0000
+Subject: [Rd] need help from someone know screen reader and R high DPI GUI
+Message-ID: <TYAP286MB02686F8746145024D4467E29D1D89@TYAP286MB0268.JPNP286.PROD.OUTLOOK.COM>
+
+hello , everyone:
+
+ I recheck and retest about the patch about high dpi of windows R GUI ,  IMO it works mostly. Last thing I am not sure is screen reader.
+
+ I download NVDA screen reader, and try it on high dpi R GUI , in NVDA Speech viewer,  it seems it can read R GUI normally, but since I konw so little about screen reader before.   I couldn't confirm NVDA Speech viewer indeed work on high dpi R GUI.
+
+Could anyone who know screen reader , help me  to confirm the high dpi patch not break screen reader.
+
+I put the patch https://github.com/armgong/misc-r-patch/blob/main/dpi-c-code.diff  .
+
+If anyone need the compiled binary on windows x64 , I can upload it on github repo also.
+
+thanks,
+
+Yu Gong
+
+
+	[[alternative HTML version deleted]]
+
+
+From |uc@r @end|ng |rom |edor@project@org  Wed Feb  8 11:24:02 2023
+From: |uc@r @end|ng |rom |edor@project@org (=?UTF-8?Q?I=C3=B1aki_Ucar?=)
+Date: Wed, 8 Feb 2023 11:24:02 +0100
+Subject: [Rd] Compiling R-devel on older Linux distributions,
+ e.g. RHEL / CentOS 7
+In-Reply-To: <920cbd04-cae4-7e8a-2c12-5a9361a459d7@stats.ox.ac.uk>
+References: <CABtg=KnOdkTL1L3wK=Q7D1vi6ubOz=1vM0r2TY_W498h_HxUqg@mail.gmail.com>
+ <920cbd04-cae4-7e8a-2c12-5a9361a459d7@stats.ox.ac.uk>
+Message-ID: <CALEXWq3c9Q0yNAzK0q17TBX-yJ9boxW+ZShZmha1XijAjBn=dQ@mail.gmail.com>
+
+On Wed, 8 Feb 2023 at 07:05, Prof Brian Ripley <ripley at stats.ox.ac.uk> wrote:
+>
+> On 08/02/2023 00:13, G?bor Cs?rdi wrote:
+> > As preparation for the next release, I am trying to compile R devel on
+> > RHEL / CentOS 7, which is still supported by RedHat until 2024 June.
+
+True, but with a big asterisk. Full updates ended on 2020-08-06, and
+it's been in maintenance mode since then, meaning that only security
+and critical fixes are released until EOL to facilitate a transition
+to a newer version. So CentOS 7 users shouldn't expect new releases of
+software to be available.
+
+> > There are two issues.
+> >
+> > One is that the libcurl version in CentOS 7 is quite old, 7.29.0, and
+> > R devel now requires 7.32.0, since 83715 about a week ago. This
+> > requirement is here to stay for R 4.3.0, right?
+
+I suppose that if R-devel doesn't use any API endpoint not available
+in 7.29, you could just patch out that requirement. Otherwise, you
+would need to build your own.
+
+> Unless we revert it.  The comment in the manual says
+>
+> @c libcurl 7.32.0 was released in Aug 2013
+>
+> and Centos 7 was released in 2014-07-07, 11 months later.  Do they
+> really never security-patch libcurl?
+
+Oh, they do port all security fixes, but without changing the version,
+which is the whole point of LTS. In fact, current version is
+7.29.0-59, and there are probably a hundred patches on top of those 59
+builds.
+
+> > The second is that the recommended packages are now installed with R
+> > CMD INSTALL --use-C17, which fails on CentOS 7 with
+> >
+> > begin installing recommended package MASS
+> > * installing *source* package 'MASS' ...
+> > ** package 'MASS' successfully unpacked and MD5 sums checked
+> > ** using non-staged installation
+> > ** libs
+> > Error: C17 standard requested but CC17 is not defined
+> > * removing '/root/R-devel/library/MASS'
+> >
+> > CentOS 7 has GCC 4.8.5, which does not have a -std=gnu17 option.
+> > However the commit message of this change in commit 83566 hints that
+> > this requirement might be temporary. Hence my questions.
+>
+> It is temporary -- needed for survival (now updated) and mgcv (awaited).
+>   However,
+>
+> 1) You should be able to set
+>
+> CC17="gcc -std=gnu11"
+>
+> in config.site, as C17 is a bug-fixed C11.
+>
+> 2) Centos 7 has later compilers available, and people are going to need
+> them for C++.  The manual says
+>
+>      ... later compilers are available: for RHEL/Centos 7 look for
+> ?devtoolset?.
+
+Exactly, here is the reference:
+https://www.softwarecollections.org/en/scls/rhscl/devtoolset-7/
+
+R 3.6.0 is the last version we support in EPEL, because EPEL is not
+allowed to build on top of SCL. But you can enable SCL and install the
+devtoolset available, which contains gcc version 7.3.1.
+
+But anyway, I don't think that staying in an almost 10-year old distro
+in maintenance mode and at the same time expecting a cutting-edge
+version of R (or any software) is reasonable.
+
+I?aki
+
+> > Is the C17 requirement temporary or it will be a requirement for R 4.3.0?
+> > Should I expect any problems if I remove the --use-C17 flag for
+> > installing the recommended packages?
+>
+> Not with that compiler.
+>
+> >
+> > There are a lot of R users still on RHEL 7, so it would be great to
+> > know what to expect for the next release.
+> an D. Ripley,                  ripley at stats.ox.ac.uk
+> Emeritus Professor of Applied Statistics, University of Oxford
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+
+-- 
+I?aki ?car
+
+
+From c@@rd|@g@bor @end|ng |rom gm@||@com  Wed Feb  8 14:03:58 2023
+From: c@@rd|@g@bor @end|ng |rom gm@||@com (=?UTF-8?B?R8OhYm9yIENzw6FyZGk=?=)
+Date: Wed, 8 Feb 2023 14:03:58 +0100
+Subject: [Rd] R-devel does not compile on OpenSUSE 15.4
+Message-ID: <CABtg=KnTn+QUei+4oxPBL=So2x2i7PEXTPfdrH17AqWv6K5BGg@mail.gmail.com>
+
+More precisely the built-in Lapack module. AFAICT this is because the
+f90 files are not compiled with -fpic. My output:
+
+make[4]: Entering directory '/tmp/R-devel/src/modules/lapack'
+gfortran -fpic  -g -O2 -msse2 -mfpmath=sse  -c dlamch.f -o dlamch.o
+gfortran  -fpic  -g -O2  -c dlapack.f -o dlapack.o
+gfortran  -fpic  -g -O2  -c cmplx.f -o cmplx.o
+gfortran  -c  la_constants.f90 -o la_constants.o
+gfortran  -c  dlartg.f90 -o dlartg.o
+gfortran  -c  la_xisnan.f90 -o la_xisnan.o
+gfortran  -c  dlassq.f90 -o dlassq.o
+gfortran  -c  zlartg.f90 -o zlartg.o
+gfortran  -c  zlassq.f90 -o zlassq.o
+gcc -shared -fopenmp -L/usr/local/lib64 -o libRlapack.so dlamch.o
+dlapack.o cmplx.o dlartg.o dlassq.o la_constants.o la_xisnan.o
+zlartg.o zlassq.o   -L"../../../lib" -lRblas -lgfortran -lm -lquadmath
+/usr/lib64/gcc/x86_64-suse-linux/7/../../../../x86_64-suse-linux/bin/ld:
+zlassq.o: warning: relocation against `__la_xisnan_MOD_disnan' in
+read-only section `.text'
+/usr/lib64/gcc/x86_64-suse-linux/7/../../../../x86_64-suse-linux/bin/ld:
+dlassq.o: relocation R_X86_64_PC32 against symbol
+`__la_xisnan_MOD_disnan' can not be used when making a shared object;
+recompile with -fPIC
+/usr/lib64/gcc/x86_64-suse-linux/7/../../../../x86_64-suse-linux/bin/ld:
+final link failed: bad value
+collect2: error: ld returned 1 exit status
+
+If I update src/modules/lapack/Makefile.in to add $(FPICFLAGS) to the
+.f90 compilation, then all is good. I assume you would also want to
+add -g and -O2 here, so probably some other variable is better than
+$(FPICFLAGS).
+
+FYI,
+Gabor
+
+
+From henr|k@bengt@@on @end|ng |rom gm@||@com  Wed Feb  8 18:21:25 2023
+From: henr|k@bengt@@on @end|ng |rom gm@||@com (Henrik Bengtsson)
+Date: Wed, 8 Feb 2023 09:21:25 -0800
+Subject: [Rd] Compiling R-devel on older Linux distributions,
+ e.g. RHEL / CentOS 7
+In-Reply-To: <CALEXWq3c9Q0yNAzK0q17TBX-yJ9boxW+ZShZmha1XijAjBn=dQ@mail.gmail.com>
+References: <CABtg=KnOdkTL1L3wK=Q7D1vi6ubOz=1vM0r2TY_W498h_HxUqg@mail.gmail.com>
+ <920cbd04-cae4-7e8a-2c12-5a9361a459d7@stats.ox.ac.uk>
+ <CALEXWq3c9Q0yNAzK0q17TBX-yJ9boxW+ZShZmha1XijAjBn=dQ@mail.gmail.com>
+Message-ID: <CAFDcVCTu-snQbYqSde8jhm_7YS=OYfcXKs8=oysiWU2pkUb45Q@mail.gmail.com>
+
+I just want to add a few reasons that I know of for why users are
+still on Red Hat/CentOS 7 and learned from being deeply involved with
+big academic and research high-performance compute (HPC) environments.
+These systems are not like your regular sailing boat, but more like a
+giant container ship; much harder to navigate, slower to react, you
+cannot just cruise around and pop into any harbor you like to, or when
+you like to. It takes much more efforts, more logistics, and more
+people to operate them. If you mess up, the damage is much bigger.
+
+Reasons:
+
+* Users don't have many options, but have to use what is available.
+
+* Red Hat/CentOS is designed for long term stability and backward
+compatibility. They've only done major upgrades every 3-4 years.
+
+* Red Hat backports security fixes to old versions of common software,
+which is why you see, for instance, Python 3.6 still being the
+provided version, although Python made that End-of-Life in December
+2021.
+
+* HPC environments (aka "compute cluster") often have 100s to 1000s of
+users. Imagine the amount of software tools and difference versions
+installed in such environments.
+
+* Upgrading an HPC environments is a major disruption for users who
+rely on it in their work and research, e.g. some software stacks,
+pipelines, and scripts have to reinstalled and re-coded.
+
+* The majority of users and sysadmins prefer stability over the being
+able to run the latest tools.
+
+* Over years, stability increases the technical debt, to a point where
+it is cheaper to upgrade than to stay behind.
+
+* Even if sysadmins want to upgrade to a newer release, their hands
+are often also tied, because of external factors.  For example, the
+global parallel file system or the backup system you rely on has not
+yet be validated for the next version of OS you want to upgrade too.
+There might also be research critical scientific pipelines that does
+not yet support the new version, which can be because the maintainers
+of those tools don't have access to a new version to test on. GPU
+drives much not be available. This is also the case for commercial
+tools. Sometimes IT security requirements cannot be met on the new
+version, because security scanning tools are not yet up-to-date. There
+can also be hardware limitations, e.g. you might even have to replace
+some central server for the whole cluster to be able to upgrade.
+
+* Although you might want to tell everyone to just run a new version
+via Linux containers, it's not the magic sauce for all of the above.
+Savvy users might be able to do it, but not your average users. Also,
+this basically puts the common sysadmin burden on the end-user, who
+now have to keep their container stacks up-to-date and in sync.  In
+contrast to a homogeneous environment, this strategy increases the
+support burden on sysadms, because they will get much more questions
+and request for troubleshooting on very specific setups.
+
+Specifically to Red Hat/CentOS 7: When sites started to think about
+migrating to CentOS 8, Red Hat decided to pull the plug and change
+their long-term business plan.  This itself was a disruptive event,
+because any plans to do a "regular" distro upgrade had to be flushed
+down the toilet.  The community waited to see what would happen and
+what the options would be.  A lot of sites now plan on migrating to
+Rocky 8, which (AFAIU) tries to stay true to the original CentOS
+mission.  This means they are waiting for third-party hardware and
+software providers to validate their products for Rocky 8, e.g.
+parallel file systems, backup software, software stacks, etc.
+
+What R Core, Gabor, and many others are doing, often silently in the
+background, is to make sure R works smoothly for many R users out
+there, whatever operating system and version they may be on. This is
+so essential to R's success, and, more importantly, for research and
+science to be able to move forward.  Those endless hours spend on
+trying to support some OS, even obscure ones, to pay off many times,
+especially on common OSes such as Red Hat and CentOS.  You spare lots
+of users and sysadmins lots of pain when you put those hours in.  So,
+thank you for doing all that.
+
+/Henrik
+
+On Wed, Feb 8, 2023 at 2:24 AM I?aki Ucar <iucar at fedoraproject.org> wrote:
+>
+> On Wed, 8 Feb 2023 at 07:05, Prof Brian Ripley <ripley at stats.ox.ac.uk> wrote:
+> >
+> > On 08/02/2023 00:13, G?bor Cs?rdi wrote:
+> > > As preparation for the next release, I am trying to compile R devel on
+> > > RHEL / CentOS 7, which is still supported by RedHat until 2024 June.
+>
+> True, but with a big asterisk. Full updates ended on 2020-08-06, and
+> it's been in maintenance mode since then, meaning that only security
+> and critical fixes are released until EOL to facilitate a transition
+> to a newer version. So CentOS 7 users shouldn't expect new releases of
+> software to be available.
+>
+> > > There are two issues.
+> > >
+> > > One is that the libcurl version in CentOS 7 is quite old, 7.29.0, and
+> > > R devel now requires 7.32.0, since 83715 about a week ago. This
+> > > requirement is here to stay for R 4.3.0, right?
+>
+> I suppose that if R-devel doesn't use any API endpoint not available
+> in 7.29, you could just patch out that requirement. Otherwise, you
+> would need to build your own.
+>
+> > Unless we revert it.  The comment in the manual says
+> >
+> > @c libcurl 7.32.0 was released in Aug 2013
+> >
+> > and Centos 7 was released in 2014-07-07, 11 months later.  Do they
+> > really never security-patch libcurl?
+>
+> Oh, they do port all security fixes, but without changing the version,
+> which is the whole point of LTS. In fact, current version is
+> 7.29.0-59, and there are probably a hundred patches on top of those 59
+> builds.
+>
+> > > The second is that the recommended packages are now installed with R
+> > > CMD INSTALL --use-C17, which fails on CentOS 7 with
+> > >
+> > > begin installing recommended package MASS
+> > > * installing *source* package 'MASS' ...
+> > > ** package 'MASS' successfully unpacked and MD5 sums checked
+> > > ** using non-staged installation
+> > > ** libs
+> > > Error: C17 standard requested but CC17 is not defined
+> > > * removing '/root/R-devel/library/MASS'
+> > >
+> > > CentOS 7 has GCC 4.8.5, which does not have a -std=gnu17 option.
+> > > However the commit message of this change in commit 83566 hints that
+> > > this requirement might be temporary. Hence my questions.
+> >
+> > It is temporary -- needed for survival (now updated) and mgcv (awaited).
+> >   However,
+> >
+> > 1) You should be able to set
+> >
+> > CC17="gcc -std=gnu11"
+> >
+> > in config.site, as C17 is a bug-fixed C11.
+> >
+> > 2) Centos 7 has later compilers available, and people are going to need
+> > them for C++.  The manual says
+> >
+> >      ... later compilers are available: for RHEL/Centos 7 look for
+> > ?devtoolset?.
+>
+> Exactly, here is the reference:
+> https://www.softwarecollections.org/en/scls/rhscl/devtoolset-7/
+>
+> R 3.6.0 is the last version we support in EPEL, because EPEL is not
+> allowed to build on top of SCL. But you can enable SCL and install the
+> devtoolset available, which contains gcc version 7.3.1.
+>
+> But anyway, I don't think that staying in an almost 10-year old distro
+> in maintenance mode and at the same time expecting a cutting-edge
+> version of R (or any software) is reasonable.
+>
+> I?aki
+>
+> > > Is the C17 requirement temporary or it will be a requirement for R 4.3.0?
+> > > Should I expect any problems if I remove the --use-C17 flag for
+> > > installing the recommended packages?
+> >
+> > Not with that compiler.
+> >
+> > >
+> > > There are a lot of R users still on RHEL 7, so it would be great to
+> > > know what to expect for the next release.
+> > an D. Ripley,                  ripley at stats.ox.ac.uk
+> > Emeritus Professor of Applied Statistics, University of Oxford
+> >
+> > ______________________________________________
+> > R-devel at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+>
+>
+> --
+> I?aki ?car
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From henr|k@bengt@@on @end|ng |rom gm@||@com  Wed Feb  8 19:25:31 2023
+From: henr|k@bengt@@on @end|ng |rom gm@||@com (Henrik Bengtsson)
+Date: Wed, 8 Feb 2023 10:25:31 -0800
+Subject: [Rd] 
+ need help from someone know screen reader and R high DPI GUI
+In-Reply-To: <TYAP286MB02686F8746145024D4467E29D1D89@TYAP286MB0268.JPNP286.PROD.OUTLOOK.COM>
+References: <TYAP286MB02686F8746145024D4467E29D1D89@TYAP286MB0268.JPNP286.PROD.OUTLOOK.COM>
+Message-ID: <CAFDcVCS9M44S1L=obUFxVKReuTJocc8zRzWvjX_EgdNyXYpxJA@mail.gmail.com>
+
+Thanks for this work. My suggestion would be to provide those
+pre-built Windows binaries to maximize the chances to get the feedback
+you need. The amount of people ready to, or have the setup to, build R
+from source, especially so on MS Windows, is much smaller than those
+who are willing to give it a quick try.
+
+/Henrik
+
+On Wed, Feb 8, 2023 at 1:39 AM yu gong <yugong at outlook.com> wrote:
+>
+> hello , everyone:
+>
+>  I recheck and retest about the patch about high dpi of windows R GUI ,  IMO it works mostly. Last thing I am not sure is screen reader.
+>
+>  I download NVDA screen reader, and try it on high dpi R GUI , in NVDA Speech viewer,  it seems it can read R GUI normally, but since I konw so little about screen reader before.   I couldn't confirm NVDA Speech viewer indeed work on high dpi R GUI.
+>
+> Could anyone who know screen reader , help me  to confirm the high dpi patch not break screen reader.
+>
+> I put the patch https://github.com/armgong/misc-r-patch/blob/main/dpi-c-code.diff  .
+>
+> If anyone need the compiled binary on windows x64 , I can upload it on github repo also.
+>
+> thanks,
+>
+> Yu Gong
+>
+>
+>         [[alternative HTML version deleted]]
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From er|cjberger @end|ng |rom gm@||@com  Wed Feb  8 20:13:45 2023
+From: er|cjberger @end|ng |rom gm@||@com (Eric Berger)
+Date: Wed, 8 Feb 2023 21:13:45 +0200
+Subject: [Rd] Compiling R-devel on older Linux distributions,
+ e.g. RHEL / CentOS 7
+In-Reply-To: <CAFDcVCTu-snQbYqSde8jhm_7YS=OYfcXKs8=oysiWU2pkUb45Q@mail.gmail.com>
+References: <CABtg=KnOdkTL1L3wK=Q7D1vi6ubOz=1vM0r2TY_W498h_HxUqg@mail.gmail.com>
+ <920cbd04-cae4-7e8a-2c12-5a9361a459d7@stats.ox.ac.uk>
+ <CALEXWq3c9Q0yNAzK0q17TBX-yJ9boxW+ZShZmha1XijAjBn=dQ@mail.gmail.com>
+ <CAFDcVCTu-snQbYqSde8jhm_7YS=OYfcXKs8=oysiWU2pkUb45Q@mail.gmail.com>
+Message-ID: <CAGgJW75W6XTmjxTHzf__Up3LQFA6RtN9LZpC-srg3zoXUOriYQ@mail.gmail.com>
+
+A different route to get the "latest and greatest version of R" while
+sticking with an older distribution of an OS would be via docker.
+
+At work, our linux servers run Ubuntu 18.04 on which I run an Ubuntu 20.04
+docker image with (close to) the latest version of R (4.2.2) for a shiny
+app I supply across the firm.
+
+
+
+On Wed, Feb 8, 2023 at 7:21 PM Henrik Bengtsson <henrik.bengtsson at gmail.com>
+wrote:
+
+> I just want to add a few reasons that I know of for why users are
+> still on Red Hat/CentOS 7 and learned from being deeply involved with
+> big academic and research high-performance compute (HPC) environments.
+> These systems are not like your regular sailing boat, but more like a
+> giant container ship; much harder to navigate, slower to react, you
+> cannot just cruise around and pop into any harbor you like to, or when
+> you like to. It takes much more efforts, more logistics, and more
+> people to operate them. If you mess up, the damage is much bigger.
+>
+> Reasons:
+>
+> * Users don't have many options, but have to use what is available.
+>
+> * Red Hat/CentOS is designed for long term stability and backward
+> compatibility. They've only done major upgrades every 3-4 years.
+>
+> * Red Hat backports security fixes to old versions of common software,
+> which is why you see, for instance, Python 3.6 still being the
+> provided version, although Python made that End-of-Life in December
+> 2021.
+>
+> * HPC environments (aka "compute cluster") often have 100s to 1000s of
+> users. Imagine the amount of software tools and difference versions
+> installed in such environments.
+>
+> * Upgrading an HPC environments is a major disruption for users who
+> rely on it in their work and research, e.g. some software stacks,
+> pipelines, and scripts have to reinstalled and re-coded.
+>
+> * The majority of users and sysadmins prefer stability over the being
+> able to run the latest tools.
+>
+> * Over years, stability increases the technical debt, to a point where
+> it is cheaper to upgrade than to stay behind.
+>
+> * Even if sysadmins want to upgrade to a newer release, their hands
+> are often also tied, because of external factors.  For example, the
+> global parallel file system or the backup system you rely on has not
+> yet be validated for the next version of OS you want to upgrade too.
+> There might also be research critical scientific pipelines that does
+> not yet support the new version, which can be because the maintainers
+> of those tools don't have access to a new version to test on. GPU
+> drives much not be available. This is also the case for commercial
+> tools. Sometimes IT security requirements cannot be met on the new
+> version, because security scanning tools are not yet up-to-date. There
+> can also be hardware limitations, e.g. you might even have to replace
+> some central server for the whole cluster to be able to upgrade.
+>
+> * Although you might want to tell everyone to just run a new version
+> via Linux containers, it's not the magic sauce for all of the above.
+> Savvy users might be able to do it, but not your average users. Also,
+> this basically puts the common sysadmin burden on the end-user, who
+> now have to keep their container stacks up-to-date and in sync.  In
+> contrast to a homogeneous environment, this strategy increases the
+> support burden on sysadms, because they will get much more questions
+> and request for troubleshooting on very specific setups.
+>
+> Specifically to Red Hat/CentOS 7: When sites started to think about
+> migrating to CentOS 8, Red Hat decided to pull the plug and change
+> their long-term business plan.  This itself was a disruptive event,
+> because any plans to do a "regular" distro upgrade had to be flushed
+> down the toilet.  The community waited to see what would happen and
+> what the options would be.  A lot of sites now plan on migrating to
+> Rocky 8, which (AFAIU) tries to stay true to the original CentOS
+> mission.  This means they are waiting for third-party hardware and
+> software providers to validate their products for Rocky 8, e.g.
+> parallel file systems, backup software, software stacks, etc.
+>
+> What R Core, Gabor, and many others are doing, often silently in the
+> background, is to make sure R works smoothly for many R users out
+> there, whatever operating system and version they may be on. This is
+> so essential to R's success, and, more importantly, for research and
+> science to be able to move forward.  Those endless hours spend on
+> trying to support some OS, even obscure ones, to pay off many times,
+> especially on common OSes such as Red Hat and CentOS.  You spare lots
+> of users and sysadmins lots of pain when you put those hours in.  So,
+> thank you for doing all that.
+>
+> /Henrik
+>
+> On Wed, Feb 8, 2023 at 2:24 AM I?aki Ucar <iucar at fedoraproject.org> wrote:
+> >
+> > On Wed, 8 Feb 2023 at 07:05, Prof Brian Ripley <ripley at stats.ox.ac.uk>
+> wrote:
+> > >
+> > > On 08/02/2023 00:13, G?bor Cs?rdi wrote:
+> > > > As preparation for the next release, I am trying to compile R devel
+> on
+> > > > RHEL / CentOS 7, which is still supported by RedHat until 2024 June.
+> >
+> > True, but with a big asterisk. Full updates ended on 2020-08-06, and
+> > it's been in maintenance mode since then, meaning that only security
+> > and critical fixes are released until EOL to facilitate a transition
+> > to a newer version. So CentOS 7 users shouldn't expect new releases of
+> > software to be available.
+> >
+> > > > There are two issues.
+> > > >
+> > > > One is that the libcurl version in CentOS 7 is quite old, 7.29.0, and
+> > > > R devel now requires 7.32.0, since 83715 about a week ago. This
+> > > > requirement is here to stay for R 4.3.0, right?
+> >
+> > I suppose that if R-devel doesn't use any API endpoint not available
+> > in 7.29, you could just patch out that requirement. Otherwise, you
+> > would need to build your own.
+> >
+> > > Unless we revert it.  The comment in the manual says
+> > >
+> > > @c libcurl 7.32.0 was released in Aug 2013
+> > >
+> > > and Centos 7 was released in 2014-07-07, 11 months later.  Do they
+> > > really never security-patch libcurl?
+> >
+> > Oh, they do port all security fixes, but without changing the version,
+> > which is the whole point of LTS. In fact, current version is
+> > 7.29.0-59, and there are probably a hundred patches on top of those 59
+> > builds.
+> >
+> > > > The second is that the recommended packages are now installed with R
+> > > > CMD INSTALL --use-C17, which fails on CentOS 7 with
+> > > >
+> > > > begin installing recommended package MASS
+> > > > * installing *source* package 'MASS' ...
+> > > > ** package 'MASS' successfully unpacked and MD5 sums checked
+> > > > ** using non-staged installation
+> > > > ** libs
+> > > > Error: C17 standard requested but CC17 is not defined
+> > > > * removing '/root/R-devel/library/MASS'
+> > > >
+> > > > CentOS 7 has GCC 4.8.5, which does not have a -std=gnu17 option.
+> > > > However the commit message of this change in commit 83566 hints that
+> > > > this requirement might be temporary. Hence my questions.
+> > >
+> > > It is temporary -- needed for survival (now updated) and mgcv
+> (awaited).
+> > >   However,
+> > >
+> > > 1) You should be able to set
+> > >
+> > > CC17="gcc -std=gnu11"
+> > >
+> > > in config.site, as C17 is a bug-fixed C11.
+> > >
+> > > 2) Centos 7 has later compilers available, and people are going to need
+> > > them for C++.  The manual says
+> > >
+> > >      ... later compilers are available: for RHEL/Centos 7 look for
+> > > ?devtoolset?.
+> >
+> > Exactly, here is the reference:
+> > https://www.softwarecollections.org/en/scls/rhscl/devtoolset-7/
+> >
+> > R 3.6.0 is the last version we support in EPEL, because EPEL is not
+> > allowed to build on top of SCL. But you can enable SCL and install the
+> > devtoolset available, which contains gcc version 7.3.1.
+> >
+> > But anyway, I don't think that staying in an almost 10-year old distro
+> > in maintenance mode and at the same time expecting a cutting-edge
+> > version of R (or any software) is reasonable.
+> >
+> > I?aki
+> >
+> > > > Is the C17 requirement temporary or it will be a requirement for R
+> 4.3.0?
+> > > > Should I expect any problems if I remove the --use-C17 flag for
+> > > > installing the recommended packages?
+> > >
+> > > Not with that compiler.
+> > >
+> > > >
+> > > > There are a lot of R users still on RHEL 7, so it would be great to
+> > > > know what to expect for the next release.
+> > > an D. Ripley,                  ripley at stats.ox.ac.uk
+> > > Emeritus Professor of Applied Statistics, University of Oxford
+> > >
+> > > ______________________________________________
+> > > R-devel at r-project.org mailing list
+> > > https://stat.ethz.ch/mailman/listinfo/r-devel
+> >
+> >
+> >
+> > --
+> > I?aki ?car
+> >
+> > ______________________________________________
+> > R-devel at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+
+	[[alternative HTML version deleted]]
+
+
+From @h@rt @end|ng |rom d|m@uch||e@c|  Wed Feb  8 20:24:49 2023
+From: @h@rt @end|ng |rom d|m@uch||e@c| (Andrew Hart)
+Date: Wed, 8 Feb 2023 16:24:49 -0300
+Subject: [Rd] 
+ need help from someone know screen reader and R high DPI GUI
+In-Reply-To: <TYAP286MB02686F8746145024D4467E29D1D89@TYAP286MB0268.JPNP286.PROD.OUTLOOK.COM>
+References: <TYAP286MB02686F8746145024D4467E29D1D89@TYAP286MB0268.JPNP286.PROD.OUTLOOK.COM>
+Message-ID: <4bff932b-ff0a-78de-acc9-cdeab853af31@dim.uchile.cl>
+
+I'd be willing to give it a go if a pre-build binary set-up could be 
+provided.
+
+Cheers,
+Andrew.
+
+On 8/02/2023 6:39, yu gong wrote:
+> hello , everyone:
+> 
+>   I recheck and retest about the patch about high dpi of windows R GUI ,  IMO it works mostly. Last thing I am not sure is screen reader.
+> 
+>   I download NVDA screen reader, and try it on high dpi R GUI , in NVDA Speech viewer,  it seems it can read R GUI normally, but since I konw so little about screen reader before.   I couldn't confirm NVDA Speech viewer indeed work on high dpi R GUI.
+> 
+> Could anyone who know screen reader , help me  to confirm the high dpi patch not break screen reader.
+> 
+> I put the patch https://github.com/armgong/misc-r-patch/blob/main/dpi-c-code.diff  .
+> 
+> If anyone need the compiled binary on windows x64 , I can upload it on github repo also.
+> 
+> thanks,
+> 
+> Yu Gong
+> 
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+
+
+From |uc@r @end|ng |rom |edor@project@org  Wed Feb  8 21:22:46 2023
+From: |uc@r @end|ng |rom |edor@project@org (=?UTF-8?Q?I=C3=B1aki_Ucar?=)
+Date: Wed, 8 Feb 2023 21:22:46 +0100
+Subject: [Rd] Compiling R-devel on older Linux distributions,
+ e.g. RHEL / CentOS 7
+In-Reply-To: <CAFDcVCTu-snQbYqSde8jhm_7YS=OYfcXKs8=oysiWU2pkUb45Q@mail.gmail.com>
+References: <CABtg=KnOdkTL1L3wK=Q7D1vi6ubOz=1vM0r2TY_W498h_HxUqg@mail.gmail.com>
+ <920cbd04-cae4-7e8a-2c12-5a9361a459d7@stats.ox.ac.uk>
+ <CALEXWq3c9Q0yNAzK0q17TBX-yJ9boxW+ZShZmha1XijAjBn=dQ@mail.gmail.com>
+ <CAFDcVCTu-snQbYqSde8jhm_7YS=OYfcXKs8=oysiWU2pkUb45Q@mail.gmail.com>
+Message-ID: <CALEXWq3Bh8V=zxSYShJOt_32-_2nc5nwQte2qcbnwgLvPOPk5Q@mail.gmail.com>
+
+On Wed, 8 Feb 2023 at 19:59, Henrik Bengtsson
+<henrik.bengtsson at gmail.com> wrote:
+>
+> I just want to add a few reasons that I know of for why users are
+> still on Red Hat/CentOS 7 and learned from being deeply involved with
+> big academic and research high-performance compute (HPC) environments.
+> These systems are not like your regular sailing boat, but more like a
+> giant container ship; much harder to navigate, slower to react, you
+> cannot just cruise around and pop into any harbor you like to, or when
+> you like to. It takes much more efforts, more logistics, and more
+> people to operate them. If you mess up, the damage is much bigger.
+
+I'm fully aware of, and I understand, all the technical and
+organizational reasons why there are CentOS 7 systems out there. I
+only challenge a single point (cherry-picked from your list):
+
+> * The majority of users and sysadmins prefer stability over the being
+> able to run the latest tools.
+
+This is simply not true. In general, sysadmins do prefer stability,
+but users want the latest tools (otherwise, this very thread would not
+exist, QED). And the first thing is hardly compatible with the second
+one. That is, without containers, which brings us to the next point.
+
+> * Although you might want to tell everyone to just run a new version
+> via Linux containers, it's not the magic sauce for all of the above.
+> Savvy users might be able to do it, but not your average users. Also,
+> this basically puts the common sysadmin burden on the end-user, who
+> now have to keep their container stacks up-to-date and in sync.  In
+> contrast to a homogeneous environment, this strategy increases the
+> support burden on sysadms, because they will get much more questions
+> and request for troubleshooting on very specific setups.
+
+How is that so? Let's say a user wants the latest version of R.
+Nothing prevents a sysadmin to set up a script called "R" in the PATH
+that runs e.g. the r2u container [1] with the proper mounts. And
+that's it: the user runs "R" and receives the latest version (and even
+package installations seem to be blazing fast now!) without even
+knowing that it's running inside a container.
+
+I know, you are thinking "security", "permissions"...
+
+$ yum install podman
+
+Drop-in replacement for docker, but rootless, daemonless. Also there's
+a similar thing called Apptainer [1], formerly Singularity, that was
+specifically designed with HPC in mind, now part of the Linux
+Foundation.
+
+[1] https://github.com/eddelbuettel/r2u
+[2] https://apptainer.org/
+
+> What R Core, Gabor, and many others are doing, often silently in the
+> background, is to make sure R works smoothly for many R users out
+> there, whatever operating system and version they may be on. This is
+> so essential to R's success, and, more importantly, for research and
+> science to be able to move forward.
+
++1000
+
+--
+I?aki ?car
+
+
+From d@v|@ @end|ng |rom po@|t@co  Wed Feb  8 21:33:27 2023
+From: d@v|@ @end|ng |rom po@|t@co (Davis Vaughan)
+Date: Wed, 8 Feb 2023 15:33:27 -0500
+Subject: [Rd] Small typo in Writing R Extensions
+Message-ID: <CABzLhzyeHpWmbToTd0OCRSCg_NVvRZ2RkxRxCVzsv03jvWyAuQ@mail.gmail.com>
+
+Hi all,
+
+Writing R Extensions describes `R_NewEnv()` as:
+
+```
+At times it may also be useful to create a new environment frame in C
+code. R_NewEnv is a C version of the R function new.env:
+
+SEXP R_NewEnv(SEXP enclos, int hash, ins size)
+```
+
+There is a typo here where `ins size` should be `int size`.
+
+Thanks!
+Davis
+
+
+From henr|k@bengt@@on @end|ng |rom gm@||@com  Wed Feb  8 22:23:02 2023
+From: henr|k@bengt@@on @end|ng |rom gm@||@com (Henrik Bengtsson)
+Date: Wed, 8 Feb 2023 13:23:02 -0800
+Subject: [Rd] Compiling R-devel on older Linux distributions,
+ e.g. RHEL / CentOS 7
+In-Reply-To: <CALEXWq3Bh8V=zxSYShJOt_32-_2nc5nwQte2qcbnwgLvPOPk5Q@mail.gmail.com>
+References: <CABtg=KnOdkTL1L3wK=Q7D1vi6ubOz=1vM0r2TY_W498h_HxUqg@mail.gmail.com>
+ <920cbd04-cae4-7e8a-2c12-5a9361a459d7@stats.ox.ac.uk>
+ <CALEXWq3c9Q0yNAzK0q17TBX-yJ9boxW+ZShZmha1XijAjBn=dQ@mail.gmail.com>
+ <CAFDcVCTu-snQbYqSde8jhm_7YS=OYfcXKs8=oysiWU2pkUb45Q@mail.gmail.com>
+ <CALEXWq3Bh8V=zxSYShJOt_32-_2nc5nwQte2qcbnwgLvPOPk5Q@mail.gmail.com>
+Message-ID: <CAFDcVCSHww=YpNcrHzpmZGnHXcyFpDDXfRGtDRwZDCq8k=ZArw@mail.gmail.com>
+
+On Wed, Feb 8, 2023 at 12:22 PM I?aki Ucar <iucar at fedoraproject.org> wrote:
+>
+> On Wed, 8 Feb 2023 at 19:59, Henrik Bengtsson
+> <henrik.bengtsson at gmail.com> wrote:
+> >
+> > I just want to add a few reasons that I know of for why users are
+> > still on Red Hat/CentOS 7 and learned from being deeply involved with
+> > big academic and research high-performance compute (HPC) environments.
+> > These systems are not like your regular sailing boat, but more like a
+> > giant container ship; much harder to navigate, slower to react, you
+> > cannot just cruise around and pop into any harbor you like to, or when
+> > you like to. It takes much more efforts, more logistics, and more
+> > people to operate them. If you mess up, the damage is much bigger.
+>
+> I'm fully aware of, and I understand, all the technical and
+> organizational reasons why there are CentOS 7 systems out there. I
+> only challenge a single point (cherry-picked from your list):
+>
+> > * The majority of users and sysadmins prefer stability over the being
+> > able to run the latest tools.
+>
+> This is simply not true. In general, sysadmins do prefer stability,
+> but users want the latest tools (otherwise, this very thread would not
+> exist, QED). And the first thing is hardly compatible with the second
+> one. That is, without containers, which brings us to the next point.
+
+We might operate in different environments, but there are lots of labs
+that keep the exact same pipeline for years (5-10 years), because "it
+works", and because if they change anything, they might have to
+re-analyze all their old data to avoid batch effects purely from
+different versions of algorithms. I can agree with this strategy too,
+especially if your data are huge and staging them back on the compute
+environment from cold storage can be a huge task in itself.  Then
+there are reasons such as being less savvy, and bad memories from last
+time they tried this (e.g. years ago), everything broke, and it took
+them weeks and months to sort it out.  I'm not trying to make fun of
+anyone here - it's just that on big clusters with many users, the
+skill-level spectrum varies a lot.
+
+>
+> > * Although you might want to tell everyone to just run a new version
+> > via Linux containers, it's not the magic sauce for all of the above.
+> > Savvy users might be able to do it, but not your average users. Also,
+> > this basically puts the common sysadmin burden on the end-user, who
+> > now have to keep their container stacks up-to-date and in sync.  In
+> > contrast to a homogeneous environment, this strategy increases the
+> > support burden on sysadms, because they will get much more questions
+> > and request for troubleshooting on very specific setups.
+>
+> How is that so? Let's say a user wants the latest version of R.
+> Nothing prevents a sysadmin to set up a script called "R" in the PATH
+> that runs e.g. the r2u container [1] with the proper mounts. And
+> that's it: the user runs "R" and receives the latest version (and even
+> package installations seem to be blazing fast now!) without even
+> knowing that it's running inside a container.
+>
+> I know, you are thinking "security", "permissions"...
+
+I'm actually thinking maintenance and support. When you bring in Linux
+containers, you basically introduce a bunch of new compute
+environments in addition to your host system. So, instead of the
+support team (often same as the sysadm) having to understand and
+answer questions for a homogeneous environment, they now have to be
+up-to-date with different versions of CentOS/Rocky, Ubuntu, Debian,
+... and different container images. In R we often have a hard time to
+even get users to report their sessionInfo() - now imagine their
+container details.  If admins start providing one-off container
+images, that becomes an added maintenance load. But, I agree, Linux
+containers are great and makes it possible for a lot of users to run
+analyzes that they otherwise would not be able to do on the host
+system.
+
+>
+> $ yum install podman
+>
+> Drop-in replacement for docker, but rootless, daemonless. Also there's
+> a similar thing called Apptainer [1], formerly Singularity, that was
+> specifically designed with HPC in mind, now part of the Linux
+> Foundation.
+>
+> [1] https://github.com/eddelbuettel/r2u
+> [2] https://apptainer.org/
+
+Yes, Singularity/Apptainer is awesome, especially since Docker is
+mostly considered a no-no in HPC environments. The minimal, or even
+zero use of SUID, these days, is great. That it runs as a regular
+process as the users itself with good default file mounts is also
+neat.  These things get even better with newer Linux kernels, which,
+by the way, is another motivation for upgrading the OS.
+
+That said, with Apptainer and likes, the user might run into conflicts
+here, similar to what we see when users install software via Conda,
+which often generals a parallel software stack to that of the host
+system.  Taking R as an example, when a user installs packages, they
+end up in R_LIBS_USER=~/R/%p-library/%v (*).  This is the same
+directory regardless of running R on the host system, in a Linux
+container, and in Linux containers based on different OSes.  So, if
+they end up running a little bit here and there, which is not
+unreasonable to expect if they work on different projects, then there
+will a mishmash of R package binaries that are not compatible with
+each other.  This happens a ton when people use Conda.  Of course, a
+savvy user will at some point figure this out, and configure their
+R_LIBS_USER to be agile to the environment they run, but the majority
+won't notice this until it's too late.  And, boom, now you're adding
+lots of load on the support team, and troubleshooting and undoing
+these conflicts consumes a lot of wasted efforts.  In the worst case,
+the user does not reach out for help, but in stead struggle in silence
+and might work with something half broken.  From my experience at UCSF
+(~2,000 users on two big clusters), this is unfortunately not that
+uncommon.
+
+(*) My wish would be if R could to include also the OS name and the OS
+version in the default R_LIBS_USER, something like
+R_LIBS_USER=~/R/%O-%p-library/%v, where %O would be a new
+specification that expands to, say, "centos-7", "ubuntu-22.04".  That
+would mitigate lots of these issues automatically.
+
+Thanks for the feedback and questions,
+
+Henrik
+
+> > What R Core, Gabor, and many others are doing, often silently in the
+> > background, is to make sure R works smoothly for many R users out
+> > there, whatever operating system and version they may be on. This is
+> > so essential to R's success, and, more importantly, for research and
+> > science to be able to move forward.
+>
+> +1000
+>
+> --
+> I?aki ?car
+
+
+From d@v|@ @end|ng |rom po@|t@co  Wed Feb  8 21:51:49 2023
+From: d@v|@ @end|ng |rom po@|t@co (Davis Vaughan)
+Date: Wed, 8 Feb 2023 15:51:49 -0500
+Subject: [Rd] On optimizing `R_NewEnv()`
+Message-ID: <CABzLhzxrrV7AGg5nCwCdEzqB1aRcRcHByoAXrjiXgRMi7Q=4-A@mail.gmail.com>
+
+Hi all,
+
+I really like the addition of `R_NewEnv()` back in 4.1.0
+https://github.com/wch/r-source/blob/625ab8d45f86f65561e53627e1f0c220bdc5f752/src/main/envir.c#L3619-L3630
+
+I have a use case where I'm likely to call this function a large
+number of times to generate many small hashed environments, so I'd
+like to optimize it as far as possible.
+
+I noticed that it takes `int size`, converts that to a SEXP for
+`R_NewHashedEnv()`, which then simply converts that back to an `int`
+here:
+https://github.com/wch/r-source/blob/625ab8d45f86f65561e53627e1f0c220bdc5f752/src/main/envir.c#L378
+
+I wonder if we could cut out that intermediate SEXP (along with its
+protection) by adjusting `R_NewHashedEnv()` to instead take `int
+size`.
+
+I'd be happy to do a patch if that sounds good. I'd update all uses of
+`R_NewHashedEnv()` to supply `int`s instead, which actually seems like
+it would make every instance of calling that function simpler:
+https://github.com/search?q=repo%3Awch%2Fr-source%20R_NewHashedEnv&type=code
+
+So hopefully a win everywhere?
+
+Thanks,
+Davis
+
+
+From yugong @end|ng |rom out|ook@com  Thu Feb  9 02:04:12 2023
+From: yugong @end|ng |rom out|ook@com (yu gong)
+Date: Thu, 9 Feb 2023 01:04:12 +0000
+Subject: [Rd] 
+ need help from someone know screen reader and R high DPI GUI
+In-Reply-To: <4bff932b-ff0a-78de-acc9-cdeab853af31@dim.uchile.cl>
+References: <TYAP286MB02686F8746145024D4467E29D1D89@TYAP286MB0268.JPNP286.PROD.OUTLOOK.COM>
+ <4bff932b-ff0a-78de-acc9-cdeab853af31@dim.uchile.cl>
+Message-ID: <TYAP286MB0268BF2279F726318432E1CBD1D99@TYAP286MB0268.JPNP286.PROD.OUTLOOK.COM>
+
+thanks Andrew
+
+I  upload the binary to https://github.com/armgong/misc-r-patch/releases/download/v0.0.1/r-highdpi-x64.zip
+
+thanks,
+
+Yu Gong
+
+________________________________
+From: R-devel <r-devel-bounces at r-project.org> on behalf of Andrew Hart via R-devel <r-devel at r-project.org>
+Sent: Thursday, February 9, 2023 3:24
+To: r-devel at r-project.org <r-devel at r-project.org>
+Subject: Re: [Rd] need help from someone know screen reader and R high DPI GUI
+
+I'd be willing to give it a go if a pre-build binary set-up could be
+provided.
+
+Cheers,
+Andrew.
+
+On 8/02/2023 6:39, yu gong wrote:
+> hello , everyone:
+>
+>   I recheck and retest about the patch about high dpi of windows R GUI ,  IMO it works mostly. Last thing I am not sure is screen reader.
+>
+>   I download NVDA screen reader, and try it on high dpi R GUI , in NVDA Speech viewer,  it seems it can read R GUI normally, but since I konw so little about screen reader before.   I couldn't confirm NVDA Speech viewer indeed work on high dpi R GUI.
+>
+> Could anyone who know screen reader , help me  to confirm the high dpi patch not break screen reader.
+>
+> I put the patch https://github.com/armgong/misc-r-patch/blob/main/dpi-c-code.diff  .
+>
+> If anyone need the compiled binary on windows x64 , I can upload it on github repo also.
+>
+> thanks,
+>
+> Yu Gong
+>
+>
+>        [[alternative HTML version deleted]]
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+
+______________________________________________
+R-devel at r-project.org mailing list
+https://stat.ethz.ch/mailman/listinfo/r-devel
+
+	[[alternative HTML version deleted]]
+
+
+From tom@@@k@||ber@ @end|ng |rom gm@||@com  Thu Feb  9 08:54:50 2023
+From: tom@@@k@||ber@ @end|ng |rom gm@||@com (Tomas Kalibera)
+Date: Thu, 9 Feb 2023 08:54:50 +0100
+Subject: [Rd] Small typo in Writing R Extensions
+In-Reply-To: <CABzLhzyeHpWmbToTd0OCRSCg_NVvRZ2RkxRxCVzsv03jvWyAuQ@mail.gmail.com>
+References: <CABzLhzyeHpWmbToTd0OCRSCg_NVvRZ2RkxRxCVzsv03jvWyAuQ@mail.gmail.com>
+Message-ID: <eb6dc619-733d-f226-7488-b2417dc2833c@gmail.com>
+
+
+On 2/8/23 21:33, Davis Vaughan via R-devel wrote:
+> Hi all,
+>
+> Writing R Extensions describes `R_NewEnv()` as:
+>
+> ```
+> At times it may also be useful to create a new environment frame in C
+> code. R_NewEnv is a C version of the R function new.env:
+>
+> SEXP R_NewEnv(SEXP enclos, int hash, ins size)
+> ```
+>
+> There is a typo here where `ins size` should be `int size`.
+Thanks, fixed now.
+Tomas
+>
+> Thanks!
+> Davis
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From c@@rd|@g@bor @end|ng |rom gm@||@com  Fri Feb 10 15:00:55 2023
+From: c@@rd|@g@bor @end|ng |rom gm@||@com (=?UTF-8?B?R8OhYm9yIENzw6FyZGk=?=)
+Date: Fri, 10 Feb 2023 15:00:55 +0100
+Subject: [Rd] R-devel does not compile on OpenSUSE 15.4
+In-Reply-To: <CABtg=KnTn+QUei+4oxPBL=So2x2i7PEXTPfdrH17AqWv6K5BGg@mail.gmail.com>
+References: <CABtg=KnTn+QUei+4oxPBL=So2x2i7PEXTPfdrH17AqWv6K5BGg@mail.gmail.com>
+Message-ID: <CABtg=KkcuxkWOKC8yHHxZsS0sheGx3O0wbE1GiHc9v9Y-t9yCA@mail.gmail.com>
+
+I think this was possibly a typo (ALL_FCLAGS vs ALL_FCFLAGS), plus
+those flags were never set for src/modules/lapack. Hence, this seems
+like a better fix, that also adds the flags to src/extra/blas.
+
+Best,
+Gabor
+
+diff --git a/src/extra/blas/Makefile.in b/src/extra/blas/Makefile.in
+index 3661416..c9b53e2 100644
+--- a/src/extra/blas/Makefile.in
++++ b/src/extra/blas/Makefile.in
+@@ -17,7 +17,7 @@ include $(top_builddir)/Makeconf
+
+ ALL_CFLAGS = $(ALL_CFLAGS_LO)
+ ALL_FFLAGS = $(ALL_FFLAGS_LO)
+-ALL_FCLAGS = $(ALL_FFLAGS_LO)
++ALL_FCFLAGS = $(ALL_FFLAGS_LO)
+
+ SOURCES = blas00.c blas.f cmplxblas.f blas2.f90 cmplxblas2.f90
+
+diff --git a/src/modules/lapack/Makefile.in b/src/modules/lapack/Makefile.in
+index 8e593ea..e35c956 100644
+--- a/src/modules/lapack/Makefile.in
++++ b/src/modules/lapack/Makefile.in
+@@ -15,6 +15,10 @@ include $(top_builddir)/Makeconf
+ .f90.o:
+        $(FC) $(ALL_FCFLAGS) -c @FCFLAGS_f90@ $< -o $@
+
++ALL_CFLAGS = $(ALL_CFLAGS_LO)
++ALL_FFLAGS = $(ALL_FFLAGS_LO)
++ALL_FCFLAGS = $(ALL_FFLAGS_LO)
++
+ SOURCES_C = Lapack.c @USE_VECLIB_G95FIX_TRUE@ vecLibg95c.c
+ SOURCES_F = @USE_VECLIB_G95FIX_TRUE@ vecLibg95f.f
+
+On Wed, Feb 8, 2023 at 2:03 PM G?bor Cs?rdi <csardi.gabor at gmail.com> wrote:
+>
+> More precisely the built-in Lapack module. AFAICT this is because the
+> f90 files are not compiled with -fpic. My output:
+>
+> make[4]: Entering directory '/tmp/R-devel/src/modules/lapack'
+> gfortran -fpic  -g -O2 -msse2 -mfpmath=sse  -c dlamch.f -o dlamch.o
+> gfortran  -fpic  -g -O2  -c dlapack.f -o dlapack.o
+> gfortran  -fpic  -g -O2  -c cmplx.f -o cmplx.o
+> gfortran  -c  la_constants.f90 -o la_constants.o
+> gfortran  -c  dlartg.f90 -o dlartg.o
+> gfortran  -c  la_xisnan.f90 -o la_xisnan.o
+> gfortran  -c  dlassq.f90 -o dlassq.o
+> gfortran  -c  zlartg.f90 -o zlartg.o
+> gfortran  -c  zlassq.f90 -o zlassq.o
+> gcc -shared -fopenmp -L/usr/local/lib64 -o libRlapack.so dlamch.o
+> dlapack.o cmplx.o dlartg.o dlassq.o la_constants.o la_xisnan.o
+> zlartg.o zlassq.o   -L"../../../lib" -lRblas -lgfortran -lm -lquadmath
+> /usr/lib64/gcc/x86_64-suse-linux/7/../../../../x86_64-suse-linux/bin/ld:
+> zlassq.o: warning: relocation against `__la_xisnan_MOD_disnan' in
+> read-only section `.text'
+> /usr/lib64/gcc/x86_64-suse-linux/7/../../../../x86_64-suse-linux/bin/ld:
+> dlassq.o: relocation R_X86_64_PC32 against symbol
+> `__la_xisnan_MOD_disnan' can not be used when making a shared object;
+> recompile with -fPIC
+> /usr/lib64/gcc/x86_64-suse-linux/7/../../../../x86_64-suse-linux/bin/ld:
+> final link failed: bad value
+> collect2: error: ld returned 1 exit status
+>
+> If I update src/modules/lapack/Makefile.in to add $(FPICFLAGS) to the
+> .f90 compilation, then all is good. I assume you would also want to
+> add -g and -O2 here, so probably some other variable is better than
+> $(FPICFLAGS).
+>
+> FYI,
+> Gabor
+
+
+From t@r@@@z@kh@rko @end|ng |rom uzh@ch  Fri Feb 10 17:00:44 2023
+From: t@r@@@z@kh@rko @end|ng |rom uzh@ch (Taras Zakharko)
+Date: Fri, 10 Feb 2023 17:00:44 +0100
+Subject: [Rd] A delayedAssign() variant for quoted expressions
+Message-ID: <DF104F0E-5EF2-4014-976C-2CD9B0AE8EB6@uzh.ch>
+
+It is sometimes useful to create a promise using a constructed expression, but delayedAssign will always substitute the expression argument. I am currently using this pattern to achieve this:
+
+expr <- bquote(?)
+eval(call("delayedAssign", x, expr, eval.env = eval_env))
+
+But it would be nice if base R already had a function that takes quoted promise body. It could be named delayedAssign0 or delayedAssignq (similar to evalq). The definition of such function would be trivial (just remove substitute from delayedAssign):
+
+function (x, value, eval.env = parent.frame(1), assign.env = parent.frame(1)) .Internal(delayedAssign(x, substitute(value), eval.env, assign.env))
+
+Maybe R maintainers could consider adding this function? I would be happy to submit a patch. 
+
+Best, 
+
+Taras
+
+
+	[[alternative HTML version deleted]]
+
+
+From @pencer@gr@ve@ @end|ng |rom prod@y@e@com  Sat Feb 11 06:38:55 2023
+From: @pencer@gr@ve@ @end|ng |rom prod@y@e@com (Spencer Graves)
+Date: Fri, 10 Feb 2023 23:38:55 -0600
+Subject: [Rd] scan(..., skip=1e11): infinite loop; cannot interrupt
+Message-ID: <acf79875-5042-1db1-5283-836dedd7f8a0@prodsyse.com>
+
+Hello, All:
+
+
+	  I have a 4.54 GB file that I'm trying to read in chunks using 
+"scan(..., skip=__)".  It works as expected for small values of "skip" 
+but goes into an infinite loop for "skip=1e11" and similar large values 
+of skip:  I cannot even interrupt it;  I must kill R.  Below please find 
+sessionInfo() with a toy example.
+
+
+	  My real problem is a large corrupted Thunderbird email file.  It's 
+file type "Mork", which is mostly standard characters with "\n" between 
+records of varying length.
+
+
+	  Is there some other function in R that allows me to read chunks of a 
+large file like this?
+
+
+	  Thanks,
+	  Spencer Graves
+
+
+writeLines(as.character(1:11), 'tstNums.txt')
+(Tst2 <- scan('tstNums.txt', n=12, skip=5))
+# works: 6 7 8 9 10 11
+(Tst13 <- scan('tstNums.txt', n=12, skip=13))
+# works: numeric(0)
+(tst1e11 <- scan('tst.txt', n=12, skip=1e11))
+# Goes into an infinite loop that I cannot even interrupt.
+# I must kill R and start over.
+
+
+sessionInfo()
+R version 4.2.2 (2022-10-31)
+Platform: x86_64-apple-darwin17.0 (64-bit)
+Running under: macOS Big Sur 11.7.3
+
+Matrix products: default
+LAPACK: 
+/Library/Frameworks/R.framework/Versions/4.2/Resources/lib/libRlapack.dylib
+
+locale:
+[1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+
+attached base packages:
+[1] stats     graphics  grDevices utils     datasets  methods   base
+
+loaded via a namespace (and not attached):
+  [1] compiler_4.2.2  fastmap_1.1.0   cli_3.6.0       htmltools_0.5.4
+  [5] tools_4.2.2     rstudioapi_0.14 yaml_2.3.6      rmarkdown_2.20
+  [9] knitr_1.41      xfun_0.36       digest_0.6.31   rlang_1.0.6
+[13] evaluate_0.20
+
+
+From kry|ov@r00t @end|ng |rom gm@||@com  Sat Feb 11 09:33:16 2023
+From: kry|ov@r00t @end|ng |rom gm@||@com (Ivan Krylov)
+Date: Sat, 11 Feb 2023 11:33:16 +0300
+Subject: [Rd] scan(..., skip=1e11): infinite loop; cannot interrupt
+In-Reply-To: <acf79875-5042-1db1-5283-836dedd7f8a0@prodsyse.com>
+References: <acf79875-5042-1db1-5283-836dedd7f8a0@prodsyse.com>
+Message-ID: <20230211113316.44dd813a@Tarkus>
+
+
+On Fri, 10 Feb 2023 23:38:55 -0600
+Spencer Graves <spencer.graves at prodsyse.com> wrote:
+
+> I have a 4.54 GB file that I'm trying to read in chunks using 
+> "scan(..., skip=__)".  It works as expected for small values of
+> "skip" but goes into an infinite loop for "skip=1e11" and similar
+> large values of skip:  I cannot even interrupt it;  I must kill R.
+
+Skipping lines is done by two nested loops. The outer loop counts the
+lines to skip; the inner loop reads characters until it encounters a
+newline or end of file. The outer loop doesn't check for EOF and keeps
+asking for more characters until the inner loop runs at least once for
+every line it wants to skip. The following patch should avoid the
+wait in such cases:
+
+--- src/main/scan.c	(revision 83797)
++++ src/main/scan.c	(working copy)
+@@ -835,7 +835,7 @@
+ attribute_hidden SEXP do_scan(SEXP call, SEXP op, SEXP args, SEXP rho)
+ {
+     SEXP ans, file, sep, what, stripwhite, dec, quotes, comstr;
+-    int c, flush, fill, blskip, multiline, escapes, skipNul;
++    int c = 0, flush, fill, blskip, multiline, escapes, skipNul;
+     R_xlen_t nmax, nlines, nskip;
+     const char *p, *encoding;
+     RCNTXT cntxt;
+@@ -952,7 +952,7 @@
+ 	    if(!data.con->canread)
+ 		error(_("cannot read from this connection"));
+ 	}
+-	for (R_xlen_t i = 0; i < nskip; i++) /* MBCS-safe */
++	for (R_xlen_t i = 0; i < nskip && c != R_EOF; i++) /* MBCS-safe */
+ 	    while ((c = scanchar(FALSE, &data)) != '\n' && c != R_EOF);
+     }
+ 
+
+Making it interruptible is a bit more work: we need to ensure that a
+valid context is set up and check regularly for an interrupt.
+
+--- src/main/scan.c	(revision 83797)
++++ src/main/scan.c	(working copy)
+@@ -835,7 +835,7 @@
+ attribute_hidden SEXP do_scan(SEXP call, SEXP op, SEXP args, SEXP rho)
+ {
+     SEXP ans, file, sep, what, stripwhite, dec, quotes, comstr;
+-    int c, flush, fill, blskip, multiline, escapes, skipNul;
++    int c = 0, flush, fill, blskip, multiline, escapes, skipNul;
+     R_xlen_t nmax, nlines, nskip;
+     const char *p, *encoding;
+     RCNTXT cntxt;
+@@ -952,8 +952,6 @@
+ 	    if(!data.con->canread)
+ 		error(_("cannot read from this connection"));
+ 	}
+-	for (R_xlen_t i = 0; i < nskip; i++) /* MBCS-safe */
+-	    while ((c = scanchar(FALSE, &data)) != '\n' && c != R_EOF);
+     }
+ 
+     ans = R_NilValue;		/* -Wall */
+@@ -966,6 +964,10 @@
+     cntxt.cend = &scan_cleanup;
+     cntxt.cenddata = &data;
+ 
++    if (ii) for (R_xlen_t i = 0, j = 0; i < nskip && c != R_EOF; i++) /* MBCS-safe */
++	while ((c = scanchar(FALSE, &data)) != '\n' && c != R_EOF)
++	    if (j++ % 10000 == 9999) R_CheckUserInterrupt();
++
+     switch (TYPEOF(what)) {
+     case LGLSXP:
+     case INTSXP:
+
+This way, even if you pour a Decanter of Endless Lines (e.g. mkfifo
+LINES; perl -E'print "A"x42 while 1;' > LINES) into scan(), it can
+still be interrupted, even if neither newline nor EOF ever arrives.
+(We never skip lines when reading from the console? I suppose it makes
+sense. I think this needs to be documented and can write a
+documentation patch.)
+
+If you actually have 1e11 lines in your file and would like to read it
+in chunks, it may help to use
+
+f <- file('...')
+chunk1 <- scan(f, n = n1, skip = nskip1)
+# the following will continue reading where chunk1 had ended
+chunk2 <- scan(f, n = n2, skip = nskip2)
+
+...in order to avoid having to skip over chunks you have already read,
+which otherwise makes the algorithm quadratic in number of lines
+instead of linear. (I couldn't determine whether you're already doing
+this, sorry.)
+
+Skipping a fixed number of lines is hard: since they have variable
+length, it's required to read every character in order to determine
+whether it starts a new line. With byte ranges, it would have been
+possible to use seek(), but not here.
+
+-- 
+Best regards,
+Ivan
+
+
+From D@v|d@C@Sterr@tt @end|ng |rom ed@@c@uk  Sat Feb 11 12:12:04 2023
+From: D@v|d@C@Sterr@tt @end|ng |rom ed@@c@uk (David Sterratt)
+Date: Sat, 11 Feb 2023 11:12:04 +0000
+Subject: [Rd] Unable to load Windows NETIO.SYS and WINSPOOL.DRV DLLs
+Message-ID: <64d8c5ea00cccbbd6bb7f92a506e97d2e9f5168a.camel@ed.ac.uk>
+
+I am trying to build the RGtk2 package
+(https://github.com/lawremi/RGtk2) using R-devel and only the libraries
+bundled with RTookl4.3 (currently RGtk2 is bundled with a compiled dll
+and requires GTK libraries to be downloaded after installation into R).
+
+I have used the instructions at
+https://cran.r-project.org/bin/windows/base/howto-R-4.2.html
+to create a Makevars.win file (appended, including description of how
+the PKG_LIBS have been set).
+
+The package can be installed, but the shared object created can't be
+loaded:
+
+   > library(RGtk2)
+   Error in inDL(x, as.logical(local), as.logical(now), ...) :
+     unable to load shared object 'C:/Users/David
+   Sterratt/AppData/Local/R/win-library/4.3/RGtk2/libs/x
+   64/RGtk2.dll':
+     LoadLibrary failure:  The specified module could not be found.
+
+WinDbg output reveals errors loading "NETIO.SYS" and "WINSPOOL.DRV"
+when running "library(RGtk2)":
+
+   0c64:0640 @ 44312812 - LdrpProcessWork - ERROR: Unable to load DLL:
+"NETIO.SYS", Parent Module: "C:\Users\David
+Sterratt\AppData\Local\R\win-library\4.3\RGtk2\libs\x64\RGtk2.dll",
+Status: 0xc0000135
+   ...
+   0c64:1e5c @ 44312812 - LdrpProcessWork - ERROR: Unable to load DLL:
+"WINSPOOL.DRV", Parent Module: "C:\Users\David
+Sterratt\AppData\Local\R\win-library\4.3\RGtk2\libs\x64\RGtk2.dll",
+Status: 0xc0000135
+   ...
+   0c64:00e4 @ 44312828 - LdrpProcessWork - ERROR: Unable to load DLL:
+"C:\Users\David Sterratt\AppData\Local\R\win-
+library\4.3\RGtk2\libs\x64\RGtk2.dll", Parent Module: "(null)", Status:
+0xc0000135
+
+I'm stuck at this point: I'm not a regular Windows User, and I've not
+been able to find any trustworthy advice online about how to deal with
+missing DLLs. Any help would be appreciated.
+
+There is an issue on Github about this issue with full output from
+WinDbg:
+https://github.com/lawremi/RGtk2/issues/9
+
+Best wishes,
+
+David
+
+* * *
+
+Contents of Makevars.win:
+
+# Use the linking_order script to determine library order
+# Install the latest version of R-devel from
+https://cran.r-project.org/
+# Install Rtools43 from https://cran.r-project.org/
+# Open the Rtools43 Bash shell
+## Set Paths to R and various tools
+# export PATH="/c/Program Files/R/R-devel/bin":$PATH
+# export PATH=/x86_64-w64-mingw32.static.posix/bin/:$PATH
+## Install pkg-config and add path
+# pacman -Syy pkg-config
+# PKG_CONFIG_PATH=/x86_64-w64-
+mingw32.static.posix/lib/pkgconfig/:$PKG_CONFIG_PATH
+
+# Install a package in R using install.pacakges(), which will set the
+personal library path
+# https://cran.r-project.org/bin/windows/base/howto-R-4.2.html
+#  ./linking_order/findLinkingOrder RGtk2/RGtk2/ /tmp/RGtk2.libs
+/c/rtools42/x86_64-w64-mingw32.static.posix/lib
+
+# pkg-config.exe --static --cflags  gtk+-2.0
+# Add these flags: -D_R_=1 -DUSE_R=1 -I. -I../inst/include
+PKG_CPPFLAGS = -I/usr/lib/mxe/usr/x86_64-w64-
+mingw32.static.posix/include/pango-1.0 -I/usr/lib/mxe/usr/x86_64-w64-
+mingw32.static.posix/include/gtk-2.0 -I/usr/lib/mxe/usr/x86_64-w64-
+mingw32.static.posix/lib/gtk-2.0/include -I/usr/lib/mxe/usr/x86_64-w64-
+mingw32.static.posix/include/atk-1.0 -I/usr/lib/mxe/usr/x86_64-w64-
+mingw32.static.posix/include -I/usr/lib/mxe/usr/x86_64-w64-
+mingw32.static.posix/include/cairo -I/usr/lib/mxe/usr/x86_64-w64-
+mingw32.static.posix/include/gdk-pixbuf-2.0 -DPCRE2_STATIC -
+I/usr/lib/mxe/usr/x86_64-w64-mingw32.static.posix/include/libpng16 -
+I/usr/lib/mxe/usr/x86_64-w64-mingw32.static.posix/include/harfbuzz -
+I/usr/lib/mxe/usr/x86_64-w64-mingw32.static.posix/include/fribidi -
+DFRIBIDI_LIB_STATIC -I/usr/lib/mxe/usr/x86_64-w64-
+mingw32.static.posix/include/freetype2 -I/usr/lib/mxe/usr/x86_64-w64-
+mingw32.static.posix/include/glib-2.0 -I/usr/lib/mxe/usr/x86_64-w64-
+mingw32.static.posix/lib/glib-2.0/include -I/usr/lib/mxe/usr/x86_64-
+w64-mingw32.static.posix/include/pixman-1 -pthread -mms-bitfields -
+D_R_=1 -DUSE_R=1 -I. -I../inst/include
+
+# Use the linking_order script to determine library order by setting
+# the PKG_LIBS below, then running (repeatedly)
+# ./linking_order/findLinkingOrder RGtk2/RGtk2/ /tmp/RGtk2.libs
+# PKG_LIBS = -Wl,--no-demangle $(shell cat /tmp/RGtk2.libs)
+
+# This is the set of PKG_LIBS found by findLinkingOrder
+# PKG_LIBS = -lgtk-win32-2.0 -lwinspool -lspoolss -lgdk-win32-2.0 -
+lcomdlg32 -lcomctl32 -latk-1.0 -lpangocairo-1.0 -lgdk_pixbuf-2.0 -
+lpangowin32-1.0 -lpangoft2-1.0 -lcairo -ldwrite -lpango-1.0 -lpixman-1
+-lmsimg32 -lfontconfig -lgio-2.0 -lfribidi -lexpat -lnetio -liphlpapi -
+lgobject-2.0 -lgmodule-2.0 -ldnsapi -lffi -lharfbuzz_too -lfreetype_too
+-lharfbuzz -lglib-2.0 -lfreetype -luuid -lpcre2-8 -lpng16 -lpng -lbz2 -
+lole32 -limm32 -lgdi32 -ltiff -lwebpdecoder -lwebp -llzma -ljpeg -
+lcfitsio -lzstd -lz -lintl -liconv -lwsock32 -lws2_32 -lshlwapi
+
+# There are duplicated symbols between -lcfitsio and -lz - remove -
+lcfitsio
+PKG_LIBS = -lgtk-win32-2.0 -lwinspool -lspoolss -lgdk-win32-2.0 -
+lcomdlg32 -lcomctl32 -latk-1.0 -lpangocairo-1.0 -lgdk_pixbuf-2.0 -
+lpangowin32-1.0 -lpangoft2-1.0 -lcairo -ldwrite -lpango-1.0 -lpixman-1
+-lmsimg32 -lfontconfig -lgio-2.0 -lfribidi -lexpat -lnetio -liphlpapi -
+lgobject-2.0 -lgmodule-2.0 -ldnsapi -lffi -lharfbuzz_too -lfreetype_too
+-lharfbuzz -lglib-2.0 -lfreetype -luuid -lpcre2-8 -lpng16 -lpng -lbz2 -
+lole32 -limm32 -lgdi32 -ltiff -lwebpdecoder -lwebp -llzma -ljpeg -lzstd
+-lz -lintl -liconv -lwsock32 -lws2_32 -lshlwapi
+
+
+--
+David Sterratt, Lecturer https://www.ed.ac.uk/profile/sterratt
+Institute for Adaptive and Neural Computation     tel: +44 131 651 1739
+School of Informatics, University of Edinburgh
+Appleton Tower, 11 Crichton Street, Edinburgh EH8 9LE, Scotland
+* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+BOOK: Principles of Computational Modelling in Neuroscience
+Sterratt, Graham, Gillies & Willshaw (CUP, 2011).
+http://www.compneuroprinciples.org
+
+
+
+The University of Edinburgh is a charitable body, registered in Scotland, with registration number SC005336. Is e buidheann carthannais a th? ann an Oilthigh Dh?n ?ideann, cl?raichte an Alba, ?ireamh cl?raidh SC005336.
+
+From pdev@|p|ne @end|ng |rom berke|ey@edu  Sat Feb 11 19:01:35 2023
+From: pdev@|p|ne @end|ng |rom berke|ey@edu (Perry de Valpine)
+Date: Sat, 11 Feb 2023 10:01:35 -0800
+Subject: [Rd] inconsistent use of optim's parscale in Hessian vs gradient
+Message-ID: <CABeTmqjnREecftHjosBg1X46J=uRmQuZbkzhqaSz3aEdZt3Vfw@mail.gmail.com>
+
+Dear r-devel:
+
+I noticed that optim's finite-element derivative approximations operate on
+par/parscale for the gradient (as documented in help(optim)) but on par for
+the Hessian. (The same goes for optimHess, which calls the same Hessian
+code.)  This seems odd, so I am wondering if it is intended.
+
+Maybe this is all well known, and thanks if all it takes is pointing me to
+any existing information on it.
+
+Here is an example (all toy values). When parscale has its default value of
+1, the issue doesn't arise.  By printing the input, we can see what grid
+points are being used.
+
+foo <- function(x) {print(x); x^4}
+.External2(stats:::C_optimhess, 1, foo, NULL, list(fnscale = 1, parscale =
+1, ndeps = 0.02))
+
+With parscale = 1 and ndeps = 0.02, the grid points for 2nd derivative at x
+= 1 are:
+x + 0.02, x - 0.02
+and then the grid points for the 1st derivative around each of those are
+x + 0.02 + 0.02, x + 0.02 - 0.02 for the first (around x + 0.02), and
+x - 0.02 + 0.02, x - 0.02 - 0.02 for the second (around x - 0.02).
+
+This all makes sense. There is no problem yet.  (There is one more function
+evaluation than needed, but that's not the point.)
+
+(BTW, I'm evaluating the Hessian at 1 instead of the optimum at 0 for
+illustration, but really it is just the grid points that illustrate the
+issue.)
+
+But with parscale != 1, we can see that the epsilons are used on different
+scales at different steps:
+
+.External2(stats:::C_optimhess, 1, foo, NULL, list(fnscale = 1, parscale =
+3, ndeps = 0.02))
+
+The grid points for the 2nd derivative at x = 1 are the same as above, so
+they are on the par scale:
+x + 0.02, x - 0.02
+but the grid points for the 1st derivatives then use par/parscale, giving
+x + 0.02 + 0.06, x + 0.02 - 0.06 for the first, and
+x - 0.02 + 0.06, x - 0.02 - 0.06 for the second
+
+The 0.06 increments are from 0.02 increments on par/parscale, which is then
+multiplied by parscale=3 before calling foo.  Is this intended?
+
+I believe the 2nd derivative increments on the scale of par occur at lines
+461-462 of src/library/stats/src/optim.c, in optimhess, and the 1st
+derivative increments on the scale of par/parscale occur at lines 138 and
+146 of the same file, in fmingr.
+
+A curious consequence in two dimensions is that the Hessian with respect to
+x[1] and then x[2] uses a different four grid points than the Hessian with
+respect to x[2] and then x[1], if they have different parscales.
+
+foo2 <- function(x) {print(x); sum(x^4)}
+.External2(stats:::C_optimhess, c(1,1), foo2,
+           NULL, list(fnscale = 1, parscale = c(3,2), ndeps = c(0.02,
+0.02)))
+
+This prints the input x values from 16 calls to foo2, comprising 4 calls
+for each of the 4 Hessian elements.
+
+The grid points for dx[1] dx[2] are lines 3-4 and 7-8 of the output, which
+are
+[1] 1.02 1.04
+[1] 1.02 0.96
+[1] 0.98 1.04
+[1] 0.98 0.96
+So the dx[1] steps are on par while the dx[2] steps are on par/parscale.
+
+The grid points for dx[2] dx[1] are lines 9-10 and 13-14 of the output,
+which are
+[1] 1.06 1.02
+[1] 0.94 1.02
+[1] 1.06 0.98
+[1] 0.94 0.98
+So the dx[2] steps are on par while the dx[1] steps are on par/parscale.
+
+The code on lines 472-477 of optim.c symmetrizes the two approximations of
+the same second derivative (from dx[1] dx[2] and dx[2] dx[1]) by
+averaging.  This may be helpful numerically in any case, but was it
+intended to be averaging over two potentially different grid schemes?
+
+That these are the grid points being used can be confirmed by direct
+computation and comparison to the value returned by optimHess.
+
+Thanks for any insight on this.
+Perry
+
+	[[alternative HTML version deleted]]
+
+
+From ch|r|com @end|ng |rom goog|e@com  Sun Feb 12 06:07:39 2023
+From: ch|r|com @end|ng |rom goog|e@com (Michael Chirico)
+Date: Sat, 11 Feb 2023 21:07:39 -0800
+Subject: [Rd] Line-terminal \ in character consants -- missing from ?Quotes ?
+Message-ID: <CAD7Bkx91sEPFAwSc_od5UgOZ7tW9=k43hRgWVi8srv2nnLgh9w@mail.gmail.com>
+
+I'm coming across some code that uses the fact the parser ignores a
+line-terminal '\', e.g.
+
+identical("\
+", "\n")
+# [1] TRUE
+
+x = "abc \
+def"
+y = "abc \ndef"
+identical(x, y)
+# [1] TRUE
+
+However:
+identical("\\n", "\n")
+# [1] FALSE
+
+This appears to be undocumented behavior; the closest thing I see in
+?Quotes suggests it should be an error:
+
+> Escaping a character not in the following table is an error.
+
+('\n' is in the table, but my understanding is the 'n' is what's being
+escaped v-a-v the "error", which seems confirmed by the third, FALSE,
+example above)
+
+Is this a bug, is the omission from ?Quotes a bug, or is this just
+undocumented behavior?
+
+Mike C
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Sun Feb 12 12:38:28 2023
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Sun, 12 Feb 2023 06:38:28 -0500
+Subject: [Rd] 
+ Line-terminal \ in character consants -- missing from ?Quotes ?
+In-Reply-To: <CAD7Bkx91sEPFAwSc_od5UgOZ7tW9=k43hRgWVi8srv2nnLgh9w@mail.gmail.com>
+References: <CAD7Bkx91sEPFAwSc_od5UgOZ7tW9=k43hRgWVi8srv2nnLgh9w@mail.gmail.com>
+Message-ID: <2461a1f3-4be7-54df-a37c-3e789fb875cb@gmail.com>
+
+On 12/02/2023 12:07 a.m., Michael Chirico via R-devel wrote:
+> I'm coming across some code that uses the fact the parser ignores a
+> line-terminal '\', e.g.
+> 
+> identical("\
+> ", "\n")
+> # [1] TRUE
+> 
+> x = "abc \
+> def"
+> y = "abc \ndef"
+> identical(x, y)
+> # [1] TRUE
+> 
+> However:
+> identical("\\n", "\n")
+> # [1] FALSE
+> 
+> This appears to be undocumented behavior; the closest thing I see in
+> ?Quotes suggests it should be an error:
+> 
+>> Escaping a character not in the following table is an error.
+> 
+> ('\n' is in the table, but my understanding is the 'n' is what's being
+> escaped v-a-v the "error", which seems confirmed by the third, FALSE,
+> example above)
+> 
+> Is this a bug, is the omission from ?Quotes a bug, or is this just
+> undocumented behavior?
+
+In your first example, you have a backslash which says to escape the 
+next char.  The next char is a newline char.  The result is an escaped 
+newline, which apparently is a newline.
+
+The same thing happens in the second example.
+
+The third example is an escaped backslash, i.e. a backslash, followed by 
+n.  That's not the same as an escaped n, which gives a newline.
+
+So I think the behaviour might be reasonable.
+
+The thing I'd worry about is whether things are handled properly on 
+Windows, where the newline is two characters (CR LF).  It might be that 
+the backslash at the end of the line escapes the CR, and you get a \r 
+out of it instead of a \n.  But maybe not, the parser knows about CR LF 
+and internally converts it to \n, so if that happens early enough, 
+things would be fine.
+
+Duncan Murdoch
+
+
+From ch|r|com @end|ng |rom goog|e@com  Sun Feb 12 19:39:19 2023
+From: ch|r|com @end|ng |rom goog|e@com (Michael Chirico)
+Date: Sun, 12 Feb 2023 10:39:19 -0800
+Subject: [Rd] 
+ Line-terminal \ in character consants -- missing from ?Quotes ?
+In-Reply-To: <2461a1f3-4be7-54df-a37c-3e789fb875cb@gmail.com>
+References: <CAD7Bkx91sEPFAwSc_od5UgOZ7tW9=k43hRgWVi8srv2nnLgh9w@mail.gmail.com>
+ <2461a1f3-4be7-54df-a37c-3e789fb875cb@gmail.com>
+Message-ID: <CAD7Bkx-FxG_3i1Doszd5uYMA2ztfLyFYMWe6XEw4FZuGQ_jc0Q@mail.gmail.com>
+
+I'm still hung up on ?Quotes -- I can't see mention of 'newline' as a
+valid escape. It mentions the literal sequence '\' 'n', where 'n' is
+being escaped.
+
+Glanced at the parser blame and apparently the terminal '\' is the
+older behavior, and what I'm used to, i.e. literal newlines in char
+constants to make multi-line strings, is new (though still 20 years
+old):
+
+https://github.com/r-devel/r-svn/commit/bc3f20e4e686be556877bb6bd2882ae8029fd17f
+
+The NEWS entry there does say the same thing as you -- "escaping the
+newlines with backslashes".
+
+>From the parser, I think ?Quotes is just missing "newline" as being a
+valid escaped character, c.f.
+
+https://github.com/r-devel/r-svn/blob/f55b24945d56e824f124638c596b99887441354a/src/main/gram.y#L2823-L2830
+('\n' is treated like '\')
+https://github.com/r-devel/r-svn/blob/f55b24945d56e824f124638c596b99887441354a/src/main/gram.y#L2978-L3008
+('\n' is in the list of valid items after '\')
+
+I don't see any special handling for '\r', so there may be a gap in
+the R parser? Or I just don't understand what I'm reading in the
+parser :)
+
+Mike C
+
+On Sun, Feb 12, 2023 at 3:38 AM Duncan Murdoch <murdoch.duncan at gmail.com> wrote:
+>
+> On 12/02/2023 12:07 a.m., Michael Chirico via R-devel wrote:
+> > I'm coming across some code that uses the fact the parser ignores a
+> > line-terminal '\', e.g.
+> >
+> > identical("\
+> > ", "\n")
+> > # [1] TRUE
+> >
+> > x = "abc \
+> > def"
+> > y = "abc \ndef"
+> > identical(x, y)
+> > # [1] TRUE
+> >
+> > However:
+> > identical("\\n", "\n")
+> > # [1] FALSE
+> >
+> > This appears to be undocumented behavior; the closest thing I see in
+> > ?Quotes suggests it should be an error:
+> >
+> >> Escaping a character not in the following table is an error.
+> >
+> > ('\n' is in the table, but my understanding is the 'n' is what's being
+> > escaped v-a-v the "error", which seems confirmed by the third, FALSE,
+> > example above)
+> >
+> > Is this a bug, is the omission from ?Quotes a bug, or is this just
+> > undocumented behavior?
+>
+> In your first example, you have a backslash which says to escape the
+> next char.  The next char is a newline char.  The result is an escaped
+> newline, which apparently is a newline.
+>
+> The same thing happens in the second example.
+>
+> The third example is an escaped backslash, i.e. a backslash, followed by
+> n.  That's not the same as an escaped n, which gives a newline.
+>
+> So I think the behaviour might be reasonable.
+>
+> The thing I'd worry about is whether things are handled properly on
+> Windows, where the newline is two characters (CR LF).  It might be that
+> the backslash at the end of the line escapes the CR, and you get a \r
+> out of it instead of a \n.  But maybe not, the parser knows about CR LF
+> and internally converts it to \n, so if that happens early enough,
+> things would be fine.
+>
+> Duncan Murdoch
+>
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Mon Feb 13 14:37:22 2023
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Mon, 13 Feb 2023 08:37:22 -0500
+Subject: [Rd] An interesting chat with ChatGPT
+Message-ID: <3d7bd521-d670-4b90-6be4-a3528d726f5b@gmail.com>
+
+I was wondering which anchor would match in the regular expression 
+"(a)|(b)" if both "a" and "b" matches the target string.  What appears 
+to happen is that the first match wins, and that's how it is documented 
+in Python, but I was looking for docs on this in R.
+
+As far as I can see, the ?regex help page doesn't resolve this. So just 
+for fun, I decided to ask ChatGPT, and got an interesting response.  I 
+won't show the whole conversation here, but just some extracts:
+
+---------------------------------------
+Me:  In a regular expression in R, if both "a" and "b" match, which does 
+"(a)|(b)" match?  Please include authoritative references in your answer.
+
+ChatGPT: [long answer about grep]
+
+Me:  In grep(), it doesn't matter which of a or b matches.  It's only in 
+sub() or gsub() that it makes a difference.  Do you know an 
+authoritative reference that discusses those functions?
+
+ChatGPT:  [long irrelevant answer about sub and gsub, with a reference 
+to "R Cookbook" by P. Teetor.]
+
+Me:  Teetor's book is not authoritative, and the other reference doesn't 
+discuss ambiguous alternation.
+
+... finally we get to the interesting part ...
+
+ChatGPT: I apologize for the mistake in my previous answer.
+
+A more authoritative reference for the behavior of regular expressions 
+in R can be found in the official R documentation.
+
+Regarding the behavior of ambiguous alternation, the regex section of 
+the manual "An Introduction to R" explains it as follows:
+
+"When several alternatives are possible, the first alternative is 
+chosen, so it is important to specify alternatives in the order in which 
+they should be tried."
+
+Here is the reference for the official R documentation:
+
+     "An Introduction to R" manual: 
+https://cran.r-project.org/doc/manuals/r-release/R-intro.html#Regular-expression-facilities
+
+I hope this reference provides the information you were looking for.
+---------------------------------------
+
+
+All right, an authoritative answer!  The only problem is that *it 
+doesn't exist*.  There's no such anchor in that document.  R-intro isn't 
+a very rapidly changing document, so I could look at every change 
+recorded in svn, and that section has *never* existed.
+
+I guess ChatGPT is a pattern matching machine, and if such a question 
+had an answer, it would probably be in a location like that.  (I would 
+have guessed a help page like ?regex instead of R-intro, but I had just 
+told it that answer was wrong.)
+
+Duncan Murdoch
+
+
+From @eb@meyer @end|ng |rom |@u@de  Mon Feb 13 15:44:44 2023
+From: @eb@meyer @end|ng |rom |@u@de (Sebastian Meyer)
+Date: Mon, 13 Feb 2023 15:44:44 +0100
+Subject: [Rd] R2HTML doesn't split paragraphs originating from
+ \Sexpr[results=rd]
+In-Reply-To: <20230205160425.1e35a036@Tarkus>
+References: <20230205160425.1e35a036@Tarkus>
+Message-ID: <592b33e5-1bc4-f87b-7ff5-8293545eacbe@fau.de>
+
+I can confirm this is a bug, more specifically, a regression in R >= 
+3.6.0. I think a report in R's Bugzilla would be useful.
+
+A possible workaround seems to be to start the Rd-generating \Sexpr in 
+column 1 of the Rd file, so to remove the indentation before \Sexpr.
+
+AFAICS, fixing this will require tools:::processRdChunk() to keep two 
+types of source references for dynamically generated Rd code: the 
+effective "srcref" from parsing the Rd fragment, and the one that refers 
+to the source Sexpr block (possibly called "wholeSrcref"), to be used by 
+checkRd() in preference to "srcref" when reporting the location of Rd 
+problems.
+
+	Sebastian Meyer
+
+
+Am 05.02.23 um 14:04 schrieb Ivan Krylov:
+> Hello,
+> 
+> Here's an example that renders correctly using Rd2txt / Rd2latex / R
+> CMD Rd2pdf, but has problems under Rd2HTML:
+> 
+> \name{foo}
+> \title{foo}
+> \section{foo}{
+>    This should be on a separate paragraph
+> 
+>    This should be on a separate paragraph
+> 
+>    This should be on a separate paragraph
+> 
+>    \Sexpr[stage=render,results=rd]{
+>      paste(
+>        rep('Sexpr: This should be on a separate paragraph', 3),
+>        collapse = '\n\n'
+>      )
+>    }
+> }
+> 
+> For the text I've typed manually, there are <p>...</p> tags splitting
+> the text separated by empty lines into paragraphs. The \Sexpr return
+> value only has newlines, which joints the paragraphs together:
+> 
+> <p>This should be on a separate paragraph
+> </p>
+> <p>This should be on a separate paragraph
+> </p>
+> <p>This should be on a separate paragraph
+> </p>
+> <p>Sexpr: This should be on a separate paragraph
+> 
+> Sexpr: This should be on a separate paragraph
+> 
+> Sexpr: This should be on a separate paragraph
+> </p>
+> 
+> addParaBreaks() is prevented from closing the paragraph tag because
+> tools:::isBlankLineRd() returns FALSE for blank lines produced by a
+> \Sexpr. This happens because utils:::getSrcByte() not 1 for these blank
+> lines. That, in turn, is because the source reference for \Sexpr values
+> is the whole \Sexpr tag:
+> 
+> # blank line from a \Sexpr
+> Rd[[3]][[2]][[9]][[2]]
+> # [1] "\n"
+> # attr(,"Rd_tag")
+> # [1] "TEXT"
+> getSrcref(Rd[[3]][[2]][[9]][[2]])
+> # \Sexpr[stage=render,results=rd]{
+> #   paste(
+> #     rep('Sexpr: This should be on a separate paragraph', 3),
+> #     collapse = '\n\n'
+> #   )
+> # }
+> 
+> # artisanal hand-crafted blank line
+> Rd[[3]][[2]][[7]]
+> # [1] "\n"
+> # attr(,"Rd_tag")
+> # [1] "TEXT"
+> summary(getSrcref(Rd[[3]][[2]][[7]]))
+> # <srcref: file "~/foo.Rd" chars 9:1 to 9:1>
+> 
+> I think I understand that tools:::isBlankLineRd requires
+> utils:::getSrcByte(x) == 1L because it may be called on things like
+> "\\eqn{0}\n" where the terminal "\n" might otherwise be considered a
+> "blank line". How to reconcile isBlankLineRd with blank lines not
+> directly originating from Rd source?
+> 
+> Rd2latex might have a similar problem (its addParaBreaks() checks for
+> isBlankLineRd()), but then it works anyway because Rd rules for
+> paragraph breaks on blank lines are the same as in LaTeX.
+>
+
+
+From bor|@@@te|pe @end|ng |rom utoronto@c@  Mon Feb 13 16:54:43 2023
+From: bor|@@@te|pe @end|ng |rom utoronto@c@ (Boris Steipe)
+Date: Mon, 13 Feb 2023 15:54:43 +0000
+Subject: [Rd] An interesting chat with ChatGPT
+In-Reply-To: <3d7bd521-d670-4b90-6be4-a3528d726f5b@gmail.com>
+References: <3d7bd521-d670-4b90-6be4-a3528d726f5b@gmail.com>
+Message-ID: <3909C1CD-AC89-465F-81E2-98D46ECE01AA@utoronto.ca>
+
+Duncan -
+
+Indeed, this has now been well documented; I have called these constructions "Schr?dinger Facts", since they arise from a superposition of truths in the training data that collapse into an untruth when observed.
+
+   https://sentientsyllabus.substack.com/p/chatgpts-achilles-heel
+
+Now, the curious question is: why can it program. Why is its production of R-syntax less vulnerable to this effect than a literature quote, or reference? Maybe it has to do with the fact that in producing correct syntax there is a ground truth - errors just will not run. But I'm not sure.
+
+Regardless: it signals that we need a reinvigorated culture of validation. Actually ChatGPT will happily make test data for you. Whisvh. in a way, it judt did  ;-)
+
+
+Boris
+
+
+
+
+> On 2023-02-13, at 08:37, Duncan Murdoch <murdoch.duncan at gmail.com> wrote:
+> 
+> I was wondering which anchor would match in the regular expression "(a)|(b)" if both "a" and "b" matches the target string.  What appears to happen is that the first match wins, and that's how it is documented in Python, but I was looking for docs on this in R.
+> 
+> As far as I can see, the ?regex help page doesn't resolve this. So just for fun, I decided to ask ChatGPT, and got an interesting response.  I won't show the whole conversation here, but just some extracts:
+> 
+> ---------------------------------------
+> Me:  In a regular expression in R, if both "a" and "b" match, which does "(a)|(b)" match?  Please include authoritative references in your answer.
+> 
+> ChatGPT: [long answer about grep]
+> 
+> Me:  In grep(), it doesn't matter which of a or b matches.  It's only in sub() or gsub() that it makes a difference.  Do you know an authoritative reference that discusses those functions?
+> 
+> ChatGPT:  [long irrelevant answer about sub and gsub, with a reference to "R Cookbook" by P. Teetor.]
+> 
+> Me:  Teetor's book is not authoritative, and the other reference doesn't discuss ambiguous alternation.
+> 
+> ... finally we get to the interesting part ...
+> 
+> ChatGPT: I apologize for the mistake in my previous answer.
+> 
+> A more authoritative reference for the behavior of regular expressions in R can be found in the official R documentation.
+> 
+> Regarding the behavior of ambiguous alternation, the regex section of the manual "An Introduction to R" explains it as follows:
+> 
+> "When several alternatives are possible, the first alternative is chosen, so it is important to specify alternatives in the order in which they should be tried."
+> 
+> Here is the reference for the official R documentation:
+> 
+>    "An Introduction to R" manual: https://cran.r-project.org/doc/manuals/r-release/R-intro.html#Regular-expression-facilities
+> 
+> I hope this reference provides the information you were looking for.
+> ---------------------------------------
+> 
+> 
+> All right, an authoritative answer!  The only problem is that *it doesn't exist*.  There's no such anchor in that document.  R-intro isn't a very rapidly changing document, so I could look at every change recorded in svn, and that section has *never* existed.
+> 
+> I guess ChatGPT is a pattern matching machine, and if such a question had an answer, it would probably be in a location like that.  (I would have guessed a help page like ?regex instead of R-intro, but I had just told it that answer was wrong.)
+> 
+> Duncan Murdoch
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+--
+Boris Steipe MD, PhD
+
+Professor em.
+Department of Biochemistry 
+Temerty Faculty of Medicine
+University of Toronto
+
+
+
+
+From kev|n@r@coombe@ @end|ng |rom gm@||@com  Mon Feb 13 18:14:28 2023
+From: kev|n@r@coombe@ @end|ng |rom gm@||@com (Kevin Coombes)
+Date: Mon, 13 Feb 2023 12:14:28 -0500
+Subject: [Rd] An interesting chat with ChatGPT
+In-Reply-To: <3909C1CD-AC89-465F-81E2-98D46ECE01AA@utoronto.ca>
+References: <3d7bd521-d670-4b90-6be4-a3528d726f5b@gmail.com>
+ <3909C1CD-AC89-465F-81E2-98D46ECE01AA@utoronto.ca>
+Message-ID: <CAHJ+2V+bqqD5UZ_9yPT4H=bLPvPcDNkhOXtQ-1KCu7u6EiJ1xg@mail.gmail.com>
+
+Chat bots are like politicians, or talking dogs. The fact that they exist
+is interesting. But no same person would believe anything they say.
+
+On Mon, Feb 13, 2023, 10:58 AM Boris Steipe <boris.steipe at utoronto.ca>
+wrote:
+
+> Duncan -
+>
+> Indeed, this has now been well documented; I have called these
+> constructions "Schr?dinger Facts", since they arise from a superposition of
+> truths in the training data that collapse into an untruth when observed.
+>
+>    https://sentientsyllabus.substack.com/p/chatgpts-achilles-heel
+>
+> Now, the curious question is: why can it program. Why is its production of
+> R-syntax less vulnerable to this effect than a literature quote, or
+> reference? Maybe it has to do with the fact that in producing correct
+> syntax there is a ground truth - errors just will not run. But I'm not sure.
+>
+> Regardless: it signals that we need a reinvigorated culture of validation.
+> Actually ChatGPT will happily make test data for you. Whisvh. in a way, it
+> judt did  ;-)
+>
+>
+> Boris
+>
+>
+>
+>
+> > On 2023-02-13, at 08:37, Duncan Murdoch <murdoch.duncan at gmail.com>
+> wrote:
+> >
+> > I was wondering which anchor would match in the regular expression
+> "(a)|(b)" if both "a" and "b" matches the target string.  What appears to
+> happen is that the first match wins, and that's how it is documented in
+> Python, but I was looking for docs on this in R.
+> >
+> > As far as I can see, the ?regex help page doesn't resolve this. So just
+> for fun, I decided to ask ChatGPT, and got an interesting response.  I
+> won't show the whole conversation here, but just some extracts:
+> >
+> > ---------------------------------------
+> > Me:  In a regular expression in R, if both "a" and "b" match, which does
+> "(a)|(b)" match?  Please include authoritative references in your answer.
+> >
+> > ChatGPT: [long answer about grep]
+> >
+> > Me:  In grep(), it doesn't matter which of a or b matches.  It's only in
+> sub() or gsub() that it makes a difference.  Do you know an authoritative
+> reference that discusses those functions?
+> >
+> > ChatGPT:  [long irrelevant answer about sub and gsub, with a reference
+> to "R Cookbook" by P. Teetor.]
+> >
+> > Me:  Teetor's book is not authoritative, and the other reference doesn't
+> discuss ambiguous alternation.
+> >
+> > ... finally we get to the interesting part ...
+> >
+> > ChatGPT: I apologize for the mistake in my previous answer.
+> >
+> > A more authoritative reference for the behavior of regular expressions
+> in R can be found in the official R documentation.
+> >
+> > Regarding the behavior of ambiguous alternation, the regex section of
+> the manual "An Introduction to R" explains it as follows:
+> >
+> > "When several alternatives are possible, the first alternative is
+> chosen, so it is important to specify alternatives in the order in which
+> they should be tried."
+> >
+> > Here is the reference for the official R documentation:
+> >
+> >    "An Introduction to R" manual:
+> https://cran.r-project.org/doc/manuals/r-release/R-intro.html#Regular-expression-facilities
+> >
+> > I hope this reference provides the information you were looking for.
+> > ---------------------------------------
+> >
+> >
+> > All right, an authoritative answer!  The only problem is that *it
+> doesn't exist*.  There's no such anchor in that document.  R-intro isn't a
+> very rapidly changing document, so I could look at every change recorded in
+> svn, and that section has *never* existed.
+> >
+> > I guess ChatGPT is a pattern matching machine, and if such a question
+> had an answer, it would probably be in a location like that.  (I would have
+> guessed a help page like ?regex instead of R-intro, but I had just told it
+> that answer was wrong.)
+> >
+> > Duncan Murdoch
+> >
+> > ______________________________________________
+> > R-devel at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+>
+> --
+> Boris Steipe MD, PhD
+>
+> Professor em.
+> Department of Biochemistry
+> Temerty Faculty of Medicine
+> University of Toronto
+>
+>
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+
+	[[alternative HTML version deleted]]
+
+
