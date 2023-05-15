@@ -1,0 +1,3412 @@
+From d@v|@ @end|ng |rom po@|t@co  Mon May  1 14:46:33 2023
+From: d@v|@ @end|ng |rom po@|t@co (Davis Vaughan)
+Date: Mon, 1 May 2023 08:46:33 -0400
+Subject: [Rd] range() for Date and POSIXct could respect `finite = TRUE`
+In-Reply-To: <25677.33376.349216.862139@stat.math.ethz.ch>
+References: <CABzLhzyRuxgHnToS4CPn_g8NOsc6M5Tx+14Sf7X+cjD8NvZgRg@mail.gmail.com>
+ <25677.33376.349216.862139@stat.math.ethz.ch>
+Message-ID: <CABzLhzzq2W3JsDP6KoRfLi0K1roD+3RH8mvnjWs_AnhP3A2SQg@mail.gmail.com>
+
+Martin,
+
+Yes, I missed that those have `Summary.*` methods, thanks!
+
+Tweaking those to respect `finite = TRUE` sounds great. It seems like
+it might be a little tricky since the Summary methods call
+`NextMethod()`, and `range.default()` uses `is.numeric()` to determine
+whether or not to apply `finite`. Because `is.numeric.Date()` is
+defined, that always returns `FALSE` for Dates (and POSIXt). Because
+of that, it may still be easier to just write a specific
+`range.Date()` method, but I'm not sure.
+
+-Davis
+
+On Sat, Apr 29, 2023 at 4:47?PM Martin Maechler
+<maechler at stat.math.ethz.ch> wrote:
+>
+> >>>>> Davis Vaughan via R-devel
+> >>>>>     on Fri, 28 Apr 2023 11:12:27 -0400 writes:
+>
+>     > Hi all,
+>
+>     > I noticed that `range.default()` has a nice `finite =
+>     > TRUE` argument, but it doesn't actually apply to Date or
+>     > POSIXct due to how `is.numeric()` works.
+>
+> Well, I think it would / should never apply:
+>
+> range() belongs to the "Summary" group generics (as min, max, ...)
+>
+> and there  *are*  Summary.Date()  and Summary.POSIX{c,l}t() methods.
+>
+> Without checking further for now, I think you are indirectly
+> suggesting to enhance these three Summary.*() methods so they do
+> obey  'finite = TRUE' .
+>
+> I think I agree they should.
+>
+> Martin
+>
+>     > ``` x <- .Date(c(0, Inf, 1, 2, Inf)) x #> [1] "1970-01-01"
+>     > "Inf" "1970-01-02" "1970-01-03" "Inf"
+>
+>     > # Darn!  range(x, finite = TRUE) #> [1] "1970-01-01" "Inf"
+>
+>     > # What I want .Date(range(unclass(x), finite = TRUE)) #>
+>     > [1] "1970-01-01" "1970-01-03" ```
+>
+>     > I think `finite = TRUE` would be pretty nice for Dates in
+>     > particular.
+>
+>     > As a motivating example, sometimes you have ranges of
+>     > dates represented by start/end pairs. It is fairly natural
+>     > to represent an event that hasn't ended yet with an
+>     > infinite date. If you need to then compute a sequence of
+>     > dates spanning the full range of the start/end pairs, it
+>     > would be nice to be able to use `range(finite = TRUE)` to
+>     > do so:
+>
+>     > ``` start <- as.Date(c("2019-01-05", "2019-01-10",
+>     > "2019-01-11", "2019-01-14")) end <-
+>     > as.Date(c("2019-01-07", NA, "2019-01-14", NA))
+>     > end[is.na(end)] <- Inf
+>
+>     > # `end = Inf` means that the event hasn't "ended" yet
+>     > data.frame(start, end) #> start end #> 1 2019-01-05
+>     > 2019-01-07 #> 2 2019-01-10 Inf #> 3 2019-01-11 2019-01-14
+>     > #> 4 2019-01-14 Inf
+>
+>     > # Create a full sequence along all days in start/end range
+>     > <- .Date(range(unclass(c(start, end)), finite = TRUE))
+>     > seq(range[1], range[2], by = 1) #> [1] "2019-01-05"
+>     > "2019-01-06" "2019-01-07" "2019-01-08" "2019-01-09" #> [6]
+>     > "2019-01-10" "2019-01-11" "2019-01-12" "2019-01-13"
+>     > "2019-01-14" ```
+>
+>     > It seems like one option is to create a `range.Date()`
+>     > method that unclasses, forwards the arguments on to a
+>     > second call to `range()`, and then reclasses?
+>
+>     > ``` range.Date <- function(x, ..., na.rm = FALSE, finite =
+>     > FALSE) { .Date(range(unclass(x), na.rm = na.rm, finite =
+>     > finite), oldClass(x)) } ```
+>
+>     > This is similar to how `rep.Date()` works.
+>
+>     > Thanks, Davis Vaughan
+>
+>     > ______________________________________________
+>     > R-devel at r-project.org mailing list
+>     > https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From kry|ov@r00t @end|ng |rom gm@||@com  Tue May  2 13:59:36 2023
+From: kry|ov@r00t @end|ng |rom gm@||@com (Ivan Krylov)
+Date: Tue, 2 May 2023 14:59:36 +0300
+Subject: [Rd] save.image Non-responsive to Interrupt
+In-Reply-To: <SY2PR01MB300358E3EDF589B5A20227C8CD6B9@SY2PR01MB3003.ausprd01.prod.outlook.com>
+References: <SY2PR01MB300358E3EDF589B5A20227C8CD6B9@SY2PR01MB3003.ausprd01.prod.outlook.com>
+Message-ID: <20230502145936.0ee6dc91@arachnoid>
+
+? Sat, 29 Apr 2023 00:00:02 +0000
+Dario Strbenac via R-devel <r-devel at r-project.org> ?????:
+
+> Could save.image() be redesigned so that it promptly responds to
+> Ctrl+C? It prevents the command line from being used for a number of
+> hours if the contents of the workspace are large.
+
+This is ultimately caused by serialize() being non-interruptible. A
+relatively simple way to hang an R session for a long-ish time would
+therefore be:
+
+f <- xzfile(nullfile(), 'a+b')
+x <- rep(0, 1e9) # approx. 8 gigabytes, adjust for your RAM size
+serialize(x, f)
+close(f)
+
+This means that calling R_CheckUserInterrupt() between saving
+individual objects is not enough: R also needs to check for interrupts
+while saving sufficiently long vectors.
+
+Since the serialize() infrastructure is carefully written to avoid
+resource leaks on allocation failures, it looks relatively safe to
+liberally sprinkle R_CheckUserInterrupt() where it makes sense to do
+so, i.e. once per WriteItem() (which calls itself recursively and
+non-recursively) and once per every downstream for loop iteration.
+Valgrind doesn't show any new leaks if I apply the patch, interrupt
+serialize() and then exit. R also passes make check after the applied
+patch.
+
+Do these changes make sense, or am I overlooking some other problem?
+
+-- 
+Best regards,
+Ivan
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: interrupt-serialize.patch
+Type: text/x-patch
+Size: 4173 bytes
+Desc: not available
+URL: <https://stat.ethz.ch/pipermail/r-devel/attachments/20230502/ab1d7f31/attachment.bin>
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Tue May  2 15:28:48 2023
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Tue, 2 May 2023 15:28:48 +0200
+Subject: [Rd] save.image Non-responsive to Interrupt
+In-Reply-To: <20230502145936.0ee6dc91@arachnoid>
+References: <SY2PR01MB300358E3EDF589B5A20227C8CD6B9@SY2PR01MB3003.ausprd01.prod.outlook.com>
+ <20230502145936.0ee6dc91@arachnoid>
+Message-ID: <25681.4112.978286.30568@stat.math.ethz.ch>
+
+>>>>> Ivan Krylov 
+>>>>>     on Tue, 2 May 2023 14:59:36 +0300 writes:
+
+    > ? Sat, 29 Apr 2023 00:00:02 +0000
+    > Dario Strbenac via R-devel <r-devel at r-project.org> ?????:
+
+    >> Could save.image() be redesigned so that it promptly responds to
+    >> Ctrl+C? It prevents the command line from being used for a number of
+    >> hours if the contents of the workspace are large.
+
+    > This is ultimately caused by serialize() being non-interruptible. A
+    > relatively simple way to hang an R session for a long-ish time would
+    > therefore be:
+
+    > f <- xzfile(nullfile(), 'a+b')
+    > x <- rep(0, 1e9) # approx. 8 gigabytes, adjust for your RAM size
+    > serialize(x, f)
+    > close(f)
+
+    > This means that calling R_CheckUserInterrupt() between saving
+    > individual objects is not enough: R also needs to check for interrupts
+    > while saving sufficiently long vectors.
+
+    > Since the serialize() infrastructure is carefully written to avoid
+    > resource leaks on allocation failures, it looks relatively safe to
+    > liberally sprinkle R_CheckUserInterrupt() where it makes sense to do
+    > so, i.e. once per WriteItem() (which calls itself recursively and
+    > non-recursively) and once per every downstream for loop iteration.
+    > Valgrind doesn't show any new leaks if I apply the patch, interrupt
+    > serialize() and then exit. R also passes make check after the applied
+    > patch.
+
+    > Do these changes make sense, or am I overlooking some other problem?
+
+Thank you, Ivan!
+
+They do make sense... but :
+
+OTOH, in the past we have had to *disable*  R_CheckUserInterrupt()
+in parts of R's code because it was too expensive,
+{see current src/main/{seq.c,unique.c}  for a series of commented-out
+ R_CheckUserInterrupt() for such speed-loss reasons}
+
+so  adding these may need a lot of care when we simultaneously
+want to remain  efficient for "morally valid" use of serialization...
+where we really don't want to pay too much of a premium.
+
+{{ saving the whole user workspace is not "valid" in that sense
+   in my view.  I tell all my (non-beginner) Rstudio-using
+   students they should turn *off* the automatic saving and
+   loading at session end / beginning; and for reproducibility
+   only saveRDS() [or save()] *explicitly* a few precious
+   objects ..
+}}
+
+Again, we don't want to punish people who know what they are
+doing, just because other R users manage to hang their R session
+by too little thinking ... 
+
+Your patch adds 15 such interrupt checking calls which may
+really be too much -- I'm not claiming they are: with our
+recursive objects it's surely not very easy to determine the
+"minimally necessary" such calls.
+
+In addition, we may still consider adding an extra optional
+argument, say   `check.interrupt = TRUE`
+which we may default to TRUE when  save.image() is called
+but e.g., not when serialize() is called..
+
+Martin
+
+    > -- 
+    > Best regards,
+    > Ivan
+    > x[DELETED ATTACHMENT external: Rd_IvanKrylov_interrupt-serialize.patch, text/x-patch]
+    > ______________________________________________
+    > R-devel at r-project.org mailing list
+    > https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From ru@@e|| @end|ng |rom r@|mond@net  Tue May  2 22:42:47 2023
+From: ru@@e|| @end|ng |rom r@|mond@net (Russell Almond)
+Date: Tue, 2 May 2023 16:42:47 -0400
+Subject: [Rd] is(x,"ANY") is FALSE
+Message-ID: <7BAB2953-CF25-484C-925F-CD460AC90A23@ralmond.net>
+
+I?m somewhat puzzled by the following bit of code on R 4.2.3 (also R 4.2.2)
+
+> df <- data.frame(x=1:3)
+> is (df,"ANY")
+[1] FALSE
+
+This seem to be false when the first argument is any S3 class, while I would think that ?ANY? would be true for S3, S4 and reference classes, as well as primitive types.
+
+This also seems to be a regression, as code that was previously working no longer works.
+
+
+A little more context on my use.
+
+I?m defining a slot for a reference class using a type union, 
+setClass(?MongoDB?,c(?NULL?,?ANY?))
+
+[I should be using setOldClass(?mongo?) here, but I was having trouble promoting the S3 ?mongo? class I was getting from the library.]
+
+Then when I try to set the corresopnding slot I?m getting an error, because ?mongo? is not of type MongoDB (even through that is a class union which contains ?ANY?).  
+
+I can work around the problem by setting the slot to type ?ANY?, but then I loose the documentation that the intention is that it should a mongo database connection.
+
+Did I miss something here?  Or is this an unintended consequence of some other change?
+
+Thanks,
+  ?Russell Almond
+
+
+
+
+	[[alternative HTML version deleted]]
+
+
+From jeroenoom@ @end|ng |rom gm@||@com  Wed May  3 00:55:48 2023
+From: jeroenoom@ @end|ng |rom gm@||@com (Jeroen Ooms)
+Date: Wed, 3 May 2023 00:55:48 +0200
+Subject: [Rd] save.image Non-responsive to Interrupt
+In-Reply-To: <25681.4112.978286.30568@stat.math.ethz.ch>
+References: <SY2PR01MB300358E3EDF589B5A20227C8CD6B9@SY2PR01MB3003.ausprd01.prod.outlook.com>
+ <20230502145936.0ee6dc91@arachnoid>
+ <25681.4112.978286.30568@stat.math.ethz.ch>
+Message-ID: <CABFfbXtru7PyV_1ecknsSLg6C3HqzVw9Mja2rybvwM76oOiT5A@mail.gmail.com>
+
+On Tue, May 2, 2023 at 3:29?PM Martin Maechler
+<maechler at stat.math.ethz.ch> wrote:
+>
+> >>>>> Ivan Krylov
+> >>>>>     on Tue, 2 May 2023 14:59:36 +0300 writes:
+>
+>     > ? Sat, 29 Apr 2023 00:00:02 +0000
+>     > Dario Strbenac via R-devel <r-devel at r-project.org> ?????:
+>
+>     >> Could save.image() be redesigned so that it promptly responds to
+>     >> Ctrl+C? It prevents the command line from being used for a number of
+>     >> hours if the contents of the workspace are large.
+>
+>     > This is ultimately caused by serialize() being non-interruptible. A
+>     > relatively simple way to hang an R session for a long-ish time would
+>     > therefore be:
+>
+>     > f <- xzfile(nullfile(), 'a+b')
+>     > x <- rep(0, 1e9) # approx. 8 gigabytes, adjust for your RAM size
+>     > serialize(x, f)
+>     > close(f)
+>
+>     > This means that calling R_CheckUserInterrupt() between saving
+>     > individual objects is not enough: R also needs to check for interrupts
+>     > while saving sufficiently long vectors.
+>
+>     > Since the serialize() infrastructure is carefully written to avoid
+>     > resource leaks on allocation failures, it looks relatively safe to
+>     > liberally sprinkle R_CheckUserInterrupt() where it makes sense to do
+>     > so, i.e. once per WriteItem() (which calls itself recursively and
+>     > non-recursively) and once per every downstream for loop iteration.
+>     > Valgrind doesn't show any new leaks if I apply the patch, interrupt
+>     > serialize() and then exit. R also passes make check after the applied
+>     > patch.
+>
+>     > Do these changes make sense, or am I overlooking some other problem?
+>
+> Thank you, Ivan!
+>
+> They do make sense... but :
+>
+> OTOH, in the past we have had to *disable*  R_CheckUserInterrupt()
+> in parts of R's code because it was too expensive,
+> {see current src/main/{seq.c,unique.c}  for a series of commented-out
+>  R_CheckUserInterrupt() for such speed-loss reasons}
+>
+> so  adding these may need a lot of care when we simultaneously
+> want to remain  efficient for "morally valid" use of serialization...
+> where we really don't want to pay too much of a premium.
+
+Alternatively, one could consider making R throttle or debounce calls
+to R_CheckUserInterrupt such that a repeated calls within x time are
+ignored, cf: https://www.freecodecamp.org/news/javascript-debounce-example/
+
+The reasoning being that it may be difficult for (contributed) code to
+determine when/where it is appropriate to check for interrupts, given
+varying code paths and cpu speed. Maybe it makes more sense to call
+R_CheckUserInterrupt frequently wherever it is safe to do so, and let
+R decide if reasonable time has elapsed to actually run the (possibly
+expensive) ui check again.
+
+Basic example: https://github.com/r-devel/r-svn/pull/125/files
+
+
+
+
+>
+> {{ saving the whole user workspace is not "valid" in that sense
+>    in my view.  I tell all my (non-beginner) Rstudio-using
+>    students they should turn *off* the automatic saving and
+>    loading at session end / beginning; and for reproducibility
+>    only saveRDS() [or save()] *explicitly* a few precious
+>    objects ..
+> }}
+>
+> Again, we don't want to punish people who know what they are
+> doing, just because other R users manage to hang their R session
+> by too little thinking ...
+>
+> Your patch adds 15 such interrupt checking calls which may
+> really be too much -- I'm not claiming they are: with our
+> recursive objects it's surely not very easy to determine the
+> "minimally necessary" such calls.
+>
+> In addition, we may still consider adding an extra optional
+> argument, say   `check.interrupt = TRUE`
+> which we may default to TRUE when  save.image() is called
+> but e.g., not when serialize() is called..
+>
+> Martin
+>
+>     > --
+>     > Best regards,
+>     > Ivan
+>     > x[DELETED ATTACHMENT external: Rd_IvanKrylov_interrupt-serialize.patch, text/x-patch]
+>     > ______________________________________________
+>     > R-devel at r-project.org mailing list
+>     > https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From |@wrence@m|ch@e| @end|ng |rom gene@com  Wed May  3 01:01:41 2023
+From: |@wrence@m|ch@e| @end|ng |rom gene@com (Michael Lawrence (MICHAFLA))
+Date: Tue, 2 May 2023 16:01:41 -0700
+Subject: [Rd] [Sender Not Verified]  is(x,"ANY") is FALSE
+In-Reply-To: <7BAB2953-CF25-484C-925F-CD460AC90A23@ralmond.net>
+References: <7BAB2953-CF25-484C-925F-CD460AC90A23@ralmond.net>
+Message-ID: <CAOQ5Nyes-9gU1=efynk66nEbZc0XvaGVhgky_4o79g9iD6+1mA@mail.gmail.com>
+
+Hi,
+
+This does seem to be a bug in is(); I'll take a look. I'm curious
+about what stopped you from using setOldClass(), since that seems to
+be the most appropriate solution.
+
+Michael
+
+On Tue, May 2, 2023 at 2:59?PM Russell Almond <russell at ralmond.net> wrote:
+>
+> I?m somewhat puzzled by the following bit of code on R 4.2.3 (also R 4.2.2)
+>
+> > df <- data.frame(x=1:3)
+> > is (df,"ANY")
+> [1] FALSE
+>
+> This seem to be false when the first argument is any S3 class, while I would think that ?ANY? would be true for S3, S4 and reference classes, as well as primitive types.
+>
+> This also seems to be a regression, as code that was previously working no longer works.
+>
+>
+> A little more context on my use.
+>
+> I?m defining a slot for a reference class using a type union,
+> setClass(?MongoDB?,c(?NULL?,?ANY?))
+>
+> [I should be using setOldClass(?mongo?) here, but I was having trouble promoting the S3 ?mongo? class I was getting from the library.]
+>
+> Then when I try to set the corresopnding slot I?m getting an error, because ?mongo? is not of type MongoDB (even through that is a class union which contains ?ANY?).
+>
+> I can work around the problem by setting the slot to type ?ANY?, but then I loose the documentation that the intention is that it should a mongo database connection.
+>
+> Did I miss something here?  Or is this an unintended consequence of some other change?
+>
+> Thanks,
+>   ?Russell Almond
+>
+>
+>
+>
+>         [[alternative HTML version deleted]]
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+
+-- 
+Michael Lawrence
+Senior Principal Scientist, Director of Data Science and Statistical Computing
+Genentech, A Member of the Roche Group
+Office +1 (650) 225-7760
+michafla at gene.com
+
+Join Genentech on LinkedIn | Twitter | Facebook | Instagram | YouTube
+
+
+From henr|k@bengt@@on @end|ng |rom gm@||@com  Wed May  3 01:25:41 2023
+From: henr|k@bengt@@on @end|ng |rom gm@||@com (Henrik Bengtsson)
+Date: Tue, 2 May 2023 16:25:41 -0700
+Subject: [Rd] save.image Non-responsive to Interrupt
+In-Reply-To: <CABFfbXtru7PyV_1ecknsSLg6C3HqzVw9Mja2rybvwM76oOiT5A@mail.gmail.com>
+References: <SY2PR01MB300358E3EDF589B5A20227C8CD6B9@SY2PR01MB3003.ausprd01.prod.outlook.com>
+ <20230502145936.0ee6dc91@arachnoid>
+ <25681.4112.978286.30568@stat.math.ethz.ch>
+ <CABFfbXtru7PyV_1ecknsSLg6C3HqzVw9Mja2rybvwM76oOiT5A@mail.gmail.com>
+Message-ID: <CAFDcVCRxU8KiDcT7yNxxDGWzMgckg2gDQQ7f-mmqGhYhseVcJA@mail.gmail.com>
+
+Along the lines of calling R_CheckUserInterrupt() only onces in a while:
+
+> OTOH, in the past we have had to *disable*  R_CheckUserInterrupt()
+> in parts of R's code because it was too expensive,
+> {see current src/main/{seq.c,unique.c}  for a series of commented-out
+> R_CheckUserInterrupt() for such speed-loss reasons}
+
+First, here are links to these two files viewable online:
+
+ * https://github.com/wch/r-source/blob/trunk/src/main/seq.c
+
+ * https://github.com/wch/r-source/blob/trunk/src/main/unique.c
+
+When not commented out, R_CheckUserInterrupt() would have been called
+every 1,000,000 times per:
+
+  /* interval at which to check interrupts */
+  #define NINTERRUPT 1000000
+
+and
+
+  if ((i+1) % NINTERRUPT == 0) R_CheckUserInterrupt()
+
+in each iteration. That '(i+1) % NINTERRUPT == 0' expression can be
+quite expensive too.  However, if we change the code to use NINTERRUPT
+= 2^k where k = {1, 2, ...}, say
+
+  #define NINTERRUPT 1048576
+
+the compiler would optimize the condition to use "the modulo of powers
+of 2 can alternatively be expressed as a bitwise AND operation"
+(Thomas Lumley, 2015-06-15).  The speedup is quite impressive, cf.
+<https://www.jottr.org/2015/06/05/checkuserinterrupt/>.
+Alternatively, one can increment a counter and reset to zero after
+calling R_CheckUserInterrupt(); I think that's equally performant.
+
+Regarding making serialize() / unserialize() interruptible: I think
+can be a good idea since we work with larger objects these days.
+However, if we implement this, we probably have to consider what
+happens when an interrupt happens. For example, transfers between a
+client and a server are no longer atomic at this level, which means we
+might end up in a corrupt state. This may, for instance, happen to
+database transactions, and PSOCK parallel worker communication.  A
+quick fix would be to use base::suspendInterrupts(), but better would
+of course be to handle interrupts gracefully.
+
+My $.02 + $0.02
+
+/Henrik
+
+On Tue, May 2, 2023 at 3:56?PM Jeroen Ooms <jeroenooms at gmail.com> wrote:
+>
+> On Tue, May 2, 2023 at 3:29?PM Martin Maechler
+> <maechler at stat.math.ethz.ch> wrote:
+> >
+> > >>>>> Ivan Krylov
+> > >>>>>     on Tue, 2 May 2023 14:59:36 +0300 writes:
+> >
+> >     > ? Sat, 29 Apr 2023 00:00:02 +0000
+> >     > Dario Strbenac via R-devel <r-devel at r-project.org> ?????:
+> >
+> >     >> Could save.image() be redesigned so that it promptly responds to
+> >     >> Ctrl+C? It prevents the command line from being used for a number of
+> >     >> hours if the contents of the workspace are large.
+> >
+> >     > This is ultimately caused by serialize() being non-interruptible. A
+> >     > relatively simple way to hang an R session for a long-ish time would
+> >     > therefore be:
+> >
+> >     > f <- xzfile(nullfile(), 'a+b')
+> >     > x <- rep(0, 1e9) # approx. 8 gigabytes, adjust for your RAM size
+> >     > serialize(x, f)
+> >     > close(f)
+> >
+> >     > This means that calling R_CheckUserInterrupt() between saving
+> >     > individual objects is not enough: R also needs to check for interrupts
+> >     > while saving sufficiently long vectors.
+> >
+> >     > Since the serialize() infrastructure is carefully written to avoid
+> >     > resource leaks on allocation failures, it looks relatively safe to
+> >     > liberally sprinkle R_CheckUserInterrupt() where it makes sense to do
+> >     > so, i.e. once per WriteItem() (which calls itself recursively and
+> >     > non-recursively) and once per every downstream for loop iteration.
+> >     > Valgrind doesn't show any new leaks if I apply the patch, interrupt
+> >     > serialize() and then exit. R also passes make check after the applied
+> >     > patch.
+> >
+> >     > Do these changes make sense, or am I overlooking some other problem?
+> >
+> > Thank you, Ivan!
+> >
+> > They do make sense... but :
+> >
+> > OTOH, in the past we have had to *disable*  R_CheckUserInterrupt()
+> > in parts of R's code because it was too expensive,
+> > {see current src/main/{seq.c,unique.c}  for a series of commented-out
+> >  R_CheckUserInterrupt() for such speed-loss reasons}
+> >
+> > so  adding these may need a lot of care when we simultaneously
+> > want to remain  efficient for "morally valid" use of serialization...
+> > where we really don't want to pay too much of a premium.
+>
+> Alternatively, one could consider making R throttle or debounce calls
+> to R_CheckUserInterrupt such that a repeated calls within x time are
+> ignored, cf: https://www.freecodecamp.org/news/javascript-debounce-example/
+>
+> The reasoning being that it may be difficult for (contributed) code to
+> determine when/where it is appropriate to check for interrupts, given
+> varying code paths and cpu speed. Maybe it makes more sense to call
+> R_CheckUserInterrupt frequently wherever it is safe to do so, and let
+> R decide if reasonable time has elapsed to actually run the (possibly
+> expensive) ui check again.
+>
+> Basic example: https://github.com/r-devel/r-svn/pull/125/files
+>
+>
+>
+>
+> >
+> > {{ saving the whole user workspace is not "valid" in that sense
+> >    in my view.  I tell all my (non-beginner) Rstudio-using
+> >    students they should turn *off* the automatic saving and
+> >    loading at session end / beginning; and for reproducibility
+> >    only saveRDS() [or save()] *explicitly* a few precious
+> >    objects ..
+> > }}
+> >
+> > Again, we don't want to punish people who know what they are
+> > doing, just because other R users manage to hang their R session
+> > by too little thinking ...
+> >
+> > Your patch adds 15 such interrupt checking calls which may
+> > really be too much -- I'm not claiming they are: with our
+> > recursive objects it's surely not very easy to determine the
+> > "minimally necessary" such calls.
+> >
+> > In addition, we may still consider adding an extra optional
+> > argument, say   `check.interrupt = TRUE`
+> > which we may default to TRUE when  save.image() is called
+> > but e.g., not when serialize() is called..
+> >
+> > Martin
+> >
+> >     > --
+> >     > Best regards,
+> >     > Ivan
+> >     > x[DELETED ATTACHMENT external: Rd_IvanKrylov_interrupt-serialize.patch, text/x-patch]
+> >     > ______________________________________________
+> >     > R-devel at r-project.org mailing list
+> >     > https://stat.ethz.ch/mailman/listinfo/r-devel
+> >
+> > ______________________________________________
+> > R-devel at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From k@ro||@@koncev|c|u@ @end|ng |rom gm@||@com  Wed May  3 09:36:30 2023
+From: k@ro||@@koncev|c|u@ @end|ng |rom gm@||@com (=?utf-8?Q?Karolis_Koncevi=C4=8Dius?=)
+Date: Wed, 3 May 2023 10:36:30 +0300
+Subject: [Rd] Inquiry about the behaviour of subsetting and names in matrices
+Message-ID: <EC0F4F60-0817-4FAB-90DC-F5C0B7FD1125@gmail.com>
+
+Hello,
+
+I have stumbled upon a few cases where the behaviour of naming and subsetting in matrices seems unintuitive.
+All those look related so wanted to put everything in one message.
+
+
+1. Why row/col selection by names with NAs is not allowed?
+
+  x <- setNames(1:10, letters[1:10])
+  X <- matrix(x, nrow=2, dimnames = list(letters[1:2], LETTERS[1:5]))
+
+  x[c(1, NA, 3)]       # vector: works and adds "NA"
+  x[c("a", NA, "c")]   # vector: works and adds "NA"
+  X[,c(1, NA, 3)]      # works and selects "NA" column
+  X[,c("A", NA, "C")]  # <error>
+
+
+2. Should setting names() for a matrix be allowed?
+
+  names(X) <- paste0("e", 1:length(X))
+  X["e4"]  # works
+
+  # but any operation on a matrix drops the names
+  X <- X[,-1]  # all names are gone
+  X["e4"]      # <error>
+
+  Maybe names() should not be allowed on a matrix?
+
+
+3. Should selection of non-existent dimension names really be an error?
+
+  x[22]   # works on a vector - gives "NA"
+  X[,22]  # <error>
+
+
+  A potential useful use-case is matching a smaller matrix to a larger one:
+  A <- matrix(rnorm(10), nrow=2, dimnames = list(c("a","c")))
+  B <- matrix(rnorm(20), nrow=4, dimnames = list(c("a", "b", "c", "d")))
+
+  # matching larger matrix to the smaller one <works>
+  B[rownames(A),]
+
+  # matching smaller matrix to the larger one <error>
+  A[rownames(B),]
+
+
+These also doesn't seem to be documented in '[', 'names', 'rownames?.
+
+Interested if there specific reasons for this behaviour, or could these potentially be adjusted?
+
+Kind regards,
+Karolis K.
+
+
+From Andre@G||||bert @end|ng |rom chu-rouen@|r  Wed May  3 10:15:52 2023
+From: Andre@G||||bert @end|ng |rom chu-rouen@|r (GILLIBERT, Andre)
+Date: Wed, 3 May 2023 08:15:52 +0000
+Subject: [Rd] Inquiry about the behaviour of subsetting and names in
+ matrices
+In-Reply-To: <EC0F4F60-0817-4FAB-90DC-F5C0B7FD1125@gmail.com>
+References: <EC0F4F60-0817-4FAB-90DC-F5C0B7FD1125@gmail.com>
+Message-ID: <55788649253e44f7b5fb4bcb46cde7c6@chu-rouen.fr>
+
+
+Karolis wrote:
+> Hello,
+
+> I have stumbled upon a few cases where the behaviour of naming and subsetting in matrices seems unintuitive.
+> All those look related so wanted to put everything in one message.
+
+
+> 1. Why row/col selection by names with NAs is not allowed?
+
+>   x <- setNames(1:10, letters[1:10])
+>   X <- matrix(x, nrow=2, dimnames = list(letters[1:2], LETTERS[1:5]))
+
+>   x[c(1, NA, 3)]       # vector: works and adds "NA"
+>   x[c("a", NA, "c")]   # vector: works and adds "NA"
+>   X[,c(1, NA, 3)]      # works and selects "NA" column
+>   X[,c("A", NA, "C")]  # <error>
+
+I would state the question the other way : why are NAs integer indices allowed?
+In my experience, they are sometimes useful but they often delay the detection of bugs. However, due to backward compatibility, this feature cannot be removed. Adding this feature to character indices would worsen the problem.
+
+I see another reason to keep the behavior as is currently : character indices are most often used with column names in contexts were they are unlikely to be NAs except as a consequence of a bug. In other words, I fear that the valid-use-case/bug ratio would be quite poor with this feature.
+
+> 2. Should setting names() for a matrix be allowed?
+>
+>   names(X) <- paste0("e", 1:length(X))
+>   X["e4"]  # works
+>
+>   # but any operation on a matrix drops the names
+>   X <- X[,-1]  # all names are gone
+>   X["e4"]      # <error>
+>
+>   Maybe names() should not be allowed on a matrix?
+
+Setting names() on a matrix is a rarely used feature that has practically no positive and no negative consequences. I see no incentive to change the behavior and break existing code.
+
+> 3. Should selection of non-existent dimension names really be an error?
+>
+>   x[22]   # works on a vector - gives "NA"
+>   X[,22]  # <error>
+
+This is very often a bug on vectors and should not have been allowed on vectors in the first place... But for backwards compatibility, it is hard to remove. Adding this unsafe feature to matrices is a poor idea in my opinion.
+
+>   A potential useful use-case is matching a smaller matrix to a larger one:
+
+This is a valid use-case, but in my opinion, it adds more problems than it solves.
+
+> These also doesn't seem to be documented in '[', 'names', 'rownames?.
+
+Indeed, the documentation of '[' seems to be unclear on indices out of range. It can be improved.
+
+> Interested if there specific reasons for this behaviour, or could these potentially be adjusted?
+
+In my opinion adding these features would improve the consistency of R but would add more sources of bugs in an already unsafe language.
+
+Sincerely
+Andr? GILLIBERT
+
+From k@ro||@@koncev|c|u@ @end|ng |rom gm@||@com  Wed May  3 11:08:28 2023
+From: k@ro||@@koncev|c|u@ @end|ng |rom gm@||@com (=?utf-8?Q?Karolis_Koncevi=C4=8Dius?=)
+Date: Wed, 3 May 2023 12:08:28 +0300
+Subject: [Rd] Inquiry about the behaviour of subsetting and names in
+ matrices
+In-Reply-To: <55788649253e44f7b5fb4bcb46cde7c6@chu-rouen.fr>
+References: <EC0F4F60-0817-4FAB-90DC-F5C0B7FD1125@gmail.com>
+ <55788649253e44f7b5fb4bcb46cde7c6@chu-rouen.fr>
+Message-ID: <DC33ED02-B1F4-4252-BB22-BDBC09207855@gmail.com>
+
+Thank you for such a quick reply, here are some points that I think might have been missed:
+
+> I would state the question the other way : why are NAs integer indices allowed?
+> In my experience, they are sometimes useful but they often delay the detection of bugs. However, due to backward compatibility, this feature cannot be removed. Adding this feature to character indices would worsen the problem.
+
+But please also note that character indices with NA are allowed for vectors. This is more an inconsistency between vectors and matrices. In vectors both numeric and character sub-setting works with NAs. In matrices only numberic and not character sub-setting works with NAs. Potentially this in itself can also be a source of bugs, or, at least surprises.
+
+> Setting names() on a matrix is a rarely used feature that has practically no positive and no negative consequences. I see no incentive to change the behavior and break existing code.
+
+When writing this message I had the opposite opinion. That this 2nd point is one of the most bug-probe points of all 3. As I would assume most users setting names() on a matrix would only do it by accident.
+
+> In my opinion adding these features would improve the consistency of R but would add more sources of bugs in an already unsafe language.
+
+I think this maybe is a crux of the thing.
+
+My original impression was that R was ?clever? about the usage of NAs by design. i.e. when you choose an unknown object from a set of objects the result is an object, but nobody knows which - hence NA. Is it really accepted now that such a decision was a mistake and lead to bugs in user code?
+
+Kind regards,
+Karolis K.
+
+> On May 3, 2023, at 11:15 AM, GILLIBERT, Andre <Andre.Gillibert at chu-rouen.fr> wrote:
+> 
+> 
+> Karolis wrote:
+>> Hello,
+> 
+>> I have stumbled upon a few cases where the behaviour of naming and subsetting in matrices seems unintuitive.
+>> All those look related so wanted to put everything in one message.
+> 
+> 
+>> 1. Why row/col selection by names with NAs is not allowed?
+> 
+>>  x <- setNames(1:10, letters[1:10])
+>>  X <- matrix(x, nrow=2, dimnames = list(letters[1:2], LETTERS[1:5]))
+> 
+>>  x[c(1, NA, 3)]       # vector: works and adds "NA"
+>>  x[c("a", NA, "c")]   # vector: works and adds "NA"
+>>  X[,c(1, NA, 3)]      # works and selects "NA" column
+>>  X[,c("A", NA, "C")]  # <error>
+> 
+> I would state the question the other way : why are NAs integer indices allowed?
+> In my experience, they are sometimes useful but they often delay the detection of bugs. However, due to backward compatibility, this feature cannot be removed. Adding this feature to character indices would worsen the problem.
+> 
+> I see another reason to keep the behavior as is currently : character indices are most often used with column names in contexts were they are unlikely to be NAs except as a consequence of a bug. In other words, I fear that the valid-use-case/bug ratio would be quite poor with this feature.
+> 
+>> 2. Should setting names() for a matrix be allowed?
+>> 
+>>  names(X) <- paste0("e", 1:length(X))
+>>  X["e4"]  # works
+>> 
+>>  # but any operation on a matrix drops the names
+>>  X <- X[,-1]  # all names are gone
+>>  X["e4"]      # <error>
+>> 
+>>  Maybe names() should not be allowed on a matrix?
+> 
+> Setting names() on a matrix is a rarely used feature that has practically no positive and no negative consequences. I see no incentive to change the behavior and break existing code.
+> 
+>> 3. Should selection of non-existent dimension names really be an error?
+>> 
+>>  x[22]   # works on a vector - gives "NA"
+>>  X[,22]  # <error>
+> 
+> This is very often a bug on vectors and should not have been allowed on vectors in the first place... But for backwards compatibility, it is hard to remove. Adding this unsafe feature to matrices is a poor idea in my opinion.
+> 
+>>  A potential useful use-case is matching a smaller matrix to a larger one:
+> 
+> This is a valid use-case, but in my opinion, it adds more problems than it solves.
+> 
+>> These also doesn't seem to be documented in '[', 'names', 'rownames?.
+> 
+> Indeed, the documentation of '[' seems to be unclear on indices out of range. It can be improved.
+> 
+>> Interested if there specific reasons for this behaviour, or could these potentially be adjusted?
+> 
+> In my opinion adding these features would improve the consistency of R but would add more sources of bugs in an already unsafe language.
+> 
+> Sincerely
+> Andr? GILLIBERT
+
+
+	[[alternative HTML version deleted]]
+
+
+From Andre@G||||bert @end|ng |rom chu-rouen@|r  Wed May  3 23:11:07 2023
+From: Andre@G||||bert @end|ng |rom chu-rouen@|r (GILLIBERT, Andre)
+Date: Wed, 3 May 2023 21:11:07 +0000
+Subject: [Rd] Inquiry about the behaviour of subsetting and names in
+ matrices
+In-Reply-To: <DC33ED02-B1F4-4252-BB22-BDBC09207855@gmail.com>
+References: <EC0F4F60-0817-4FAB-90DC-F5C0B7FD1125@gmail.com>
+ <55788649253e44f7b5fb4bcb46cde7c6@chu-rouen.fr>,
+ <DC33ED02-B1F4-4252-BB22-BDBC09207855@gmail.com>
+Message-ID: <e9c6873bbafe420b8e27542998d9bf70@chu-rouen.fr>
+
+
+Karolis K wrote:
+
+> This is more an inconsistency between vectors and matrices.
+
+> In vectors both numeric and character sub-setting works with NAs.
+
+> In matrices only numberic and not character sub-setting works with NAs.
+
+> Potentially this in itself can also be a source of bugs, or, at least surprises.
+
+
+Indeed.
+
+
+Karolis K wrote:
+
+> My original impression was that R was ?clever? about the usage of NAs by design. i.e. when you choose an unknown object
+
+> from a set of objects the result is an object, but nobody knows which - hence NA. Is it really accepted now that such a
+
+> decision was a mistake and lead to bugs in user code?
+
+
+This makes sense but my personal opinion (I do not speak for R developers, as I am not an R developer at all) is that the R language is so "clever" that it often becomes unsafe.
+
+Sometimes, this cleverness is handy for fast programming, such as NA propagation at many places. Other times, it causes more bugs than it helps, such as partial matching for the '$' operator. Indexation of column names in a matrix is probably not the place where NA propagation is the most useful, although it has its use cases. Consistency may be the main reason to add that feature, but I am not sure that this is a major incentive.
+
+
+Of course, the opinion of R developers would be more useful than my own personal views.
+
+
+--
+
+Sincerely
+
+Andr? GILLIBERT
+
+________________________________
+De : Karolis Koncevi?ius <karolis.koncevicius at gmail.com>
+Envoy? : mercredi 3 mai 2023 11:08:28
+? : GILLIBERT, Andre
+Cc : r-devel at r-project.org
+Objet : Re: [Rd] Inquiry about the behaviour of subsetting and names in matrices
+
+
+ATTENTION: Cet e-mail provient d?une adresse mail ext?rieure au CHU de Rouen. Ne cliquez pas sur les liens ou n'ouvrez pas les pi?ces jointes ? moins de conna?tre l'exp?diteur et de savoir que le contenu est s?r. En cas de doute, transf?rer le mail ? ? DSI, S?curit? ? pour analyse. Merci de votre vigilance
+
+
+Thank you for such a quick reply, here are some points that I think might have been missed:
+
+I would state the question the other way : why are NAs integer indices allowed?
+In my experience, they are sometimes useful but they often delay the detection of bugs. However, due to backward compatibility, this feature cannot be removed. Adding this feature to character indices would worsen the problem.
+
+But please also note that character indices with NA are allowed for vectors. This is more an inconsistency between vectors and matrices. In vectors both numeric and character sub-setting works with NAs. In matrices only numberic and not character sub-setting works with NAs. Potentially this in itself can also be a source of bugs, or, at least surprises.
+
+Setting names() on a matrix is a rarely used feature that has practically no positive and no negative consequences. I see no incentive to change the behavior and break existing code.
+
+When writing this message I had the opposite opinion. That this 2nd point is one of the most bug-probe points of all 3. As I would assume most users setting names() on a matrix would only do it by accident.
+
+In my opinion adding these features would improve the consistency of R but would add more sources of bugs in an already unsafe language.
+
+I think this maybe is a crux of the thing.
+
+My original impression was that R was ?clever? about the usage of NAs by design. i.e. when you choose an unknown object from a set of objects the result is an object, but nobody knows which - hence NA. Is it really accepted now that such a decision was a mistake and lead to bugs in user code?
+
+Kind regards,
+Karolis K.
+
+On May 3, 2023, at 11:15 AM, GILLIBERT, Andre <Andre.Gillibert at chu-rouen.fr> wrote:
+
+
+Karolis wrote:
+Hello,
+
+I have stumbled upon a few cases where the behaviour of naming and subsetting in matrices seems unintuitive.
+All those look related so wanted to put everything in one message.
+
+
+1. Why row/col selection by names with NAs is not allowed?
+
+ x <- setNames(1:10, letters[1:10])
+ X <- matrix(x, nrow=2, dimnames = list(letters[1:2], LETTERS[1:5]))
+
+ x[c(1, NA, 3)]       # vector: works and adds "NA"
+ x[c("a", NA, "c")]   # vector: works and adds "NA"
+ X[,c(1, NA, 3)]      # works and selects "NA" column
+ X[,c("A", NA, "C")]  # <error>
+
+I would state the question the other way : why are NAs integer indices allowed?
+In my experience, they are sometimes useful but they often delay the detection of bugs. However, due to backward compatibility, this feature cannot be removed. Adding this feature to character indices would worsen the problem.
+
+I see another reason to keep the behavior as is currently : character indices are most often used with column names in contexts were they are unlikely to be NAs except as a consequence of a bug. In other words, I fear that the valid-use-case/bug ratio would be quite poor with this feature.
+
+2. Should setting names() for a matrix be allowed?
+
+ names(X) <- paste0("e", 1:length(X))
+ X["e4"]  # works
+
+ # but any operation on a matrix drops the names
+ X <- X[,-1]  # all names are gone
+ X["e4"]      # <error>
+
+ Maybe names() should not be allowed on a matrix?
+
+Setting names() on a matrix is a rarely used feature that has practically no positive and no negative consequences. I see no incentive to change the behavior and break existing code.
+
+3. Should selection of non-existent dimension names really be an error?
+
+ x[22]   # works on a vector - gives "NA"
+ X[,22]  # <error>
+
+This is very often a bug on vectors and should not have been allowed on vectors in the first place... But for backwards compatibility, it is hard to remove. Adding this unsafe feature to matrices is a poor idea in my opinion.
+
+ A potential useful use-case is matching a smaller matrix to a larger one:
+
+This is a valid use-case, but in my opinion, it adds more problems than it solves.
+
+These also doesn't seem to be documented in '[', 'names', 'rownames?.
+
+Indeed, the documentation of '[' seems to be unclear on indices out of range. It can be improved.
+
+Interested if there specific reasons for this behaviour, or could these potentially be adjusted?
+
+In my opinion adding these features would improve the consistency of R but would add more sources of bugs in an already unsafe language.
+
+Sincerely
+Andr? GILLIBERT
+
+
+	[[alternative HTML version deleted]]
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Thu May  4 11:29:52 2023
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Thu, 4 May 2023 11:29:52 +0200
+Subject: [Rd] range() for Date and POSIXct could respect `finite = TRUE`
+In-Reply-To: <CABzLhzzq2W3JsDP6KoRfLi0K1roD+3RH8mvnjWs_AnhP3A2SQg@mail.gmail.com>
+References: <CABzLhzyRuxgHnToS4CPn_g8NOsc6M5Tx+14Sf7X+cjD8NvZgRg@mail.gmail.com>
+ <25677.33376.349216.862139@stat.math.ethz.ch>
+ <CABzLhzzq2W3JsDP6KoRfLi0K1roD+3RH8mvnjWs_AnhP3A2SQg@mail.gmail.com>
+Message-ID: <25683.31504.509548.721569@stat.math.ethz.ch>
+
+>>>>> Davis Vaughan 
+>>>>>     on Mon, 1 May 2023 08:46:33 -0400 writes:
+
+    > Martin,
+    > Yes, I missed that those have `Summary.*` methods, thanks!
+
+    > Tweaking those to respect `finite = TRUE` sounds great. It seems like
+    > it might be a little tricky since the Summary methods call
+    > `NextMethod()`, and `range.default()` uses `is.numeric()` to determine
+    > whether or not to apply `finite`. Because `is.numeric.Date()` is
+    > defined, that always returns `FALSE` for Dates (and POSIXt). Because
+    > of that, it may still be easier to just write a specific
+    > `range.Date()` method, but I'm not sure.
+
+    > -Davis
+
+I've looked more closely now, and indeed,
+range() is the only function in the  Summary  group
+where (only) the default method has a 'finite' argument.
+which strikes me as somewhat asymmetric / inconsequential, as
+after all,  range(.) := c(min(.), max(.)) ,
+but  min() and max() do not obey an finite=TRUE setting, note
+
+> min(c(-Inf,3:5), finite=TRUE)
+Error: attempt to use zero-length variable name
+
+where the error message also is not particularly friendly
+and of course has nothing to with 'finite' :
+
+> max(1:4, foo="bar")
+Error: attempt to use zero-length variable name
+> 
+
+... but that is diverting;  coming back to the topic:  Given
+that 'finite' only applies to range() {and there is just a convenience},
+I do agree that from my own work & support to make `Date` and
+`POSIX(c)t` behave more number-like, it would be "nice" to have
+range() obey a `finite=TRUE` also for these.
+
+OTOH, there are quite a few other 'number-like' thingies for
+which I would then like to have  range(*, finite=TRUE) work,
+e.g.,  "mpfr" (package {Rmpfr}) or "bigz" {gmp} numbers, numeric
+sparse matrices, ...
+
+To keep such methods all internally consistent with
+range.default(), I could envision something like this
+
+
+.rangeNum <- function(..., na.rm = FALSE, finite = FALSE, isNumeric)
+{
+    x <- c(..., recursive = TRUE)
+    if(isNumeric(x)) {
+        if(finite) x <- x[is.finite(x)]
+        else if(na.rm) x <- x[!is.na(x)]
+	c(min(x), max(x))
+    } else {
+        if(finite) na.rm <- TRUE
+        c(min(x, na.rm=na.rm), max(x, na.rm=na.rm))
+    }
+}
+
+range.default <- function(..., na.rm = FALSE, finite = FALSE)
+    .rangeNum(..., na.rm=na.rm, finite=finite, isNumeric = is.numeric)
+
+range.POSIXct <- range.Date <- function(..., na.rm = FALSE, finite = FALSE)
+    .rangeNum(..., na.rm=na.rm, finite=finite, isNumeric = function(.)TRUE)
+
+
+
+which would also provide .rangeNum() to be used by implementors
+of other numeric-like classes to provide their own range()
+method as a 1-liner *and* be future-consistent with the default method..
+
+
+
+
+    > On Sat, Apr 29, 2023 at 4:47?PM Martin Maechler
+    > <maechler at stat.math.ethz.ch> wrote:
+    >> 
+    >> >>>>> Davis Vaughan via R-devel
+    >> >>>>>     on Fri, 28 Apr 2023 11:12:27 -0400 writes:
+    >> 
+    >> > Hi all,
+    >> 
+    >> > I noticed that `range.default()` has a nice `finite =
+    >> > TRUE` argument, but it doesn't actually apply to Date or
+    >> > POSIXct due to how `is.numeric()` works.
+    >> 
+    >> Well, I think it would / should never apply:
+    >> 
+    >> range() belongs to the "Summary" group generics (as min, max, ...)
+    >> 
+    >> and there  *are*  Summary.Date()  and Summary.POSIX{c,l}t() methods.
+    >> 
+    >> Without checking further for now, I think you are indirectly
+    >> suggesting to enhance these three Summary.*() methods so they do
+    >> obey  'finite = TRUE' .
+    >> 
+    >> I think I agree they should.
+    >> 
+    >> Martin
+    >> 
+    >> > ``` x <- .Date(c(0, Inf, 1, 2, Inf)) x #> [1] "1970-01-01"
+    >> > "Inf" "1970-01-02" "1970-01-03" "Inf"
+    >> 
+    >> > # Darn!  range(x, finite = TRUE) #> [1] "1970-01-01" "Inf"
+    >> 
+    >> > # What I want .Date(range(unclass(x), finite = TRUE)) #>
+    >> > [1] "1970-01-01" "1970-01-03" ```
+    >> 
+    >> > I think `finite = TRUE` would be pretty nice for Dates in
+    >> > particular.
+    >> 
+    >> > As a motivating example, sometimes you have ranges of
+    >> > dates represented by start/end pairs. It is fairly natural
+    >> > to represent an event that hasn't ended yet with an
+    >> > infinite date. If you need to then compute a sequence of
+    >> > dates spanning the full range of the start/end pairs, it
+    >> > would be nice to be able to use `range(finite = TRUE)` to
+    >> > do so:
+    >> 
+    >> > ``` start <- as.Date(c("2019-01-05", "2019-01-10",
+    >> > "2019-01-11", "2019-01-14")) end <-
+    >> > as.Date(c("2019-01-07", NA, "2019-01-14", NA))
+    >> > end[is.na(end)] <- Inf
+    >> 
+    >> > # `end = Inf` means that the event hasn't "ended" yet
+    >> > data.frame(start, end) #> start end #> 1 2019-01-05
+    >> > 2019-01-07 #> 2 2019-01-10 Inf #> 3 2019-01-11 2019-01-14
+    >> > #> 4 2019-01-14 Inf
+    >> 
+    >> > # Create a full sequence along all days in start/end range
+    >> > <- .Date(range(unclass(c(start, end)), finite = TRUE))
+    >> > seq(range[1], range[2], by = 1) #> [1] "2019-01-05"
+    >> > "2019-01-06" "2019-01-07" "2019-01-08" "2019-01-09" #> [6]
+    >> > "2019-01-10" "2019-01-11" "2019-01-12" "2019-01-13"
+    >> > "2019-01-14" ```
+    >> 
+    >> > It seems like one option is to create a `range.Date()`
+    >> > method that unclasses, forwards the arguments on to a
+    >> > second call to `range()`, and then reclasses?
+    >> 
+    >> > ``` range.Date <- function(x, ..., na.rm = FALSE, finite =
+    >> > FALSE) { .Date(range(unclass(x), na.rm = na.rm, finite =
+    >> > finite), oldClass(x)) } ```
+    >> 
+    >> > This is similar to how `rep.Date()` works.
+    >> 
+    >> > Thanks, Davis Vaughan
+    >> 
+    >> > ______________________________________________
+    >> > R-devel at r-project.org mailing list
+    >> > https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From @oko| @end|ng |rom |n@@-tou|ou@e@|r  Thu May  4 15:01:53 2023
+From: @oko| @end|ng |rom |n@@-tou|ou@e@|r (Serguei Sokol)
+Date: Thu, 4 May 2023 15:01:53 +0200
+Subject: [Rd] save.image Non-responsive to Interrupt
+In-Reply-To: <CAFDcVCRxU8KiDcT7yNxxDGWzMgckg2gDQQ7f-mmqGhYhseVcJA@mail.gmail.com>
+References: <SY2PR01MB300358E3EDF589B5A20227C8CD6B9@SY2PR01MB3003.ausprd01.prod.outlook.com>
+ <20230502145936.0ee6dc91@arachnoid>
+ <25681.4112.978286.30568@stat.math.ethz.ch>
+ <CABFfbXtru7PyV_1ecknsSLg6C3HqzVw9Mja2rybvwM76oOiT5A@mail.gmail.com>
+ <CAFDcVCRxU8KiDcT7yNxxDGWzMgckg2gDQQ7f-mmqGhYhseVcJA@mail.gmail.com>
+Message-ID: <18059965-1c70-a509-6ffb-81663d87e8f6@insa-toulouse.fr>
+
+Le 03/05/2023 ? 01:25, Henrik Bengtsson a ?crit?:
+> Along the lines of calling R_CheckUserInterrupt() only onces in a while:
+>
+>> OTOH, in the past we have had to *disable*  R_CheckUserInterrupt()
+>> in parts of R's code because it was too expensive,
+>> {see current src/main/{seq.c,unique.c}  for a series of commented-out
+>> R_CheckUserInterrupt() for such speed-loss reasons}
+> First, here are links to these two files viewable online:
+>
+>   * https://github.com/wch/r-source/blob/trunk/src/main/seq.c
+>
+>   * https://github.com/wch/r-source/blob/trunk/src/main/unique.c
+>
+> When not commented out, R_CheckUserInterrupt() would have been called
+> every 1,000,000 times per:
+>
+>    /* interval at which to check interrupts */
+>    #define NINTERRUPT 1000000
+>
+> and
+>
+>    if ((i+1) % NINTERRUPT == 0) R_CheckUserInterrupt()
+>
+> in each iteration. That '(i+1) % NINTERRUPT == 0' expression can be
+> quite expensive too.
+I vaguely remember a hack that was mentioned on this list as close to 
+0-cost. It looked something like:
+
+iint = NINTERRUPT;
+for (...) {
+ ?? if (--iint == 0) {
+ ????? R_CheckUserInterrupt();
+ ????? iint = NINTERRUPT;
+ ? }
+}
+
+Best,
+Serguei.
+
+>    However, if we change the code to use NINTERRUPT
+> = 2^k where k = {1, 2, ...}, say
+>
+>    #define NINTERRUPT 1048576
+>
+> the compiler would optimize the condition to use "the modulo of powers
+> of 2 can alternatively be expressed as a bitwise AND operation"
+> (Thomas Lumley, 2015-06-15).  The speedup is quite impressive, cf.
+> <https://www.jottr.org/2015/06/05/checkuserinterrupt/>.
+> Alternatively, one can increment a counter and reset to zero after
+> calling R_CheckUserInterrupt(); I think that's equally performant.
+>
+> Regarding making serialize() / unserialize() interruptible: I think
+> can be a good idea since we work with larger objects these days.
+> However, if we implement this, we probably have to consider what
+> happens when an interrupt happens. For example, transfers between a
+> client and a server are no longer atomic at this level, which means we
+> might end up in a corrupt state. This may, for instance, happen to
+> database transactions, and PSOCK parallel worker communication.  A
+> quick fix would be to use base::suspendInterrupts(), but better would
+> of course be to handle interrupts gracefully.
+>
+> My $.02 + $0.02
+>
+> /Henrik
+>
+> On Tue, May 2, 2023 at 3:56?PM Jeroen Ooms <jeroenooms at gmail.com> wrote:
+>> On Tue, May 2, 2023 at 3:29?PM Martin Maechler
+>> <maechler at stat.math.ethz.ch> wrote:
+>>>>>>>> Ivan Krylov
+>>>>>>>>      on Tue, 2 May 2023 14:59:36 +0300 writes:
+>>>      > ? Sat, 29 Apr 2023 00:00:02 +0000
+>>>      > Dario Strbenac via R-devel <r-devel at r-project.org> ?????:
+>>>
+>>>      >> Could save.image() be redesigned so that it promptly responds to
+>>>      >> Ctrl+C? It prevents the command line from being used for a number of
+>>>      >> hours if the contents of the workspace are large.
+>>>
+>>>      > This is ultimately caused by serialize() being non-interruptible. A
+>>>      > relatively simple way to hang an R session for a long-ish time would
+>>>      > therefore be:
+>>>
+>>>      > f <- xzfile(nullfile(), 'a+b')
+>>>      > x <- rep(0, 1e9) # approx. 8 gigabytes, adjust for your RAM size
+>>>      > serialize(x, f)
+>>>      > close(f)
+>>>
+>>>      > This means that calling R_CheckUserInterrupt() between saving
+>>>      > individual objects is not enough: R also needs to check for interrupts
+>>>      > while saving sufficiently long vectors.
+>>>
+>>>      > Since the serialize() infrastructure is carefully written to avoid
+>>>      > resource leaks on allocation failures, it looks relatively safe to
+>>>      > liberally sprinkle R_CheckUserInterrupt() where it makes sense to do
+>>>      > so, i.e. once per WriteItem() (which calls itself recursively and
+>>>      > non-recursively) and once per every downstream for loop iteration.
+>>>      > Valgrind doesn't show any new leaks if I apply the patch, interrupt
+>>>      > serialize() and then exit. R also passes make check after the applied
+>>>      > patch.
+>>>
+>>>      > Do these changes make sense, or am I overlooking some other problem?
+>>>
+>>> Thank you, Ivan!
+>>>
+>>> They do make sense... but :
+>>>
+>>> OTOH, in the past we have had to *disable*  R_CheckUserInterrupt()
+>>> in parts of R's code because it was too expensive,
+>>> {see current src/main/{seq.c,unique.c}  for a series of commented-out
+>>>   R_CheckUserInterrupt() for such speed-loss reasons}
+>>>
+>>> so  adding these may need a lot of care when we simultaneously
+>>> want to remain  efficient for "morally valid" use of serialization...
+>>> where we really don't want to pay too much of a premium.
+>> Alternatively, one could consider making R throttle or debounce calls
+>> to R_CheckUserInterrupt such that a repeated calls within x time are
+>> ignored, cf: https://www.freecodecamp.org/news/javascript-debounce-example/
+>>
+>> The reasoning being that it may be difficult for (contributed) code to
+>> determine when/where it is appropriate to check for interrupts, given
+>> varying code paths and cpu speed. Maybe it makes more sense to call
+>> R_CheckUserInterrupt frequently wherever it is safe to do so, and let
+>> R decide if reasonable time has elapsed to actually run the (possibly
+>> expensive) ui check again.
+>>
+>> Basic example: https://github.com/r-devel/r-svn/pull/125/files
+>>
+>>
+>>
+>>
+>>> {{ saving the whole user workspace is not "valid" in that sense
+>>>     in my view.  I tell all my (non-beginner) Rstudio-using
+>>>     students they should turn *off* the automatic saving and
+>>>     loading at session end / beginning; and for reproducibility
+>>>     only saveRDS() [or save()] *explicitly* a few precious
+>>>     objects ..
+>>> }}
+>>>
+>>> Again, we don't want to punish people who know what they are
+>>> doing, just because other R users manage to hang their R session
+>>> by too little thinking ...
+>>>
+>>> Your patch adds 15 such interrupt checking calls which may
+>>> really be too much -- I'm not claiming they are: with our
+>>> recursive objects it's surely not very easy to determine the
+>>> "minimally necessary" such calls.
+>>>
+>>> In addition, we may still consider adding an extra optional
+>>> argument, say   `check.interrupt = TRUE`
+>>> which we may default to TRUE when  save.image() is called
+>>> but e.g., not when serialize() is called..
+>>>
+>>> Martin
+>>>
+>>>      > --
+>>>      > Best regards,
+>>>      > Ivan
+>>>      > x[DELETED ATTACHMENT external: Rd_IvanKrylov_interrupt-serialize.patch, text/x-patch]
+>>>      > ______________________________________________
+>>>      > R-devel at r-project.org mailing list
+>>>      > https://stat.ethz.ch/mailman/listinfo/r-devel
+>>>
+>>> ______________________________________________
+>>> R-devel at r-project.org mailing list
+>>> https://stat.ethz.ch/mailman/listinfo/r-devel
+>> ______________________________________________
+>> R-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-devel
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+-- 
+Serguei Sokol
+Ingenieur de recherche INRAE
+
+Cellule Math?matiques
+TBI, INSA/INRAE UMR 792, INSA/CNRS UMR 5504
+135 Avenue de Rangueil
+31077 Toulouse Cedex 04
+
+tel: +33 5 61 55 98 49
+email: sokol at insa-toulouse.fr
+http://www.toulouse-biotechnology-institute.fr/en/technology_platforms/mathematics-cell.html
+
+
+From henr|k@bengt@@on @end|ng |rom gm@||@com  Thu May  4 18:38:14 2023
+From: henr|k@bengt@@on @end|ng |rom gm@||@com (Henrik Bengtsson)
+Date: Thu, 4 May 2023 18:38:14 +0200
+Subject: [Rd] save.image Non-responsive to Interrupt
+In-Reply-To: <18059965-1c70-a509-6ffb-81663d87e8f6@insa-toulouse.fr>
+References: <SY2PR01MB300358E3EDF589B5A20227C8CD6B9@SY2PR01MB3003.ausprd01.prod.outlook.com>
+ <20230502145936.0ee6dc91@arachnoid>
+ <25681.4112.978286.30568@stat.math.ethz.ch>
+ <CABFfbXtru7PyV_1ecknsSLg6C3HqzVw9Mja2rybvwM76oOiT5A@mail.gmail.com>
+ <CAFDcVCRxU8KiDcT7yNxxDGWzMgckg2gDQQ7f-mmqGhYhseVcJA@mail.gmail.com>
+ <18059965-1c70-a509-6ffb-81663d87e8f6@insa-toulouse.fr>
+Message-ID: <CAFDcVCQezw-LOnR2YecByQC+pGdT7UYrSdQ5DmYmaQwWoOCNkw@mail.gmail.com>
+
+On Thu, May 4, 2023 at 3:02?PM Serguei Sokol via R-devel
+<r-devel at r-project.org> wrote:
+>
+> Le 03/05/2023 ? 01:25, Henrik Bengtsson a ?crit :
+> > Along the lines of calling R_CheckUserInterrupt() only onces in a while:
+> >
+> >> OTOH, in the past we have had to *disable*  R_CheckUserInterrupt()
+> >> in parts of R's code because it was too expensive,
+> >> {see current src/main/{seq.c,unique.c}  for a series of commented-out
+> >> R_CheckUserInterrupt() for such speed-loss reasons}
+> > First, here are links to these two files viewable online:
+> >
+> >   * https://github.com/wch/r-source/blob/trunk/src/main/seq.c
+> >
+> >   * https://github.com/wch/r-source/blob/trunk/src/main/unique.c
+> >
+> > When not commented out, R_CheckUserInterrupt() would have been called
+> > every 1,000,000 times per:
+> >
+> >    /* interval at which to check interrupts */
+> >    #define NINTERRUPT 1000000
+> >
+> > and
+> >
+> >    if ((i+1) % NINTERRUPT == 0) R_CheckUserInterrupt()
+> >
+> > in each iteration. That '(i+1) % NINTERRUPT == 0' expression can be
+> > quite expensive too.
+> I vaguely remember a hack that was mentioned on this list as close to
+> 0-cost. It looked something like:
+>
+> iint = NINTERRUPT;
+> for (...) {
+>     if (--iint == 0) {
+>        R_CheckUserInterrupt();
+>        iint = NINTERRUPT;
+>    }
+> }
+>
+> Best,
+> Serguei.
+
+> > Alternatively, one can increment a counter and reset to zero after
+> > calling R_CheckUserInterrupt(); I think that's equally performant.
+
+Yes, that's the one, e.g. Tomas K migrated some "modulo" ones in
+R-devel to this one yesterday
+(https://github.com/wch/r-source/commit/1ca6c6c6246629c6a98a526a2906595e5cfcd45e).
+
+/Henrik
+
+>
+> >    However, if we change the code to use NINTERRUPT
+> > = 2^k where k = {1, 2, ...}, say
+> >
+> >    #define NINTERRUPT 1048576
+> >
+> > the compiler would optimize the condition to use "the modulo of powers
+> > of 2 can alternatively be expressed as a bitwise AND operation"
+> > (Thomas Lumley, 2015-06-15).  The speedup is quite impressive, cf.
+> > <https://www.jottr.org/2015/06/05/checkuserinterrupt/>.
+> > Alternatively, one can increment a counter and reset to zero after
+> > calling R_CheckUserInterrupt(); I think that's equally performant.
+> >
+> > Regarding making serialize() / unserialize() interruptible: I think
+> > can be a good idea since we work with larger objects these days.
+> > However, if we implement this, we probably have to consider what
+> > happens when an interrupt happens. For example, transfers between a
+> > client and a server are no longer atomic at this level, which means we
+> > might end up in a corrupt state. This may, for instance, happen to
+> > database transactions, and PSOCK parallel worker communication.  A
+> > quick fix would be to use base::suspendInterrupts(), but better would
+> > of course be to handle interrupts gracefully.
+> >
+> > My $.02 + $0.02
+> >
+> > /Henrik
+> >
+> > On Tue, May 2, 2023 at 3:56?PM Jeroen Ooms <jeroenooms at gmail.com> wrote:
+> >> On Tue, May 2, 2023 at 3:29?PM Martin Maechler
+> >> <maechler at stat.math.ethz.ch> wrote:
+> >>>>>>>> Ivan Krylov
+> >>>>>>>>      on Tue, 2 May 2023 14:59:36 +0300 writes:
+> >>>      > ? Sat, 29 Apr 2023 00:00:02 +0000
+> >>>      > Dario Strbenac via R-devel <r-devel at r-project.org> ?????:
+> >>>
+> >>>      >> Could save.image() be redesigned so that it promptly responds to
+> >>>      >> Ctrl+C? It prevents the command line from being used for a number of
+> >>>      >> hours if the contents of the workspace are large.
+> >>>
+> >>>      > This is ultimately caused by serialize() being non-interruptible. A
+> >>>      > relatively simple way to hang an R session for a long-ish time would
+> >>>      > therefore be:
+> >>>
+> >>>      > f <- xzfile(nullfile(), 'a+b')
+> >>>      > x <- rep(0, 1e9) # approx. 8 gigabytes, adjust for your RAM size
+> >>>      > serialize(x, f)
+> >>>      > close(f)
+> >>>
+> >>>      > This means that calling R_CheckUserInterrupt() between saving
+> >>>      > individual objects is not enough: R also needs to check for interrupts
+> >>>      > while saving sufficiently long vectors.
+> >>>
+> >>>      > Since the serialize() infrastructure is carefully written to avoid
+> >>>      > resource leaks on allocation failures, it looks relatively safe to
+> >>>      > liberally sprinkle R_CheckUserInterrupt() where it makes sense to do
+> >>>      > so, i.e. once per WriteItem() (which calls itself recursively and
+> >>>      > non-recursively) and once per every downstream for loop iteration.
+> >>>      > Valgrind doesn't show any new leaks if I apply the patch, interrupt
+> >>>      > serialize() and then exit. R also passes make check after the applied
+> >>>      > patch.
+> >>>
+> >>>      > Do these changes make sense, or am I overlooking some other problem?
+> >>>
+> >>> Thank you, Ivan!
+> >>>
+> >>> They do make sense... but :
+> >>>
+> >>> OTOH, in the past we have had to *disable*  R_CheckUserInterrupt()
+> >>> in parts of R's code because it was too expensive,
+> >>> {see current src/main/{seq.c,unique.c}  for a series of commented-out
+> >>>   R_CheckUserInterrupt() for such speed-loss reasons}
+> >>>
+> >>> so  adding these may need a lot of care when we simultaneously
+> >>> want to remain  efficient for "morally valid" use of serialization...
+> >>> where we really don't want to pay too much of a premium.
+> >> Alternatively, one could consider making R throttle or debounce calls
+> >> to R_CheckUserInterrupt such that a repeated calls within x time are
+> >> ignored, cf: https://www.freecodecamp.org/news/javascript-debounce-example/
+> >>
+> >> The reasoning being that it may be difficult for (contributed) code to
+> >> determine when/where it is appropriate to check for interrupts, given
+> >> varying code paths and cpu speed. Maybe it makes more sense to call
+> >> R_CheckUserInterrupt frequently wherever it is safe to do so, and let
+> >> R decide if reasonable time has elapsed to actually run the (possibly
+> >> expensive) ui check again.
+> >>
+> >> Basic example: https://github.com/r-devel/r-svn/pull/125/files
+> >>
+> >>
+> >>
+> >>
+> >>> {{ saving the whole user workspace is not "valid" in that sense
+> >>>     in my view.  I tell all my (non-beginner) Rstudio-using
+> >>>     students they should turn *off* the automatic saving and
+> >>>     loading at session end / beginning; and for reproducibility
+> >>>     only saveRDS() [or save()] *explicitly* a few precious
+> >>>     objects ..
+> >>> }}
+> >>>
+> >>> Again, we don't want to punish people who know what they are
+> >>> doing, just because other R users manage to hang their R session
+> >>> by too little thinking ...
+> >>>
+> >>> Your patch adds 15 such interrupt checking calls which may
+> >>> really be too much -- I'm not claiming they are: with our
+> >>> recursive objects it's surely not very easy to determine the
+> >>> "minimally necessary" such calls.
+> >>>
+> >>> In addition, we may still consider adding an extra optional
+> >>> argument, say   `check.interrupt = TRUE`
+> >>> which we may default to TRUE when  save.image() is called
+> >>> but e.g., not when serialize() is called..
+> >>>
+> >>> Martin
+> >>>
+> >>>      > --
+> >>>      > Best regards,
+> >>>      > Ivan
+> >>>      > x[DELETED ATTACHMENT external: Rd_IvanKrylov_interrupt-serialize.patch, text/x-patch]
+> >>>      > ______________________________________________
+> >>>      > R-devel at r-project.org mailing list
+> >>>      > https://stat.ethz.ch/mailman/listinfo/r-devel
+> >>>
+> >>> ______________________________________________
+> >>> R-devel at r-project.org mailing list
+> >>> https://stat.ethz.ch/mailman/listinfo/r-devel
+> >> ______________________________________________
+> >> R-devel at r-project.org mailing list
+> >> https://stat.ethz.ch/mailman/listinfo/r-devel
+> > ______________________________________________
+> > R-devel at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+>
+> --
+> Serguei Sokol
+> Ingenieur de recherche INRAE
+>
+> Cellule Math?matiques
+> TBI, INSA/INRAE UMR 792, INSA/CNRS UMR 5504
+> 135 Avenue de Rangueil
+> 31077 Toulouse Cedex 04
+>
+> tel: +33 5 61 55 98 49
+> email: sokol at insa-toulouse.fr
+> http://www.toulouse-biotechnology-institute.fr/en/technology_platforms/mathematics-cell.html
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Fri May  5 23:41:45 2023
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Fri, 5 May 2023 23:41:45 +0200
+Subject: [Rd] save.image Non-responsive to Interrupt
+In-Reply-To: <CAFDcVCQezw-LOnR2YecByQC+pGdT7UYrSdQ5DmYmaQwWoOCNkw@mail.gmail.com>
+References: <SY2PR01MB300358E3EDF589B5A20227C8CD6B9@SY2PR01MB3003.ausprd01.prod.outlook.com>
+ <20230502145936.0ee6dc91@arachnoid>
+ <25681.4112.978286.30568@stat.math.ethz.ch>
+ <CABFfbXtru7PyV_1ecknsSLg6C3HqzVw9Mja2rybvwM76oOiT5A@mail.gmail.com>
+ <CAFDcVCRxU8KiDcT7yNxxDGWzMgckg2gDQQ7f-mmqGhYhseVcJA@mail.gmail.com>
+ <18059965-1c70-a509-6ffb-81663d87e8f6@insa-toulouse.fr>
+ <CAFDcVCQezw-LOnR2YecByQC+pGdT7UYrSdQ5DmYmaQwWoOCNkw@mail.gmail.com>
+Message-ID: <25685.30745.829297.335910@stat.math.ethz.ch>
+
+>>>>> Henrik Bengtsson 
+>>>>>     on Thu, 4 May 2023 18:38:14 +0200 writes:
+
+    > On Thu, May 4, 2023 at 3:02?PM Serguei Sokol via R-devel
+    > <r-devel at r-project.org> wrote:
+    >> 
+    >> Le 03/05/2023 ? 01:25, Henrik Bengtsson a ?crit : > Along
+    >> the lines of calling R_CheckUserInterrupt() only onces in
+    >> a while:
+    >> >
+    >> >> OTOH, in the past we have had to *disable*
+    >> R_CheckUserInterrupt() >> in parts of R's code because it
+    >> was too expensive, >> {see current
+    >> src/main/{seq.c,unique.c} for a series of commented-out
+    >> >> R_CheckUserInterrupt() for such speed-loss reasons} >
+    >> First, here are links to these two files viewable online:
+    >> >
+    >> > *
+    >> https://github.com/wch/r-source/blob/trunk/src/main/seq.c
+    >> >
+    >> > *
+    >> https://github.com/wch/r-source/blob/trunk/src/main/unique.c
+    >> >
+    >> > When not commented out, R_CheckUserInterrupt() would
+    >> have been called > every 1,000,000 times per:
+    >> >
+    >> > /* interval at which to check interrupts */ > #define
+    >> NINTERRUPT 1000000
+    >> >
+    >> > and
+    >> >
+    >> > if ((i+1) % NINTERRUPT == 0) R_CheckUserInterrupt()
+    >> >
+    >> > in each iteration. That '(i+1) % NINTERRUPT == 0'
+    >> expression can be > quite expensive too.  I vaguely
+    >> remember a hack that was mentioned on this list as close
+    >> to 0-cost. It looked something like:
+    >> 
+    >> iint = NINTERRUPT; for (...) { if (--iint == 0) {
+    >> R_CheckUserInterrupt(); iint = NINTERRUPT; } }
+    >> 
+    >> Best, Serguei.
+
+    >> > Alternatively, one can increment a counter and reset to
+    >> zero after > calling R_CheckUserInterrupt(); I think
+    >> that's equally performant.
+
+    > Yes, that's the one, e.g. Tomas K migrated some "modulo"
+    > ones in R-devel to this one yesterday
+    > (https://github.com/wch/r-source/commit/1ca6c6c6246629c6a98a526a2906595e5cfcd45e).
+
+    > /Henrik
+
+Indeed.
+I have now (svn rev 84399) committed a version Ivan's patch which uses
+Tomas' approach (I think) in all cases, making uniformly use of
+this macro (derived from a version of what Tomas used):
+
+#define IF_IC_R_CheckUserInterrupt()		\
+    if(!(--ic)) {				\
+	R_CheckUserInterrupt();			\
+	ic = 9999;				\
+    }
+
+I confirm that I now can interrupt Ivan's example.  The
+interrupt is not handled immediately but within a second or so.
+
+Martin
+
+    >> > However, if we change the code to use NINTERRUPT > =
+    >> 2^k where k = {1, 2, ...}, say
+    >> >
+    >> > #define NINTERRUPT 1048576
+    >> >
+    >> > the compiler would optimize the condition to use "the
+    >> modulo of powers > of 2 can alternatively be expressed as
+    >> a bitwise AND operation" > (Thomas Lumley, 2015-06-15).
+    >> The speedup is quite impressive, cf.  >
+    >> <https://www.jottr.org/2015/06/05/checkuserinterrupt/>.
+    >> > Alternatively, one can increment a counter and reset to
+    >> zero after > calling R_CheckUserInterrupt(); I think
+    >> that's equally performant.
+    >> >
+    >> > Regarding making serialize() / unserialize()
+    >> interruptible: I think > can be a good idea since we work
+    >> with larger objects these days.  > However, if we
+    >> implement this, we probably have to consider what >
+    >> happens when an interrupt happens. For example, transfers
+    >> between a > client and a server are no longer atomic at
+    >> this level, which means we > might end up in a corrupt
+    >> state. This may, for instance, happen to > database
+    >> transactions, and PSOCK parallel worker communication.  A
+    >> > quick fix would be to use base::suspendInterrupts(),
+    >> but better would > of course be to handle interrupts
+    >> gracefully.
+    >> >
+    >> > My $.02 + $0.02
+    >> >
+    >> > /Henrik
+    >> >
+    >> > On Tue, May 2, 2023 at 3:56?PM Jeroen Ooms
+    >> <jeroenooms at gmail.com> wrote: >> On Tue, May 2, 2023 at
+    >> 3:29?PM Martin Maechler >> <maechler at stat.math.ethz.ch>
+    >> wrote: >>>>>>>> Ivan Krylov >>>>>>>> on Tue, 2 May 2023
+    >> 14:59:36 +0300 writes: >>> > ? Sat, 29 Apr 2023 00:00:02
+    >> +0000 >>> > Dario Strbenac via R-devel
+    >> <r-devel at r-project.org> ?????:
+    >> >>>
+    >> >>> >> Could save.image() be redesigned so that it
+    >> promptly responds to >>> >> Ctrl+C? It prevents the
+    >> command line from being used for a number of >>> >> hours
+    >> if the contents of the workspace are large.
+    >> >>>
+    >> >>> > This is ultimately caused by serialize() being
+    >> non-interruptible. A >>> > relatively simple way to hang
+    >> an R session for a long-ish time would >>> > therefore
+    >> be:
+    >> >>>
+    >> >>> > f <- xzfile(nullfile(), 'a+b') >>> > x <- rep(0,
+    >> 1e9) # approx. 8 gigabytes, adjust for your RAM size >>>
+    >> > serialize(x, f) >>> > close(f)
+    >> >>>
+    >> >>> > This means that calling R_CheckUserInterrupt()
+    >> between saving >>> > individual objects is not enough: R
+    >> also needs to check for interrupts >>> > while saving
+    >> sufficiently long vectors.
+    >> >>>
+    >> >>> > Since the serialize() infrastructure is carefully
+    >> written to avoid >>> > resource leaks on allocation
+    >> failures, it looks relatively safe to >>> > liberally
+    >> sprinkle R_CheckUserInterrupt() where it makes sense to
+    >> do >>> > so, i.e. once per WriteItem() (which calls
+    >> itself recursively and >>> > non-recursively) and once
+    >> per every downstream for loop iteration.  >>> > Valgrind
+    >> doesn't show any new leaks if I apply the patch,
+    >> interrupt >>> > serialize() and then exit. R also passes
+    >> make check after the applied >>> > patch.
+    >> >>>
+    >> >>> > Do these changes make sense, or am I overlooking
+    >> some other problem?
+    >> >>>
+    >> >>> Thank you, Ivan!
+    >> >>>
+    >> >>> They do make sense... but :
+    >> >>>
+    >> >>> OTOH, in the past we have had to *disable*
+    >> R_CheckUserInterrupt() >>> in parts of R's code because
+    >> it was too expensive, >>> {see current
+    >> src/main/{seq.c,unique.c} for a series of commented-out
+    >> >>> R_CheckUserInterrupt() for such speed-loss reasons}
+    >> >>>
+    >> >>> so adding these may need a lot of care when we
+    >> simultaneously >>> want to remain efficient for "morally
+    >> valid" use of serialization...  >>> where we really don't
+    >> want to pay too much of a premium.  >> Alternatively, one
+    >> could consider making R throttle or debounce calls >> to
+    >> R_CheckUserInterrupt such that a repeated calls within x
+    >> time are >> ignored, cf:
+    >> https://www.freecodecamp.org/news/javascript-debounce-example/
+    >> >>
+    >> >> The reasoning being that it may be difficult for
+    >> (contributed) code to >> determine when/where it is
+    >> appropriate to check for interrupts, given >> varying
+    >> code paths and cpu speed. Maybe it makes more sense to
+    >> call >> R_CheckUserInterrupt frequently wherever it is
+    >> safe to do so, and let >> R decide if reasonable time has
+    >> elapsed to actually run the (possibly >> expensive) ui
+    >> check again.
+    >> >>
+    >> >> Basic example:
+    >> https://github.com/r-devel/r-svn/pull/125/files
+    >> >>
+    >> >>
+    >> >>
+    >> >>
+    >> >>> {{ saving the whole user workspace is not "valid" in
+    >> that sense >>> in my view.  I tell all my (non-beginner)
+    >> Rstudio-using >>> students they should turn *off* the
+    >> automatic saving and >>> loading at session end /
+    >> beginning; and for reproducibility >>> only saveRDS() [or
+    >> save()] *explicitly* a few precious >>> objects ..  >>>
+    >> }}
+    >> >>>
+    >> >>> Again, we don't want to punish people who know what
+    >> they are >>> doing, just because other R users manage to
+    >> hang their R session >>> by too little thinking ...
+    >> >>>
+    >> >>> Your patch adds 15 such interrupt checking calls
+    >> which may >>> really be too much -- I'm not claiming they
+    >> are: with our >>> recursive objects it's surely not very
+    >> easy to determine the >>> "minimally necessary" such
+    >> calls.
+    >> >>>
+    >> >>> In addition, we may still consider adding an extra
+    >> optional >>> argument, say `check.interrupt = TRUE` >>>
+    >> which we may default to TRUE when save.image() is called
+    >> >>> but e.g., not when serialize() is called..
+    >> >>>
+    >> >>> Martin
+    >> >>>
+    >> >>>      > --
+    >> >>> > Best regards, >>> > Ivan >>> > x[DELETED ATTACHMENT
+    >> external: Rd_IvanKrylov_interrupt-serialize.patch,
+    >> text/x-patch] >>> >
+    >> ______________________________________________ >>> >
+    >> R-devel at r-project.org mailing list >>> >
+    >> https://stat.ethz.ch/mailman/listinfo/r-devel
+    >> >>>
+    >> >>> ______________________________________________ >>>
+    >> R-devel at r-project.org mailing list >>>
+    >> https://stat.ethz.ch/mailman/listinfo/r-devel >>
+    >> ______________________________________________ >>
+    >> R-devel at r-project.org mailing list >>
+    >> https://stat.ethz.ch/mailman/listinfo/r-devel >
+    >> ______________________________________________ >
+    >> R-devel at r-project.org mailing list >
+    >> https://stat.ethz.ch/mailman/listinfo/r-devel
+    >> 
+    >> 
+    >> --
+    >> Serguei Sokol Ingenieur de recherche INRAE
+    >> 
+    >> Cellule Math?matiques TBI, INSA/INRAE UMR 792, INSA/CNRS
+    >> UMR 5504 135 Avenue de Rangueil 31077 Toulouse Cedex 04
+    >> 
+    >> tel: +33 5 61 55 98 49 email: sokol at insa-toulouse.fr
+    >> http://www.toulouse-biotechnology-institute.fr/en/technology_platforms/mathematics-cell.html
+    >> 
+    >> ______________________________________________
+    >> R-devel at r-project.org mailing list
+    >> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+    > ______________________________________________
+    > R-devel at r-project.org mailing list
+    > https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From j@g@nmn2 @end|ng |rom gm@||@com  Sat May  6 18:26:29 2023
+From: j@g@nmn2 @end|ng |rom gm@||@com (Mikael Jagan)
+Date: Sat, 6 May 2023 12:26:29 -0400
+Subject: [Rd] Change DEFAULTDEPARSE to DEFAULTDEPARSE | SHOWATTRIBUTES ?
+Message-ID: <fdc5b57c-b401-38df-1090-2109080eb98f@gmail.com>
+
+The deparse options used by default by 'deparse' and 'dput' are
+
+     c("keepNA", "keepInteger", "niceNames", "showAttributes")
+
+but Defn.h still has
+
+     #define DEFAULTDEPARSE		1089 /* KEEPINTEGER | KEEPNA | NICE_NAMES, used for 
+calls */
+
+i.e., with the SHOWATTRIBUTES bit turned off.  Is that on purpose?
+Note that this leads to weird things like:
+
+     > (expr <- call("is.matrix", matrix(1:4, 2L, 2L)))
+     is.matrix(1:4)
+     > eval(expr)
+     [1] TRUE
+
+which can confuse anyone not paying close attention ...
+
+Mikael
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Sat May  6 19:12:09 2023
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Sat, 6 May 2023 13:12:09 -0400
+Subject: [Rd] Change DEFAULTDEPARSE to DEFAULTDEPARSE | SHOWATTRIBUTES ?
+In-Reply-To: <fdc5b57c-b401-38df-1090-2109080eb98f@gmail.com>
+References: <fdc5b57c-b401-38df-1090-2109080eb98f@gmail.com>
+Message-ID: <d2880934-7914-3af2-dd1c-56eea5825d50@gmail.com>
+
+On 06/05/2023 12:26 p.m., Mikael Jagan wrote:
+> The deparse options used by default by 'deparse' and 'dput' are
+> 
+>       c("keepNA", "keepInteger", "niceNames", "showAttributes")
+> 
+> but Defn.h still has
+> 
+>       #define DEFAULTDEPARSE		1089 /* KEEPINTEGER | KEEPNA | NICE_NAMES, used for
+> calls */
+> 
+> i.e., with the SHOWATTRIBUTES bit turned off.  Is that on purpose?
+> Note that this leads to weird things like:
+> 
+>       > (expr <- call("is.matrix", matrix(1:4, 2L, 2L)))
+>       is.matrix(1:4)
+>       > eval(expr)
+>       [1] TRUE
+> 
+> which can confuse anyone not paying close attention ...
+
+I agree that deparse does a better job in this case, but I'm not sure 
+I'd recommend the change.  You should try it, and see if any tests are 
+broken.  I'd guess there will be some in base R, but I might be wrong.
+
+Contributed packages are another issue.  Lots of packages test for 
+changes in their output; this change could break those.
+
+I think the underlying issue is that call("is.matrix", matrix(1:4, 2L, 
+2L)) produces something that would never be produced by the parser, so 
+"deparsing" isn't really well defined.
+
+For example deparse(expr) also gets it wrong:
+
+   [1] "is.matrix(structure(1:4, dim = c(2L, 2L)))"
+
+Even though that evaluates to the same result, it isn't the expression I 
+put into expr.  There are also many examples where you don't get the 
+right answer from either version.  A simple one is this:
+
+    > (expr <- call("identity", pi))
+    identity(3.14159265358979)
+    > eval(expr)
+    [1] 3.141593
+    > eval(expr) == identity(3.14159265358979)
+    [1] FALSE
+
+Here the issue is that the deparsed expression doesn't include the full 
+precision for pi that is stored in expr.
+
+(Aside:  This is one reason why it's such a bad idea to use the common 
+pattern:
+
+    deparse expression
+    modify part of it
+    parse the result
+
+You can often get more changes than you intended.  It's better to work 
+on the expression directly.)
+
+BTW, I just noticed something else in deparse() that's probably a bug.
+
+    > deparse(expr, control = "exact")
+    [1] "quote(I(0x1.921fb54442d18p+1))"
+
+I don't know why "quote" is now showing up; it means that
+
+    parse(text = deparse(expr, control = "exact"))
+
+produces something that's really quite different from expr.
+
+Duncan Murdoch
+
+
+From d@v|@ @end|ng |rom po@|t@co  Tue May  9 15:49:41 2023
+From: d@v|@ @end|ng |rom po@|t@co (Davis Vaughan)
+Date: Tue, 9 May 2023 09:49:41 -0400
+Subject: [Rd] range() for Date and POSIXct could respect `finite = TRUE`
+In-Reply-To: <25683.31504.509548.721569@stat.math.ethz.ch>
+References: <CABzLhzyRuxgHnToS4CPn_g8NOsc6M5Tx+14Sf7X+cjD8NvZgRg@mail.gmail.com>
+ <25677.33376.349216.862139@stat.math.ethz.ch>
+ <CABzLhzzq2W3JsDP6KoRfLi0K1roD+3RH8mvnjWs_AnhP3A2SQg@mail.gmail.com>
+ <25683.31504.509548.721569@stat.math.ethz.ch>
+Message-ID: <CABzLhzxsUbgG2kQDovN_2droJtraFCqmn9G+_vkwrdTXivvj0Q@mail.gmail.com>
+
+It seems like the main problem is that `is.numeric(x)` isn't fully
+indicative of whether or not `is.finite(x)` makes sense for `x` (i.e.
+Date isn't numeric but does allow infinite dates).
+
+So I could also imagine a new `allows.infinite()` S3 generic that
+would return a single TRUE/FALSE for whether or not the type allows
+infinite values, this would also be indicative of whether or not
+`is.finite()` and `is.infinite()` make sense on that type. I imagine
+it being used like:
+
+```
+allows.infinite <- function(x) {
+  UseMethod("allows.infinite")
+}
+allows.infinite.default <- function(x) {
+  is.numeric(x) # For backwards compatibility, maybe? Not sure.
+}
+allows.infinite.Date <- function(x) {
+  TRUE
+}
+allows.infinite.POSIXct <- function(x) {
+  TRUE
+}
+
+range.default <- function (..., na.rm = FALSE, finite = FALSE) {
+  x <- c(..., recursive = TRUE)
+  if (allows.infinite(x)) { # changed from `is.numeric()`
+    if (finite)
+      x <- x[is.finite(x)]
+    else if (na.rm)
+      x <- x[!is.na(x)]
+    c(min(x), max(x))
+  }
+  else {
+    if (finite)
+      na.rm <- TRUE
+    c(min(x, na.rm = na.rm), max(x, na.rm = na.rm))
+  }
+}
+```
+
+It could allow other R developers to also use the pattern of:
+
+```
+if (allows.infinite(x)) {
+  # conditionally do stuff with is.infinite(x)
+}
+```
+
+and that seems like it could be rather nice.
+
+It would avoid the need for `range.Date()` and `range.POSIXct()` methods too.
+
+-Davis
+
+On Thu, May 4, 2023 at 5:29?AM Martin Maechler
+<maechler at stat.math.ethz.ch> wrote:
+>
+> >>>>> Davis Vaughan
+> >>>>>     on Mon, 1 May 2023 08:46:33 -0400 writes:
+>
+>     > Martin,
+>     > Yes, I missed that those have `Summary.*` methods, thanks!
+>
+>     > Tweaking those to respect `finite = TRUE` sounds great. It seems like
+>     > it might be a little tricky since the Summary methods call
+>     > `NextMethod()`, and `range.default()` uses `is.numeric()` to determine
+>     > whether or not to apply `finite`. Because `is.numeric.Date()` is
+>     > defined, that always returns `FALSE` for Dates (and POSIXt). Because
+>     > of that, it may still be easier to just write a specific
+>     > `range.Date()` method, but I'm not sure.
+>
+>     > -Davis
+>
+> I've looked more closely now, and indeed,
+> range() is the only function in the  Summary  group
+> where (only) the default method has a 'finite' argument.
+> which strikes me as somewhat asymmetric / inconsequential, as
+> after all,  range(.) := c(min(.), max(.)) ,
+> but  min() and max() do not obey an finite=TRUE setting, note
+>
+> > min(c(-Inf,3:5), finite=TRUE)
+> Error: attempt to use zero-length variable name
+>
+> where the error message also is not particularly friendly
+> and of course has nothing to with 'finite' :
+>
+> > max(1:4, foo="bar")
+> Error: attempt to use zero-length variable name
+> >
+>
+> ... but that is diverting;  coming back to the topic:  Given
+> that 'finite' only applies to range() {and there is just a convenience},
+> I do agree that from my own work & support to make `Date` and
+> `POSIX(c)t` behave more number-like, it would be "nice" to have
+> range() obey a `finite=TRUE` also for these.
+>
+> OTOH, there are quite a few other 'number-like' thingies for
+> which I would then like to have  range(*, finite=TRUE) work,
+> e.g.,  "mpfr" (package {Rmpfr}) or "bigz" {gmp} numbers, numeric
+> sparse matrices, ...
+>
+> To keep such methods all internally consistent with
+> range.default(), I could envision something like this
+>
+>
+> .rangeNum <- function(..., na.rm = FALSE, finite = FALSE, isNumeric)
+> {
+>     x <- c(..., recursive = TRUE)
+>     if(isNumeric(x)) {
+>         if(finite) x <- x[is.finite(x)]
+>         else if(na.rm) x <- x[!is.na(x)]
+>         c(min(x), max(x))
+>     } else {
+>         if(finite) na.rm <- TRUE
+>         c(min(x, na.rm=na.rm), max(x, na.rm=na.rm))
+>     }
+> }
+>
+> range.default <- function(..., na.rm = FALSE, finite = FALSE)
+>     .rangeNum(..., na.rm=na.rm, finite=finite, isNumeric = is.numeric)
+>
+> range.POSIXct <- range.Date <- function(..., na.rm = FALSE, finite = FALSE)
+>     .rangeNum(..., na.rm=na.rm, finite=finite, isNumeric = function(.)TRUE)
+>
+>
+>
+> which would also provide .rangeNum() to be used by implementors
+> of other numeric-like classes to provide their own range()
+> method as a 1-liner *and* be future-consistent with the default method..
+>
+>
+>
+>
+>     > On Sat, Apr 29, 2023 at 4:47?PM Martin Maechler
+>     > <maechler at stat.math.ethz.ch> wrote:
+>     >>
+>     >> >>>>> Davis Vaughan via R-devel
+>     >> >>>>>     on Fri, 28 Apr 2023 11:12:27 -0400 writes:
+>     >>
+>     >> > Hi all,
+>     >>
+>     >> > I noticed that `range.default()` has a nice `finite =
+>     >> > TRUE` argument, but it doesn't actually apply to Date or
+>     >> > POSIXct due to how `is.numeric()` works.
+>     >>
+>     >> Well, I think it would / should never apply:
+>     >>
+>     >> range() belongs to the "Summary" group generics (as min, max, ...)
+>     >>
+>     >> and there  *are*  Summary.Date()  and Summary.POSIX{c,l}t() methods.
+>     >>
+>     >> Without checking further for now, I think you are indirectly
+>     >> suggesting to enhance these three Summary.*() methods so they do
+>     >> obey  'finite = TRUE' .
+>     >>
+>     >> I think I agree they should.
+>     >>
+>     >> Martin
+>     >>
+>     >> > ``` x <- .Date(c(0, Inf, 1, 2, Inf)) x #> [1] "1970-01-01"
+>     >> > "Inf" "1970-01-02" "1970-01-03" "Inf"
+>     >>
+>     >> > # Darn!  range(x, finite = TRUE) #> [1] "1970-01-01" "Inf"
+>     >>
+>     >> > # What I want .Date(range(unclass(x), finite = TRUE)) #>
+>     >> > [1] "1970-01-01" "1970-01-03" ```
+>     >>
+>     >> > I think `finite = TRUE` would be pretty nice for Dates in
+>     >> > particular.
+>     >>
+>     >> > As a motivating example, sometimes you have ranges of
+>     >> > dates represented by start/end pairs. It is fairly natural
+>     >> > to represent an event that hasn't ended yet with an
+>     >> > infinite date. If you need to then compute a sequence of
+>     >> > dates spanning the full range of the start/end pairs, it
+>     >> > would be nice to be able to use `range(finite = TRUE)` to
+>     >> > do so:
+>     >>
+>     >> > ``` start <- as.Date(c("2019-01-05", "2019-01-10",
+>     >> > "2019-01-11", "2019-01-14")) end <-
+>     >> > as.Date(c("2019-01-07", NA, "2019-01-14", NA))
+>     >> > end[is.na(end)] <- Inf
+>     >>
+>     >> > # `end = Inf` means that the event hasn't "ended" yet
+>     >> > data.frame(start, end) #> start end #> 1 2019-01-05
+>     >> > 2019-01-07 #> 2 2019-01-10 Inf #> 3 2019-01-11 2019-01-14
+>     >> > #> 4 2019-01-14 Inf
+>     >>
+>     >> > # Create a full sequence along all days in start/end range
+>     >> > <- .Date(range(unclass(c(start, end)), finite = TRUE))
+>     >> > seq(range[1], range[2], by = 1) #> [1] "2019-01-05"
+>     >> > "2019-01-06" "2019-01-07" "2019-01-08" "2019-01-09" #> [6]
+>     >> > "2019-01-10" "2019-01-11" "2019-01-12" "2019-01-13"
+>     >> > "2019-01-14" ```
+>     >>
+>     >> > It seems like one option is to create a `range.Date()`
+>     >> > method that unclasses, forwards the arguments on to a
+>     >> > second call to `range()`, and then reclasses?
+>     >>
+>     >> > ``` range.Date <- function(x, ..., na.rm = FALSE, finite =
+>     >> > FALSE) { .Date(range(unclass(x), na.rm = na.rm, finite =
+>     >> > finite), oldClass(x)) } ```
+>     >>
+>     >> > This is similar to how `rep.Date()` works.
+>     >>
+>     >> > Thanks, Davis Vaughan
+>     >>
+>     >> > ______________________________________________
+>     >> > R-devel at r-project.org mailing list
+>     >> > https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From w@|ter@djur|c @end|ng |rom gm@||@com  Thu May 11 03:07:10 2023
+From: w@|ter@djur|c @end|ng |rom gm@||@com (Gmail)
+Date: Thu, 11 May 2023 03:07:10 +0200
+Subject: [Rd] R-4.2.3 build from source on Windows (w Rtools42) - lto1.exe
+ error
+Message-ID: <000701d983a4$ea7cc160$bf764420$@gmail.com>
+
+Windows 11 PRO Version??10.0.22621 Build 22621
+Processor: Intel(R) Core(TM) i7-1065G7 "Icelake-client"
+```
+?svn info	
+Path: .
+Working Copy Root Path: /d/R_DEV/R-4/R42/R-4-2-branch
+URL: https://svn.r-project.org/R/branches/R-4-2-branch
+Relative URL: ^/branches/R-4-2-branch
+Repository Root: https://svn.r-project.org/R
+Repository UUID: 00db46b3-68df-0310-9c12-caf00c1e9a41
+Revision: 84417
+Node Kind: directory
+Schedule: normal
+Last Changed Author: kalibera
+Last Changed Rev: 84249
+Last Changed Date: 2023-04-13 07:12:24 +0000 (Thu, 13 Apr 2023)
+```
+
+Only adaptation done in MkRules.local was adding: `EOPTS = -march=native`  - that's why I included the cpu-type info above;
+running make all recommended? fails at/with:
+```
+gcc -shared -s -static-libgcc -o utils.dll tmp.def init.o io.o size.o sock.o stubs.o utils.o hashtab.o windows/dataentry.o windows/dialogs.o windows/registry.o windows/util.o windows/widgets.o ../../../gnuwin32/dllversion.o -lRgraphapp -lversion -L/x86_64-w64-mingw32.static.posix/lib/x64 -llzma -LC:/rtools42/x86_64-w64-mingw32.static.posix/lib/x64 -LC:/rtools42/x86_64-w64-mingw32.static.posix/lib -L../../../../bin/x64 -lR
+
+lto1.exe: fatal error: bytecode stream in file 'windows/dataentry.o' generated with LTO version 9.3 instead of the expected 9.4
+compilation terminated.
+
+lto-wrapper.exe: fatal error: C:\rtools42\x86_64-w64-mingw32.static.posix\bin\gcc.exe returned 1 exit status
+compilation terminated.
+C:\rtools42\x86_64-w64-mingw32.static.posix\bin/ld.exe: error: lto-wrapper failed
+collect2.exe: error: ld returned 1 exit status
+cp: cannot stat 'utils.dll': No such file or directory
+make[4]: *** [Makefile.win:36: shlib] Error 1
+make[3]: *** [../../../share/make/basepkg.mk:145: mksrc-win2] Error 1
+make[2]: *** [Makefile.win:24: all] Error 2
+make[1]: *** [Makefile.win:34: R] Error 1
+make: *** [Makefile:18: all] Error 2
+```
+Any hints/ideas on how to fix this? I guess I could 
+gcc -c -flto ... windows/dataentry.c -o windows/dataentry.o 
+with the exact path of that fiile ... 
+and it hopefully will fix that but I guess it would make sense to add a Revision to update that LTO version mismatch there, and I don't know yet if this is the only one?
+
+Greetings,
+W
+
+
+From @vr@h@m@@d|er @end|ng |rom gm@||@com  Thu May 11 03:57:55 2023
+From: @vr@h@m@@d|er @end|ng |rom gm@||@com (Avraham Adler)
+Date: Wed, 10 May 2023 21:57:55 -0400
+Subject: [Rd] 
+ R-4.2.3 build from source on Windows (w Rtools42) - lto1.exe error
+In-Reply-To: <000701d983a4$ea7cc160$bf764420$@gmail.com>
+References: <000701d983a4$ea7cc160$bf764420$@gmail.com>
+Message-ID: <042F34F5-D77E-4D2C-B0FC-F132ADA54B67@gmail.com>
+
+Hi. 
+
+Are you sure you have the most up-to-date version of the libraries? It should be version 5550. Tomas updates the entire toolchain semi-regularly. If you call ? cat /x86_64-w64-mingw32.static.posix/.version? and it?s not 5550, try updating the libraries as per https://cran.r-project.org/bin/windows/base/howto-R-devel.html.
+
+Hope that helps,
+
+Avi
+
+Sent from my iPhone
+
+> On May 10, 2023, at 9:07 PM, Gmail <walter.djuric at gmail.com> wrote:
+> 
+> ?Windows 11 PRO Version??10.0.22621 Build 22621
+> Processor: Intel(R) Core(TM) i7-1065G7 "Icelake-client"
+> ```
+> ?svn info    
+> Path: .
+> Working Copy Root Path: /d/R_DEV/R-4/R42/R-4-2-branch
+> URL: https://svn.r-project.org/R/branches/R-4-2-branch
+> Relative URL: ^/branches/R-4-2-branch
+> Repository Root: https://svn.r-project.org/R
+> Repository UUID: 00db46b3-68df-0310-9c12-caf00c1e9a41
+> Revision: 84417
+> Node Kind: directory
+> Schedule: normal
+> Last Changed Author: kalibera
+> Last Changed Rev: 84249
+> Last Changed Date: 2023-04-13 07:12:24 +0000 (Thu, 13 Apr 2023)
+> ```
+> 
+> Only adaptation done in MkRules.local was adding: `EOPTS = -march=native`  - that's why I included the cpu-type info above;
+> running make all recommended? fails at/with:
+> ```
+> gcc -shared -s -static-libgcc -o utils.dll tmp.def init.o io.o size.o sock.o stubs.o utils.o hashtab.o windows/dataentry.o windows/dialogs.o windows/registry.o windows/util.o windows/widgets.o ../../../gnuwin32/dllversion.o -lRgraphapp -lversion -L/x86_64-w64-mingw32.static.posix/lib/x64 -llzma -LC:/rtools42/x86_64-w64-mingw32.static.posix/lib/x64 -LC:/rtools42/x86_64-w64-mingw32.static.posix/lib -L../../../../bin/x64 -lR
+> 
+> lto1.exe: fatal error: bytecode stream in file 'windows/dataentry.o' generated with LTO version 9.3 instead of the expected 9.4
+> compilation terminated.
+> 
+> lto-wrapper.exe: fatal error: C:\rtools42\x86_64-w64-mingw32.static.posix\bin\gcc.exe returned 1 exit status
+> compilation terminated.
+> C:\rtools42\x86_64-w64-mingw32.static.posix\bin/ld.exe: error: lto-wrapper failed
+> collect2.exe: error: ld returned 1 exit status
+> cp: cannot stat 'utils.dll': No such file or directory
+> make[4]: *** [Makefile.win:36: shlib] Error 1
+> make[3]: *** [../../../share/make/basepkg.mk:145: mksrc-win2] Error 1
+> make[2]: *** [Makefile.win:24: all] Error 2
+> make[1]: *** [Makefile.win:34: R] Error 1
+> make: *** [Makefile:18: all] Error 2
+> ```
+> Any hints/ideas on how to fix this? I guess I could 
+> gcc -c -flto ... windows/dataentry.c -o windows/dataentry.o 
+> with the exact path of that fiile ... 
+> and it hopefully will fix that but I guess it would make sense to add a Revision to update that LTO version mismatch there, and I don't know yet if this is the only one?
+> 
+> Greetings,
+> W
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+	[[alternative HTML version deleted]]
+
+
+From r|p|ey @end|ng |rom @t@t@@ox@@c@uk  Thu May 11 08:20:47 2023
+From: r|p|ey @end|ng |rom @t@t@@ox@@c@uk (Prof Brian Ripley)
+Date: Thu, 11 May 2023 07:20:47 +0100
+Subject: [Rd] 
+ R-4.2.3 build from source on Windows (w Rtools42) - lto1.exe error
+In-Reply-To: <000701d983a4$ea7cc160$bf764420$@gmail.com>
+References: <000701d983a4$ea7cc160$bf764420$@gmail.com>
+Message-ID: <97e9b872-bb3b-e2dd-524c-223f953444b9@stats.ox.ac.uk>
+
+Initial comments
+
+- R 4.2.3 is not current
+
+- -flto does not seem to be the default in src/gnuwin32/MkRules.
+
+- LTO versions in GCC are tied to the compiler version, and in recent 
+GCC are the same as the compiler version.  The recommended toolchain for 
+R 4.2.x is Rtools42 which according to NEWS is based on GCC 10 not 9.
+
+- LTO mismatches in my experience are most often seen in incremental 
+builds, so first do an ab initio build.  (Not so long ago they were not 
+detected during linking but gave segfaults.)
+
+Assuming it is important to use LTO, I would first build without LTO to 
+isolate the issue.  And be aware of the following in the NEWS for R 4.3.0:
+
+     ? The Rcomplex definition (in header R_ext/Complex.h) has been
+       extended to prevent possible mis-compilation when interfacing
+       with Fortran (PR#18430).
+
+AFAIR that "possible mis-compilation" is most likely using LTO.
+
+
+On 11/05/2023 02:07, Gmail wrote:
+> Windows 11 PRO Version??10.0.22621 Build 22621
+> Processor: Intel(R) Core(TM) i7-1065G7 "Icelake-client"
+> ```
+> ?svn info	
+> Path: .
+> Working Copy Root Path: /d/R_DEV/R-4/R42/R-4-2-branch
+> URL: https://svn.r-project.org/R/branches/R-4-2-branch
+> Relative URL: ^/branches/R-4-2-branch
+> Repository Root: https://svn.r-project.org/R
+> Repository UUID: 00db46b3-68df-0310-9c12-caf00c1e9a41
+> Revision: 84417
+> Node Kind: directory
+> Schedule: normal
+> Last Changed Author: kalibera
+> Last Changed Rev: 84249
+> Last Changed Date: 2023-04-13 07:12:24 +0000 (Thu, 13 Apr 2023)
+> ```
+> 
+> Only adaptation done in MkRules.local was adding: `EOPTS = -march=native`  - that's why I included the cpu-type info above;
+> running make all recommended? fails at/with:
+> ```
+> gcc -shared -s -static-libgcc -o utils.dll tmp.def init.o io.o size.o sock.o stubs.o utils.o hashtab.o windows/dataentry.o windows/dialogs.o windows/registry.o windows/util.o windows/widgets.o ../../../gnuwin32/dllversion.o -lRgraphapp -lversion -L/x86_64-w64-mingw32.static.posix/lib/x64 -llzma -LC:/rtools42/x86_64-w64-mingw32.static.posix/lib/x64 -LC:/rtools42/x86_64-w64-mingw32.static.posix/lib -L../../../../bin/x64 -lR
+> 
+> lto1.exe: fatal error: bytecode stream in file 'windows/dataentry.o' generated with LTO version 9.3 instead of the expected 9.4
+> compilation terminated.
+> 
+> lto-wrapper.exe: fatal error: C:\rtools42\x86_64-w64-mingw32.static.posix\bin\gcc.exe returned 1 exit status
+> compilation terminated.
+> C:\rtools42\x86_64-w64-mingw32.static.posix\bin/ld.exe: error: lto-wrapper failed
+> collect2.exe: error: ld returned 1 exit status
+> cp: cannot stat 'utils.dll': No such file or directory
+> make[4]: *** [Makefile.win:36: shlib] Error 1
+> make[3]: *** [../../../share/make/basepkg.mk:145: mksrc-win2] Error 1
+> make[2]: *** [Makefile.win:24: all] Error 2
+> make[1]: *** [Makefile.win:34: R] Error 1
+> make: *** [Makefile:18: all] Error 2
+> ```
+> Any hints/ideas on how to fix this? I guess I could
+> gcc -c -flto ... windows/dataentry.c -o windows/dataentry.o
+> with the exact path of that fiile ...
+> and it hopefully will fix that but I guess it would make sense to add a Revision to update that LTO version mismatch there, and I don't know yet if this is the only one?
+> 
+> Greetings,
+> W
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+-- 
+Brian D. Ripley,                  ripley at stats.ox.ac.uk
+Emeritus Professor of Applied Statistics, University of Oxford
+
+
+From tom@@@k@||ber@ @end|ng |rom gm@||@com  Thu May 11 09:05:59 2023
+From: tom@@@k@||ber@ @end|ng |rom gm@||@com (Tomas Kalibera)
+Date: Thu, 11 May 2023 09:05:59 +0200
+Subject: [Rd] 
+ R-4.2.3 build from source on Windows (w Rtools42) - lto1.exe error
+In-Reply-To: <000701d983a4$ea7cc160$bf764420$@gmail.com>
+References: <000701d983a4$ea7cc160$bf764420$@gmail.com>
+Message-ID: <2bc1b922-3fa4-33d2-7ec0-f8c2316280bf@gmail.com>
+
+
+On 5/11/23 03:07, Gmail wrote:
+> Windows 11 PRO Version??10.0.22621 Build 22621
+> Processor: Intel(R) Core(TM) i7-1065G7 "Icelake-client"
+> ```
+> ?svn info	
+> Path: .
+> Working Copy Root Path: /d/R_DEV/R-4/R42/R-4-2-branch
+> URL: https://svn.r-project.org/R/branches/R-4-2-branch
+> Relative URL: ^/branches/R-4-2-branch
+> Repository Root: https://svn.r-project.org/R
+> Repository UUID: 00db46b3-68df-0310-9c12-caf00c1e9a41
+> Revision: 84417
+> Node Kind: directory
+> Schedule: normal
+> Last Changed Author: kalibera
+> Last Changed Rev: 84249
+> Last Changed Date: 2023-04-13 07:12:24 +0000 (Thu, 13 Apr 2023)
+> ```
+>
+> Only adaptation done in MkRules.local was adding: `EOPTS = -march=native`  - that's why I included the cpu-type info above;
+> running make all recommended? fails at/with:
+> ```
+> gcc -shared -s -static-libgcc -o utils.dll tmp.def init.o io.o size.o sock.o stubs.o utils.o hashtab.o windows/dataentry.o windows/dialogs.o windows/registry.o windows/util.o windows/widgets.o ../../../gnuwin32/dllversion.o -lRgraphapp -lversion -L/x86_64-w64-mingw32.static.posix/lib/x64 -llzma -LC:/rtools42/x86_64-w64-mingw32.static.posix/lib/x64 -LC:/rtools42/x86_64-w64-mingw32.static.posix/lib -L../../../../bin/x64 -lR
+>
+> lto1.exe: fatal error: bytecode stream in file 'windows/dataentry.o' generated with LTO version 9.3 instead of the expected 9.4
+> compilation terminated.
+>
+> lto-wrapper.exe: fatal error: C:\rtools42\x86_64-w64-mingw32.static.posix\bin\gcc.exe returned 1 exit status
+> compilation terminated.
+> C:\rtools42\x86_64-w64-mingw32.static.posix\bin/ld.exe: error: lto-wrapper failed
+> collect2.exe: error: ld returned 1 exit status
+> cp: cannot stat 'utils.dll': No such file or directory
+> make[4]: *** [Makefile.win:36: shlib] Error 1
+> make[3]: *** [../../../share/make/basepkg.mk:145: mksrc-win2] Error 1
+> make[2]: *** [Makefile.win:24: all] Error 2
+> make[1]: *** [Makefile.win:34: R] Error 1
+> make: *** [Makefile:18: all] Error 2
+> ```
+> Any hints/ideas on how to fix this? I guess I could
+> gcc -c -flto ... windows/dataentry.c -o windows/dataentry.o
+> with the exact path of that fiile ...
+
+All of the object files are generated on your system during the build. 
+If dataentry.o is generated using an older version than other object 
+files, maybe there is some configuration problem on the system. It might 
+be worth checking the compilers and linkers from Rtools42 are used, and 
+then running "make distclean", and then trying the build again.
+
+I never tried building R with LTO on Windows myself, I don't know if 
+that works even on a system set up according to the documentation for R 
+4.2 (https://cran.r-project.org/bin/windows/base/howto-R-4.2.html).
+
+> and it hopefully will fix that but I guess it would make sense to add a Revision to update that LTO version mismatch there, and I don't know yet if this is the only one?
+
+Perhaps it is better to use Rtools43 and R-devel if you can, so that if 
+you find some problem in either, it can still be fixed.
+
+> Greetings,
+> W
+
+Best,
+Tomas
+
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Thu May 11 10:49:49 2023
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Thu, 11 May 2023 10:49:49 +0200
+Subject: [Rd] range() for Date and POSIXct could respect `finite = TRUE`
+In-Reply-To: <CABzLhzxsUbgG2kQDovN_2droJtraFCqmn9G+_vkwrdTXivvj0Q@mail.gmail.com>
+References: <CABzLhzyRuxgHnToS4CPn_g8NOsc6M5Tx+14Sf7X+cjD8NvZgRg@mail.gmail.com>
+ <25677.33376.349216.862139@stat.math.ethz.ch>
+ <CABzLhzzq2W3JsDP6KoRfLi0K1roD+3RH8mvnjWs_AnhP3A2SQg@mail.gmail.com>
+ <25683.31504.509548.721569@stat.math.ethz.ch>
+ <CABzLhzxsUbgG2kQDovN_2droJtraFCqmn9G+_vkwrdTXivvj0Q@mail.gmail.com>
+Message-ID: <25692.44077.542251.477187@stat.math.ethz.ch>
+
+>>>>> Davis Vaughan 
+>>>>>     on Tue, 9 May 2023 09:49:41 -0400 writes:
+
+    > It seems like the main problem is that `is.numeric(x)`
+    > isn't fully indicative of whether or not `is.finite(x)`
+    > makes sense for `x` (i.e.  Date isn't numeric but does
+    > allow infinite dates).
+
+    > So I could also imagine a new `allows.infinite()` S3
+    > generic that would return a single TRUE/FALSE for whether
+    > or not the type allows infinite values, this would also be
+    > indicative of whether or not `is.finite()` and
+    > `is.infinite()` make sense on that type. I imagine it
+    > being used like:
+
+> ```
+>   allows.infinite <- function(x) {
+>     UseMethod("allows.infinite")
+>   }
+>   allows.infinite.default <- function(x) {
+>     is.numeric(x) # For backwards compatibility, maybe? Not sure.
+>   }
+>   allows.infinite.Date <- function(x) {
+>     TRUE
+>   }
+>   allows.infinite.POSIXct <- function(x) {
+>     TRUE
+>   }
+>
+>   range.default <- function (..., na.rm = FALSE, finite = FALSE) {
+>     x <- c(..., recursive = TRUE)
+>     if (allows.infinite(x)) { # changed from `is.numeric()`
+>	if (finite)
+>	  x <- x[is.finite(x)]
+>	else if (na.rm)
+>	  x <- x[!is.na(x)]
+>	c(min(x), max(x))
+>     }
+>     else {
+>	if (finite)
+>	  na.rm <- TRUE
+>	c(min(x, na.rm = na.rm), max(x, na.rm = na.rm))
+>     }
+>   }
+>   ```
+
+    > It could allow other R developers to also use the pattern of:
+
+    > ```
+    > if (allows.infinite(x)) {
+    >    # conditionally do stuff with is.infinite(x)
+    > }
+    > ```
+
+    > and that seems like it could be rather nice.
+
+    > It would avoid the need for `range.Date()` and `range.POSIXct()` methods too.
+
+    > -Davis
+
+That *is* an interesting alternative perspective ...
+sent just about before I was going to commit my proposal (incl
+new help page entries, regr.tests ..).
+
+So we would introduce a new generic  allows.infinite() {or
+better name?,  allowsInf, ..} with the defined semantic that
+
+allows.infinite(x) for a vector 'x' gives a logical "scalar",
+TRUE iff it is known that  is.finite(x) "makes sense" and
+returns a logical vector of length length(x) .. which is TRUE
+where x[i] is not NA/NaN/+Inf/-Inf .. *and*
+is.infinite := Negate(is.finite)    {or vice versa if you prefer}.
+
+I agree that this may be useful somewhat more generally than
+just for  range() methods.
+
+What do others think?
+
+Martin
+
+
+    > On Thu, May 4, 2023 at 5:29?AM Martin Maechler
+    > <maechler at stat.math.ethz.ch> wrote:
+[......]
+
+    >> >>>>> Davis Vaughan
+    >> >>>>>     on Mon, 1 May 2023 08:46:33 -0400 writes:
+    >> 
+    >> > Martin,
+    >> > Yes, I missed that those have `Summary.*` methods, thanks!
+    >> 
+    >> > Tweaking those to respect `finite = TRUE` sounds great. It seems like
+    >> > it might be a little tricky since the Summary methods call
+    >> > `NextMethod()`, and `range.default()` uses `is.numeric()` to determine
+    >> > whether or not to apply `finite`. Because `is.numeric.Date()` is
+    >> > defined, that always returns `FALSE` for Dates (and POSIXt). Because
+    >> > of that, it may still be easier to just write a specific
+    >> > `range.Date()` method, but I'm not sure.
+    >> 
+    >> > -Davis
+    >> 
+    >> I've looked more closely now, and indeed,
+    >> range() is the only function in the  Summary  group
+    >> where (only) the default method has a 'finite' argument.
+    >> which strikes me as somewhat asymmetric / inconsequential, as
+    >> after all,  range(.) := c(min(.), max(.)) ,
+    >> but  min() and max() do not obey an finite=TRUE setting, note
+    >> 
+    >> > min(c(-Inf,3:5), finite=TRUE)
+    >> Error: attempt to use zero-length variable name
+    >> 
+    >> where the error message also is not particularly friendly
+    >> and of course has nothing to with 'finite' :
+    >> 
+    >> > max(1:4, foo="bar")
+    >> Error: attempt to use zero-length variable name
+    >> >
+    >> 
+    >> ... but that is diverting;  coming back to the topic:  Given
+    >> that 'finite' only applies to range() {and there is just a convenience},
+    >> I do agree that from my own work & support to make `Date` and
+    >> `POSIX(c)t` behave more number-like, it would be "nice" to have
+    >> range() obey a `finite=TRUE` also for these.
+    >> 
+    >> OTOH, there are quite a few other 'number-like' thingies for
+    >> which I would then like to have  range(*, finite=TRUE) work,
+    >> e.g.,  "mpfr" (package {Rmpfr}) or "bigz" {gmp} numbers, numeric
+    >> sparse matrices, ...
+    >> 
+    >> To keep such methods all internally consistent with
+    >> range.default(), I could envision something like this
+    >> 
+    >> 
+    >> .rangeNum <- function(..., na.rm = FALSE, finite = FALSE, isNumeric)
+    >> {
+    >> x <- c(..., recursive = TRUE)
+    >> if(isNumeric(x)) {
+    >> if(finite) x <- x[is.finite(x)]
+    >> else if(na.rm) x <- x[!is.na(x)]
+    >> c(min(x), max(x))
+    >> } else {
+    >> if(finite) na.rm <- TRUE
+    >> c(min(x, na.rm=na.rm), max(x, na.rm=na.rm))
+    >> }
+    >> }
+    >> 
+    >> range.default <- function(..., na.rm = FALSE, finite = FALSE)
+    >> .rangeNum(..., na.rm=na.rm, finite=finite, isNumeric = is.numeric)
+    >> 
+    >> range.POSIXct <- range.Date <- function(..., na.rm = FALSE, finite = FALSE)
+    >> .rangeNum(..., na.rm=na.rm, finite=finite, isNumeric = function(.)TRUE)
+    >> 
+    >> 
+    >> 
+    >> which would also provide .rangeNum() to be used by implementors
+    >> of other numeric-like classes to provide their own range()
+    >> method as a 1-liner *and* be future-consistent with the default method..
+    >> 
+    >> 
+    >> 
+    >> 
+    >> > On Sat, Apr 29, 2023 at 4:47?PM Martin Maechler
+    >> > <maechler at stat.math.ethz.ch> wrote:
+    >> >>
+    >> >> >>>>> Davis Vaughan via R-devel
+    >> >> >>>>>     on Fri, 28 Apr 2023 11:12:27 -0400 writes:
+    >> >>
+    >> >> > Hi all,
+    >> >>
+    >> >> > I noticed that `range.default()` has a nice `finite =
+    >> >> > TRUE` argument, but it doesn't actually apply to Date or
+    >> >> > POSIXct due to how `is.numeric()` works.
+    >> >>
+    >> >> Well, I think it would / should never apply:
+    >> >>
+    >> >> range() belongs to the "Summary" group generics (as min, max, ...)
+    >> >>
+    >> >> and there  *are*  Summary.Date()  and Summary.POSIX{c,l}t() methods.
+    >> >>
+    >> >> Without checking further for now, I think you are indirectly
+    >> >> suggesting to enhance these three Summary.*() methods so they do
+    >> >> obey  'finite = TRUE' .
+    >> >>
+    >> >> I think I agree they should.
+    >> >>
+    >> >> Martin
+    >> >>
+    >> >> > ``` x <- .Date(c(0, Inf, 1, 2, Inf)) x #> [1] "1970-01-01"
+    >> >> > "Inf" "1970-01-02" "1970-01-03" "Inf"
+    >> >>
+    >> >> > # Darn!  range(x, finite = TRUE) #> [1] "1970-01-01" "Inf"
+    >> >>
+    >> >> > # What I want .Date(range(unclass(x), finite = TRUE)) #>
+    >> >> > [1] "1970-01-01" "1970-01-03" ```
+    >> >>
+    >> >> > I think `finite = TRUE` would be pretty nice for Dates in
+    >> >> > particular.
+    >> >>
+    >> >> > As a motivating example, sometimes you have ranges of
+    >> >> > dates represented by start/end pairs. It is fairly natural
+    >> >> > to represent an event that hasn't ended yet with an
+    >> >> > infinite date. If you need to then compute a sequence of
+    >> >> > dates spanning the full range of the start/end pairs, it
+    >> >> > would be nice to be able to use `range(finite = TRUE)` to
+    >> >> > do so:
+    >> >>
+    >> >> > ``` start <- as.Date(c("2019-01-05", "2019-01-10",
+    >> >> > "2019-01-11", "2019-01-14")) end <-
+    >> >> > as.Date(c("2019-01-07", NA, "2019-01-14", NA))
+    >> >> > end[is.na(end)] <- Inf
+    >> >>
+    >> >> > # `end = Inf` means that the event hasn't "ended" yet
+    >> >> > data.frame(start, end) #> start end #> 1 2019-01-05
+    >> >> > 2019-01-07 #> 2 2019-01-10 Inf #> 3 2019-01-11 2019-01-14
+    >> >> > #> 4 2019-01-14 Inf
+    >> >>
+    >> >> > # Create a full sequence along all days in start/end range
+    >> >> > <- .Date(range(unclass(c(start, end)), finite = TRUE))
+    >> >> > seq(range[1], range[2], by = 1) #> [1] "2019-01-05"
+    >> >> > "2019-01-06" "2019-01-07" "2019-01-08" "2019-01-09" #> [6]
+    >> >> > "2019-01-10" "2019-01-11" "2019-01-12" "2019-01-13"
+    >> >> > "2019-01-14" ```
+    >> >>
+    >> >> > It seems like one option is to create a `range.Date()`
+    >> >> > method that unclasses, forwards the arguments on to a
+    >> >> > second call to `range()`, and then reclasses?
+    >> >>
+    >> >> > ``` range.Date <- function(x, ..., na.rm = FALSE, finite =
+    >> >> > FALSE) { .Date(range(unclass(x), na.rm = na.rm, finite =
+    >> >> > finite), oldClass(x)) } ```
+    >> >>
+    >> >> > This is similar to how `rep.Date()` works.
+    >> >>
+    >> >> > Thanks, Davis Vaughan
+    >> >>
+    >> >> > ______________________________________________
+    >> >> > R-devel at r-project.org mailing list
+    >> >> > https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From w@|ter@djur|c @end|ng |rom gm@||@com  Thu May 11 18:26:43 2023
+From: w@|ter@djur|c @end|ng |rom gm@||@com (W. D.)
+Date: Thu, 11 May 2023 18:26:43 +0200
+Subject: [Rd] 
+ R-4.2.3 build from source on Windows (w Rtools42) - lto1.exe error
+In-Reply-To: <2bc1b922-3fa4-33d2-7ec0-f8c2316280bf@gmail.com>
+References: <000701d983a4$ea7cc160$bf764420$@gmail.com>
+ <2bc1b922-3fa4-33d2-7ec0-f8c2316280bf@gmail.com>
+Message-ID: <CAJWiZ+ks6woYgDetho+O-6D0zKkbxzzS6b23uiOH7+H2cj1E5w@mail.gmail.com>
+
+Thanks to everybody for the reples.
+
+tl;dr: it was a config problem with my environment being polluted by
+other apps (also via $USERPROFILE/.bashrc).
+R-4-2-branch builds with LTO "march=native" (Rtools42, also managed to
+build with "mtune=native", which afaik is inherently included when
+doing march, but still).
+
+Details: I will try to aggregate answers to comments/hints here and
+document a sequentially processed train of action here including
+results as some form of documentation for current status and hickups
+from my setup described in this email chain.
+
+@Avraham, et al
+Since I wasn't sure if and how maybe lib updates I had done before
+starting to build had played a role I downloaded a fresh copy of the
+Rtools42 installer from here
+[https://cran.r-project.org/bin/windows/Rtools/rtools42/files/]
+current version via `cat /x86_64-w6cat
+/x86_64-w64-mingw32.static.posix/.version` gave "5355"
+Did some more "tests":
+`cd R-4-2-branch/src/gnuwin32`
+Ran build with"mtune=native" gave same error
+Ran `make clean`
+Then using no EOPTS options in MkRules.local with version "5355" -> same error
+Ran `make clean`
+---
+Then ran an update via `pacman -Syuu`
+Which updates the following:
+Packages (55) brotli-1.0.9-8  bsdtar-3.6.2-3
+ca-certificates-20230311-1  coreutils-8.32-5  curl-8.0.1-1
+              dash-0.5.12-1  db-5.3.28-4  diffutils-3.9-1  file-5.44-5
+ gawk-5.2.1-2  gcc-libs-11.3.0-3
+              gnupg-2.2.41-1  grep-1~3.0-6  heimdal-libs-7.8.0-3
+info-7.0.3-1  less-633-1  libcrypt-2.1-4
+              libcurl-8.0.1-1  libdb-5.3.28-4  libedit-20221030_3.1-1
+libexpat-2.5.0-1  libffi-3.4.4-1
+              libgcrypt-1.10.2-1  libgnutls-3.8.0-1
+libgpg-error-1.47-1  libidn2-2.3.4-2  libksba-1.6.3-1
+              liblzma-5.4.3-1  libnghttp2-1.52.0-1  libopenssl-3.1.0-2
+ libpcre-8.45-3  libpsl-0.21.2-1
+              libreadline-8.2.001-3  libsqlite-3.41.2-3
+libssh2-1.10.0-3  libunistring-1.1-2  libxml2-2.10.4-1
+              libzstd-1.5.5-1  make-4.4.1-1  mpfr-4.2.0.p4-1
+msys2-keyring-1~20230316-1  ncurses-6.4-1
+              openssl-3.1.0-2  patch-2.7.6-2  perl-5.36.0-1
+pinentry-1.2.1-1  rebase-4.5.0-4  rsync-3.2.7-2
+              sed-4.9-1  tcl-8.6.12-3  texinfo-7.0.3-1
+texinfo-tex-7.0.3-1  xz-5.4.3-1  zlib-1.2.13-1  zstd-1.5.5-1
+
+But what confuses me a bit is that after that ` cat /x86_64-w6cat
+/x86_64-w64-mingw32.static.posix/.version` still only gives me "5355"?
+As will be shown later (below) this was not a breaking issue.
+
+Important change to my environment for the next attempt!
+I decided to check my ENV Variables (one more time) after thoroughly
+reading Tomas comment "maybe there is some config problem on the
+system" as well as Prof. Ripley's "first build without LTO to
+isolate the issue" and noticed that the old Rtools40/.../bin folder
+was also in my WINdows %PATH% ENV Variable.
+So I started a cleanup initiative from there.
+Also noticed that the .bashrc file in my %USERPROFILE% folder
+cluttered up my PATH especially there were `/mingw-64/bin` and
+`.../Library/bin` and similar entries from a miniconda3 installation
+amongst others ghosting around in there!
+Despite gcc --version or make commands not returning anything other
+than `command not found` I cleaned that .bashrc file up quite a bit.
+After cleanup I restarted MSYS2 Bash and ran  `make distcelan` in the
+/src/gnuwin32 folder one more time then added miktex,
+/x86_64-w64-mingw32.static.posix/bin, tar, etc to $PATH or environment
+again.
+`echo $PATH` now (ater the extension of PATH var as dscibed in
+https://cran.r-project.org/bin/windows/base/howto-R-4.2.html)
+finally looked like this
+```
+/c/Users/gwd/AppData/Local/Programs/MiKTeX/miktex/bin/x64:/x86_64-w64-mingw32.static.posix/bin:/usr/local/bin:/usr/bin:/bin:/opt/bin:/c/Windows/System32:/c/Windows:/c/Windows/System32/Wbem:/c/Windows/System32/WindowsPowerShell/v1.0/:/c/progra~1/git/cmd:/usr/bin/site_perl:/usr/bin/vendor_perl:/usr/bin/core_perl
+```
+with all other Library, bin or similar (mainly miniconda3) folders gone now.
+and
+`which make gcc pdflatex tar` looks like this now (not much different
+to before, but ...)
+```
+make is /usr/bin/make
+make is /bin/make
+gcc is /x86_64-w64-mingw32.static.posix/bin/gcc
+pdflatex is /c/Users/gwd/AppData/Local/Programs/MiKTeX/miktex/bin/x64/pdflatex
+tar is /usr/bin/tar
+tar is /bin/tar
+tar is /c/Windows/System32/tar
+```
+seems to look "better"!
+
+Then I started to build again ... which took me some time - that's why
+there's this delay in my answer here. ..
+First w/o any EOPTS -> succeeded!
+Then `make distclean`
+And then with march=native` [as well as mtune] -> succeeded!
+
+I will give the R-devel version with Rtools43 a shot as well (next)
+week - if you don't hear back from me -> you can assume that (also)
+worked correctly with LTO.
+
+So ... as is so often the case: "the problem was sitting in front of the PC".
+Thanks for the assistance and informative hints and sorry for
+bothering you all basically b/c of my (.bashrc) setup conundrum!
+
+Greetings,
+Walter
+
+
+On Thu, 11 May 2023 at 09:06, Tomas Kalibera <tomas.kalibera at gmail.com> wrote:
+>
+>
+> On 5/11/23 03:07, Gmail wrote:
+> > Windows 11 PRO Version??10.0.22621 Build 22621
+> > Processor: Intel(R) Core(TM) i7-1065G7 "Icelake-client"
+> > ```
+> > svn info
+> > Path: .
+> > Working Copy Root Path: /d/R_DEV/R-4/R42/R-4-2-branch
+> > URL: https://svn.r-project.org/R/branches/R-4-2-branch
+> > Relative URL: ^/branches/R-4-2-branch
+> > Repository Root: https://svn.r-project.org/R
+> > Repository UUID: 00db46b3-68df-0310-9c12-caf00c1e9a41
+> > Revision: 84417
+> > Node Kind: directory
+> > Schedule: normal
+> > Last Changed Author: kalibera
+> > Last Changed Rev: 84249
+> > Last Changed Date: 2023-04-13 07:12:24 +0000 (Thu, 13 Apr 2023)
+> > ```
+> >
+> > Only adaptation done in MkRules.local was adding: `EOPTS = -march=native`  - that's why I included the cpu-type info above;
+> > running make all recommended fails at/with:
+> > ```
+> > gcc -shared -s -static-libgcc -o utils.dll tmp.def init.o io.o size.o sock.o stubs.o utils.o hashtab.o windows/dataentry.o windows/dialogs.o windows/registry.o windows/util.o windows/widgets.o ../../../gnuwin32/dllversion.o -lRgraphapp -lversion -L/x86_64-w64-mingw32.static.posix/lib/x64 -llzma -LC:/rtools42/x86_64-w64-mingw32.static.posix/lib/x64 -LC:/rtools42/x86_64-w64-mingw32.static.posix/lib -L../../../../bin/x64 -lR
+> >
+> > lto1.exe: fatal error: bytecode stream in file 'windows/dataentry.o' generated with LTO version 9.3 instead of the expected 9.4
+> > compilation terminated.
+> >
+> > lto-wrapper.exe: fatal error: C:\rtools42\x86_64-w64-mingw32.static.posix\bin\gcc.exe returned 1 exit status
+> > compilation terminated.
+> > C:\rtools42\x86_64-w64-mingw32.static.posix\bin/ld.exe: error: lto-wrapper failed
+> > collect2.exe: error: ld returned 1 exit status
+> > cp: cannot stat 'utils.dll': No such file or directory
+> > make[4]: *** [Makefile.win:36: shlib] Error 1
+> > make[3]: *** [../../../share/make/basepkg.mk:145: mksrc-win2] Error 1
+> > make[2]: *** [Makefile.win:24: all] Error 2
+> > make[1]: *** [Makefile.win:34: R] Error 1
+> > make: *** [Makefile:18: all] Error 2
+> > ```
+> > Any hints/ideas on how to fix this? I guess I could
+> > gcc -c -flto ... windows/dataentry.c -o windows/dataentry.o
+> > with the exact path of that fiile ...
+>
+> All of the object files are generated on your system during the build.
+> If dataentry.o is generated using an older version than other object
+> files, maybe there is some configuration problem on the system. It might
+> be worth checking the compilers and linkers from Rtools42 are used, and
+> then running "make distclean", and then trying the build again.
+>
+> I never tried building R with LTO on Windows myself, I don't know if
+> that works even on a system set up according to the documentation for R
+> 4.2 (https://cran.r-project.org/bin/windows/base/howto-R-4.2.html).
+>
+> > and it hopefully will fix that but I guess it would make sense to add a Revision to update that LTO version mismatch there, and I don't know yet if this is the only one?
+>
+> Perhaps it is better to use Rtools43 and R-devel if you can, so that if
+> you find some problem in either, it can still be fixed.
+>
+> > Greetings,
+> > W
+>
+> Best,
+> Tomas
+>
+> >
+> > ______________________________________________
+> > R-devel at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+
+-- 
+G, WD
+
+
+From w||||@mwdun|@p @end|ng |rom gm@||@com  Thu May 11 19:42:48 2023
+From: w||||@mwdun|@p @end|ng |rom gm@||@com (Bill Dunlap)
+Date: Thu, 11 May 2023 10:42:48 -0700
+Subject: [Rd] range() for Date and POSIXct could respect `finite = TRUE`
+In-Reply-To: <25692.44077.542251.477187@stat.math.ethz.ch>
+References: <CABzLhzyRuxgHnToS4CPn_g8NOsc6M5Tx+14Sf7X+cjD8NvZgRg@mail.gmail.com>
+ <25677.33376.349216.862139@stat.math.ethz.ch>
+ <CABzLhzzq2W3JsDP6KoRfLi0K1roD+3RH8mvnjWs_AnhP3A2SQg@mail.gmail.com>
+ <25683.31504.509548.721569@stat.math.ethz.ch>
+ <CABzLhzxsUbgG2kQDovN_2droJtraFCqmn9G+_vkwrdTXivvj0Q@mail.gmail.com>
+ <25692.44077.542251.477187@stat.math.ethz.ch>
+Message-ID: <CAHqSRuR+gqxw3i4379wi7mSX2v_2TdG_=VHbfNXaFYE6ywfvog@mail.gmail.com>
+
+>  What do others think?
+
+I can imagine a class, "TemperatureKelvins", that wraps a double but would
+have a range of 0 to Inf or one called "GymnasticsScore" with a range of 0
+to 10.  For those sorts of things it would be nice to have a generic that
+gave the possible min and max for the class instead of one that just said
+they were -Inf and Inf or not.
+
+-Bill
+
+On Thu, May 11, 2023 at 1:49?AM Martin Maechler <maechler at stat.math.ethz.ch>
+wrote:
+
+> >>>>> Davis Vaughan
+> >>>>>     on Tue, 9 May 2023 09:49:41 -0400 writes:
+>
+>     > It seems like the main problem is that `is.numeric(x)`
+>     > isn't fully indicative of whether or not `is.finite(x)`
+>     > makes sense for `x` (i.e.  Date isn't numeric but does
+>     > allow infinite dates).
+>
+>     > So I could also imagine a new `allows.infinite()` S3
+>     > generic that would return a single TRUE/FALSE for whether
+>     > or not the type allows infinite values, this would also be
+>     > indicative of whether or not `is.finite()` and
+>     > `is.infinite()` make sense on that type. I imagine it
+>     > being used like:
+>
+> > ```
+> >   allows.infinite <- function(x) {
+> >     UseMethod("allows.infinite")
+> >   }
+> >   allows.infinite.default <- function(x) {
+> >     is.numeric(x) # For backwards compatibility, maybe? Not sure.
+> >   }
+> >   allows.infinite.Date <- function(x) {
+> >     TRUE
+> >   }
+> >   allows.infinite.POSIXct <- function(x) {
+> >     TRUE
+> >   }
+> >
+> >   range.default <- function (..., na.rm = FALSE, finite = FALSE) {
+> >     x <- c(..., recursive = TRUE)
+> >     if (allows.infinite(x)) { # changed from `is.numeric()`
+> >       if (finite)
+> >         x <- x[is.finite(x)]
+> >       else if (na.rm)
+> >         x <- x[!is.na(x)]
+> >       c(min(x), max(x))
+> >     }
+> >     else {
+> >       if (finite)
+> >         na.rm <- TRUE
+> >       c(min(x, na.rm = na.rm), max(x, na.rm = na.rm))
+> >     }
+> >   }
+> >   ```
+>
+>     > It could allow other R developers to also use the pattern of:
+>
+>     > ```
+>     > if (allows.infinite(x)) {
+>     >    # conditionally do stuff with is.infinite(x)
+>     > }
+>     > ```
+>
+>     > and that seems like it could be rather nice.
+>
+>     > It would avoid the need for `range.Date()` and `range.POSIXct()`
+> methods too.
+>
+>     > -Davis
+>
+> That *is* an interesting alternative perspective ...
+> sent just about before I was going to commit my proposal (incl
+> new help page entries, regr.tests ..).
+>
+> So we would introduce a new generic  allows.infinite() {or
+> better name?,  allowsInf, ..} with the defined semantic that
+>
+> allows.infinite(x) for a vector 'x' gives a logical "scalar",
+> TRUE iff it is known that  is.finite(x) "makes sense" and
+> returns a logical vector of length length(x) .. which is TRUE
+> where x[i] is not NA/NaN/+Inf/-Inf .. *and*
+> is.infinite := Negate(is.finite)    {or vice versa if you prefer}.
+>
+> I agree that this may be useful somewhat more generally than
+> just for  range() methods.
+>
+> What do others think?
+>
+> Martin
+>
+>
+>     > On Thu, May 4, 2023 at 5:29?AM Martin Maechler
+>     > <maechler at stat.math.ethz.ch> wrote:
+> [......]
+>
+>     >> >>>>> Davis Vaughan
+>     >> >>>>>     on Mon, 1 May 2023 08:46:33 -0400 writes:
+>     >>
+>     >> > Martin,
+>     >> > Yes, I missed that those have `Summary.*` methods, thanks!
+>     >>
+>     >> > Tweaking those to respect `finite = TRUE` sounds great. It seems
+> like
+>     >> > it might be a little tricky since the Summary methods call
+>     >> > `NextMethod()`, and `range.default()` uses `is.numeric()` to
+> determine
+>     >> > whether or not to apply `finite`. Because `is.numeric.Date()` is
+>     >> > defined, that always returns `FALSE` for Dates (and POSIXt).
+> Because
+>     >> > of that, it may still be easier to just write a specific
+>     >> > `range.Date()` method, but I'm not sure.
+>     >>
+>     >> > -Davis
+>     >>
+>     >> I've looked more closely now, and indeed,
+>     >> range() is the only function in the  Summary  group
+>     >> where (only) the default method has a 'finite' argument.
+>     >> which strikes me as somewhat asymmetric / inconsequential, as
+>     >> after all,  range(.) := c(min(.), max(.)) ,
+>     >> but  min() and max() do not obey an finite=TRUE setting, note
+>     >>
+>     >> > min(c(-Inf,3:5), finite=TRUE)
+>     >> Error: attempt to use zero-length variable name
+>     >>
+>     >> where the error message also is not particularly friendly
+>     >> and of course has nothing to with 'finite' :
+>     >>
+>     >> > max(1:4, foo="bar")
+>     >> Error: attempt to use zero-length variable name
+>     >> >
+>     >>
+>     >> ... but that is diverting;  coming back to the topic:  Given
+>     >> that 'finite' only applies to range() {and there is just a
+> convenience},
+>     >> I do agree that from my own work & support to make `Date` and
+>     >> `POSIX(c)t` behave more number-like, it would be "nice" to have
+>     >> range() obey a `finite=TRUE` also for these.
+>     >>
+>     >> OTOH, there are quite a few other 'number-like' thingies for
+>     >> which I would then like to have  range(*, finite=TRUE) work,
+>     >> e.g.,  "mpfr" (package {Rmpfr}) or "bigz" {gmp} numbers, numeric
+>     >> sparse matrices, ...
+>     >>
+>     >> To keep such methods all internally consistent with
+>     >> range.default(), I could envision something like this
+>     >>
+>     >>
+>     >> .rangeNum <- function(..., na.rm = FALSE, finite = FALSE, isNumeric)
+>     >> {
+>     >> x <- c(..., recursive = TRUE)
+>     >> if(isNumeric(x)) {
+>     >> if(finite) x <- x[is.finite(x)]
+>     >> else if(na.rm) x <- x[!is.na(x)]
+>     >> c(min(x), max(x))
+>     >> } else {
+>     >> if(finite) na.rm <- TRUE
+>     >> c(min(x, na.rm=na.rm), max(x, na.rm=na.rm))
+>     >> }
+>     >> }
+>     >>
+>     >> range.default <- function(..., na.rm = FALSE, finite = FALSE)
+>     >> .rangeNum(..., na.rm=na.rm, finite=finite, isNumeric = is.numeric)
+>     >>
+>     >> range.POSIXct <- range.Date <- function(..., na.rm = FALSE, finite
+> = FALSE)
+>     >> .rangeNum(..., na.rm=na.rm, finite=finite, isNumeric =
+> function(.)TRUE)
+>     >>
+>     >>
+>     >>
+>     >> which would also provide .rangeNum() to be used by implementors
+>     >> of other numeric-like classes to provide their own range()
+>     >> method as a 1-liner *and* be future-consistent with the default
+> method..
+>     >>
+>     >>
+>     >>
+>     >>
+>     >> > On Sat, Apr 29, 2023 at 4:47?PM Martin Maechler
+>     >> > <maechler at stat.math.ethz.ch> wrote:
+>     >> >>
+>     >> >> >>>>> Davis Vaughan via R-devel
+>     >> >> >>>>>     on Fri, 28 Apr 2023 11:12:27 -0400 writes:
+>     >> >>
+>     >> >> > Hi all,
+>     >> >>
+>     >> >> > I noticed that `range.default()` has a nice `finite =
+>     >> >> > TRUE` argument, but it doesn't actually apply to Date or
+>     >> >> > POSIXct due to how `is.numeric()` works.
+>     >> >>
+>     >> >> Well, I think it would / should never apply:
+>     >> >>
+>     >> >> range() belongs to the "Summary" group generics (as min, max,
+> ...)
+>     >> >>
+>     >> >> and there  *are*  Summary.Date()  and Summary.POSIX{c,l}t()
+> methods.
+>     >> >>
+>     >> >> Without checking further for now, I think you are indirectly
+>     >> >> suggesting to enhance these three Summary.*() methods so they do
+>     >> >> obey  'finite = TRUE' .
+>     >> >>
+>     >> >> I think I agree they should.
+>     >> >>
+>     >> >> Martin
+>     >> >>
+>     >> >> > ``` x <- .Date(c(0, Inf, 1, 2, Inf)) x #> [1] "1970-01-01"
+>     >> >> > "Inf" "1970-01-02" "1970-01-03" "Inf"
+>     >> >>
+>     >> >> > # Darn!  range(x, finite = TRUE) #> [1] "1970-01-01" "Inf"
+>     >> >>
+>     >> >> > # What I want .Date(range(unclass(x), finite = TRUE)) #>
+>     >> >> > [1] "1970-01-01" "1970-01-03" ```
+>     >> >>
+>     >> >> > I think `finite = TRUE` would be pretty nice for Dates in
+>     >> >> > particular.
+>     >> >>
+>     >> >> > As a motivating example, sometimes you have ranges of
+>     >> >> > dates represented by start/end pairs. It is fairly natural
+>     >> >> > to represent an event that hasn't ended yet with an
+>     >> >> > infinite date. If you need to then compute a sequence of
+>     >> >> > dates spanning the full range of the start/end pairs, it
+>     >> >> > would be nice to be able to use `range(finite = TRUE)` to
+>     >> >> > do so:
+>     >> >>
+>     >> >> > ``` start <- as.Date(c("2019-01-05", "2019-01-10",
+>     >> >> > "2019-01-11", "2019-01-14")) end <-
+>     >> >> > as.Date(c("2019-01-07", NA, "2019-01-14", NA))
+>     >> >> > end[is.na(end)] <- Inf
+>     >> >>
+>     >> >> > # `end = Inf` means that the event hasn't "ended" yet
+>     >> >> > data.frame(start, end) #> start end #> 1 2019-01-05
+>     >> >> > 2019-01-07 #> 2 2019-01-10 Inf #> 3 2019-01-11 2019-01-14
+>     >> >> > #> 4 2019-01-14 Inf
+>     >> >>
+>     >> >> > # Create a full sequence along all days in start/end range
+>     >> >> > <- .Date(range(unclass(c(start, end)), finite = TRUE))
+>     >> >> > seq(range[1], range[2], by = 1) #> [1] "2019-01-05"
+>     >> >> > "2019-01-06" "2019-01-07" "2019-01-08" "2019-01-09" #> [6]
+>     >> >> > "2019-01-10" "2019-01-11" "2019-01-12" "2019-01-13"
+>     >> >> > "2019-01-14" ```
+>     >> >>
+>     >> >> > It seems like one option is to create a `range.Date()`
+>     >> >> > method that unclasses, forwards the arguments on to a
+>     >> >> > second call to `range()`, and then reclasses?
+>     >> >>
+>     >> >> > ``` range.Date <- function(x, ..., na.rm = FALSE, finite =
+>     >> >> > FALSE) { .Date(range(unclass(x), na.rm = na.rm, finite =
+>     >> >> > finite), oldClass(x)) } ```
+>     >> >>
+>     >> >> > This is similar to how `rep.Date()` works.
+>     >> >>
+>     >> >> > Thanks, Davis Vaughan
+>     >> >>
+>     >> >> > ______________________________________________
+>     >> >> > R-devel at r-project.org mailing list
+>     >> >> > https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+
+	[[alternative HTML version deleted]]
+
+
+From tom@@@k@||ber@ @end|ng |rom gm@||@com  Fri May 12 09:50:05 2023
+From: tom@@@k@||ber@ @end|ng |rom gm@||@com (Tomas Kalibera)
+Date: Fri, 12 May 2023 09:50:05 +0200
+Subject: [Rd] 
+ R-4.2.3 build from source on Windows (w Rtools42) - lto1.exe error
+In-Reply-To: <CAJWiZ+ks6woYgDetho+O-6D0zKkbxzzS6b23uiOH7+H2cj1E5w@mail.gmail.com>
+References: <000701d983a4$ea7cc160$bf764420$@gmail.com>
+ <2bc1b922-3fa4-33d2-7ec0-f8c2316280bf@gmail.com>
+ <CAJWiZ+ks6woYgDetho+O-6D0zKkbxzzS6b23uiOH7+H2cj1E5w@mail.gmail.com>
+Message-ID: <e0fdb5fc-7f1e-c0f2-a638-5b406ff4a8d9@gmail.com>
+
+
+On 5/11/23 18:26, W. D. wrote:
+> Thanks to everybody for the reples.
+>
+> tl;dr: it was a config problem with my environment being polluted by
+> other apps (also via $USERPROFILE/.bashrc).
+> R-4-2-branch builds with LTO "march=native" (Rtools42, also managed to
+> build with "mtune=native", which afaik is inherently included when
+> doing march, but still).
+>
+> Details: I will try to aggregate answers to comments/hints here and
+> document a sequentially processed train of action here including
+> results as some form of documentation for current status and hickups
+> from my setup described in this email chain.
+>
+> @Avraham, et al
+> Since I wasn't sure if and how maybe lib updates I had done before
+> starting to build had played a role I downloaded a fresh copy of the
+> Rtools42 installer from here
+> [https://cran.r-project.org/bin/windows/Rtools/rtools42/files/]
+> current version via `cat /x86_64-w6cat
+> /x86_64-w64-mingw32.static.posix/.version` gave "5355"
+> Did some more "tests":
+> `cd R-4-2-branch/src/gnuwin32`
+> Ran build with"mtune=native" gave same error
+> Ran `make clean`
+> Then using no EOPTS options in MkRules.local with version "5355" -> same error
+> Ran `make clean`
+> ---
+> Then ran an update via `pacman -Syuu`
+> Which updates the following:
+> Packages (55) brotli-1.0.9-8  bsdtar-3.6.2-3
+> ca-certificates-20230311-1  coreutils-8.32-5  curl-8.0.1-1
+>                dash-0.5.12-1  db-5.3.28-4  diffutils-3.9-1  file-5.44-5
+>   gawk-5.2.1-2  gcc-libs-11.3.0-3
+>                gnupg-2.2.41-1  grep-1~3.0-6  heimdal-libs-7.8.0-3
+> info-7.0.3-1  less-633-1  libcrypt-2.1-4
+>                libcurl-8.0.1-1  libdb-5.3.28-4  libedit-20221030_3.1-1
+> libexpat-2.5.0-1  libffi-3.4.4-1
+>                libgcrypt-1.10.2-1  libgnutls-3.8.0-1
+> libgpg-error-1.47-1  libidn2-2.3.4-2  libksba-1.6.3-1
+>                liblzma-5.4.3-1  libnghttp2-1.52.0-1  libopenssl-3.1.0-2
+>   libpcre-8.45-3  libpsl-0.21.2-1
+>                libreadline-8.2.001-3  libsqlite-3.41.2-3
+> libssh2-1.10.0-3  libunistring-1.1-2  libxml2-2.10.4-1
+>                libzstd-1.5.5-1  make-4.4.1-1  mpfr-4.2.0.p4-1
+> msys2-keyring-1~20230316-1  ncurses-6.4-1
+>                openssl-3.1.0-2  patch-2.7.6-2  perl-5.36.0-1
+> pinentry-1.2.1-1  rebase-4.5.0-4  rsync-3.2.7-2
+>                sed-4.9-1  tcl-8.6.12-3  texinfo-7.0.3-1
+> texinfo-tex-7.0.3-1  xz-5.4.3-1  zlib-1.2.13-1  zstd-1.5.5-1
+>
+> But what confuses me a bit is that after that ` cat /x86_64-w6cat
+> /x86_64-w64-mingw32.static.posix/.version` still only gives me "5355"?
+> As will be shown later (below) this was not a breaking issue.
+
+Rtools contains multiple separate things.
+
+It contains Msys2, which you can update using pacman and which has its 
+own versioning. Msys2 is used for build tools and their dependencies 
+(like make) - so e.g. pcre from above is used by some build tool, not 
+linked to R packages.
+
+It also contains a pre-built compiler toolchain and libraries, which 
+live in x86_64-w64-mingw32.static.posix and the .version file refers to 
+that. You can update this part also, but differently. These libraries 
+are linked to R packages, and you will find e.g. pcre there as well.
+
+Then Rtools also contains several additional tools used by packages when 
+building/checking.
+
+These things are described in the documentation in detail, for R 4.2 
+(and Rtools42) in
+https://cran.r-project.org/bin/windows/base/howto-R-4.2.html
+
+> Important change to my environment for the next attempt!
+> I decided to check my ENV Variables (one more time) after thoroughly
+> reading Tomas comment "maybe there is some config problem on the
+> system" as well as Prof. Ripley's "first build without LTO to
+> isolate the issue" and noticed that the old Rtools40/.../bin folder
+> was also in my WINdows %PATH% ENV Variable.
+> So I started a cleanup initiative from there.
+> Also noticed that the .bashrc file in my %USERPROFILE% folder
+> cluttered up my PATH especially there were `/mingw-64/bin` and
+> `.../Library/bin` and similar entries from a miniconda3 installation
+> amongst others ghosting around in there!
+> Despite gcc --version or make commands not returning anything other
+> than `command not found` I cleaned that .bashrc file up quite a bit.
+> After cleanup I restarted MSYS2 Bash and ran  `make distcelan` in the
+> /src/gnuwin32 folder one more time then added miktex,
+> /x86_64-w64-mingw32.static.posix/bin, tar, etc to $PATH or environment
+> again.
+> `echo $PATH` now (ater the extension of PATH var as dscibed in
+> https://cran.r-project.org/bin/windows/base/howto-R-4.2.html)
+> finally looked like this
+> ```
+> /c/Users/gwd/AppData/Local/Programs/MiKTeX/miktex/bin/x64:/x86_64-w64-mingw32.static.posix/bin:/usr/local/bin:/usr/bin:/bin:/opt/bin:/c/Windows/System32:/c/Windows:/c/Windows/System32/Wbem:/c/Windows/System32/WindowsPowerShell/v1.0/:/c/progra~1/git/cmd:/usr/bin/site_perl:/usr/bin/vendor_perl:/usr/bin/core_perl
+> ```
+> with all other Library, bin or similar (mainly miniconda3) folders gone now.
+> and
+> `which make gcc pdflatex tar` looks like this now (not much different
+> to before, but ...)
+> ```
+> make is /usr/bin/make
+> make is /bin/make
+> gcc is /x86_64-w64-mingw32.static.posix/bin/gcc
+> pdflatex is /c/Users/gwd/AppData/Local/Programs/MiKTeX/miktex/bin/x64/pdflatex
+> tar is /usr/bin/tar
+> tar is /bin/tar
+> tar is /c/Windows/System32/tar
+> ```
+> seems to look "better"!
+>
+> Then I started to build again ... which took me some time - that's why
+> there's this delay in my answer here. ..
+> First w/o any EOPTS -> succeeded!
+> Then `make distclean`
+> And then with march=native` [as well as mtune] -> succeeded!
+>
+> I will give the R-devel version with Rtools43 a shot as well (next)
+> week - if you don't hear back from me -> you can assume that (also)
+> worked correctly with LTO.
+>
+> So ... as is so often the case: "the problem was sitting in front of the PC".
+> Thanks for the assistance and informative hints and sorry for
+> bothering you all basically b/c of my (.bashrc) setup conundrum!
+
+Good you figured it out. You can use your Msys2 installation with Rtools 
+if needed (also covered in the documentation). You surely might be able 
+to make it work even with other distribution of tools, but you'd be on 
+your own, likely have to deal with technical issues.
+
+Best
+Tomas
+
+
+> Greetings,
+> Walter
+>
+>
+> On Thu, 11 May 2023 at 09:06, Tomas Kalibera <tomas.kalibera at gmail.com> wrote:
+>>
+>> On 5/11/23 03:07, Gmail wrote:
+>>> Windows 11 PRO Version??10.0.22621 Build 22621
+>>> Processor: Intel(R) Core(TM) i7-1065G7 "Icelake-client"
+>>> ```
+>>> svn info
+>>> Path: .
+>>> Working Copy Root Path: /d/R_DEV/R-4/R42/R-4-2-branch
+>>> URL: https://svn.r-project.org/R/branches/R-4-2-branch
+>>> Relative URL: ^/branches/R-4-2-branch
+>>> Repository Root: https://svn.r-project.org/R
+>>> Repository UUID: 00db46b3-68df-0310-9c12-caf00c1e9a41
+>>> Revision: 84417
+>>> Node Kind: directory
+>>> Schedule: normal
+>>> Last Changed Author: kalibera
+>>> Last Changed Rev: 84249
+>>> Last Changed Date: 2023-04-13 07:12:24 +0000 (Thu, 13 Apr 2023)
+>>> ```
+>>>
+>>> Only adaptation done in MkRules.local was adding: `EOPTS = -march=native`  - that's why I included the cpu-type info above;
+>>> running make all recommended fails at/with:
+>>> ```
+>>> gcc -shared -s -static-libgcc -o utils.dll tmp.def init.o io.o size.o sock.o stubs.o utils.o hashtab.o windows/dataentry.o windows/dialogs.o windows/registry.o windows/util.o windows/widgets.o ../../../gnuwin32/dllversion.o -lRgraphapp -lversion -L/x86_64-w64-mingw32.static.posix/lib/x64 -llzma -LC:/rtools42/x86_64-w64-mingw32.static.posix/lib/x64 -LC:/rtools42/x86_64-w64-mingw32.static.posix/lib -L../../../../bin/x64 -lR
+>>>
+>>> lto1.exe: fatal error: bytecode stream in file 'windows/dataentry.o' generated with LTO version 9.3 instead of the expected 9.4
+>>> compilation terminated.
+>>>
+>>> lto-wrapper.exe: fatal error: C:\rtools42\x86_64-w64-mingw32.static.posix\bin\gcc.exe returned 1 exit status
+>>> compilation terminated.
+>>> C:\rtools42\x86_64-w64-mingw32.static.posix\bin/ld.exe: error: lto-wrapper failed
+>>> collect2.exe: error: ld returned 1 exit status
+>>> cp: cannot stat 'utils.dll': No such file or directory
+>>> make[4]: *** [Makefile.win:36: shlib] Error 1
+>>> make[3]: *** [../../../share/make/basepkg.mk:145: mksrc-win2] Error 1
+>>> make[2]: *** [Makefile.win:24: all] Error 2
+>>> make[1]: *** [Makefile.win:34: R] Error 1
+>>> make: *** [Makefile:18: all] Error 2
+>>> ```
+>>> Any hints/ideas on how to fix this? I guess I could
+>>> gcc -c -flto ... windows/dataentry.c -o windows/dataentry.o
+>>> with the exact path of that fiile ...
+>> All of the object files are generated on your system during the build.
+>> If dataentry.o is generated using an older version than other object
+>> files, maybe there is some configuration problem on the system. It might
+>> be worth checking the compilers and linkers from Rtools42 are used, and
+>> then running "make distclean", and then trying the build again.
+>>
+>> I never tried building R with LTO on Windows myself, I don't know if
+>> that works even on a system set up according to the documentation for R
+>> 4.2 (https://cran.r-project.org/bin/windows/base/howto-R-4.2.html).
+>>
+>>> and it hopefully will fix that but I guess it would make sense to add a Revision to update that LTO version mismatch there, and I don't know yet if this is the only one?
+>> Perhaps it is better to use Rtools43 and R-devel if you can, so that if
+>> you find some problem in either, it can still be fixed.
+>>
+>>> Greetings,
+>>> W
+>> Best,
+>> Tomas
+>>
+>>> ______________________________________________
+>>> R-devel at r-project.org mailing list
+>>> https://stat.ethz.ch/mailman/listinfo/r-devel
+>> ______________________________________________
+>> R-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+>
+
+
