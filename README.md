@@ -4,7 +4,7 @@ The R ecosystem includes a few mailing lists for technical issues. The archives 
 
 This repository exists so you can clone it & then use command-line facilities like `grep`/`awk` to search more flexibly, or if you wanted to turn these archives into a data set (e.g. for NLP).
 
-Infinite gratitude to the maintainers of R, CRAN, and these mailing list.
+Infinite gratitude to the maintainers of R, CRAN, and these mailing lists.
 
 ## `r-announce` archives: announcements, e.g. releases
 
