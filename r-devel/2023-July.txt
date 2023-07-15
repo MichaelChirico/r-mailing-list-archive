@@ -1,0 +1,1007 @@
+From murdoch@dunc@n @end|ng |rom gm@||@com  Sun Jul  2 18:01:03 2023
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Sun, 2 Jul 2023 12:01:03 -0400
+Subject: [Rd] Strange error in R CMD check --timings
+Message-ID: <fb0340ef-f2f0-4b52-ae15-900d3cf2fdeb@gmail.com>
+
+This SO post: https://stackoverflow.com/q/76583828 describes a strange R 
+CMD check error.  Depending on the contents of a comment in one of the 
+examples sections of a help page, an error like this could be triggered:
+
+   > base::assign(".dptime", (proc.time() - get(".ptime", pos = 
+"CheckExEnv")), pos = "CheckExEnv")
+   > base::cat("read_net", base::get(".format_ptime", pos = 
+'CheckExEnv')(get(".dptime", pos = "CheckExEnv")), "\n", 
+file=base::get(".ExTimings", pos = 'CheckExEnv'), append=TRUE, sep="\t")
+   > ### * <FOOTER>
+   > ###
+   > cleanEx()
+   > options(digits = 7L)
+   > base::cat("Time elapsed: ", proc.time() - base::g
+   + Error: unexpected end of input
+   Execution halted
+
+The code without the offending comment is available here:
+
+   https://github.com/rob-ward-psych/iac
+
+at revision c2f3529.  To add the offending comment, change line 318 of 
+R/iac_networks.R to
+
+   #' # Ken is a burglar in the Sharks, what is retrieved from his name
+
+and run roxygen on the package, so the long comment ends up in the 
+examples section of man/read_net.Rd instead of the empty comment that is 
+there on Github.
+
+At first it appeared to require devtools::check(), but in fact the error 
+comes from R CMD check --timings .  One thing that may be related is 
+that an earlier example had this code:
+
+   file.edit(iac_example("what_where.yaml"))
+
+If that line is skipped (by conditioning on interactive()), the error 
+goes away.  But this might be unrelated, since deleting that comment 
+also makes the error go away.
+
+Duncan Murdoch
+
+
+From @eb@meyer @end|ng |rom |@u@de  Sun Jul  2 20:34:21 2023
+From: @eb@meyer @end|ng |rom |@u@de (Sebastian Meyer)
+Date: Sun, 2 Jul 2023 20:34:21 +0200
+Subject: [Rd] Strange error in R CMD check --timings
+In-Reply-To: <fb0340ef-f2f0-4b52-ae15-900d3cf2fdeb@gmail.com>
+References: <fb0340ef-f2f0-4b52-ae15-900d3cf2fdeb@gmail.com>
+Message-ID: <c3fa82ce-8941-e606-8229-131fa2fe03b0@fau.de>
+
+Am 02.07.23 um 18:01 schrieb Duncan Murdoch:
+> This SO post: https://stackoverflow.com/q/76583828 describes a strange R
+> CMD check error.  Depending on the contents of a comment in one of the
+> examples sections of a help page, an error like this could be triggered:
+> 
+>     > base::assign(".dptime", (proc.time() - get(".ptime", pos =
+> "CheckExEnv")), pos = "CheckExEnv")
+>     > base::cat("read_net", base::get(".format_ptime", pos =
+> 'CheckExEnv')(get(".dptime", pos = "CheckExEnv")), "\n",
+> file=base::get(".ExTimings", pos = 'CheckExEnv'), append=TRUE, sep="\t")
+>     > ### * <FOOTER>
+>     > ###
+>     > cleanEx()
+>     > options(digits = 7L)
+>     > base::cat("Time elapsed: ", proc.time() - base::g
+>     + Error: unexpected end of input
+>     Execution halted
+> 
+> The code without the offending comment is available here:
+> 
+>     https://github.com/rob-ward-psych/iac
+> 
+> at revision c2f3529.  To add the offending comment, change line 318 of
+> R/iac_networks.R to
+> 
+>     #' # Ken is a burglar in the Sharks, what is retrieved from his name
+> 
+> and run roxygen on the package, so the long comment ends up in the
+> examples section of man/read_net.Rd instead of the empty comment that is
+> there on Github.
+> 
+> At first it appeared to require devtools::check(), but in fact the error
+> comes from R CMD check --timings .  One thing that may be related is
+> that an earlier example had this code:
+> 
+>     file.edit(iac_example("what_where.yaml"))
+
+I could reproduce the check error on Ubuntu for some settings of EDITOR.
+
+- For EDITOR="nano", the output below file.edit() in iac-Ex.Rout showed 
+content from the first few lines of the yaml file and then
+Too many errors from stdin
+
+- For EDITOR="vi", iac-Ex.Rout showed
+Vim: Warning: Output is not to a terminal
+Vim: Warning: Input is not from a terminal
+Press ENTER or type command to continue
+... some content from the yaml file ...
+Vim: Error reading input, exiting...
+
+OTOH,
+EDITOR="nonexistent" resulted in a successful check run with file.edit() 
+output
+sh: 1: nonexistent: not found
+Warning: error in running command
+
+whereas EDITOR="emacs" would open the GUI while "* checking examples 
+...", waiting for me to finish editing.
+
+I agree that the package should conditionalize a [file.]edit() example 
+on the R session being interactive(). I'm wondering, however, whether R 
+CMD check should itself generally set the "editor" option to a read-only 
+variant, e.g., a function that just calls file.show() with a warning 
+when it runs the (massaged) examples. For related reasons, I guess, it 
+already sets the "pager" option on Windows to "console". Alternatively, 
+if the massaged "editor" option called stop() (similar to T and F 
+producing errors), such examples would really need to be conditioned on 
+interactive().
+
+	Sebastian Meyer
+
+> 
+> If that line is skipped (by conditioning on interactive()), the error
+> goes away.  But this might be unrelated, since deleting that comment
+> also makes the error go away.
+> 
+> Duncan Murdoch
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Sun Jul  2 20:44:34 2023
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Sun, 2 Jul 2023 14:44:34 -0400
+Subject: [Rd] Strange error in R CMD check --timings
+In-Reply-To: <c3fa82ce-8941-e606-8229-131fa2fe03b0@fau.de>
+References: <fb0340ef-f2f0-4b52-ae15-900d3cf2fdeb@gmail.com>
+ <c3fa82ce-8941-e606-8229-131fa2fe03b0@fau.de>
+Message-ID: <d4fc6647-9838-76ea-3bce-b348ecd3dc32@gmail.com>
+
+On 02/07/2023 2:34 p.m., Sebastian Meyer wrote:
+> Am 02.07.23 um 18:01 schrieb Duncan Murdoch:
+>> This SO post: https://stackoverflow.com/q/76583828 describes a strange R
+>> CMD check error.  Depending on the contents of a comment in one of the
+>> examples sections of a help page, an error like this could be triggered:
+>>
+>>      > base::assign(".dptime", (proc.time() - get(".ptime", pos =
+>> "CheckExEnv")), pos = "CheckExEnv")
+>>      > base::cat("read_net", base::get(".format_ptime", pos =
+>> 'CheckExEnv')(get(".dptime", pos = "CheckExEnv")), "\n",
+>> file=base::get(".ExTimings", pos = 'CheckExEnv'), append=TRUE, sep="\t")
+>>      > ### * <FOOTER>
+>>      > ###
+>>      > cleanEx()
+>>      > options(digits = 7L)
+>>      > base::cat("Time elapsed: ", proc.time() - base::g
+>>      + Error: unexpected end of input
+>>      Execution halted
+>>
+>> The code without the offending comment is available here:
+>>
+>>      https://github.com/rob-ward-psych/iac
+>>
+>> at revision c2f3529.  To add the offending comment, change line 318 of
+>> R/iac_networks.R to
+>>
+>>      #' # Ken is a burglar in the Sharks, what is retrieved from his name
+>>
+>> and run roxygen on the package, so the long comment ends up in the
+>> examples section of man/read_net.Rd instead of the empty comment that is
+>> there on Github.
+>>
+>> At first it appeared to require devtools::check(), but in fact the error
+>> comes from R CMD check --timings .  One thing that may be related is
+>> that an earlier example had this code:
+>>
+>>      file.edit(iac_example("what_where.yaml"))
+> 
+> I could reproduce the check error on Ubuntu for some settings of EDITOR.
+> 
+> - For EDITOR="nano", the output below file.edit() in iac-Ex.Rout showed
+> content from the first few lines of the yaml file and then
+> Too many errors from stdin
+> 
+> - For EDITOR="vi", iac-Ex.Rout showed
+> Vim: Warning: Output is not to a terminal
+> Vim: Warning: Input is not from a terminal
+> Press ENTER or type command to continue
+> ... some content from the yaml file ...
+> Vim: Error reading input, exiting...
+> 
+> OTOH,
+> EDITOR="nonexistent" resulted in a successful check run with file.edit()
+> output
+> sh: 1: nonexistent: not found
+> Warning: error in running command
+> 
+> whereas EDITOR="emacs" would open the GUI while "* checking examples
+> ...", waiting for me to finish editing.
+> 
+> I agree that the package should conditionalize a [file.]edit() example
+> on the R session being interactive(). I'm wondering, however, whether R
+> CMD check should itself generally set the "editor" option to a read-only
+> variant, e.g., a function that just calls file.show() with a warning
+> when it runs the (massaged) examples. For related reasons, I guess, it
+> already sets the "pager" option on Windows to "console". Alternatively,
+> if the massaged "editor" option called stop() (similar to T and F
+> producing errors), such examples would really need to be conditioned on
+> interactive().
+
+Given how variable the results are, I think the last option (calling 
+file.edit() non-interactively should be an error) would be my choice.
+
+Duncan Murdoch
+
+> 
+> 	Sebastian Meyer
+> 
+>>
+>> If that line is skipped (by conditioning on interactive()), the error
+>> goes away.  But this might be unrelated, since deleting that comment
+>> also makes the error go away.
+>>
+>> Duncan Murdoch
+>>
+>> ______________________________________________
+>> R-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From d|pter|x@w@ng @end|ng |rom gm@||@com  Thu Jul  6 08:37:22 2023
+From: d|pter|x@w@ng @end|ng |rom gm@||@com (Dipterix Wang)
+Date: Thu, 6 Jul 2023 02:37:22 -0400
+Subject: [Rd] numeric_version doesn't like numeric versions anymore?
+Message-ID: <674F4E4B-9A97-4185-A09B-A5E38CA6D2AC@gmail.com>
+
+Dear R devs,
+
+I installed the recent devel R to test a package error when I intercept this warning when loading packages:
+
+```
+Warning in .make_numeric_version(x, strict, .standard_regexps()$valid_numeric_version) :
+  invalid non-character version specification 'x' (type: double)
+```
+
+After a long debugging, I realize that `numeric_version` in base does not support numerical input x by default now. 
+
+A reproducible example: 
+
+R 4.4
+
+```
+> numeric_version(1.5)
+Warning in .make_numeric_version(x, strict, .standard_regexps()$valid_numeric_version) :
+  invalid non-character version specification 'x' (type: double)
+[1] ?1.5?
+```
+
+
+R 4.3.1
+
+```
+> numeric_version(1.5)
+[1] ?1.5?
+```
+
+According to help document, `strict=TRUE` should result in errors, then the 4.3 behavior was actually incorrect. According to pkgload maintainer, Kurt has sent him an email to fix this, suggesting this on-going change is intentional.
+ 
+May I ask is there any benefit of changing the behavior?
+
+Thanks,
+- D
+	[[alternative HTML version deleted]]
+
+
+From @eb@meyer @end|ng |rom |@u@de  Thu Jul  6 09:52:59 2023
+From: @eb@meyer @end|ng |rom |@u@de (Sebastian Meyer)
+Date: Thu, 6 Jul 2023 09:52:59 +0200
+Subject: [Rd] numeric_version doesn't like numeric versions anymore?
+In-Reply-To: <674F4E4B-9A97-4185-A09B-A5E38CA6D2AC@gmail.com>
+References: <674F4E4B-9A97-4185-A09B-A5E38CA6D2AC@gmail.com>
+Message-ID: <0ac19a97-ff57-6325-1744-41707d3b71ba@fau.de>
+
+Please see <https://bugs.r-project.org/show_bug.cgi?id=18548> for the 
+background. The documentation has always said that the input needs to be 
+a character vector. Implicit conversion of numeric input to character is 
+affected by R options (OutDec and scipen), but it is also error-prone in 
+this context:
+
+R> package_version("1.3") > 1.20
+[1] TRUE
+
+This now warns for a good reason in my opinion.
+
+Best regards,
+
+	Sebastian Meyer
+
+
+Am 06.07.23 um 08:37 schrieb Dipterix Wang:
+> Dear R devs,
+> 
+> I installed the recent devel R to test a package error when I intercept this warning when loading packages:
+> 
+> ```
+> Warning in .make_numeric_version(x, strict, .standard_regexps()$valid_numeric_version) :
+>    invalid non-character version specification 'x' (type: double)
+> ```
+> 
+> After a long debugging, I realize that `numeric_version` in base does not support numerical input x by default now.
+> 
+> A reproducible example:
+> 
+> R 4.4
+> 
+> ```
+>> numeric_version(1.5)
+> Warning in .make_numeric_version(x, strict, .standard_regexps()$valid_numeric_version) :
+>    invalid non-character version specification 'x' (type: double)
+> [1] ?1.5?
+> ```
+> 
+> 
+> R 4.3.1
+> 
+> ```
+>> numeric_version(1.5)
+> [1] ?1.5?
+> ```
+> 
+> According to help document, `strict=TRUE` should result in errors, then the 4.3 behavior was actually incorrect. According to pkgload maintainer, Kurt has sent him an email to fix this, suggesting this on-going change is intentional.
+>   
+> May I ask is there any benefit of changing the behavior?
+> 
+> Thanks,
+> - D
+> 	[[alternative HTML version deleted]]
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From j@g@nmn2 @end|ng |rom gm@||@com  Thu Jul  6 17:32:00 2023
+From: j@g@nmn2 @end|ng |rom gm@||@com (Mikael Jagan)
+Date: Thu, 6 Jul 2023 11:32:00 -0400
+Subject: [Rd] logic tweak needed for as.data.frame.<class> deprecation
+ warning
+Message-ID: <730ed025-b919-6d76-4263-6462d37f40e8@gmail.com>
+
+Continuing the thread started on R-package-devel, here:
+https://stat.ethz.ch/pipermail/r-package-devel/2023q3/009307.html
+
+The logic of the now soft-deprecated as.data.frame.<class>,
+
+ > body(as.data.frame.integer)[[2L]]
+if ((sys.nframe() <= 1L || sys.call(-1L)[[1L]] != quote(as.data.frame)) &&
+     nzchar(Sys.getenv("_R_CHECK_AS_DATA_FRAME_EXPLICIT_METHOD_"))) 
+.Deprecated(msg = gettextf("Direct call of '%s()' is deprecated.  Use '%s()' or 
+'%s()' instead",
+     "as.data.frame.integer", "as.data.frame.vector", "as.data.frame"))
+
+may need adjustment to avoid false positives such as this one:
+
+ > Sys.setenv("_R_CHECK_AS_DATA_FRAME_EXPLICIT_METHOD_" = TRUE)
+ > f <- as.data.frame
+ > f(0L)
+   0L
+1  0
+Warning message:
+Direct call of 'as.data.frame.integer()' is deprecated.  Use 
+'as.data.frame.vector()' or 'as.data.frame()' instead
+
+i.e., the condition sys.call(-1L)[[1L]] != quote(as.data.frame) is not precise
+enough ... would !identical(sys.function(-1L), as.data.frame) work instead?
+
+Mikael
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Thu Jul  6 18:13:37 2023
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Thu, 6 Jul 2023 18:13:37 +0200
+Subject: [Rd] Warning 'as.data.frame.POSIXct()' is deprecated
+In-Reply-To: <4d7bc097-0ea9-96b2-81ea-36203a7f7310@hiddenelephants.co.uk>
+References: <CALnEB16CAR28kTtkvVcEOQj3Tmyc_rwCjckwexnQsA3_ZkFPCg@mail.gmail.com>
+ <1e8bc3aa-1614-3cd4-f0db-01735c152e7f@hiddenelephants.co.uk>
+ <15178f56-0d28-e7fa-000f-959c00dd63ca@hiddenelephants.co.uk>
+ <CALnEB17VsNZC5U_usC+qxXgx4ngZFwGpO2W_Tg8L6WQ9rm83Qg@mail.gmail.com>
+ <87wmzdcg23.fsf@aldus>
+ <4d7bc097-0ea9-96b2-81ea-36203a7f7310@hiddenelephants.co.uk>
+Message-ID: <25766.59441.59514.211464@stat.math.ethz.ch>
+
+>>>>> Tim Taylor 
+>>>>>     on Thu, 6 Jul 2023 15:11:41 +0100 writes:
+
+    > Ah yes ... and reading the as.data.frame help we see (emphasis mine):
+    > "... Direct calls to as.data.frame.<class>() are still possible (*base 
+    > package!*), for 12 atomic base classes, but will deprecated ..."
+
+    > So it does seem that a lot of these warnings are triggered by base R and 
+    > updating this code may be a work in progress.
+
+
+    > A little tangential (but related) to this though is still the fact that 
+    > we can trigger the warning with:
+
+    > lapply(Sys.Date(), as.data.frame)
+
+    > so I wonder if the code in base/R/zzz.R 
+    > (https://github.com/wch/r-source/blob/9f1940663f902174034a01197e55fd17c767213a/src/library/base/R/zzz.R#L664-L686) 
+    > does need tweaking?
+
+Yes, thank you, Tim for your analysis.
+I've started looking at the issue a couple of hours ago,
+{notably as I am the originator of the issue ...}
+
+    > At this stage this is probably more a question for R-devel though.
+
+    > Tim
+
+(( not only at this stage. This would have belonged there from the
+   start.... but nothing is perfect....
+   ==> This reply now *GOES* to R-devel ))
+
+
+Yes, this a buglet / imperfection in the deprecation warnings.
+I have spent already time to fix the  lapply() case {and similar} cases.
+In the mean time there *is* also a very related message on
+R-devel by Mikael Jagan.
+
+As the plan was that this is only "ad interim", namely
+before those explicit  as.data.frame.<something> methods will be
+completely gone from base -- because they are all currently
+identical(*) to as.data.frame.vector(),
+I did add that hack in zzz.R  to create deprecation warnings
+that should be correct most of the time - unless people do funny things.
+--
+*) apart from the fact that 12 method functions all got their deprec.warning.
+
+
+    > On 06/07/2023 14:42, Enrico Schumann wrote:
+    >> On Thu, 06 Jul 2023, Vincent van Hees writes:
+    >> 
+    >>> Thanks, in that case the REPLEX for the issue may need to be:
+    >>> 
+    >>>> remember = Sys.getenv("_R_CHECK_AS_DATA_FRAME_EXPLICIT_METHOD_")
+    >>>> Sys.setenv("_R_CHECK_AS_DATA_FRAME_EXPLICIT_METHOD_" = TRUE)
+    >>>> data.frame(time = Sys.time())
+    >>> time
+    >>> 1 2023-07-06 14:29:37
+    >>>> data.frame(time = as.POSIXlt(Sys.time()))
+    >>> time
+    >>> 1 2023-07-06 14:29:37
+    >>> Warning message:
+    >>> Direct call of 'as.data.frame.POSIXct()' is deprecated.  Use
+    >>> 'as.data.frame.vector()' or 'as.data.frame()' instead
+    >>>> Sys.setenv("_R_CHECK_AS_DATA_FRAME_EXPLICIT_METHOD_" = remember)
+    >> 
+    >> I think it happens because
+    >> 
+    >> data.frame(<POSIXlt>)
+    >> 
+    >> calls 'as.data.frame.POSIXlt' (per its S3-class), which
+    >> in turn directly calls 'as.data.frame.POSIXct':
+    >> 
+    >> ## as.data.frame.POSIXlt
+    >> function (x, row.names = NULL, optional = FALSE, ...)
+    >> {
+    >> value <- as.data.frame.POSIXct(as.POSIXct(x), row.names,
+    >> optional, ...)
+    >> if (!optional)
+    >> names(value) <- deparse1(substitute(x))
+    >> value
+    >> }
+    >> <environment: namespace:base>
+    >> 
+    >> Kind regards
+    >> Enrico
+
+Indeed, thank you, Enrico!
+
+That's another such case, that my "hack" (see above) overlooked;
+somewhat embarrassingly, but also astonishingly to me as I hoped
+to find relevant cases by warnings appearing within the base R
+checks...  {and it is I think even easier to fix than the
+lapply(.)  case..}.
+
+Martin
+
+
+Martin Maechler
+ETH Zurich  and  R Core team
+
+
+    >>> Vincent
+    >>> 
+    >>> On Thu, 6 Jul 2023 at 10:41, Tim Taylor <tim.taylor at hiddenelephants.co.uk>
+    >>> wrote:
+    >>> 
+    >>>> Apologies - I've not had enough caffeine just yet. The reprex below
+    >>>> highlights the issue but I think the code which implemented the change
+    >>>> *may* need tweaking not lapply.
+    >>>> 
+    >>>> Tim
+    >>>> 
+    >>>> On 06/07/2023 09:26, Tim Taylor wrote:
+    >>>>> This *may* be an issue in lapply.  Let's see what others day. Reprex
+    >>>>> below
+    >>>>> 
+    >>>>> Sys.setenv("_R_CHECK_AS_DATA_FRAME_EXPLICIT_METHOD_" = TRUE)
+    >>>>> dat <- Sys.Date()
+    >>>>> as.data.frame(dat)
+    >>>>> #>          dat
+    >>>>> #> 1 2023-07-06
+    >>>>> lapply(dat, as.data.frame)
+    >>>>> #> Warning: Direct call of 'as.data.frame.Date()' is deprecated.  Use
+    >>>>> #> 'as.data.frame.vector()' or 'as.data.frame()' instead
+    >>>>> #> [[1]]
+    >>>>> #>       X[[i]]
+    >>>>> #> 1 2023-07-06
+    >>>>> 
+    >>>>> Tim
+    >>>>> 
+    >>>>> On 06/07/2023 08:54, Vincent van Hees wrote:
+>>>>> Dear all,
+    >>>>>> 
+>>>>> I see the following warning in my package test results:
+    >>>>>> 
+>>>>> ```
+>>>>> Warning
+>>>>> Direct call of 'as.data.frame.POSIXct()' is deprecated.  Use
+>>>>> 'as.data.frame.vector()' or 'as.data.frame()' instead
+>>>>> ```
+    >>>>>> 
+>>>>> The warning is not always there and I struggle to make it
+>>>>> reproducible. I
+>>>>> have encountered it in both Ubuntu 22.04 and in Windows 11, in both R
+>>>>> 4.3.0
+>>>>> and 4.3.1, in both RStudio and in an GitHub Actions environment (example
+>>>>> <https://github.com/wadpac/GGIR/actions/runs/5463862340/jobs/9945096566>).
+>>>>> The warning gives the impression that I am doing something that R no
+>>>>> longer
+>>>>> supports. However, I am not using the command as.data.frame.POSIXct()
+>>>>> anywhere directly in my code.
+    >>>>>> 
+>>>>> When I dive into the code where the warnings occur I see patterns like:
+    >>>>>> 
+>>>>> ```
+>>>>> now = Sys.time()
+>>>>> df = data.frame (time = seq(now, now + 10, by =1),  B  = 1:11)
+>>>>> ```
+    >>>>>> 
+>>>>> (this is a simplification of for example:
+    >>>>>> 
+    >>>> https://github.com/wadpac/GGIR/blob/master/tests/testthat/test_read.myacc.csv.R
+>>>>> )
+    >>>>>> 
+>>>>> Does this mean I am discouraged from putting a vector with POSIXct
+>>>>> values
+>>>>> in a data.frame?
+>>>>> If yes, what would be the recommended work around?
+    >>>>>> 
+>>>>> I have been trying to find documentation or online discussions about
+>>>>> this
+>>>>> warning but no luck so far. I see R NEWS
+>>>>> <https://cran.r-project.org/doc/manuals/r-release/NEWS.html> mentions
+>>>>> updates to POSIXct related objects several times in the past year but
+>>>>> those
+>>>>> seem to be different issues.
+
+>>>>> Best,
+>>>>> Vincent
+
+
+From j@g@nmn2 @end|ng |rom gm@||@com  Thu Jul  6 18:54:11 2023
+From: j@g@nmn2 @end|ng |rom gm@||@com (Mikael Jagan)
+Date: Thu, 6 Jul 2023 12:54:11 -0400
+Subject: [Rd] logic tweak needed for as.data.frame.<class> deprecation
+ warning
+In-Reply-To: <730ed025-b919-6d76-4263-6462d37f40e8@gmail.com>
+References: <730ed025-b919-6d76-4263-6462d37f40e8@gmail.com>
+Message-ID: <56c8be34-f804-be1a-765a-898b649475f6@gmail.com>
+
+Another issue raised in the earlier thread is that as.data.frame.POSIXlt
+still calls as.data.frame.POSIXct.  Hence another path to a false positive
+deprecation warning would be:
+
+ > Sys.setenv("_R_CHECK_AS_DATA_FRAME_EXPLICIT_METHOD_" = TRUE)
+ > as.data.frame(as.POSIXlt(.POSIXct(0, "UTC")))
+   as.POSIXlt(.POSIXct(0, "UTC"))
+1                     1970-01-01
+Warning message:
+Direct call of 'as.data.frame.POSIXct()' is deprecated.  Use 
+'as.data.frame.vector()' or 'as.data.frame()' instead
+
+as.data.frame.POSIXlt could simply change to using as.data.frame.vector.
+
+I glanced at the other non-deprecated as.data.frame.<class> and did not
+see other usage of the deprecated ones ... a more systematic check could
+be worth doing.
+
+Mikael
+
+On 2023-07-06 11:32 am, Mikael Jagan wrote:
+> Continuing the thread started on R-package-devel, here:
+> https://stat.ethz.ch/pipermail/r-package-devel/2023q3/009307.html
+> 
+> The logic of the now soft-deprecated as.data.frame.<class>,
+> 
+>   > body(as.data.frame.integer)[[2L]]
+> if ((sys.nframe() <= 1L || sys.call(-1L)[[1L]] != quote(as.data.frame)) &&
+>       nzchar(Sys.getenv("_R_CHECK_AS_DATA_FRAME_EXPLICIT_METHOD_")))
+> .Deprecated(msg = gettextf("Direct call of '%s()' is deprecated.  Use '%s()' or
+> '%s()' instead",
+>       "as.data.frame.integer", "as.data.frame.vector", "as.data.frame"))
+> 
+> may need adjustment to avoid false positives such as this one:
+> 
+>   > Sys.setenv("_R_CHECK_AS_DATA_FRAME_EXPLICIT_METHOD_" = TRUE)
+>   > f <- as.data.frame
+>   > f(0L)
+>     0L
+> 1  0
+> Warning message:
+> Direct call of 'as.data.frame.integer()' is deprecated.  Use
+> 'as.data.frame.vector()' or 'as.data.frame()' instead
+> 
+> i.e., the condition sys.call(-1L)[[1L]] != quote(as.data.frame) is not precise
+> enough ... would !identical(sys.function(-1L), as.data.frame) work instead?
+> 
+> Mikael
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Fri Jul  7 18:46:34 2023
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Fri, 7 Jul 2023 18:46:34 +0200
+Subject: [Rd] logic tweak needed for as.data.frame.<class> deprecation
+ warning
+In-Reply-To: <730ed025-b919-6d76-4263-6462d37f40e8@gmail.com>
+References: <730ed025-b919-6d76-4263-6462d37f40e8@gmail.com>
+Message-ID: <25768.16746.938255.645014@stat.math.ethz.ch>
+
+>>>>> Mikael Jagan 
+>>>>>     on Thu, 6 Jul 2023 11:32:00 -0400 writes:
+
+    > Continuing the thread started on R-package-devel, here:
+    > https://stat.ethz.ch/pipermail/r-package-devel/2023q3/009307.html
+
+    > The logic of the now soft-deprecated as.data.frame.<class>,
+
+    >> body(as.data.frame.integer)[[2L]]
+    > if ((sys.nframe() <= 1L || sys.call(-1L)[[1L]] != quote(as.data.frame)) &&
+    > nzchar(Sys.getenv("_R_CHECK_AS_DATA_FRAME_EXPLICIT_METHOD_"))) 
+    > .Deprecated(msg = gettextf("Direct call of '%s()' is deprecated.  Use '%s()' or 
+    > '%s()' instead",
+    > "as.data.frame.integer", "as.data.frame.vector", "as.data.frame"))
+
+    > may need adjustment to avoid false positives such as this one:
+
+    >> Sys.setenv("_R_CHECK_AS_DATA_FRAME_EXPLICIT_METHOD_" = TRUE)
+    >> f <- as.data.frame
+    >> f(0L)
+    > 0L
+    > 1  0
+    > Warning message:
+    > Direct call of 'as.data.frame.integer()' is deprecated.  Use 
+    > 'as.data.frame.vector()' or 'as.data.frame()' instead
+
+    > i.e., the condition sys.call(-1L)[[1L]] != quote(as.data.frame) is not precise
+    > enough ... would !identical(sys.function(-1L), as.data.frame) work instead?
+
+
+    > Mikael
+
+
+Thank you, Mikael!
+
+Indeed, as I see that it seems not even more costly than using sys.call(),
+*and* because you gave me a case, where the previous, even
+updated code, even lead to an error:
+
+  > mapply(as.data.frame, x=1:10, row.names=letters[1:10])
+  Error in (c1 <- sys.call(-1L)[[1L]]) != quote(as.data.frame) :
+      comparison (!=) is possible only for atomic and list types
+
+I have amended the code, using sys.function(-1L) in the first check
+which does fix the above error and catches more false positives.
+
+This is now in  R-devel svn rev >=  84653
+and is planned to eventually be ported to the R 4.3.x series,
+i.e., currently "R 4.3.1 patched".
+
+Martin
+
+
+From kry|ov@r00t @end|ng |rom gm@||@com  Mon Jul 10 17:37:30 2023
+From: kry|ov@r00t @end|ng |rom gm@||@com (Ivan Krylov)
+Date: Mon, 10 Jul 2023 18:37:30 +0300
+Subject: [Rd] [R] Errors in "An introduction to R"
+In-Reply-To: <4caaf4ba-0072-8040-5e0b-77a2f5725004@gmail.com>
+References: <4caaf4ba-0072-8040-5e0b-77a2f5725004@gmail.com>
+Message-ID: <20230710183730.16f332b8@arachnoid>
+
+Dear Jarkko,
+
+Thank you for spotting these problems and suggesting fixes for them! I
+am forwarding your e-mail to the R-devel mailing list (removing the
+R-help list, which is for different kind of R problems), together with
+a patch implementing your suggested changes.
+
+? Thu, 6 Jul 2023 10:12:16 +0300
+Jarkko Toivonen <jarkko.toivonen.19 at gmail.com> ?????:
+> I noticed a few errors in Version 4.3.1 (2023-06-16)
+
+--- doc/manual/R-intro.texi	(revision 84676)
++++ doc/manual/R-intro.texi	(working copy)
+@@ -2594,7 +2594,7 @@
+ 
+ @noindent
+ does not replace the component @code{u} of the data frame, but rather
+-masks it with another variable @code{u} in the working directory at
++masks it with another variable @code{u} in the workspace at
+ @w{position 1} on the search path.  To make a permanent change to the
+ data frame itself, the simplest way is to resort once again to the
+ @code{$} notation:
+@@ -2631,7 +2631,7 @@
+ @subsection Working with data frames
+ 
+ A useful convention that allows you to work with many different problems
+-comfortably together in the same working directory is
++comfortably together in the same workspace is
+ 
+ @itemize @bullet
+ @item
+@@ -2639,7 +2639,7 @@
+ in a data frame under a suitably informative name;
+ @item
+ when working with a problem attach the appropriate data frame at
+- at w{position 2}, and use the working directory at @w{level 1} for
++ at w{position 2}, and use the workspace at @w{level 1} for
+ operational quantities and temporary variables;
+ @item
+ before leaving a problem, add any variables you wish to keep for future
+@@ -2646,7 +2646,7 @@
+ reference to the data frame using the @code{$} form of assignment, and
+ then @code{detach()};
+ @item
+-finally remove all unwanted variables from the working directory and
++finally remove all unwanted variables from the workspace and
+ keep it as clean of left-over temporary variables as possible.
+ @end itemize
+ 
+@@ -2718,7 +2718,7 @@
+ rather inflexible.  There is a clear presumption by the designers of
+ @R{} that you will be able to modify your input files using other tools,
+ such as file editors or Perl at footnote{Under UNIX, the utilities
+- at command{sed} or at command{awk} can be used.} to fit in with the
++ at command{sed} or @command{awk} can be used.} to fit in with the
+ requirements of @R{}.  Generally this is very simple.
+ 
+ If variables are to be held mainly in data frames, as we strongly
+@@ -3576,8 +3576,15 @@
+ following to use it safely.
+ 
+ Thus given a @math{n} by @math{1} vector @math{y} and an @math{n} by
+- at math{p} matrix @math{X} then @math{X \ y} is defined as
++ at math{p} matrix @math{X} then
+ @ifnottex
++ at math{X \ y}
++ at end ifnottex
++ at tex
++ at math{X \\ y}
++ at end tex
++is defined as
++ at ifnottex
+ (X'X)^@{-@}X'y, where (X'X)^@{-@}
+ @end ifnottex
+ @tex
+
+I chose to replace the "working directory" metaphor with "workspace". I
+such word use here is correct.
+
+-- 
+Best regards,
+Ivan
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Tue Jul 11 10:53:08 2023
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Tue, 11 Jul 2023 10:53:08 +0200
+Subject: [Rd] [R] Errors in "An introduction to R"
+In-Reply-To: <20230710183730.16f332b8@arachnoid>
+References: <4caaf4ba-0072-8040-5e0b-77a2f5725004@gmail.com>
+ <20230710183730.16f332b8@arachnoid>
+Message-ID: <25773.6260.362980.712859@stat.math.ethz.ch>
+
+>>>>> Ivan Krylov 
+>>>>>     on Mon, 10 Jul 2023 18:37:30 +0300 writes:
+
+    > Dear Jarkko, Thank you for spotting these problems and
+    > suggesting fixes for them! I am forwarding your e-mail to
+    > the R-devel mailing list (removing the R-help list, which
+    > is for different kind of R problems), together with a
+    > patch implementing your suggested changes.
+
+
+Thank you, both, Jarkko  and Ivan for your respective work!
+I've committed the changes from Ivan's patch to the sources.
+
+
+    > ? Thu, 6 Jul 2023 10:12:16 +0300 Jarkko Toivonen
+    > <jarkko.toivonen.19 at gmail.com> ?????:
+    >> I noticed a few errors in Version 4.3.1 (2023-06-16)
+
+    > --- doc/manual/R-intro.texi (revision 84676)
+    > +++ doc/manual/R-intro.texi (working copy)
+
+  [...............]
+  [...............]
+
+    > I chose to replace the "working directory" metaphor with
+    > "workspace". I such word use here is correct.
+
+In other parts of the R-intro the  "working directory" actually
+has been correct use (not even metaphoric).
+
+    > -- 
+    > Best regards, Ivan
+
+Thank you again,
+Martin
+
+
+From bbo|ker @end|ng |rom gm@||@com  Wed Jul 12 00:01:32 2023
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Tue, 11 Jul 2023 18:01:32 -0400
+Subject: [Rd] question about an R idiom: eval()ing a quoted block
+Message-ID: <a777a5e6-7363-35ed-3f30-ea526937cdff@gmail.com>
+
+   In a few places in the R source code, such as the $initialize element 
+of `family` objects, and in the body of power.t.test() (possibly other 
+power.* functions), sets of instructions that will need to be run later 
+are encapsulated by saving them as an expression and later applying 
+eval(), rather than as a function. This seems weird to me; the only 
+reason I can think of for doing it this way is to avoid having to pass 
+back multiple objects and assign them in the calling environment (since 
+R doesn't have a particularly nice form of Python's tuple-unpacking idiom).
+
+   Am I missing something?
+
+  cheers
+    Ben
+
+
+https://github.com/r-devel/r-svn/blob/eac72e66a4d2c2aba50867bd80643b978febf5a3/src/library/stats/R/power.R#L38-L52
+
+https://github.com/r-devel/r-svn/blob/master/src/library/stats/R/family.R#L166-L171
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Wed Jul 12 02:24:14 2023
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Tue, 11 Jul 2023 20:24:14 -0400
+Subject: [Rd] question about an R idiom: eval()ing a quoted block
+In-Reply-To: <a777a5e6-7363-35ed-3f30-ea526937cdff@gmail.com>
+References: <a777a5e6-7363-35ed-3f30-ea526937cdff@gmail.com>
+Message-ID: <d7998a5d-8b43-9373-dfd7-b1145dffa8af@gmail.com>
+
+On 11/07/2023 6:01 p.m., Ben Bolker wrote:
+>     In a few places in the R source code, such as the $initialize element
+> of `family` objects, and in the body of power.t.test() (possibly other
+> power.* functions), sets of instructions that will need to be run later
+> are encapsulated by saving them as an expression and later applying
+> eval(), rather than as a function. This seems weird to me; the only
+> reason I can think of for doing it this way is to avoid having to pass
+> back multiple objects and assign them in the calling environment (since
+> R doesn't have a particularly nice form of Python's tuple-unpacking idiom).
+> 
+>     Am I missing something?
+> 
+>    cheers
+>      Ben
+> 
+> 
+> https://github.com/r-devel/r-svn/blob/eac72e66a4d2c2aba50867bd80643b978febf5a3/src/library/stats/R/power.R#L38-L52
+> 
+> https://github.com/r-devel/r-svn/blob/master/src/library/stats/R/family.R#L166-L171
+
+Those examples are very old (the second is at least 20 years old).  It 
+may be they were written by someone who was thinking in S rather than in 
+R.
+
+As far as I recall (but I might be wrong), S didn't have the same 
+scoping rules for accessing and modifying local variables in a function 
+from a nested function.
+
+Duncan Murdoch
+
+
+From j@rkko@to|vonen@19 @end|ng |rom gm@||@com  Wed Jul 12 15:15:52 2023
+From: j@rkko@to|vonen@19 @end|ng |rom gm@||@com (Jarkko Toivonen)
+Date: Wed, 12 Jul 2023 16:15:52 +0300
+Subject: [Rd] [R] Errors in "An introduction to R"
+In-Reply-To: <25773.6260.362980.712859@stat.math.ethz.ch>
+References: <4caaf4ba-0072-8040-5e0b-77a2f5725004@gmail.com>
+ <20230710183730.16f332b8@arachnoid>
+ <25773.6260.362980.712859@stat.math.ethz.ch>
+Message-ID: <1c77cc95-ac33-b50e-94e1-2801e71b5faa@gmail.com>
+
+Hi all,
+
+I originally sent my correction suggestions to R-help list since the
+R-intro document contains the following sentence:
+"Comments and corrections are always welcome. Please address email 
+correspondence to
+R-help at R-project.org."
+
+Maybe that email address needs updating as well.
+
+Jarkko
+
+On 11.7.2023 11.53, Martin Maechler wrote:
+>>>>>> Ivan Krylov
+>>>>>>      on Mon, 10 Jul 2023 18:37:30 +0300 writes:
+>      > Dear Jarkko, Thank you for spotting these problems and
+>      > suggesting fixes for them! I am forwarding your e-mail to
+>      > the R-devel mailing list (removing the R-help list, which
+>      > is for different kind of R problems), together with a
+>      > patch implementing your suggested changes.
+>
+>
+> Thank you, both, Jarkko  and Ivan for your respective work!
+> I've committed the changes from Ivan's patch to the sources.
+>
+>
+>      > ? Thu, 6 Jul 2023 10:12:16 +0300 Jarkko Toivonen
+>      > <jarkko.toivonen.19 at gmail.com> ?????:
+>      >> I noticed a few errors in Version 4.3.1 (2023-06-16)
+>
+>      > --- doc/manual/R-intro.texi (revision 84676)
+>      > +++ doc/manual/R-intro.texi (working copy)
+>
+>    [...............]
+>    [...............]
+>
+>      > I chose to replace the "working directory" metaphor with
+>      > "workspace". I such word use here is correct.
+>
+> In other parts of the R-intro the  "working directory" actually
+> has been correct use (not even metaphoric).
+>
+>      > --
+>      > Best regards, Ivan
+>
+> Thank you again,
+> Martin
+
+
+From w||||@m@mcc|enn@n @end|ng |rom gm@||@com  Thu Jul 13 00:26:56 2023
+From: w||||@m@mcc|enn@n @end|ng |rom gm@||@com (Will McClennan)
+Date: Wed, 12 Jul 2023 18:26:56 -0400
+Subject: [Rd] Incorrect type in malloc in Rscript.c
+Message-ID: <69F17DDB-3725-42F7-AE2B-5682C4AE82AA@gmail.com>
+
+I downloaded and compiled R-4.3.1 from cran.rstudio.com and on line 405 of Rscript.c in src/unix the line of code
+
+char *buf=(char*) malloc((size_t) (len+1)*sizeof(char *));
+
+appears to be wrong to me. If an array of char* is being allocated then the argument to sizeof should be char and not char*. On a 64 bit machine this will allocate 8 times as much memory as needed. For this reason the code works but it is an incorrect. Not a big issue though.
+
+Will McClennan
+
+From tom@@@k@||ber@ @end|ng |rom gm@||@com  Thu Jul 13 08:59:01 2023
+From: tom@@@k@||ber@ @end|ng |rom gm@||@com (Tomas Kalibera)
+Date: Thu, 13 Jul 2023 08:59:01 +0200
+Subject: [Rd] Incorrect type in malloc in Rscript.c
+In-Reply-To: <69F17DDB-3725-42F7-AE2B-5682C4AE82AA@gmail.com>
+References: <69F17DDB-3725-42F7-AE2B-5682C4AE82AA@gmail.com>
+Message-ID: <95590b13-e657-16af-b6a8-8d2921ec8c5e@gmail.com>
+
+
+On 7/13/23 00:26, Will McClennan wrote:
+> I downloaded and compiled R-4.3.1 from cran.rstudio.com and on line 405 of Rscript.c in src/unix the line of code
+>
+> char *buf=(char*) malloc((size_t) (len+1)*sizeof(char *));
+>
+> appears to be wrong to me. If an array of char* is being allocated then the argument to sizeof should be char and not char*. On a 64 bit machine this will allocate 8 times as much memory as needed. For this reason the code works but it is an incorrect. Not a big issue though.
+
+Thanks, fixed now.
+
+Tomas
+
+>
+> Will McClennan
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
