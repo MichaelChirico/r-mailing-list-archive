@@ -1,0 +1,485 @@
+From AHL27 @end|ng |rom p|tt@edu  Fri Sep  1 11:17:57 2023
+From: AHL27 @end|ng |rom p|tt@edu (Lakshman, Aidan H)
+Date: Fri, 1 Sep 2023 09:17:57 +0000
+Subject: [Rd] Updated `dendrapply`
+Message-ID: <BL0PR04MB470648B7E324632897EF4EEDD9E5A@BL0PR04MB4706.namprd04.prod.outlook.com>
+
+Hi everyone,
+Ivan and I had a few discussions several months ago regarding `dendrapply`, but now that I've had the chance to work on it more specifically and discuss it Martin Maechler at the R Project Sprint, I figured it would be a good idea to start a new email chain.
+I've refactored `dendrapply`, and the current implementation is available in my bugzilla report (https://bugs.r-project.org/show_bug.cgi?id=18480). This project started due to the help page for `dendrapply`, which specifically requested users to contribute improvements to the function. I'm including a lot of writeup here because I'm very aware that this is a relatively large contribution for someone that doesn't have a history of contributing a lot of code to base, and I'd like to justify the inclusion.
+Feel free to skip everything I've written and instead use the following links. A thorough discussion follows.
+- Bugzilla with patch: https://bugs.r-project.org/show_bug.cgi?id=18480
+- R Checks: https://github.com/r-devel/r-svn/pull/111
+- Discussion at R Project Sprint: https://github.com/r-devel/r-project-sprint-2023/discussions/6
+- Original blog post about this (long, code out of date, but has a simpler explanation of the implementation): https://www.ahl27.com/posts/2023/02/dendrapply/
+
+Responses to common questions:
+- Why does this project need to be done?
+The current implementation in `stats::dendrapply` is recursive, and thus has issues with deeply nested dendrogram objects. As of 2015, users experienced issues with recursive operations on dendrograms causing stack overflow issues (see https://bugs.r-project.org/show_bug.cgi?id=15215). This has been alleviated by better computers and short-term workarounds, but many users have limited resources and/or need for large trees. Even with sufficient memory, a recursive implementation incurs a nontrivial amount of unneccessary computational overhead. I'll also add that this is a feature that was requested in R itself (see Note section in `?dendrapply`), and Martin Maechler has been supportive of the work thus far on it.
+- What does this implementation do?
+There are a few improvements in this implementation. The first is that function application to dendrogram objects is no longer recursive. This implementation is also based in C, providing a performance boost of at least 4x (see later question for details). Finally, iterative application of functions in C allows for flexibility in *how* the dendrogram is traversed, which gives end-users a significant amount of power to work with tree-like structures in an intuitive way. An easy example is subsetting based on leaf values--if a user wanted to subset a dendrogram to only certain leaves, there isn't a good way to do this in base R (even with dendrapply). `how='post.order'` fixes this problem. I'm happy to provide additional examples if needed.
+- Why C? This is harder to maintain than R.
+This is a valid point. I did my best to include as much documentation as possible, and I'm also volunteering myself to help maintain this function. C provides a lot of power in working with dendrograms, since R's toolkit for tree-like structures is relatively lacking. This refactor is theoretically doable in R, but the implementation would involve an immense amount of memory overhead to ensure we can preserve the node states as we traverse the tree. There is precedence for a C implementation of dendrapply (see other `*apply` functions). Additionally, this decreases function application overhead, and allows future extensions to be written purely in R in a much simpler way. I think this tradeoff is worth it, but I am happy to discuss implementation specifics with anyone that is interested.
+- Ivan previously mentioned issues with user specific `[[.dendrogram` implementations, and it doesn't seem that you've fixed that.
+This is correct. I discovered during the R project sprint that `stats::dendrapply` does not respect user-specific implementations of `[[.dendrogram`. stats::`[[.dendrogram` has its own issues; if the user defines multiple classes for a dendrogram object, double bracket subsetting will remove the class (a bug report will be filed for this shortly). My implementation exactly replicates the performance of stats::`[[.dendrogram`, and if users are in need of a function that can respect custom subset overloading, I can address those feature requests if/when they are submitted.
+- Backwards compatibility?
+>From current testing, this is a drop-in replacement for `stats::dendrapply`. R builds successfully, and all >400 tests in the CRAN package that uses `dendrapply` the most (dendextend) pass with no changes from the original. The additional argument `how=c('pre.order', 'post.order')` is the same syntax as `rapply`, and additional documentation has been added to the `dendrapply.Rd` to reflect this change. This is still an unfinished TODO; the internal R testing for `dendrapply` is very sparse. I haven't been able to find any differences between stats::dendrapply and this implementation, but I am planning to run a full check against all CRAN packages that use `dendrapply`. I'm also planning to add additional regression testing to R either as part of this patch in a separate patch.
+- You mentioned there was more to the listed '4x improvement'
+Yes. I haven't yet put together a comprehensive benchmark for highly unbalanced trees, and in truth there are so many possible tree structures that it would be challenging to test them all. However, on trees with 5 leaves the performance is roughly identical to that of `stats`, and benchmarking with `microbenchmark` demonstrates performance gains of roughly 5x on fully balanced trees with 10-5000 leaves. This should be a lower bound for performance, since fully balanced trees minimize internal nodes and thus have less recursion...so on reasonably sized trees of arbitrary structure we should have at least around a 4x improvement. I'll also stress that the focus of this patch is not a runtime improvement--it's nice that we get a speedup, but the added value here is the removal of recursive calls.
+- Why not just put this in a package?
+I think there's value in fleshing out the structures included in base R. Dendrograms are a general tree structure, and few programming languages provide support for these out of the box. Dendrogram objects are currently rarely used, but with a little bit of additional functionality, they could be a very powerful tool for users. These have applications in a variety of fields that are not just phylogenetics; implementations of domain-specific tools (e.g. `ape`, `DECIPHER`) are better suited to 3rd party packages. However, `dendrograms` already exist in base and have poor support, which is even admitted in their help files. `dendrapply`. While it's currently limited to acting on dendrogram objects, a solid implementation would open the door to generalizing dendrapply to work on any nested list. This is my personal opinion, and there is certainly an argument to be made that `dendrapply` (and even `dendrogram` as a whole) could live outside of base.
+- Why/how were the included traversal strategies chosen?
+The default, pre.order, was chosen because it replicates existing functionality. post.order was included because it lends itself well to a lot of applications. Between these two methods, we have a way to apply a function to trees ensuring that parents are evaluated before children, and ensuring children are evaluated before parents. Future extensions to support an in.order or BFS/level.order traversal is definitely an option, but I don't think the added implementation effort and complexity adds a lot of functionality over the two that have been included.
+There's also been previous comments regarding the structure of dendrograms. While hclust will return a bifurcating tree, dendrogram objects (and dendrapply) support arbitrary multifurcations and edge weights.
+Apologies for the lengthy email. If you've read even half, thanks for your time. There?s likely some optimizations that could be made in the C code dealing with R structures; I?m still learning the intricacies of some of the more specific points of this. One that comes to mind is converting the repeated `lang2` calls to instead initialize a `lang2` call and then change the symbol in the call, as is done in `lapply` (and was mentioned by Ivan in my last submission). I?ll test that as well.
+Further feedback is welcome and much appreciated.
+-Aidan
+
+-----------------------
+Aidan Lakshman (he/him)<https://www.ahl27.com/>
+Doctoral Fellow, Wright Lab<https://www.wrightlabscience.com/>
+University of Pittsburgh School of Medicine
+Department of Biomedical Informatics
+ahl27 at pitt.edu
+(724) 612-9940
+
+
+	[[alternative HTML version deleted]]
+
+
+From kry|ov@r00t @end|ng |rom gm@||@com  Fri Sep  1 16:24:43 2023
+From: kry|ov@r00t @end|ng |rom gm@||@com (Ivan Krylov)
+Date: Fri, 1 Sep 2023 17:24:43 +0300
+Subject: [Rd] Updated `dendrapply`
+In-Reply-To: <BL0PR04MB470648B7E324632897EF4EEDD9E5A@BL0PR04MB4706.namprd04.prod.outlook.com>
+References: <BL0PR04MB470648B7E324632897EF4EEDD9E5A@BL0PR04MB4706.namprd04.prod.outlook.com>
+Message-ID: <20230901172443.20f904a2@arachnoid>
+
+? Fri, 1 Sep 2023 09:17:57 +0000
+"Lakshman, Aidan H" <AHL27 at pitt.edu> ?????:
+
+> - Ivan previously mentioned issues with user specific `[[.dendrogram`
+> implementations, and it doesn't seem that you've fixed that.
+
+> This is correct. I discovered during the R project sprint that
+> `stats::dendrapply` does not respect user-specific implementations of
+> `[[.dendrogram`. stats::`[[.dendrogram` has its own issues; if the
+> user defines multiple classes for a dendrogram object, double bracket
+> subsetting will remove the class (a bug report will be filed for this
+> shortly).
+
+True, my warning about not handing potential subclasses of dendrogram
+was purely theoretical.
+
+(A hypothetical subclass of dendrogram could work with the current
+[[.dendrogram if it ensured that its own class name always precedes
+'dendrogram' in the class vector, thus never being downstream from
+stats:::`[[.dendrogram` in a chain of NextMethod() calls. But that's
+still hypothetical.)
+
+I see that your current implementation very nicely bounds the PROTECT()
+stack usage and avoids the need to deallocate arbitrary SEXPs, which is
+awkward to do with R's garbage collector API. Congratulations!
+
+-- 
+Best regards,
+Ivan
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Mon Sep  4 12:01:50 2023
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Mon, 4 Sep 2023 06:01:50 -0400
+Subject: [Rd] Bug in PCRE interface code
+Message-ID: <c0079cbe-0ec0-4e8a-09d1-b6d3a0bce9cd@gmail.com>
+
+This Stackoverflow question https://stackoverflow.com/q/77036362 turned 
+up a bug in the R PCRE interface.
+
+The example (currently in an edit to the original question) tried to use 
+named capture with more than 127 named groups.  Here's the code:
+
+append_unique_id <- function(x) {
+   for (i in seq_along(x)) {
+     x[i] <- paste0("<", paste(sample(letters, 10), collapse = ""), ">", 
+x[i])
+   }
+   x
+}
+
+list_regexes <- sample(letters, 128, TRUE) # <<<<<<<<<<< change this to
+                                            #             127 and it works
+regex2 <- append_unique_id(list_regexes)
+regex2 <- paste0("(?", regex2, ")")
+regex2 <- paste(regex2, collapse = "|")
+
+out <- gregexpr(regex2, "Cyprus", perl = TRUE, ignore.case = TRUE)
+#> Error in gregexpr(regex2, "Cyprus", perl = TRUE, ignore.case = TRUE): 
+attempt to set index -129/128 in SET_STRING_ELT
+
+I think the bug is in R, here: 
+https://github.com/wch/r-source/blob/57d15d68235dd9bcfaa51fce83aaa71163a020e1/src/main/grep.c#L3079
+
+This is the line
+
+	    int capture_num = (entry[0]<<8) + entry[1] - 1;
+
+where entry is declared as a pointer to a char.  What this is doing is 
+extracting a 16 bit number from the first two bytes of a character 
+string holding the name of the capture group.  Since char is a signed 
+type, the conversion of bytes to integer gets messed up and the value 
+comes out wrong.
+
+Duncan Murdoch
+
+
+From tdhock5 @end|ng |rom gm@||@com  Tue Sep  5 23:06:49 2023
+From: tdhock5 @end|ng |rom gm@||@com (Toby Hocking)
+Date: Tue, 5 Sep 2023 14:06:49 -0700
+Subject: [Rd] Bug in PCRE interface code
+In-Reply-To: <c0079cbe-0ec0-4e8a-09d1-b6d3a0bce9cd@gmail.com>
+References: <c0079cbe-0ec0-4e8a-09d1-b6d3a0bce9cd@gmail.com>
+Message-ID: <CALK03d3c7HMcbF5rZZTNN6yBcX8=-6N-sGK48=GfZu8kiUyGQg@mail.gmail.com>
+
+BTW this is documented here
+http://pcre.org/current/doc/html/pcre2api.html#infoaboutpattern with a
+helpful example, copied below.
+
+As a simple example of the name/number table, consider the following
+pattern after compilation by the 8-bit library (assume PCRE2_EXTENDED
+is set, so white space - including newlines - is ignored):
+
+  (?<date> (?<year>(\d\d)?\d\d) - (?<month>\d\d) - (?<day>\d\d) )
+
+There are four named capture groups, so the table has four entries,
+and each entry in the table is eight bytes long. The table is as
+follows, with non-printing bytes shows in hexadecimal, and undefined
+bytes shown as ??:
+
+  00 01 d  a  t  e  00 ??
+  00 05 d  a  y  00 ?? ??
+  00 04 m  o  n  t  h  00
+  00 02 y  e  a  r  00 ??
+
+On Mon, Sep 4, 2023 at 3:02?AM Duncan Murdoch <murdoch.duncan at gmail.com> wrote:
+>
+> This Stackoverflow question https://stackoverflow.com/q/77036362 turned
+> up a bug in the R PCRE interface.
+>
+> The example (currently in an edit to the original question) tried to use
+> named capture with more than 127 named groups.  Here's the code:
+>
+> append_unique_id <- function(x) {
+>    for (i in seq_along(x)) {
+>      x[i] <- paste0("<", paste(sample(letters, 10), collapse = ""), ">",
+> x[i])
+>    }
+>    x
+> }
+>
+> list_regexes <- sample(letters, 128, TRUE) # <<<<<<<<<<< change this to
+>                                             #             127 and it works
+> regex2 <- append_unique_id(list_regexes)
+> regex2 <- paste0("(?", regex2, ")")
+> regex2 <- paste(regex2, collapse = "|")
+>
+> out <- gregexpr(regex2, "Cyprus", perl = TRUE, ignore.case = TRUE)
+> #> Error in gregexpr(regex2, "Cyprus", perl = TRUE, ignore.case = TRUE):
+> attempt to set index -129/128 in SET_STRING_ELT
+>
+> I think the bug is in R, here:
+> https://github.com/wch/r-source/blob/57d15d68235dd9bcfaa51fce83aaa71163a020e1/src/main/grep.c#L3079
+>
+> This is the line
+>
+>             int capture_num = (entry[0]<<8) + entry[1] - 1;
+>
+> where entry is declared as a pointer to a char.  What this is doing is
+> extracting a 16 bit number from the first two bytes of a character
+> string holding the name of the capture group.  Since char is a signed
+> type, the conversion of bytes to integer gets messed up and the value
+> comes out wrong.
+>
+> Duncan Murdoch
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Fri Sep  8 15:44:48 2023
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Fri, 8 Sep 2023 15:44:48 +0200
+Subject: [Rd] FYI: daily R source tarballs from ETH: *.xz instead of *.bz2)
+Message-ID: <25851.9552.398085.384361@stat.math.ethz.ch>
+
+A quick notice for anyone who uses cron-like scripts to get
+R source tarballs from the ETH  R/daily/ s:
+
+I've finally switched to replace *.bz2 by *.xz which does save
+quite a bit of bandwidth.
+
+Currently, you can see the 2 day old *.bz2 (and their sizes) and
+compare with the new  *.xz one  (sorted newest first):
+
+  https://stat.ethz.ch/R/daily/?C=M;O=D
+
+
+Best,
+Martin
+
+
+From hp@ge@@on@g|thub @end|ng |rom gm@||@com  Sat Sep  9 02:56:20 2023
+From: hp@ge@@on@g|thub @end|ng |rom gm@||@com (=?UTF-8?B?SGVydsOpIFBhZ8Oocw==?=)
+Date: Fri, 8 Sep 2023 17:56:20 -0700
+Subject: [Rd] 
+ FYI: daily R source tarballs from ETH: *.xz instead of *.bz2)
+In-Reply-To: <25851.9552.398085.384361@stat.math.ethz.ch>
+References: <25851.9552.398085.384361@stat.math.ethz.ch>
+Message-ID: <27378572-a2e2-eb29-1e7d-9c8d7020bd3a@gmail.com>
+
+Hi Martin,
+
+Sounds good. Are there any plans to support the xz compression for 
+package source tarballs?
+
+Thanks,
+
+H.
+
+On 9/8/23 06:44, Martin Maechler wrote:
+> A quick notice for anyone who uses cron-like scripts to get
+> R source tarballs from the ETH  R/daily/ s:
+>
+> I've finally switched to replace *.bz2 by *.xz which does save
+> quite a bit of bandwidth.
+>
+> Currently, you can see the 2 day old *.bz2 (and their sizes) and
+> compare with the new  *.xz one  (sorted newest first):
+>
+>    https://stat.ethz.ch/R/daily/?C=M;O=D
+>
+>
+> Best,
+> Martin
+>
+> ______________________________________________
+> R-devel at r-project.org  mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+-- 
+Herv? Pag?s
+
+Bioconductor Core Team
+hpages.on.github at gmail.com
+
+	[[alternative HTML version deleted]]
+
+
+From trevor@|@d@v|@ @end|ng |rom gm@||@com  Mon Sep 11 18:29:26 2023
+From: trevor@|@d@v|@ @end|ng |rom gm@||@com (Trevor Davis)
+Date: Mon, 11 Sep 2023 09:29:26 -0700
+Subject: [Rd] List's `[[` method with "" tag
+Message-ID: <CAMigB8FTRq5BeY8nHfukwyk=kBNQ1k6EHfsKRv6EEZytLC9=og@mail.gmail.com>
+
+Hi,
+
+I notice that one can assign a variable to an R list by using an empty
+string key but one cannot get that variable back from the list by using the
+empty string key:
+
+```r
+l <- list()
+l[[""]] <- "An empty string as list key"
+names(l)
+l[[""]] # Returns a `NULL`
+l[[names(l) == ""]] # Returns first value with `""` tag
+```
+
+Instead of `l[[""]]` returning a `NULL` I'd "expect" it to instead return
+the first variable named `""`  i.e. in this case "An empty string as list
+key".  It would be nice if the `[[` method of a list was updated to "fix"
+this.
+
+Additionally, I observe that if a list is named but has certain elements
+without names then those are currently "named" `""`:
+
+```r
+names(list(a = 1, 2, c = 3, 4))
+```
+
+This latter change may be a breaking change but I speculate that perhaps it
+may be more intuitive if missing names were indicated with `NA_character_`
+instead of `""`.
+
+Thanks,
+
+Trevor
+
+	[[alternative HTML version deleted]]
+
+
+From @oko| @end|ng |rom |n@@-tou|ou@e@|r  Mon Sep 11 18:52:51 2023
+From: @oko| @end|ng |rom |n@@-tou|ou@e@|r (=?UTF-8?Q?Sergue=C3=AF_Sokol?=)
+Date: Mon, 11 Sep 2023 18:52:51 +0200
+Subject: [Rd] List's `[[` method with "" tag
+In-Reply-To: <CAMigB8FTRq5BeY8nHfukwyk=kBNQ1k6EHfsKRv6EEZytLC9=og@mail.gmail.com>
+References: <CAMigB8FTRq5BeY8nHfukwyk=kBNQ1k6EHfsKRv6EEZytLC9=og@mail.gmail.com>
+Message-ID: <fdf54c1464d0e0d9a45fae138c050ef1@198c5bc6.internal>
+
+It's per design: 
+
+?names
+...
+The name '""' is special: it is used to
+indicate that there is no
+name associated with an element of a (atomic
+or generic) vector.
+Subscripting by '""' will match nothing (not even
+elements which
+have no name).
+... 
+
+Best,
+Serguei. 
+
+Le 2023-09-11
+18:29, Trevor Davis a ?crit :
+
+> Hi,
+> 
+> I notice that one can assign a
+variable to an R list by using an empty
+> string key but one cannot get
+that variable back from the list by using the
+> empty string key:
+> 
+>
+```r
+> l <- list()
+> l[[""]] <- "An empty string as list key"
+>
+names(l)
+> l[[""]] # Returns a `NULL`
+> l[[names(l) == ""]] # Returns
+first value with `""` tag
+> ```
+> 
+> Instead of `l[[""]]` returning a
+`NULL` I'd "expect" it to instead return
+> the first variable named `""`
+i.e. in this case "An empty string as list
+> key".  It would be nice if
+the `[[` method of a list was updated to "fix"
+> this.
+> 
+>
+Additionally, I observe that if a list is named but has certain
+elements
+> without names then those are currently "named" `""`:
+> 
+>
+```r
+> names(list(a = 1, 2, c = 3, 4))
+> ```
+> 
+> This latter change may
+be a breaking change but I speculate that perhaps it
+> may be more
+intuitive if missing names were indicated with `NA_character_`
+> instead
+of `""`.
+> 
+> Thanks,
+> 
+> Trevor
+> 
+> [[alternative HTML version
+deleted]]
+> 
+> ______________________________________________
+>
+R-devel at r-project.org mailing list
+>
+https://stat.ethz.ch/mailman/listinfo/r-devel
+ 
+	[[alternative HTML version deleted]]
+
+
+From r|p|ey @end|ng |rom @t@t@@ox@@c@uk  Tue Sep 12 07:39:47 2023
+From: r|p|ey @end|ng |rom @t@t@@ox@@c@uk (Prof Brian Ripley)
+Date: Tue, 12 Sep 2023 06:39:47 +0100
+Subject: [Rd] 
+ FYI: daily R source tarballs from ETH: *.xz instead of *.bz2)
+In-Reply-To: <27378572-a2e2-eb29-1e7d-9c8d7020bd3a@gmail.com>
+References: <25851.9552.398085.384361@stat.math.ethz.ch>
+ <27378572-a2e2-eb29-1e7d-9c8d7020bd3a@gmail.com>
+Message-ID: <f84b708a-6ddd-4c02-a97c-8a1331768444@stats.ox.ac.uk>
+
+On 09/09/2023 01:56, Herv? Pag?s wrote:
+> Hi Martin,
+> 
+> Sounds good. Are there any plans to support the xz compression for
+> package source tarballs?
+
+What makes you think it is not supported?
+
+R CMD INSTALL happily installs .tar.xz files, and the name is not used 
+to detect compression so .tar.gz files could be bzip2- or xz-compressed.
+
+Note that tarball compression is pretty much irrelevant where the 
+tarball contains large compressed files, for example .rda files or 
+vendor.tar.xz files of Rust sources.  You have to arrange that the first 
+compression is the bast possible.
+
+-- 
+Brian D. Ripley,                  ripley at stats.ox.ac.uk
+Emeritus Professor of Applied Statistics, University of Oxford
+
+
+From hp@ge@@on@g|thub @end|ng |rom gm@||@com  Wed Sep 13 02:05:25 2023
+From: hp@ge@@on@g|thub @end|ng |rom gm@||@com (=?UTF-8?B?SGVydsOpIFBhZ8Oocw==?=)
+Date: Tue, 12 Sep 2023 17:05:25 -0700
+Subject: [Rd] 
+ FYI: daily R source tarballs from ETH: *.xz instead of *.bz2)
+In-Reply-To: <f84b708a-6ddd-4c02-a97c-8a1331768444@stats.ox.ac.uk>
+References: <25851.9552.398085.384361@stat.math.ethz.ch>
+ <27378572-a2e2-eb29-1e7d-9c8d7020bd3a@gmail.com>
+ <f84b708a-6ddd-4c02-a97c-8a1331768444@stats.ox.ac.uk>
+Message-ID: <c31fd49d-3249-881b-64e5-a6ad9895be4e@gmail.com>
+
+On 9/11/23 22:39, Prof Brian Ripley wrote:
+
+> On 09/09/2023 01:56, Herv? Pag?s wrote:
+>> Hi Martin,
+>>
+>> Sounds good. Are there any plans to support the xz compression for
+>> package source tarballs?
+>
+> What makes you think it is not supported?
+
+I guess because I've never seen source tarballs distributed as .xz files 
+but it's good to know that 'R CMD build' and 'R CMD INSTALL' support that.
+
+So let me reformulate my question: do CRAN have any plans to switch from 
+.tar.gz to .xz for the distribution of source tarballs? Is this 
+something that tools like write_PACKAGES(), available.packages(), and 
+install.packages() would be able to handle? Would they be able to handle 
+a mix of .tar.gz and .xz packages? (Which would be important for a 
+smooth transition from .tar.gz to .xz across CRAN/Bioconductor.)
+
+I'm just trying to get a sense if the effort to reduce bandwidth will go 
+beyond the distribution of R source snapshots.
+
+Thanks,
+
+H.
+
+-- 
+Herv? Pag?s
+
+Bioconductor Core Team
+hpages.on.github at gmail.com
+
+	[[alternative HTML version deleted]]
+
+
