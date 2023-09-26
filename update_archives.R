@@ -8,6 +8,7 @@ mailing_lists = list(
   c(name = 'r-devel', current = format(today, '%Y-%B.txt')),
   c(name = 'r-package-devel',
     current = with(today, sprintf('%dq%d.txt', year + 1900L, mon %/% 3L + 1L))),
+  c(name = 'r-sig-mac', current = format(today, '%Y-%B.txt')),
   c(name = 'r-help', current = format(today, '%Y-%B.txt')),
   c(name = 'r-announce', current = format(today, '%Y'))
 )
