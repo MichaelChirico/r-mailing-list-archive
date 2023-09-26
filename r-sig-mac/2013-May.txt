@@ -1,0 +1,3766 @@
+From andy.jacobson at noaa.gov  Wed May  8 01:30:39 2013
+From: andy.jacobson at noaa.gov (Andy Jacobson (NOAA Affiliate))
+Date: Tue, 7 May 2013 17:30:39 -0600
+Subject: [R-SIG-Mac] R-3.0.0: choice of gfortran compiler in
+	install.packages()
+Message-ID: <49A76966-152A-4EE7-BD7B-DC72A1001006@noaa.gov>
+
+Howdy,
+
+I am attempting to install the fields_6.7.6 package under R-3.0.0 on OS X 10.7.5.  I think the install process is calling the wrong gfortran compiler.  The compiler being called is /usr/local/gfortran/bin/gfortran, which is "GNU Fortran (GCC) 4.4.0 20090321 (experimental) [trunk revision 144983]".  I've installed the gfortran-4.2.3.pkg package from http://cran.r-project.org/bin/macosx/tools/gfortran-4.2.3.pkg.
+
+The /Library/Frameworks/R.framework/Versions/3.0/Resources/etc/Makeconf file specifies:
+
+FC = gfortran-4.2 -arch x86_64
+and
+F77 = gfortran-4.2 -arch x86_64
+
+The text output from install.packages() shows lots of -c compilation using this wrong gfortran, then attempts to link with llvm-gcc-4.2.  The linking step complains about the .o files being architecture i386, which is probably wrong output from the gfortran-4.4.0 compiler:
+
+> /usr/local/gfortran/bin/gfortran   -fPIC  -g -O2  -c sortm.f -o sortm.o
+> llvm-gcc-4.2 -arch x86_64 -std=gnu99 -dynamiclib -Wl,-headerpad_max_install_names -undefined dynamic_lookup -single_module -multiply_defined suppress -L/usr/local/gfortran/lib/ -o fields.so css.o csstr.o cvrf.o dchold.o dcopy.o ddfind.o ddot.o derrb.o dlv.o dmaket.o drdfun.o dsetup.o evlpoly.o evlpoly2.o expfn.o ifind.o igpoly.o inpoly.o mltdrb.o mltdtd.o multeb.o multrb.o radbas.o radfn2.o radfun.o rcss.o rcssr.o rcsswt.o sortm.o -L/usr/local/lib/gcc/i686-apple-darwin8/4.2.3/x86_64 -L/usr/local/lib/x86_64 -L/usr/local/lib/gcc/i686-apple-darwin8/4.2.3 -lgfortran -F/Library/Frameworks/R.framework/.. -framework R -Wl,-framework -Wl,CoreFoundation
+> ld: warning: ld: warning: ignoring file css.o, file was built for i386 which is not the architecture being linked (x86_64): css.oignoring file csstr.o, file was built for i386 which is not the architecture being linked (x86_64): csstr.o
+
+
+
+There's no Makefile in the fields package, so FC and F77 are not being overridden by the package itself, I believe.  The FC and F77 variables from R's Makeconf are not being respected, and I've tried to specify alternative gfortran compilers with syntax like:
+
+
+install.packages("fields",type="source",repos="http://cran.us.r-project.org",clean=TRUE,configure.vars=list(F77="gfortran-4.2 -arch x86_64",FC="gfortran-4.2 -arch x86_64"))
+
+Nothing I do seems to tell the fields package to use the proper gfortran compiler.  I have no environment variables like FC or F77 defined.  I have to admit that I do have four different gfortran versions installed on this machine:  in addition to the R pkg version and the gfortran-4.4.0, there's a fink /sw/bin/gfortran 4.6.2, and a /usr/bin/gfortran-4.2 which claims to come from Apple (GNU Fortran (GCC) 4.2.1 (Apple Inc. build 5566)).  I'm up to date with Xcode.
+
+Any advice about how to do this correctly would be much appreciated!
+
+Thanks,
+
+Andy
+-- 
+Andy Jacobson
+andy.jacobson at noaa.gov
+
+NOAA Earth System Research Lab
+Global Monitoring Division
+325 Broadway R/GMD1
+Boulder, Colorado 80305
+
+303/578-2237
+
+
+From rkoenker at illinois.edu  Wed May  8 22:43:01 2013
+From: rkoenker at illinois.edu (Roger Koenker)
+Date: Wed, 8 May 2013 15:43:01 -0500
+Subject: [R-SIG-Mac] rgl segfault
+Message-ID: <45AB9E1F-E828-4904-9F90-A3E232A6F2F2@illinois.edu>
+
+Is there some new protocol for installing rgl?  I finally installed R 3.0 today:
+
+> require(rgl)
+Loading required package: rgl
+> sessionInfo()
+R version 3.0.0 (2013-04-03)
+Platform: x86_64-apple-darwin10.8.0 (64-bit)
+
+locale:
+[1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+
+attached base packages:
+[1] stats     graphics  grDevices utils     datasets  methods   base     
+
+other attached packages:
+[1] rgl_0.93.935
+
+and installed rgl from binaries....  but rgl.open()  yields:
+
+> rgl.open()
+
+ *** caught segfault ***
+address 0xe8, cause 'memory not mapped'
+
+Traceback:
+ 1: .C(rgl_dev_open, success = FALSE)
+ 2: rgl.open()
+
+I had an old note to myself suggesting to install from source with:
+
+R  CMD INSTALL --configure-args="--x-includes=/usr/X11/include --x-libraries=/usr/X11/lib" rgl
+
+which I tried too, but it produced the same result when I tried to run demo(rgl).  Any suggestions
+would be welcome.
+
+Roger
+
+url:    www.econ.uiuc.edu/~roger            Roger Koenker
+email    rkoenker at uiuc.edu            Department of Economics
+vox:     217-333-4558                University of Illinois
+fax:       217-244-6678                Urbana, IL 61801
+
+
+From simon.urbanek at r-project.org  Wed May  8 23:16:10 2013
+From: simon.urbanek at r-project.org (Simon Urbanek)
+Date: Wed, 8 May 2013 17:16:10 -0400
+Subject: [R-SIG-Mac] rgl segfault
+In-Reply-To: <45AB9E1F-E828-4904-9F90-A3E232A6F2F2@illinois.edu>
+References: <45AB9E1F-E828-4904-9F90-A3E232A6F2F2@illinois.edu>
+Message-ID: <7C7E00EC-DE57-4B07-BB03-47E5DC7B5326@r-project.org>
+
+Roger,
+
+On May 8, 2013, at 4:43 PM, Roger Koenker wrote:
+
+> Is there some new protocol for installing rgl?  I finally installed R 3.0 today:
+> 
+>> require(rgl)
+> Loading required package: rgl
+>> sessionInfo()
+> R version 3.0.0 (2013-04-03)
+> Platform: x86_64-apple-darwin10.8.0 (64-bit)
+> 
+> locale:
+> [1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+> 
+> attached base packages:
+> [1] stats     graphics  grDevices utils     datasets  methods   base     
+> 
+> other attached packages:
+> [1] rgl_0.93.935
+> 
+> and installed rgl from binaries....  but rgl.open()  yields:
+> 
+>> rgl.open()
+> 
+> *** caught segfault ***
+> address 0xe8, cause 'memory not mapped'
+> 
+> Traceback:
+> 1: .C(rgl_dev_open, success = FALSE)
+> 2: rgl.open()
+> 
+
+Can you provide more details about your setup? I cannot reproduce it. Both X11 and AGL versions of rgl work for me just fine (CRAN binary, OS X 10.6.8).
+
+There are several ways to run rgl, so it would be useful to know
+a) what is your OS X version
+b) are you running X11 and if so which one
+c) if you are not running the X11 version, is this from R.app or Terminal or any other GUI
+
+Cheers,
+Simon
+
+
+> I had an old note to myself suggesting to install from source with:
+> 
+> R  CMD INSTALL --configure-args="--x-includes=/usr/X11/include --x-libraries=/usr/X11/lib" rgl
+> 
+> which I tried too, but it produced the same result when I tried to run demo(rgl).  Any suggestions
+> would be welcome.
+> 
+> Roger
+> 
+> url:    www.econ.uiuc.edu/~roger            Roger Koenker
+> email    rkoenker at uiuc.edu            Department of Economics
+> vox:     217-333-4558                University of Illinois
+> fax:       217-244-6678                Urbana, IL 61801
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+> 
+> 
+
+
+From rkoenker at illinois.edu  Wed May  8 23:27:57 2013
+From: rkoenker at illinois.edu (Roger Koenker)
+Date: Wed, 8 May 2013 16:27:57 -0500
+Subject: [R-SIG-Mac] rgl segfault
+In-Reply-To: <67e82734c240479eacf9e6785b51d2a2@CHIHT2.ad.uillinois.edu>
+References: <45AB9E1F-E828-4904-9F90-A3E232A6F2F2@illinois.edu>
+	<67e82734c240479eacf9e6785b51d2a2@CHIHT2.ad.uillinois.edu>
+Message-ID: <2D80BB84-BA3F-43DB-9322-593C02185E39@illinois.edu>
+
+
+On May 8, 2013, at 4:16 PM, Simon Urbanek wrote:
+
+> Roger,
+> 
+> On May 8, 2013, at 4:43 PM, Roger Koenker wrote:
+> 
+>> Is there some new protocol for installing rgl?  I finally installed R 3.0 today:
+>> 
+>>> require(rgl)
+>> Loading required package: rgl
+>>> sessionInfo()
+>> R version 3.0.0 (2013-04-03)
+>> Platform: x86_64-apple-darwin10.8.0 (64-bit)
+>> 
+>> locale:
+>> [1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+>> 
+>> attached base packages:
+>> [1] stats     graphics  grDevices utils     datasets  methods   base     
+>> 
+>> other attached packages:
+>> [1] rgl_0.93.935
+>> 
+>> and installed rgl from binaries....  but rgl.open()  yields:
+>> 
+>>> rgl.open()
+>> 
+>> *** caught segfault ***
+>> address 0xe8, cause 'memory not mapped'
+>> 
+>> Traceback:
+>> 1: .C(rgl_dev_open, success = FALSE)
+>> 2: rgl.open()
+>> 
+> 
+> Can you provide more details about your setup? I cannot reproduce it. Both X11 and AGL versions of rgl work for me just fine (CRAN binary, OS X 10.6.8).
+
+Sure, sorry....  here are the further details:
+> 
+> There are several ways to run rgl, so it would be useful to know
+> a) what is your OS X version
+ Mac OS X Lion 10.7.5 (11G63)
+> b) are you running X11 and if so which one
+Yes,  XQuartz 2.6.5 (xorg-server 1.10.6)
+> c) if you are not running the X11 version, is this from R.app or Terminal or any other GUI
+I was initially running R from the Terminal, but I get the same behavior from an X11 window
+
+Thanks, 
+Roger
+
+> 
+> Cheers,
+> Simon
+> 
+> 
+>> I had an old note to myself suggesting to install from source with:
+>> 
+>> R  CMD INSTALL --configure-args="--x-includes=/usr/X11/include --x-libraries=/usr/X11/lib" rgl
+>> 
+>> which I tried too, but it produced the same result when I tried to run demo(rgl).  Any suggestions
+>> would be welcome.
+>> 
+>> Roger
+>> 
+>> url:    www.econ.uiuc.edu/~roger            Roger Koenker
+>> email    rkoenker at uiuc.edu            Department of Economics
+>> vox:     217-333-4558                University of Illinois
+>> fax:       217-244-6678                Urbana, IL 61801
+>> 
+>> _______________________________________________
+>> R-SIG-Mac mailing list
+>> R-SIG-Mac at r-project.org
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>> 
+>> 
+
+
+From cubranic at stat.ubc.ca  Thu May  9 00:28:51 2013
+From: cubranic at stat.ubc.ca (Davor Cubranic)
+Date: Wed, 8 May 2013 15:28:51 -0700
+Subject: [R-SIG-Mac] R-3.0.0: choice of gfortran compiler in
+	install.packages()
+In-Reply-To: <49A76966-152A-4EE7-BD7B-DC72A1001006@noaa.gov>
+References: <49A76966-152A-4EE7-BD7B-DC72A1001006@noaa.gov>
+Message-ID: <7DDC515D-C3DD-4850-BF64-A207B39AB53A@stat.ubc.ca>
+
+I don't see this on my  machine:
+
+> install.packages('fields', type='source')
+* installing *source* package 'fields' ...
+** package 'fields' successfully unpacked and MD5 sums checked
+** libs
+gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c css.f -o css.o
+gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c csstr.f -o csstr.o
+gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c cvrf.f -o cvrf.o
+gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c dchold.f -o dchold.o
+gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c dcopy.f -o dcopy.o
+gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c ddfind.f -o ddfind.o
+gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c ddot.f -o ddot.o
+gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c derrb.f -o derrb.o
+gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c dlv.f -o dlv.o
+gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c dmaket.f -o dmaket.o
+gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c drdfun.f -o drdfun.o
+gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c dsetup.f -o dsetup.o
+gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c evlpoly.f -o evlpoly.o
+gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c evlpoly2.f -o evlpoly2.o
+gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c expfn.f -o expfn.o
+gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c ifind.f -o ifind.o
+gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c igpoly.f -o igpoly.o
+gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c inpoly.f -o inpoly.o
+gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c mltdrb.f -o mltdrb.o
+gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c mltdtd.f -o mltdtd.o
+gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c multeb.f -o multeb.o
+gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c multrb.f -o multrb.o
+gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c radbas.f -o radbas.o
+gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c radfn2.f -o radfn2.o
+gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c radfun.f -o radfun.o
+gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c rcss.f -o rcss.o
+gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c rcssr.f -o rcssr.o
+gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c rcsswt.f -o rcsswt.o
+gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c sortm.f -o sortm.o
+llvm-gcc-4.2 -arch x86_64 -std=gnu99 -dynamiclib -Wl,-headerpad_max_install_names -undefined dynamic_lookup -single_module -multiply_defined suppress -L/usr/local/lib -L/usr/local/lib -o fields.so css.o csstr.o cvrf.o dchold.o dcopy.o ddfind.o ddot.o derrb.o dlv.o dmaket.o drdfun.o dsetup.o evlpoly.o evlpoly2.o expfn.o ifind.o igpoly.o inpoly.o mltdrb.o mltdtd.o multeb.o multrb.o radbas.o radfn2.o radfun.o rcss.o rcssr.o rcsswt.o sortm.o -L/usr/local/lib/gcc/i686-apple-darwin8/4.2.3/x86_64 -L/usr/local/lib/x86_64 -L/usr/local/lib/gcc/i686-apple-darwin8/4.2.3 -lgfortran -F/Library/Frameworks/R.framework/.. -framework R -Wl,-framework -Wl,CoreFoundation
+ld: warning: directory not found for option '-L/usr/local/lib/gcc/i686-apple-darwin8/4.2.3/x86_64'
+ld: warning: directory not found for option '-L/usr/local/lib/x86_64'
+ld: warning: directory not found for option '-L/usr/local/lib/gcc/i686-apple-darwin8/4.2.3'
+installing to /private/tmp/library/fields/libs
+** R
+** data
+** preparing package for lazy loading
+** help
+*** installing help indices
+** building package indices
+** testing if installed package can be loaded
+* DONE (fields)
+
+I'm also running R-3.0.0 and OS X 10.7.5, so I think the issue is your environment. Why do you have gfortran in /usr/local anyways? CRAN's fortran goes into /usr/bin.
+
+Note that you set FC and F77 to "gfortran-4.2" (no path), so that will look for it in your PATH, and you probably have /usr/local/gfortran/bin before /usr/bin. Try either removing /usr/local/gfortran directory or make sure the one in /usr/bin is found first.
+
+Davor
+
+On 2013-05-07, at 4:30 PM, Andy Jacobson (NOAA Affiliate) wrote:
+
+> Howdy,
+> 
+> I am attempting to install the fields_6.7.6 package under R-3.0.0 on OS X 10.7.5.  I think the install process is calling the wrong gfortran compiler.  The compiler being called is /usr/local/gfortran/bin/gfortran, which is "GNU Fortran (GCC) 4.4.0 20090321 (experimental) [trunk revision 144983]".  I've installed the gfortran-4.2.3.pkg package from http://cran.r-project.org/bin/macosx/tools/gfortran-4.2.3.pkg.
+> 
+> The /Library/Frameworks/R.framework/Versions/3.0/Resources/etc/Makeconf file specifies:
+> 
+> FC = gfortran-4.2 -arch x86_64
+> and
+> F77 = gfortran-4.2 -arch x86_64
+> 
+> The text output from install.packages() shows lots of -c compilation using this wrong gfortran, then attempts to link with llvm-gcc-4.2.  The linking step complains about the .o files being architecture i386, which is probably wrong output from the gfortran-4.4.0 compiler:
+> 
+>> /usr/local/gfortran/bin/gfortran   -fPIC  -g -O2  -c sortm.f -o sortm.o
+>> llvm-gcc-4.2 -arch x86_64 -std=gnu99 -dynamiclib -Wl,-headerpad_max_install_names -undefined dynamic_lookup -single_module -multiply_defined suppress -L/usr/local/gfortran/lib/ -o fields.so css.o csstr.o cvrf.o dchold.o dcopy.o ddfind.o ddot.o derrb.o dlv.o dmaket.o drdfun.o dsetup.o evlpoly.o evlpoly2.o expfn.o ifind.o igpoly.o inpoly.o mltdrb.o mltdtd.o multeb.o multrb.o radbas.o radfn2.o radfun.o rcss.o rcssr.o rcsswt.o sortm.o -L/usr/local/lib/gcc/i686-apple-darwin8/4.2.3/x86_64 -L/usr/local/lib/x86_64 -L/usr/local/lib/gcc/i686-apple-darwin8/4.2.3 -lgfortran -F/Library/Frameworks/R.framework/.. -framework R -Wl,-framework -Wl,CoreFoundation
+>> ld: warning: ld: warning: ignoring file css.o, file was built for i386 which is not the architecture being linked (x86_64): css.oignoring file csstr.o, file was built for i386 which is not the architecture being linked (x86_64): csstr.o
+> 
+> 
+> 
+> There's no Makefile in the fields package, so FC and F77 are not being overridden by the package itself, I believe.  The FC and F77 variables from R's Makeconf are not being respected, and I've tried to specify alternative gfortran compilers with syntax like:
+> 
+> 
+> install.packages("fields",type="source",repos="http://cran.us.r-project.org",clean=TRUE,configure.vars=list(F77="gfortran-4.2 -arch x86_64",FC="gfortran-4.2 -arch x86_64"))
+> 
+> Nothing I do seems to tell the fields package to use the proper gfortran compiler.  I have no environment variables like FC or F77 defined.  I have to admit that I do have four different gfortran versions installed on this machine:  in addition to the R pkg version and the gfortran-4.4.0, there's a fink /sw/bin/gfortran 4.6.2, and a /usr/bin/gfortran-4.2 which claims to come from Apple (GNU Fortran (GCC) 4.2.1 (Apple Inc. build 5566)).  I'm up to date with Xcode.
+> 
+> Any advice about how to do this correctly would be much appreciated!
+> 
+> Thanks,
+> 
+> Andy
+> -- 
+> Andy Jacobson
+> andy.jacobson at noaa.gov
+> 
+> NOAA Earth System Research Lab
+> Global Monitoring Division
+> 325 Broadway R/GMD1
+> Boulder, Colorado 80305
+> 
+> 303/578-2237
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+
+
+From ripley at stats.ox.ac.uk  Thu May  9 08:40:23 2013
+From: ripley at stats.ox.ac.uk (Prof Brian Ripley)
+Date: Thu, 09 May 2013 07:40:23 +0100
+Subject: [R-SIG-Mac] R-3.0.0: choice of gfortran compiler in
+	install.packages()
+In-Reply-To: <7DDC515D-C3DD-4850-BF64-A207B39AB53A@stat.ubc.ca>
+References: <49A76966-152A-4EE7-BD7B-DC72A1001006@noaa.gov>
+	<7DDC515D-C3DD-4850-BF64-A207B39AB53A@stat.ubc.ca>
+Message-ID: <518B44D7.1090104@stats.ox.ac.uk>
+
+Note that the recommended CRAN gfortran *does* go into /usr/local.  This 
+one: http://cran.r-project.org/bin/macosx/tools/gfortran-4.2.3.pkg as 
+described at 
+http://cran.r-project.org/doc/manuals/r-release/R-admin.html#OS-X .
+
+That's for R 3.0.0: other versions were recommended for earlier versions 
+as add-ons to gcc versions which are no longer recommended.
+
+If you are not using the recommended compiler with a CRAN binary build 
+you should set some variables in ~/.R/Makevars: see 
+http://cran.r-project.org/doc/manuals/r-release/R-admin.html#OS-X-packages .
+
+On 08/05/2013 23:28, Davor Cubranic wrote:
+> I don't see this on my  machine:
+>
+>> install.packages('fields', type='source')
+> * installing *source* package 'fields' ...
+> ** package 'fields' successfully unpacked and MD5 sums checked
+> ** libs
+> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c css.f -o css.o
+> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c csstr.f -o csstr.o
+> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c cvrf.f -o cvrf.o
+> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c dchold.f -o dchold.o
+> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c dcopy.f -o dcopy.o
+> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c ddfind.f -o ddfind.o
+> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c ddot.f -o ddot.o
+> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c derrb.f -o derrb.o
+> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c dlv.f -o dlv.o
+> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c dmaket.f -o dmaket.o
+> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c drdfun.f -o drdfun.o
+> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c dsetup.f -o dsetup.o
+> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c evlpoly.f -o evlpoly.o
+> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c evlpoly2.f -o evlpoly2.o
+> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c expfn.f -o expfn.o
+> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c ifind.f -o ifind.o
+> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c igpoly.f -o igpoly.o
+> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c inpoly.f -o inpoly.o
+> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c mltdrb.f -o mltdrb.o
+> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c mltdtd.f -o mltdtd.o
+> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c multeb.f -o multeb.o
+> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c multrb.f -o multrb.o
+> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c radbas.f -o radbas.o
+> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c radfn2.f -o radfn2.o
+> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c radfun.f -o radfun.o
+> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c rcss.f -o rcss.o
+> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c rcssr.f -o rcssr.o
+> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c rcsswt.f -o rcsswt.o
+> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c sortm.f -o sortm.o
+> llvm-gcc-4.2 -arch x86_64 -std=gnu99 -dynamiclib -Wl,-headerpad_max_install_names -undefined dynamic_lookup -single_module -multiply_defined suppress -L/usr/local/lib -L/usr/local/lib -o fields.so css.o csstr.o cvrf.o dchold.o dcopy.o ddfind.o ddot.o derrb.o dlv.o dmaket.o drdfun.o dsetup.o evlpoly.o evlpoly2.o expfn.o ifind.o igpoly.o inpoly.o mltdrb.o mltdtd.o multeb.o multrb.o radbas.o radfn2.o radfun.o rcss.o rcssr.o rcsswt.o sortm.o -L/usr/local/lib/gcc/i686-apple-darwin8/4.2.3/x86_64 -L/usr/local/lib/x86_64 -L/usr/local/lib/gcc/i686-apple-darwin8/4.2.3 -lgfortran -F/Library/Frameworks/R.framework/.. -framework R -Wl,-framework -Wl,CoreFoundation
+> ld: warning: directory not found for option '-L/usr/local/lib/gcc/i686-apple-darwin8/4.2.3/x86_64'
+> ld: warning: directory not found for option '-L/usr/local/lib/x86_64'
+> ld: warning: directory not found for option '-L/usr/local/lib/gcc/i686-apple-darwin8/4.2.3'
+> installing to /private/tmp/library/fields/libs
+> ** R
+> ** data
+> ** preparing package for lazy loading
+> ** help
+> *** installing help indices
+> ** building package indices
+> ** testing if installed package can be loaded
+> * DONE (fields)
+>
+> I'm also running R-3.0.0 and OS X 10.7.5, so I think the issue is your environment. Why do you have gfortran in /usr/local anyways? CRAN's fortran goes into /usr/bin.
+>
+> Note that you set FC and F77 to "gfortran-4.2" (no path), so that will look for it in your PATH, and you probably have /usr/local/gfortran/bin before /usr/bin. Try either removing /usr/local/gfortran directory or make sure the one in /usr/bin is found first.
+>
+> Davor
+>
+> On 2013-05-07, at 4:30 PM, Andy Jacobson (NOAA Affiliate) wrote:
+>
+>> Howdy,
+>>
+>> I am attempting to install the fields_6.7.6 package under R-3.0.0 on OS X 10.7.5.  I think the install process is calling the wrong gfortran compiler.  The compiler being called is /usr/local/gfortran/bin/gfortran, which is "GNU Fortran (GCC) 4.4.0 20090321 (experimental) [trunk revision 144983]".  I've installed the gfortran-4.2.3.pkg package from http://cran.r-project.org/bin/macosx/tools/gfortran-4.2.3.pkg.
+>>
+>> The /Library/Frameworks/R.framework/Versions/3.0/Resources/etc/Makeconf file specifies:
+>>
+>> FC = gfortran-4.2 -arch x86_64
+>> and
+>> F77 = gfortran-4.2 -arch x86_64
+>>
+>> The text output from install.packages() shows lots of -c compilation using this wrong gfortran, then attempts to link with llvm-gcc-4.2.  The linking step complains about the .o files being architecture i386, which is probably wrong output from the gfortran-4.4.0 compiler:
+>>
+>>> /usr/local/gfortran/bin/gfortran   -fPIC  -g -O2  -c sortm.f -o sortm.o
+>>> llvm-gcc-4.2 -arch x86_64 -std=gnu99 -dynamiclib -Wl,-headerpad_max_install_names -undefined dynamic_lookup -single_module -multiply_defined suppress -L/usr/local/gfortran/lib/ -o fields.so css.o csstr.o cvrf.o dchold.o dcopy.o ddfind.o ddot.o derrb.o dlv.o dmaket.o drdfun.o dsetup.o evlpoly.o evlpoly2.o expfn.o ifind.o igpoly.o inpoly.o mltdrb.o mltdtd.o multeb.o multrb.o radbas.o radfn2.o radfun.o rcss.o rcssr.o rcsswt.o sortm.o -L/usr/local/lib/gcc/i686-apple-darwin8/4.2.3/x86_64 -L/usr/local/lib/x86_64 -L/usr/local/lib/gcc/i686-apple-darwin8/4.2.3 -lgfortran -F/Library/Frameworks/R.framework/.. -framework R -Wl,-framework -Wl,CoreFoundation
+>>> ld: warning: ld: warning: ignoring file css.o, file was built for i386 which is not the architecture being linked (x86_64): css.oignoring file csstr.o, file was built for i386 which is not the architecture being linked (x86_64): csstr.o
+>>
+>>
+>>
+>> There's no Makefile in the fields package, so FC and F77 are not being overridden by the package itself, I believe.  The FC and F77 variables from R's Makeconf are not being respected, and I've tried to specify alternative gfortran compilers with syntax like:
+>>
+>>
+>> install.packages("fields",type="source",repos="http://cran.us.r-project.org",clean=TRUE,configure.vars=list(F77="gfortran-4.2 -arch x86_64",FC="gfortran-4.2 -arch x86_64"))
+>>
+>> Nothing I do seems to tell the fields package to use the proper gfortran compiler.  I have no environment variables like FC or F77 defined.  I have to admit that I do have four different gfortran versions installed on this machine:  in addition to the R pkg version and the gfortran-4.4.0, there's a fink /sw/bin/gfortran 4.6.2, and a /usr/bin/gfortran-4.2 which claims to come from Apple (GNU Fortran (GCC) 4.2.1 (Apple Inc. build 5566)).  I'm up to date with Xcode.
+>>
+>> Any advice about how to do this correctly would be much appreciated!
+>>
+>> Thanks,
+>>
+>> Andy
+>> --
+>> Andy Jacobson
+>> andy.jacobson at noaa.gov
+>>
+>> NOAA Earth System Research Lab
+>> Global Monitoring Division
+>> 325 Broadway R/GMD1
+>> Boulder, Colorado 80305
+>>
+>> 303/578-2237
+>>
+>> _______________________________________________
+>> R-SIG-Mac mailing list
+>> R-SIG-Mac at r-project.org
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>
+
+
+-- 
+Brian D. Ripley,                  ripley at stats.ox.ac.uk
+Professor of Applied Statistics,  http://www.stats.ox.ac.uk/~ripley/
+University of Oxford,             Tel:  +44 1865 272861 (self)
+1 South Parks Road,                     +44 1865 272866 (PA)
+Oxford OX1 3TG, UK                Fax:  +44 1865 272595
+
+
+From andy.jacobson at noaa.gov  Thu May  9 17:16:33 2013
+From: andy.jacobson at noaa.gov (Andy Jacobson (NOAA Affiliate))
+Date: Thu, 9 May 2013 09:16:33 -0600
+Subject: [R-SIG-Mac] R-3.0.0: choice of gfortran compiler in
+	install.packages()
+In-Reply-To: <518B44D7.1090104@stats.ox.ac.uk>
+References: <49A76966-152A-4EE7-BD7B-DC72A1001006@noaa.gov>
+	<7DDC515D-C3DD-4850-BF64-A207B39AB53A@stat.ubc.ca>
+	<518B44D7.1090104@stats.ox.ac.uk>
+Message-ID: <0834FCDA-49FB-47A0-8BD0-59FD4F9F660D@noaa.gov>
+
+Issue resolved.
+
+I was unaware of the ~/.R/Makevars file, which indeed was specifying the wrong gfortran compiler.  To build the fields package correctly, I needed to specify the correct compiler and architecture in that file, as:
+
+F77=/usr/local/bin/gfortran-4.2 -arch x86_64
+
+Interesting that the .R/Makevars would override Makevars specified as arguments to install.packages().  Is this correct behavior?
+
+Thanks to Davor Cubranic and Professor Ripley for help on this matter.
+
+Best,
+
+Andy
+
+
+On Thu 09 May 2013, at 24:40 , Prof Brian Ripley wrote:
+
+> If you are not using the recommended compiler with a CRAN binary build you should set some variables in ~/.R/Makevars: see http://cran.r-project.org/doc/manuals/r-release/R-admin.html#OS-X-packages .
+
+-- 
+Andy Jacobson
+andy.jacobson at noaa.gov
+
+NOAA Earth System Research Lab
+Global Monitoring Division
+325 Broadway
+Boulder, Colorado 80305
+
+303/578-2237
+
+
+From cubranic at stat.ubc.ca  Thu May  9 18:36:43 2013
+From: cubranic at stat.ubc.ca (Davor Cubranic)
+Date: Thu, 9 May 2013 09:36:43 -0700
+Subject: [R-SIG-Mac] R-3.0.0: choice of gfortran compiler in
+	install.packages()
+In-Reply-To: <518B44D7.1090104@stats.ox.ac.uk>
+References: <49A76966-152A-4EE7-BD7B-DC72A1001006@noaa.gov>
+	<7DDC515D-C3DD-4850-BF64-A207B39AB53A@stat.ubc.ca>
+	<518B44D7.1090104@stats.ox.ac.uk>
+Message-ID: <DD6C022A-B408-45B0-8B13-0754E185F66F@stat.ubc.ca>
+
+I don't see any mention in the admin manual that GCC add-ons are no longer recommended. The section you linked to says: "Other compilers from http://r.research.att.com/tools/ can also be used." That tools page further says: "Note: If you are interested in cutting-edge compilers and/or integration of GNU Fortran and Apple's compilers see gcc 4.2 section below." That's what I was using, "gcc-4.2 (Apple build 5666.3) with GNU Fortran 4.2.4 for Mac OS X 10.7 (Lion)", since I use XCode and liked the integration. I should have noted that in my message, although I didn't know that the path would be different.
+
+Davor
+
+On 2013-05-08, at 11:40 PM, Prof Brian Ripley wrote:
+
+> Note that the recommended CRAN gfortran *does* go into /usr/local.  This one: http://cran.r-project.org/bin/macosx/tools/gfortran-4.2.3.pkg as described at http://cran.r-project.org/doc/manuals/r-release/R-admin.html#OS-X .
+> 
+> That's for R 3.0.0: other versions were recommended for earlier versions as add-ons to gcc versions which are no longer recommended.
+> 
+> If you are not using the recommended compiler with a CRAN binary build you should set some variables in ~/.R/Makevars: see http://cran.r-project.org/doc/manuals/r-release/R-admin.html#OS-X-packages .
+> 
+> On 08/05/2013 23:28, Davor Cubranic wrote:
+>> I don't see this on my  machine:
+>> 
+>>> install.packages('fields', type='source')
+>> * installing *source* package 'fields' ...
+>> ** package 'fields' successfully unpacked and MD5 sums checked
+>> ** libs
+>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c css.f -o css.o
+>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c csstr.f -o csstr.o
+>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c cvrf.f -o cvrf.o
+>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c dchold.f -o dchold.o
+>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c dcopy.f -o dcopy.o
+>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c ddfind.f -o ddfind.o
+>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c ddot.f -o ddot.o
+>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c derrb.f -o derrb.o
+>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c dlv.f -o dlv.o
+>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c dmaket.f -o dmaket.o
+>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c drdfun.f -o drdfun.o
+>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c dsetup.f -o dsetup.o
+>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c evlpoly.f -o evlpoly.o
+>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c evlpoly2.f -o evlpoly2.o
+>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c expfn.f -o expfn.o
+>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c ifind.f -o ifind.o
+>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c igpoly.f -o igpoly.o
+>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c inpoly.f -o inpoly.o
+>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c mltdrb.f -o mltdrb.o
+>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c mltdtd.f -o mltdtd.o
+>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c multeb.f -o multeb.o
+>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c multrb.f -o multrb.o
+>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c radbas.f -o radbas.o
+>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c radfn2.f -o radfn2.o
+>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c radfun.f -o radfun.o
+>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c rcss.f -o rcss.o
+>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c rcssr.f -o rcssr.o
+>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c rcsswt.f -o rcsswt.o
+>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c sortm.f -o sortm.o
+>> llvm-gcc-4.2 -arch x86_64 -std=gnu99 -dynamiclib -Wl,-headerpad_max_install_names -undefined dynamic_lookup -single_module -multiply_defined suppress -L/usr/local/lib -L/usr/local/lib -o fields.so css.o csstr.o cvrf.o dchold.o dcopy.o ddfind.o ddot.o derrb.o dlv.o dmaket.o drdfun.o dsetup.o evlpoly.o evlpoly2.o expfn.o ifind.o igpoly.o inpoly.o mltdrb.o mltdtd.o multeb.o multrb.o radbas.o radfn2.o radfun.o rcss.o rcssr.o rcsswt.o sortm.o -L/usr/local/lib/gcc/i686-apple-darwin8/4.2.3/x86_64 -L/usr/local/lib/x86_64 -L/usr/local/lib/gcc/i686-apple-darwin8/4.2.3 -lgfortran -F/Library/Frameworks/R.framework/.. -framework R -Wl,-framework -Wl,CoreFoundation
+>> ld: warning: directory not found for option '-L/usr/local/lib/gcc/i686-apple-darwin8/4.2.3/x86_64'
+>> ld: warning: directory not found for option '-L/usr/local/lib/x86_64'
+>> ld: warning: directory not found for option '-L/usr/local/lib/gcc/i686-apple-darwin8/4.2.3'
+>> installing to /private/tmp/library/fields/libs
+>> ** R
+>> ** data
+>> ** preparing package for lazy loading
+>> ** help
+>> *** installing help indices
+>> ** building package indices
+>> ** testing if installed package can be loaded
+>> * DONE (fields)
+>> 
+>> I'm also running R-3.0.0 and OS X 10.7.5, so I think the issue is your environment. Why do you have gfortran in /usr/local anyways? CRAN's fortran goes into /usr/bin.
+>> 
+>> Note that you set FC and F77 to "gfortran-4.2" (no path), so that will look for it in your PATH, and you probably have /usr/local/gfortran/bin before /usr/bin. Try either removing /usr/local/gfortran directory or make sure the one in /usr/bin is found first.
+>> 
+>> Davor
+>> 
+>> On 2013-05-07, at 4:30 PM, Andy Jacobson (NOAA Affiliate) wrote:
+>> 
+>>> Howdy,
+>>> 
+>>> I am attempting to install the fields_6.7.6 package under R-3.0.0 on OS X 10.7.5.  I think the install process is calling the wrong gfortran compiler.  The compiler being called is /usr/local/gfortran/bin/gfortran, which is "GNU Fortran (GCC) 4.4.0 20090321 (experimental) [trunk revision 144983]".  I've installed the gfortran-4.2.3.pkg package from http://cran.r-project.org/bin/macosx/tools/gfortran-4.2.3.pkg.
+>>> 
+>>> The /Library/Frameworks/R.framework/Versions/3.0/Resources/etc/Makeconf file specifies:
+>>> 
+>>> FC = gfortran-4.2 -arch x86_64
+>>> and
+>>> F77 = gfortran-4.2 -arch x86_64
+>>> 
+>>> The text output from install.packages() shows lots of -c compilation using this wrong gfortran, then attempts to link with llvm-gcc-4.2.  The linking step complains about the .o files being architecture i386, which is probably wrong output from the gfortran-4.4.0 compiler:
+>>> 
+>>>> /usr/local/gfortran/bin/gfortran   -fPIC  -g -O2  -c sortm.f -o sortm.o
+>>>> llvm-gcc-4.2 -arch x86_64 -std=gnu99 -dynamiclib -Wl,-headerpad_max_install_names -undefined dynamic_lookup -single_module -multiply_defined suppress -L/usr/local/gfortran/lib/ -o fields.so css.o csstr.o cvrf.o dchold.o dcopy.o ddfind.o ddot.o derrb.o dlv.o dmaket.o drdfun.o dsetup.o evlpoly.o evlpoly2.o expfn.o ifind.o igpoly.o inpoly.o mltdrb.o mltdtd.o multeb.o multrb.o radbas.o radfn2.o radfun.o rcss.o rcssr.o rcsswt.o sortm.o -L/usr/local/lib/gcc/i686-apple-darwin8/4.2.3/x86_64 -L/usr/local/lib/x86_64 -L/usr/local/lib/gcc/i686-apple-darwin8/4.2.3 -lgfortran -F/Library/Frameworks/R.framework/.. -framework R -Wl,-framework -Wl,CoreFoundation
+>>>> ld: warning: ld: warning: ignoring file css.o, file was built for i386 which is not the architecture being linked (x86_64): css.oignoring file csstr.o, file was built for i386 which is not the architecture being linked (x86_64): csstr.o
+>>> 
+>>> 
+>>> 
+>>> There's no Makefile in the fields package, so FC and F77 are not being overridden by the package itself, I believe.  The FC and F77 variables from R's Makeconf are not being respected, and I've tried to specify alternative gfortran compilers with syntax like:
+>>> 
+>>> 
+>>> install.packages("fields",type="source",repos="http://cran.us.r-project.org",clean=TRUE,configure.vars=list(F77="gfortran-4.2 -arch x86_64",FC="gfortran-4.2 -arch x86_64"))
+>>> 
+>>> Nothing I do seems to tell the fields package to use the proper gfortran compiler.  I have no environment variables like FC or F77 defined.  I have to admit that I do have four different gfortran versions installed on this machine:  in addition to the R pkg version and the gfortran-4.4.0, there's a fink /sw/bin/gfortran 4.6.2, and a /usr/bin/gfortran-4.2 which claims to come from Apple (GNU Fortran (GCC) 4.2.1 (Apple Inc. build 5566)).  I'm up to date with Xcode.
+>>> 
+>>> Any advice about how to do this correctly would be much appreciated!
+>>> 
+>>> Thanks,
+>>> 
+>>> Andy
+>>> --
+>>> Andy Jacobson
+>>> andy.jacobson at noaa.gov
+>>> 
+>>> NOAA Earth System Research Lab
+>>> Global Monitoring Division
+>>> 325 Broadway R/GMD1
+>>> Boulder, Colorado 80305
+>>> 
+>>> 303/578-2237
+>>> 
+>>> _______________________________________________
+>>> R-SIG-Mac mailing list
+>>> R-SIG-Mac at r-project.org
+>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>> 
+>> _______________________________________________
+>> R-SIG-Mac mailing list
+>> R-SIG-Mac at r-project.org
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>> 
+> 
+> 
+> -- 
+> Brian D. Ripley,                  ripley at stats.ox.ac.uk
+> Professor of Applied Statistics,  http://www.stats.ox.ac.uk/~ripley/
+> University of Oxford,             Tel:  +44 1865 272861 (self)
+> 1 South Parks Road,                     +44 1865 272866 (PA)
+> Oxford OX1 3TG, UK                Fax:  +44 1865 272595
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+
+
+From ripley at stats.ox.ac.uk  Fri May 10 08:03:01 2013
+From: ripley at stats.ox.ac.uk (Prof Brian Ripley)
+Date: Fri, 10 May 2013 07:03:01 +0100
+Subject: [R-SIG-Mac] R-3.0.0: choice of gfortran compiler in
+	install.packages()
+In-Reply-To: <DD6C022A-B408-45B0-8B13-0754E185F66F@stat.ubc.ca>
+References: <49A76966-152A-4EE7-BD7B-DC72A1001006@noaa.gov>
+	<7DDC515D-C3DD-4850-BF64-A207B39AB53A@stat.ubc.ca>
+	<518B44D7.1090104@stats.ox.ac.uk>
+	<DD6C022A-B408-45B0-8B13-0754E185F66F@stat.ubc.ca>
+Message-ID: <518C8D95.5080500@stats.ox.ac.uk>
+
+On 09/05/2013 17:36, Davor Cubranic wrote:
+> I don't see any mention in the admin manual that GCC add-ons are no longer recommended. The section you linked to says: "Other compilers from http://r.research.att.com/tools/ can also be used." That tools page further says: "Note: If you are interested in cutting-edge compilers and/or integration of GNU Fortran and Apple's compilers see gcc 4.2 section below." That's what I was using, "gcc-4.2 (Apple build 5666.3) with GNU Fortran 4.2.4 for Mac OS X 10.7 (Lion)", since I use XCode and liked the integration. I should have noted that in my message, although I didn't know that the path would be different.
+
+You don't see any mention that they are recommended ....
+
+> Davor
+>
+> On 2013-05-08, at 11:40 PM, Prof Brian Ripley wrote:
+>
+>> Note that the recommended CRAN gfortran *does* go into /usr/local.  This one: http://cran.r-project.org/bin/macosx/tools/gfortran-4.2.3.pkg as described at http://cran.r-project.org/doc/manuals/r-release/R-admin.html#OS-X .
+>>
+>> That's for R 3.0.0: other versions were recommended for earlier versions as add-ons to gcc versions which are no longer recommended.
+>>
+>> If you are not using the recommended compiler with a CRAN binary build you should set some variables in ~/.R/Makevars: see http://cran.r-project.org/doc/manuals/r-release/R-admin.html#OS-X-packages .
+>>
+>> On 08/05/2013 23:28, Davor Cubranic wrote:
+>>> I don't see this on my  machine:
+>>>
+>>>> install.packages('fields', type='source')
+>>> * installing *source* package 'fields' ...
+>>> ** package 'fields' successfully unpacked and MD5 sums checked
+>>> ** libs
+>>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c css.f -o css.o
+>>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c csstr.f -o csstr.o
+>>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c cvrf.f -o cvrf.o
+>>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c dchold.f -o dchold.o
+>>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c dcopy.f -o dcopy.o
+>>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c ddfind.f -o ddfind.o
+>>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c ddot.f -o ddot.o
+>>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c derrb.f -o derrb.o
+>>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c dlv.f -o dlv.o
+>>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c dmaket.f -o dmaket.o
+>>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c drdfun.f -o drdfun.o
+>>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c dsetup.f -o dsetup.o
+>>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c evlpoly.f -o evlpoly.o
+>>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c evlpoly2.f -o evlpoly2.o
+>>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c expfn.f -o expfn.o
+>>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c ifind.f -o ifind.o
+>>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c igpoly.f -o igpoly.o
+>>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c inpoly.f -o inpoly.o
+>>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c mltdrb.f -o mltdrb.o
+>>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c mltdtd.f -o mltdtd.o
+>>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c multeb.f -o multeb.o
+>>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c multrb.f -o multrb.o
+>>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c radbas.f -o radbas.o
+>>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c radfn2.f -o radfn2.o
+>>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c radfun.f -o radfun.o
+>>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c rcss.f -o rcss.o
+>>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c rcssr.f -o rcssr.o
+>>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c rcsswt.f -o rcsswt.o
+>>> gfortran-4.2 -arch x86_64   -fPIC  -g -O2  -c sortm.f -o sortm.o
+>>> llvm-gcc-4.2 -arch x86_64 -std=gnu99 -dynamiclib -Wl,-headerpad_max_install_names -undefined dynamic_lookup -single_module -multiply_defined suppress -L/usr/local/lib -L/usr/local/lib -o fields.so css.o csstr.o cvrf.o dchold.o dcopy.o ddfind.o ddot.o derrb.o dlv.o dmaket.o drdfun.o dsetup.o evlpoly.o evlpoly2.o expfn.o ifind.o igpoly.o inpoly.o mltdrb.o mltdtd.o multeb.o multrb.o radbas.o radfn2.o radfun.o rcss.o rcssr.o rcsswt.o sortm.o -L/usr/local/lib/gcc/i686-apple-darwin8/4.2.3/x86_64 -L/usr/local/lib/x86_64 -L/usr/local/lib/gcc/i686-apple-darwin8/4.2.3 -lgfortran -F/Library/Frameworks/R.framework/.. -framework R -Wl,-framework -Wl,CoreFoundation
+>>> ld: warning: directory not found for option '-L/usr/local/lib/gcc/i686-apple-darwin8/4.2.3/x86_64'
+>>> ld: warning: directory not found for option '-L/usr/local/lib/x86_64'
+>>> ld: warning: directory not found for option '-L/usr/local/lib/gcc/i686-apple-darwin8/4.2.3'
+>>> installing to /private/tmp/library/fields/libs
+>>> ** R
+>>> ** data
+>>> ** preparing package for lazy loading
+>>> ** help
+>>> *** installing help indices
+>>> ** building package indices
+>>> ** testing if installed package can be loaded
+>>> * DONE (fields)
+>>>
+>>> I'm also running R-3.0.0 and OS X 10.7.5, so I think the issue is your environment. Why do you have gfortran in /usr/local anyways? CRAN's fortran goes into /usr/bin.
+>>>
+>>> Note that you set FC and F77 to "gfortran-4.2" (no path), so that will look for it in your PATH, and you probably have /usr/local/gfortran/bin before /usr/bin. Try either removing /usr/local/gfortran directory or make sure the one in /usr/bin is found first.
+>>>
+>>> Davor
+>>>
+>>> On 2013-05-07, at 4:30 PM, Andy Jacobson (NOAA Affiliate) wrote:
+>>>
+>>>> Howdy,
+>>>>
+>>>> I am attempting to install the fields_6.7.6 package under R-3.0.0 on OS X 10.7.5.  I think the install process is calling the wrong gfortran compiler.  The compiler being called is /usr/local/gfortran/bin/gfortran, which is "GNU Fortran (GCC) 4.4.0 20090321 (experimental) [trunk revision 144983]".  I've installed the gfortran-4.2.3.pkg package from http://cran.r-project.org/bin/macosx/tools/gfortran-4.2.3.pkg.
+>>>>
+>>>> The /Library/Frameworks/R.framework/Versions/3.0/Resources/etc/Makeconf file specifies:
+>>>>
+>>>> FC = gfortran-4.2 -arch x86_64
+>>>> and
+>>>> F77 = gfortran-4.2 -arch x86_64
+>>>>
+>>>> The text output from install.packages() shows lots of -c compilation using this wrong gfortran, then attempts to link with llvm-gcc-4.2.  The linking step complains about the .o files being architecture i386, which is probably wrong output from the gfortran-4.4.0 compiler:
+>>>>
+>>>>> /usr/local/gfortran/bin/gfortran   -fPIC  -g -O2  -c sortm.f -o sortm.o
+>>>>> llvm-gcc-4.2 -arch x86_64 -std=gnu99 -dynamiclib -Wl,-headerpad_max_install_names -undefined dynamic_lookup -single_module -multiply_defined suppress -L/usr/local/gfortran/lib/ -o fields.so css.o csstr.o cvrf.o dchold.o dcopy.o ddfind.o ddot.o derrb.o dlv.o dmaket.o drdfun.o dsetup.o evlpoly.o evlpoly2.o expfn.o ifind.o igpoly.o inpoly.o mltdrb.o mltdtd.o multeb.o multrb.o radbas.o radfn2.o radfun.o rcss.o rcssr.o rcsswt.o sortm.o -L/usr/local/lib/gcc/i686-apple-darwin8/4.2.3/x86_64 -L/usr/local/lib/x86_64 -L/usr/local/lib/gcc/i686-apple-darwin8/4.2.3 -lgfortran -F/Library/Frameworks/R.framework/.. -framework R -Wl,-framework -Wl,CoreFoundation
+>>>>> ld: warning: ld: warning: ignoring file css.o, file was built for i386 which is not the architecture being linked (x86_64): css.oignoring file csstr.o, file was built for i386 which is not the architecture being linked (x86_64): csstr.o
+>>>>
+>>>>
+>>>>
+>>>> There's no Makefile in the fields package, so FC and F77 are not being overridden by the package itself, I believe.  The FC and F77 variables from R's Makeconf are not being respected, and I've tried to specify alternative gfortran compilers with syntax like:
+>>>>
+>>>>
+>>>> install.packages("fields",type="source",repos="http://cran.us.r-project.org",clean=TRUE,configure.vars=list(F77="gfortran-4.2 -arch x86_64",FC="gfortran-4.2 -arch x86_64"))
+>>>>
+>>>> Nothing I do seems to tell the fields package to use the proper gfortran compiler.  I have no environment variables like FC or F77 defined.  I have to admit that I do have four different gfortran versions installed on this machine:  in addition to the R pkg version and the gfortran-4.4.0, there's a fink /sw/bin/gfortran 4.6.2, and a /usr/bin/gfortran-4.2 which claims to come from Apple (GNU Fortran (GCC) 4.2.1 (Apple Inc. build 5566)).  I'm up to date with Xcode.
+>>>>
+>>>> Any advice about how to do this correctly would be much appreciated!
+>>>>
+>>>> Thanks,
+>>>>
+>>>> Andy
+>>>> --
+>>>> Andy Jacobson
+>>>> andy.jacobson at noaa.gov
+>>>>
+>>>> NOAA Earth System Research Lab
+>>>> Global Monitoring Division
+>>>> 325 Broadway R/GMD1
+>>>> Boulder, Colorado 80305
+>>>>
+>>>> 303/578-2237
+>>>>
+>>>> _______________________________________________
+>>>> R-SIG-Mac mailing list
+>>>> R-SIG-Mac at r-project.org
+>>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>>>
+>>> _______________________________________________
+>>> R-SIG-Mac mailing list
+>>> R-SIG-Mac at r-project.org
+>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>>>
+>>
+>>
+>> --
+>> Brian D. Ripley,                  ripley at stats.ox.ac.uk
+>> Professor of Applied Statistics,  http://www.stats.ox.ac.uk/~ripley/
+>> University of Oxford,             Tel:  +44 1865 272861 (self)
+>> 1 South Parks Road,                     +44 1865 272866 (PA)
+>> Oxford OX1 3TG, UK                Fax:  +44 1865 272595
+>>
+>> _______________________________________________
+>> R-SIG-Mac mailing list
+>> R-SIG-Mac at r-project.org
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>
+
+
+-- 
+Brian D. Ripley,                  ripley at stats.ox.ac.uk
+Professor of Applied Statistics,  http://www.stats.ox.ac.uk/~ripley/
+University of Oxford,             Tel:  +44 1865 272861 (self)
+1 South Parks Road,                     +44 1865 272866 (PA)
+Oxford OX1 3TG, UK                Fax:  +44 1865 272595
+
+
+From dmck at u.washington.edu  Sat May 18 01:20:05 2013
+From: dmck at u.washington.edu (Don McKenzie)
+Date: Fri, 17 May 2013 16:20:05 -0700
+Subject: [R-SIG-Mac] source() hangs on import
+Message-ID: <5266E855-C6D3-41E4-978E-4E9667AFC1D5@u.washington.edu>
+
+I checked the archives since the release of R 3.0.0 and didn't see anything on this.
+
+Trying to import data previously exported with dump(), source() hangs and I have to force quit R.  This happens with data objects
+as small as 5 kb.  Has anyone encountered this and found a workaround?  Is there now a preferred method to export R objects?
+
+Thanks for any suggestions.
+
+on a macbook pro with 4 gb RAM.
+
+> R.version
+               _                           
+platform       x86_64-apple-darwin10.8.0   
+arch           x86_64                      
+os             darwin10.8.0                
+system         x86_64, darwin10.8.0        
+status                                     
+major          3                           
+minor          0.0                         
+year           2013                        
+month          04                          
+day            03                          
+svn rev        62481                       
+language       R                           
+version.string R version 3.0.0 (2013-04-03)
+nickname       Masked Marvel   
+
+
+
+Don McKenzie
+Research Ecologist
+Pacific Wildland Fire Sciences Lab
+US Forest Service
+
+Affiliate Professor
+School of Environmental and Forest Sciences
+University of Washington
+
+phone: 206-732-7824
+dmck at uw.edu
+
+
+From simon.urbanek at r-project.org  Sat May 18 01:41:39 2013
+From: simon.urbanek at r-project.org (Simon Urbanek)
+Date: Fri, 17 May 2013 19:41:39 -0400
+Subject: [R-SIG-Mac] source() hangs on import
+In-Reply-To: <5266E855-C6D3-41E4-978E-4E9667AFC1D5@u.washington.edu>
+References: <5266E855-C6D3-41E4-978E-4E9667AFC1D5@u.washington.edu>
+Message-ID: <B1609E40-D0E2-4E22-99F8-F1639E093588@r-project.org>
+
+
+On May 17, 2013, at 7:20 PM, Don McKenzie wrote:
+
+> I checked the archives since the release of R 3.0.0 and didn't see anything on this.
+> 
+> Trying to import data previously exported with dump(), source() hangs and I have to force quit R.  This happens with data objects
+> as small as 5 kb.  
+
+Do you have a reproducible example?
+
+
+> Has anyone encountered this and found a workaround?  Is there now a preferred method to export R objects?
+> 
+
+The preferred method has always been to use serialization (save/load or saveRDS/readRDS).
+
+Cheers,
+Simon
+
+
+> Thanks for any suggestions.
+> 
+> on a macbook pro with 4 gb RAM.
+> 
+>> R.version
+>               _                           
+> platform       x86_64-apple-darwin10.8.0   
+> arch           x86_64                      
+> os             darwin10.8.0                
+> system         x86_64, darwin10.8.0        
+> status                                     
+> major          3                           
+> minor          0.0                         
+> year           2013                        
+> month          04                          
+> day            03                          
+> svn rev        62481                       
+> language       R                           
+> version.string R version 3.0.0 (2013-04-03)
+> nickname       Masked Marvel   
+> 
+> 
+> 
+> Don McKenzie
+> Research Ecologist
+> Pacific Wildland Fire Sciences Lab
+> US Forest Service
+> 
+> Affiliate Professor
+> School of Environmental and Forest Sciences
+> University of Washington
+> 
+> phone: 206-732-7824
+> dmck at uw.edu
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+> 
+> 
+
+
+From dmck at u.washington.edu  Sat May 18 03:41:52 2013
+From: dmck at u.washington.edu (Donald McKenzie)
+Date: Fri, 17 May 2013 18:41:52 -0700 (PDT)
+Subject: [R-SIG-Mac] source() hangs on import
+In-Reply-To: <B1609E40-D0E2-4E22-99F8-F1639E093588@r-project.org>
+Message-ID: <alpine.LRH.2.01.1305171841520.27517@hymn03.u.washington.edu>
+
+Simon -- I can't reproduce it for the list because the window it's running in always hangs and R freezes. I tried. But it basically looks like
+
+> dump("my.file",file="myfileR")
+> source("myfileR")
+HANG..... (yellow colored ball)
+
+I will go with your suggestions below and report back if need be.   Thanks for the help.
+
+Don
+
+On Fri, 17 May 2013, Simon Urbanek wrote:
+
+>
+> On May 17, 2013, at 7:20 PM, Don McKenzie wrote:
+>
+>> I checked the archives since the release of R 3.0.0 and didn't see anything on this.
+>>
+>> Trying to import data previously exported with dump(), source() hangs and I have to force quit R.  This happens with data objects
+>> as small as 5 kb.
+>
+> Do you have a reproducible example?
+>
+>
+>> Has anyone encountered this and found a workaround?  Is there now a preferred method to export R objects?
+>>
+>
+> The preferred method has always been to use serialization (save/load or saveRDS/readRDS).
+>
+> Cheers,
+> Simon
+>
+>
+>> Thanks for any suggestions.
+>>
+>> on a macbook pro with 4 gb RAM.
+>>
+>>> R.version
+>>               _
+>> platform       x86_64-apple-darwin10.8.0
+>> arch           x86_64
+>> os             darwin10.8.0
+>> system         x86_64, darwin10.8.0
+>> status
+>> major          3
+>> minor          0.0
+>> year           2013
+>> month          04
+>> day            03
+>> svn rev        62481
+>> language       R
+>> version.string R version 3.0.0 (2013-04-03)
+>> nickname       Masked Marvel
+>>
+>>
+>>
+>> Don McKenzie
+>> Research Ecologist
+>> Pacific Wildland Fire Sciences Lab
+>> US Forest Service
+>>
+>> Affiliate Professor
+>> School of Environmental and Forest Sciences
+>> University of Washington
+>>
+>> phone: 206-732-7824
+>> dmck at uw.edu
+>>
+>> _______________________________________________
+>> R-SIG-Mac mailing list
+>> R-SIG-Mac at r-project.org
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>>
+>>
+>
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>
+
+
+From simon.urbanek at r-project.org  Sat May 18 03:51:19 2013
+From: simon.urbanek at r-project.org (Simon Urbanek)
+Date: Fri, 17 May 2013 21:51:19 -0400
+Subject: [R-SIG-Mac] source() hangs on import
+In-Reply-To: <alpine.LRH.2.01.1305171841520.27517@hymn03.u.washington.edu>
+References: <alpine.LRH.2.01.1305171841520.27517@hymn03.u.washington.edu>
+Message-ID: <88D998C1-F215-4840-BE74-A017AA1464D5@r-project.org>
+
+
+On May 17, 2013, at 9:41 PM, Donald McKenzie wrote:
+
+> Simon -- I can't reproduce it for the list because the window it's running in always hangs and R freezes. I tried. But it basically looks like
+> 
+>> dump("my.file",file="myfileR")
+>> source("myfileR")
+> HANG..... (yellow colored ball)
+> 
+
+Well, you can simply provide the myfileR that hangs for you ...
+
+Cheers,
+Simon
+
+
+> I will go with your suggestions below and report back if need be.   Thanks for the help.
+> 
+> Don
+> 
+> On Fri, 17 May 2013, Simon Urbanek wrote:
+> 
+>> 
+>> On May 17, 2013, at 7:20 PM, Don McKenzie wrote:
+>> 
+>>> I checked the archives since the release of R 3.0.0 and didn't see anything on this.
+>>> 
+>>> Trying to import data previously exported with dump(), source() hangs and I have to force quit R.  This happens with data objects
+>>> as small as 5 kb.
+>> 
+>> Do you have a reproducible example?
+>> 
+>> 
+>>> Has anyone encountered this and found a workaround?  Is there now a preferred method to export R objects?
+>>> 
+>> 
+>> The preferred method has always been to use serialization (save/load or saveRDS/readRDS).
+>> 
+>> Cheers,
+>> Simon
+>> 
+>> 
+>>> Thanks for any suggestions.
+>>> 
+>>> on a macbook pro with 4 gb RAM.
+>>> 
+>>>> R.version
+>>>              _
+>>> platform       x86_64-apple-darwin10.8.0
+>>> arch           x86_64
+>>> os             darwin10.8.0
+>>> system         x86_64, darwin10.8.0
+>>> status
+>>> major          3
+>>> minor          0.0
+>>> year           2013
+>>> month          04
+>>> day            03
+>>> svn rev        62481
+>>> language       R
+>>> version.string R version 3.0.0 (2013-04-03)
+>>> nickname       Masked Marvel
+>>> 
+>>> 
+>>> 
+>>> Don McKenzie
+>>> Research Ecologist
+>>> Pacific Wildland Fire Sciences Lab
+>>> US Forest Service
+>>> 
+>>> Affiliate Professor
+>>> School of Environmental and Forest Sciences
+>>> University of Washington
+>>> 
+>>> phone: 206-732-7824
+>>> dmck at uw.edu
+>>> 
+>>> _______________________________________________
+>>> R-SIG-Mac mailing list
+>>> R-SIG-Mac at r-project.org
+>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>>> 
+>>> 
+>> 
+>> _______________________________________________
+>> R-SIG-Mac mailing list
+>> R-SIG-Mac at r-project.org
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>> 
+> 
+> 
+
+
+From dmck at u.washington.edu  Sat May 18 04:16:16 2013
+From: dmck at u.washington.edu (Don McKenzie)
+Date: Fri, 17 May 2013 19:16:16 -0700
+Subject: [R-SIG-Mac] source() hangs on import
+In-Reply-To: <88D998C1-F215-4840-BE74-A017AA1464D5@r-project.org>
+References: <alpine.LRH.2.01.1305171841520.27517@hymn03.u.washington.edu>
+	<88D998C1-F215-4840-BE74-A017AA1464D5@r-project.org>
+Message-ID: <90637ABD-DA31-4348-A851-BEF87D67C1D0@u.washington.edu>
+
+Yes. Duh.  Overthinking the "reproducible" part and responding too  
+quickly.  Here's one that produces the behavior.
+
+myfile <- data.frame(x1=runif(100000),x2=runif(100000),x3=runif(100000))
+dump("myfile",file="myfileR")
+source("myfileR")
+
+The source() part takes ~10 sec. in R 2.9.2 on my old powermac, but  
+hangs in 3.0.0.
+
+Don
+
+
+On 17-May-13, at 6:51 PM, Simon Urbanek wrote:
+
+>
+> On May 17, 2013, at 9:41 PM, Donald McKenzie wrote:
+>
+>> Simon -- I can't reproduce it for the list because the window it's  
+>> running in always hangs and R freezes. I tried. But it basically  
+>> looks like
+>>
+>>> dump("my.file",file="myfileR")
+>>> source("myfileR")
+>> HANG..... (yellow colored ball)
+>>
+>
+> Well, you can simply provide the myfileR that hangs for you ...
+>
+> Cheers,
+> Simon
+>
+>
+>> I will go with your suggestions below and report back if need  
+>> be.   Thanks for the help.
+>>
+>> Don
+>>
+>> On Fri, 17 May 2013, Simon Urbanek wrote:
+>>
+>>>
+>>> On May 17, 2013, at 7:20 PM, Don McKenzie wrote:
+>>>
+>>>> I checked the archives since the release of R 3.0.0 and didn't  
+>>>> see anything on this.
+>>>>
+>>>> Trying to import data previously exported with dump(), source()  
+>>>> hangs and I have to force quit R.  This happens with data objects
+>>>> as small as 5 kb.
+>>>
+>>> Do you have a reproducible example?
+>>>
+>>>
+>>>> Has anyone encountered this and found a workaround?  Is there  
+>>>> now a preferred method to export R objects?
+>>>>
+>>>
+>>> The preferred method has always been to use serialization (save/ 
+>>> load or saveRDS/readRDS).
+>>>
+>>> Cheers,
+>>> Simon
+>>>
+>>>
+>>>> Thanks for any suggestions.
+>>>>
+>>>> on a macbook pro with 4 gb RAM.
+>>>>
+>>>>> R.version
+>>>>              _
+>>>> platform       x86_64-apple-darwin10.8.0
+>>>> arch           x86_64
+>>>> os             darwin10.8.0
+>>>> system         x86_64, darwin10.8.0
+>>>> status
+>>>> major          3
+>>>> minor          0.0
+>>>> year           2013
+>>>> month          04
+>>>> day            03
+>>>> svn rev        62481
+>>>> language       R
+>>>> version.string R version 3.0.0 (2013-04-03)
+>>>> nickname       Masked Marvel
+>>>>
+>>>>
+>>>>
+>>>> Don McKenzie
+>>>> Research Ecologist
+>>>> Pacific Wildland Fire Sciences Lab
+>>>> US Forest Service
+>>>>
+>>>> Affiliate Professor
+>>>> School of Environmental and Forest Sciences
+>>>> University of Washington
+>>>>
+>>>> phone: 206-732-7824
+>>>> dmck at uw.edu
+>>>>
+>>>> _______________________________________________
+>>>> R-SIG-Mac mailing list
+>>>> R-SIG-Mac at r-project.org
+>>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>>>>
+>>>>
+>>>
+>>> _______________________________________________
+>>> R-SIG-Mac mailing list
+>>> R-SIG-Mac at r-project.org
+>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>>>
+>>
+>>
+>
+
+
+
+
+
+Don McKenzie, Research Ecologist
+Pacific Wildland Fire Sciences Lab
+US Forest Service
+phone: 206-732-7824
+
+Affiliate Professor
+School of Environmental and Forest Sciences
+University of Washington
+
+
+From palermor at uw.edu  Sat May 18 09:11:42 2013
+From: palermor at uw.edu (Robert Palermo)
+Date: Sat, 18 May 2013 07:11:42 +0000
+Subject: [R-SIG-Mac] Multiple crashes with R version 3.0.1,
+	running from R.app GUI 1.61
+Message-ID: <CDBC77BD.2BEA9%palermor@uw.edu>
+
+An embedded and charset-unspecified text was scrubbed...
+Name: not available
+URL: <https://stat.ethz.ch/pipermail/r-sig-mac/attachments/20130518/cbaeef92/attachment.pl>
+
+From goedman at icloud.com  Sat May 18 17:14:16 2013
+From: goedman at icloud.com (Robert J Goedman)
+Date: Sat, 18 May 2013 08:14:16 -0700
+Subject: [R-SIG-Mac] source() hangs on import
+In-Reply-To: <90637ABD-DA31-4348-A851-BEF87D67C1D0@u.washington.edu>
+References: <alpine.LRH.2.01.1305171841520.27517@hymn03.u.washington.edu>
+	<88D998C1-F215-4840-BE74-A017AA1464D5@r-project.org>
+	<90637ABD-DA31-4348-A851-BEF87D67C1D0@u.washington.edu>
+Message-ID: <5BA26FE9-E918-43B6-AAB6-917FC8C547E0@icloud.com>
+
+Don,
+
+Slightly modified, your example:
+
+N <- 5e4
+
+cat('Create myfile\n')
+system.time(myfile <- data.frame(x1=runif(N),x2=runif(N),x3=runif(N)))
+head(myfile)
+
+cat('\nSave myfile\n')
+system.time(save("myfile",file="./R/R_projects/R Support/Debug/myfile.RData"))
+remove(myfile)
+
+cat('Load myfile\n')
+system.time(load("./R/R_projects/R Support/Debug/myfile.RData"))
+head(myfile)
+
+cat('\nDump myfile\n')
+system.time(dump("myfile",file="./R/R_projects/R Support/Debug/myfile.R"))
+remove(myfile)
+
+cat('Source myfile\n')
+system.time(source("./R/R_projects/R Support/Debug/myfile.R"))
+head(myfile)
+
+produces:
+
+> source('/Users/rob/Projects/R/R_projects/R support/Debug/DumpAndSave_test.r', print.eval=TRUE)
+Create myfile
+   user  system elapsed 
+  0.005   0.001   0.006 
+           x1        x2         x3
+1 0.611084090 0.4841179 0.47273937
+2 0.596409008 0.2234015 0.19283019
+3 0.273999461 0.7524927 0.02346372
+4 0.691567956 0.4921780 0.48312317
+5 0.001781206 0.1211497 0.12041949
+6 0.002494183 0.6935539 0.23262610
+
+Save myfile
+   user  system elapsed 
+  0.161   0.001   0.162 
+Load myfile
+   user  system elapsed 
+  0.007   0.001   0.008 
+           x1        x2         x3
+1 0.611084090 0.4841179 0.47273937
+2 0.596409008 0.2234015 0.19283019
+3 0.273999461 0.7524927 0.02346372
+4 0.691567956 0.4921780 0.48312317
+5 0.001781206 0.1211497 0.12041949
+6 0.002494183 0.6935539 0.23262610
+
+Dump myfile
+   user  system elapsed 
+  0.335   0.005   0.338 
+Source myfile
+   user  system elapsed 
+ 22.252   0.238  22.440 
+           x1        x2         x3
+1 0.611084090 0.4841179 0.47273937
+2 0.596409008 0.2234015 0.19283019
+3 0.273999461 0.7524927 0.02346372
+4 0.691567956 0.4921780 0.48312317
+5 0.001781206 0.1211497 0.12041949
+6 0.002494183 0.6935539 0.23262610
+
+For N=1e5, the elapsed time for source() is ~100seconds. It is slow, but eventually will return on my machine .
+
+Regards,
+Rob J. Goedman
+goedman at icloud.com
+
+
+
+
+On May 17, 2013, at 7:16 PM, Don McKenzie <dmck at u.washington.edu> wrote:
+
+> Yes. Duh.  Overthinking the "reproducible" part and responding too quickly.  Here's one that produces the behavior.
+> 
+> myfile <- data.frame(x1=runif(100000),x2=runif(100000),x3=runif(100000))
+> dump("myfile",file="myfileR")
+> source("myfileR")
+> 
+> The source() part takes ~10 sec. in R 2.9.2 on my old powermac, but hangs in 3.0.0.
+> 
+> Don
+> 
+> 
+> On 17-May-13, at 6:51 PM, Simon Urbanek wrote:
+> 
+>> 
+>> On May 17, 2013, at 9:41 PM, Donald McKenzie wrote:
+>> 
+>>> Simon -- I can't reproduce it for the list because the window it's running in always hangs and R freezes. I tried. But it basically looks like
+>>> 
+>>>> dump("my.file",file="myfileR")
+>>>> source("myfileR")
+>>> HANG..... (yellow colored ball)
+>>> 
+>> 
+>> Well, you can simply provide the myfileR that hangs for you ...
+>> 
+>> Cheers,
+>> Simon
+>> 
+>> 
+>>> I will go with your suggestions below and report back if need be.   Thanks for the help.
+>>> 
+>>> Don
+>>> 
+>>> On Fri, 17 May 2013, Simon Urbanek wrote:
+>>> 
+>>>> 
+>>>> On May 17, 2013, at 7:20 PM, Don McKenzie wrote:
+>>>> 
+>>>>> I checked the archives since the release of R 3.0.0 and didn't see anything on this.
+>>>>> 
+>>>>> Trying to import data previously exported with dump(), source() hangs and I have to force quit R.  This happens with data objects
+>>>>> as small as 5 kb.
+>>>> 
+>>>> Do you have a reproducible example?
+>>>> 
+>>>> 
+>>>>> Has anyone encountered this and found a workaround?  Is there now a preferred method to export R objects?
+>>>>> 
+>>>> 
+>>>> The preferred method has always been to use serialization (save/load or saveRDS/readRDS).
+>>>> 
+>>>> Cheers,
+>>>> Simon
+>>>> 
+>>>> 
+>>>>> Thanks for any suggestions.
+>>>>> 
+>>>>> on a macbook pro with 4 gb RAM.
+>>>>> 
+>>>>>> R.version
+>>>>>             _
+>>>>> platform       x86_64-apple-darwin10.8.0
+>>>>> arch           x86_64
+>>>>> os             darwin10.8.0
+>>>>> system         x86_64, darwin10.8.0
+>>>>> status
+>>>>> major          3
+>>>>> minor          0.0
+>>>>> year           2013
+>>>>> month          04
+>>>>> day            03
+>>>>> svn rev        62481
+>>>>> language       R
+>>>>> version.string R version 3.0.0 (2013-04-03)
+>>>>> nickname       Masked Marvel
+>>>>> 
+>>>>> 
+>>>>> 
+>>>>> Don McKenzie
+>>>>> Research Ecologist
+>>>>> Pacific Wildland Fire Sciences Lab
+>>>>> US Forest Service
+>>>>> 
+>>>>> Affiliate Professor
+>>>>> School of Environmental and Forest Sciences
+>>>>> University of Washington
+>>>>> 
+>>>>> phone: 206-732-7824
+>>>>> dmck at uw.edu
+>>>>> 
+>>>>> _______________________________________________
+>>>>> R-SIG-Mac mailing list
+>>>>> R-SIG-Mac at r-project.org
+>>>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>>>>> 
+>>>>> 
+>>>> 
+>>>> _______________________________________________
+>>>> R-SIG-Mac mailing list
+>>>> R-SIG-Mac at r-project.org
+>>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>>>> 
+>>> 
+>>> 
+>> 
+> 
+> 
+> 
+> 
+> 
+> Don McKenzie, Research Ecologist
+> Pacific Wildland Fire Sciences Lab
+> US Forest Service
+> phone: 206-732-7824
+> 
+> Affiliate Professor
+> School of Environmental and Forest Sciences
+> University of Washington
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+
+
+From dmck at u.washington.edu  Sat May 18 20:12:21 2013
+From: dmck at u.washington.edu (Don McKenzie)
+Date: Sat, 18 May 2013 11:12:21 -0700
+Subject: [R-SIG-Mac] source() hangs on import
+In-Reply-To: <5BA26FE9-E918-43B6-AAB6-917FC8C547E0@icloud.com>
+References: <alpine.LRH.2.01.1305171841520.27517@hymn03.u.washington.edu>
+	<88D998C1-F215-4840-BE74-A017AA1464D5@r-project.org>
+	<90637ABD-DA31-4348-A851-BEF87D67C1D0@u.washington.edu>
+	<5BA26FE9-E918-43B6-AAB6-917FC8C547E0@icloud.com>
+Message-ID: <1B7D87D7-A871-4581-970A-2B93E25A4C79@u.washington.edu>
+
+
+On 18-May-13, at 8:14 AM, Robert J Goedman wrote:
+
+> Don,
+>
+> Slightly modified, your example:
+>
+> N <- 5e4
+>
+> cat('Create myfile\n')
+> system.time(myfile <- data.frame(x1=runif(N),x2=runif(N),x3=runif(N)))
+> head(myfile)
+>
+> cat('\nSave myfile\n')
+> system.time(save("myfile",file="./R/R_projects/R Support/Debug/ 
+> myfile.RData"))
+> remove(myfile)
+>
+> cat('Load myfile\n')
+> system.time(load("./R/R_projects/R Support/Debug/myfile.RData"))
+> head(myfile)
+>
+> cat('\nDump myfile\n')
+> system.time(dump("myfile",file="./R/R_projects/R Support/Debug/ 
+> myfile.R"))
+> remove(myfile)
+>
+> cat('Source myfile\n')
+> system.time(source("./R/R_projects/R Support/Debug/myfile.R"))
+> head(myfile)
+>
+> produces:
+>
+>> source('/Users/rob/Projects/R/R_projects/R support/Debug/ 
+>> DumpAndSave_test.r', print.eval=TRUE)
+> Create myfile
+>    user  system elapsed
+>   0.005   0.001   0.006
+>            x1        x2         x3
+> 1 0.611084090 0.4841179 0.47273937
+> 2 0.596409008 0.2234015 0.19283019
+> 3 0.273999461 0.7524927 0.02346372
+> 4 0.691567956 0.4921780 0.48312317
+> 5 0.001781206 0.1211497 0.12041949
+> 6 0.002494183 0.6935539 0.23262610
+>
+> Save myfile
+>    user  system elapsed
+>   0.161   0.001   0.162
+> Load myfile
+>    user  system elapsed
+>   0.007   0.001   0.008
+>            x1        x2         x3
+> 1 0.611084090 0.4841179 0.47273937
+> 2 0.596409008 0.2234015 0.19283019
+> 3 0.273999461 0.7524927 0.02346372
+> 4 0.691567956 0.4921780 0.48312317
+> 5 0.001781206 0.1211497 0.12041949
+> 6 0.002494183 0.6935539 0.23262610
+>
+> Dump myfile
+>    user  system elapsed
+>   0.335   0.005   0.338
+> Source myfile
+>    user  system elapsed
+>  22.252   0.238  22.440
+>            x1        x2         x3
+> 1 0.611084090 0.4841179 0.47273937
+> 2 0.596409008 0.2234015 0.19283019
+> 3 0.273999461 0.7524927 0.02346372
+> 4 0.691567956 0.4921780 0.48312317
+> 5 0.001781206 0.1211497 0.12041949
+> 6 0.002494183 0.6935539 0.23262610
+>
+> For N=1e5, the elapsed time for source() is ~100seconds. It is  
+> slow, but eventually will return on my machine .
+>
+> Regards,
+> Rob J. Goedman
+> goedman at icloud.com
+
+Rob -- thanks for taking the time to try that out.  Simon's  
+suggestion to switch to save() and load() seems better all around, so
+I'll move to that usage.   I should get out more -- that seems to  
+have been the standard for a while.
+
+Don
+
+>
+>
+>
+>
+> On May 17, 2013, at 7:16 PM, Don McKenzie <dmck at u.washington.edu>  
+> wrote:
+>
+>> Yes. Duh.  Overthinking the "reproducible" part and responding too  
+>> quickly.  Here's one that produces the behavior.
+>>
+>> myfile <- data.frame(x1=runif(100000),x2=runif(100000),x3=runif 
+>> (100000))
+>> dump("myfile",file="myfileR")
+>> source("myfileR")
+>>
+>> The source() part takes ~10 sec. in R 2.9.2 on my old powermac,  
+>> but hangs in 3.0.0.
+>>
+>> Don
+>>
+>>
+>> On 17-May-13, at 6:51 PM, Simon Urbanek wrote:
+>>
+>>>
+>>> On May 17, 2013, at 9:41 PM, Donald McKenzie wrote:
+>>>
+>>>> Simon -- I can't reproduce it for the list because the window  
+>>>> it's running in always hangs and R freezes. I tried. But it  
+>>>> basically looks like
+>>>>
+>>>>> dump("my.file",file="myfileR")
+>>>>> source("myfileR")
+>>>> HANG..... (yellow colored ball)
+>>>>
+>>>
+>>> Well, you can simply provide the myfileR that hangs for you ...
+>>>
+>>> Cheers,
+>>> Simon
+>>>
+>>>
+>>>> I will go with your suggestions below and report back if need  
+>>>> be.   Thanks for the help.
+>>>>
+>>>> Don
+>>>>
+>>>> On Fri, 17 May 2013, Simon Urbanek wrote:
+>>>>
+>>>>>
+>>>>> On May 17, 2013, at 7:20 PM, Don McKenzie wrote:
+>>>>>
+>>>>>> I checked the archives since the release of R 3.0.0 and didn't  
+>>>>>> see anything on this.
+>>>>>>
+>>>>>> Trying to import data previously exported with dump(), source 
+>>>>>> () hangs and I have to force quit R.  This happens with data  
+>>>>>> objects
+>>>>>> as small as 5 kb.
+>>>>>
+>>>>> Do you have a reproducible example?
+>>>>>
+>>>>>
+>>>>>> Has anyone encountered this and found a workaround?  Is there  
+>>>>>> now a preferred method to export R objects?
+>>>>>>
+>>>>>
+>>>>> The preferred method has always been to use serialization (save/ 
+>>>>> load or saveRDS/readRDS).
+>>>>>
+>>>>> Cheers,
+>>>>> Simon
+>>>>>
+>>>>>
+>>>>>> Thanks for any suggestions.
+>>>>>>
+>>>>>> on a macbook pro with 4 gb RAM.
+>>>>>>
+>>>>>>> R.version
+>>>>>>             _
+>>>>>> platform       x86_64-apple-darwin10.8.0
+>>>>>> arch           x86_64
+>>>>>> os             darwin10.8.0
+>>>>>> system         x86_64, darwin10.8.0
+>>>>>> status
+>>>>>> major          3
+>>>>>> minor          0.0
+>>>>>> year           2013
+>>>>>> month          04
+>>>>>> day            03
+>>>>>> svn rev        62481
+>>>>>> language       R
+>>>>>> version.string R version 3.0.0 (2013-04-03)
+>>>>>> nickname       Masked Marvel
+>>>>>>
+>>>>>>
+>>>>>>
+>>>>>> Don McKenzie
+>>>>>> Research Ecologist
+>>>>>> Pacific Wildland Fire Sciences Lab
+>>>>>> US Forest Service
+>>>>>>
+>>>>>> Affiliate Professor
+>>>>>> School of Environmental and Forest Sciences
+>>>>>> University of Washington
+>>>>>>
+>>>>>> phone: 206-732-7824
+>>>>>> dmck at uw.edu
+>>>>>>
+>>>>>> _______________________________________________
+>>>>>> R-SIG-Mac mailing list
+>>>>>> R-SIG-Mac at r-project.org
+>>>>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>>>>>>
+>>>>>>
+>>>>>
+>>>>> _______________________________________________
+>>>>> R-SIG-Mac mailing list
+>>>>> R-SIG-Mac at r-project.org
+>>>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>>>>>
+>>>>
+>>>>
+>>>
+>>
+>>
+>>
+>>
+>>
+>> Don McKenzie, Research Ecologist
+>> Pacific Wildland Fire Sciences Lab
+>> US Forest Service
+>> phone: 206-732-7824
+>>
+>> Affiliate Professor
+>> School of Environmental and Forest Sciences
+>> University of Washington
+>>
+>> _______________________________________________
+>> R-SIG-Mac mailing list
+>> R-SIG-Mac at r-project.org
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>
+
+
+
+
+
+Don McKenzie, Research Ecologist
+Pacific Wildland Fire Sciences Lab
+US Forest Service
+phone: 206-732-7824
+
+Affiliate Professor
+School of Environmental and Forest Sciences
+University of Washington
+
+
+From goedman at icloud.com  Sat May 18 21:00:28 2013
+From: goedman at icloud.com (Robert J Goedman)
+Date: Sat, 18 May 2013 12:00:28 -0700
+Subject: [R-SIG-Mac] source() hangs on import
+In-Reply-To: <1B7D87D7-A871-4581-970A-2B93E25A4C79@u.washington.edu>
+References: <alpine.LRH.2.01.1305171841520.27517@hymn03.u.washington.edu>
+	<88D998C1-F215-4840-BE74-A017AA1464D5@r-project.org>
+	<90637ABD-DA31-4348-A851-BEF87D67C1D0@u.washington.edu>
+	<5BA26FE9-E918-43B6-AAB6-917FC8C547E0@icloud.com>
+	<1B7D87D7-A871-4581-970A-2B93E25A4C79@u.washington.edu>
+Message-ID: <0DE471B7-B1F6-43D2-B5D6-010E038F0F47@icloud.com>
+
+Don,
+
+Agreed, although it is not 'all around', e.g. I use source() quite a bit if a program writes out results in a proper R script, often a nice and quick solution if the program is in Fortran or Python.
+
+Regards,
+Rob
+
+Sent from Rob Goedman's iPad ...
+
+
+On May 18, 2013, at 11:12, Don McKenzie <dmck at u.washington.edu> wrote:
+
+> Rob -- thanks for taking the time to try that out.  Simon's suggestion to switch to save() and load() seems better all around, so
+> I'll move to that usage.   I should get out more -- that seems to have been the standard for a while.
+> 
+> Don
+
+
+From jorgeivanvelez at gmail.com  Mon May 20 06:53:00 2013
+From: jorgeivanvelez at gmail.com (Jorge I Velez)
+Date: Mon, 20 May 2013 14:53:00 +1000
+Subject: [R-SIG-Mac] Installing bivpois, R 3.0.0
+Message-ID: <CAKL8G3HBs+vu9u=MiBovDqpQCOA1Q7XyfRwyRo47JvwugJBVig@mail.gmail.com>
+
+An embedded and charset-unspecified text was scrubbed...
+Name: not available
+URL: <https://stat.ethz.ch/pipermail/r-sig-mac/attachments/20130520/f60b1090/attachment.pl>
+
+From dwinsemius at comcast.net  Mon May 20 07:03:58 2013
+From: dwinsemius at comcast.net (David Winsemius)
+Date: Sun, 19 May 2013 22:03:58 -0700
+Subject: [R-SIG-Mac] Installing bivpois, R 3.0.0
+In-Reply-To: <CAKL8G3HBs+vu9u=MiBovDqpQCOA1Q7XyfRwyRo47JvwugJBVig@mail.gmail.com>
+References: <CAKL8G3HBs+vu9u=MiBovDqpQCOA1Q7XyfRwyRo47JvwugJBVig@mail.gmail.com>
+Message-ID: <CABA3D6F-7888-4541-808F-5901A35AD310@comcast.net>
+
+
+On May 19, 2013, at 9:53 PM, Jorge I Velez wrote:
+
+> Dear all,
+> 
+> I would like to install the bivpois library on my Mac OS X (10.8.3) system.
+> After downlading the sources from
+> http://cran.r-project.org/src/contrib/Archive/bivpois/ and saving it on my
+> home directory, I used the "Packages & Data" menu in the R GUI for
+> installation proposes.  Unfortunately, I got the following error:
+> 
+> * installing *source* package ?bivpois? ...
+> ERROR: a 'NAMESPACE' file is required
+> * removing
+> ?/Library/Frameworks/R.framework/Versions/3.0/Resources/library/bivpois?
+> 
+> Is there any work around for this?  My sessionInfo() is below.
+> 
+
+Several versions of R ago there was an added requirement that package have NAMESPACES. You could add a namespace to the archived package and recompile it.
+
+-- 
+David.
+> Thank you very much in advance.
+> 
+> Best regards,
+> Jorge.-
+> 
+> 
+>> sessionInfo()
+> R version 3.0.0 Patched (2013-04-08 r62531)
+> Platform: x86_64-apple-darwin10.8.0 (64-bit)
+> 
+> locale:
+> [1] en_AU.UTF-8/en_AU.UTF-8/en_AU.UTF-8/C/en_AU.UTF-8/en_AU.UTF-8
+> 
+> attached base packages:
+> [1] stats     graphics  grDevices utils     datasets  methods   base
+> 
+> loaded via a namespace (and not attached):
+> [1] tools_3.0.0
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+
+David Winsemius
+Alameda, CA, USA
+
+
+From rossahmed at googlemail.com  Tue May 21 18:38:08 2013
+From: rossahmed at googlemail.com (Ross Ahmed)
+Date: Tue, 21 May 2013 17:38:08 +0100
+Subject: [R-SIG-Mac] spTransform() error & problems installing rgdal
+Message-ID: <CDC16180.4DDC%rossahmed@gmail.com>
+
+An embedded and charset-unspecified text was scrubbed...
+Name: not available
+URL: <https://stat.ethz.ch/pipermail/r-sig-mac/attachments/20130521/50338652/attachment.pl>
+
+From paciorek at stat.berkeley.edu  Thu May 23 00:29:39 2013
+From: paciorek at stat.berkeley.edu (Chris Paciorek)
+Date: Wed, 22 May 2013 15:29:39 -0700
+Subject: [R-SIG-Mac] using vecLib BLAS in 3.0
+Message-ID: <CAG=M9LpuNL28-Bjyq8cW7u6gVmnC10ajK1jc_mVQQ-NQU+=-gQ@mail.gmail.com>
+
+An embedded and charset-unspecified text was scrubbed...
+Name: not available
+URL: <https://stat.ethz.ch/pipermail/r-sig-mac/attachments/20130522/420aa00a/attachment.pl>
+
+From simon.urbanek at r-project.org  Thu May 23 03:25:31 2013
+From: simon.urbanek at r-project.org (Simon Urbanek)
+Date: Wed, 22 May 2013 21:25:31 -0400
+Subject: [R-SIG-Mac] using vecLib BLAS in 3.0
+In-Reply-To: <CAG=M9LpuNL28-Bjyq8cW7u6gVmnC10ajK1jc_mVQQ-NQU+=-gQ@mail.gmail.com>
+References: <CAG=M9LpuNL28-Bjyq8cW7u6gVmnC10ajK1jc_mVQQ-NQU+=-gQ@mail.gmail.com>
+Message-ID: <C7BE55D9-6A17-4093-9F1D-4855C699D974@r-project.org>
+
+On May 22, 2013, at 6:29 PM, Chris Paciorek wrote:
+
+> In R 2.15, one had the option of switching the libRblas.dylib symlink
+> between libRblas.0.dylib and libRblas.vecLib.dylib. This is discussed in
+> http://cran.r-project.org/bin/macosx/RMacOSX-FAQ.html#Which-BLAS-is-used-and-how-can-it-be-changed_003f
+> 
+> As of 3.0 (either 3.0.0 or 3.0.1), I no longer see libRblas.vecLib.dylib in
+> the Mac binary, and therefore the instructions in the link are no longer
+> accurate or vecLib is accidentally missing. I don't see any information on
+> this in the "Changes in R" document.
+> 
+
+... because it has nothing to do with R itself. It was merely a packaging bonus that inadvertently disappeared as we switched OS on the build machine. You can still do it yourself - either by copying the vecLib.dylib from the previous version or by symlinking the Accelerate framework. I'll see if I can restored it going forward.
+
+Cheers,
+Simon
+
+
+
+> -Chris
+> 
+> 
+> ----------------------------------------------------------------------------------------------
+> Chris Paciorek
+> 
+> Statistical Computing Consultant, Associate Research Statistician, Lecturer
+> 
+> Office: 495 Evans Hall                      Email:
+> paciorek at stat.berkeley.edu
+> Mailing Address:                            Voice: 510-842-6670
+> Department of Statistics                    Fax:   510-642-7892
+> 367 Evans Hall                              Skype: cjpaciorek
+> University of California, Berkeley          WWW:
+> www.stat.berkeley.edu/~paciorek
+> Berkeley, CA 94720 USA                      Permanent forward:
+> paciorek at alumni.cmu.edu
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+> 
+> 
+
+
+From pdalgd at gmail.com  Thu May 23 06:59:41 2013
+From: pdalgd at gmail.com (peter dalgaard)
+Date: Thu, 23 May 2013 06:59:41 +0200
+Subject: [R-SIG-Mac] using vecLib BLAS in 3.0
+In-Reply-To: <C7BE55D9-6A17-4093-9F1D-4855C699D974@r-project.org>
+References: <CAG=M9LpuNL28-Bjyq8cW7u6gVmnC10ajK1jc_mVQQ-NQU+=-gQ@mail.gmail.com>
+	<C7BE55D9-6A17-4093-9F1D-4855C699D974@r-project.org>
+Message-ID: <338E51CA-2C3F-4BA2-8AE4-BC36AB04BDF4@gmail.com>
+
+
+On May 23, 2013, at 03:25 , Simon Urbanek wrote:
+
+> On May 22, 2013, at 6:29 PM, Chris Paciorek wrote:
+> 
+>> In R 2.15, one had the option of switching the libRblas.dylib symlink
+>> between libRblas.0.dylib and libRblas.vecLib.dylib. This is discussed in
+>> http://cran.r-project.org/bin/macosx/RMacOSX-FAQ.html#Which-BLAS-is-used-and-how-can-it-be-changed_003f
+>> 
+>> As of 3.0 (either 3.0.0 or 3.0.1), I no longer see libRblas.vecLib.dylib in
+>> the Mac binary, and therefore the instructions in the link are no longer
+>> accurate or vecLib is accidentally missing. I don't see any information on
+>> this in the "Changes in R" document.
+>> 
+> 
+> ... because it has nothing to do with R itself. It was merely a packaging bonus that inadvertently disappeared as we switched OS on the build machine. You can still do it yourself - either by copying the vecLib.dylib from the previous version or by symlinking the Accelerate framework. I'll see if I can restored it going forward.
+> 
+> Cheers,
+> Simon
+> 
+
+Could you be a little more specific (and perhaps update the FAQ) ? Does it work to
+
+ln -s  /System/Library/Frameworks/Accelerate.framework/Frameworks/vecLib.framework/Versions/Current/libBLAS.dylib libRblas.dylib  
+
+-- 
+Peter Dalgaard, Professor,
+Center for Statistics, Copenhagen Business School
+Solbjerg Plads 3, 2000 Frederiksberg, Denmark
+Phone: (+45)38153501
+Email: pd.mes at cbs.dk  Priv: PDalgd at gmail.com
+
+
+From stefanML at collocations.de  Thu May 23 18:12:48 2013
+From: stefanML at collocations.de (Stefan Evert)
+Date: Thu, 23 May 2013 18:12:48 +0200
+Subject: [R-SIG-Mac] using vecLib BLAS in 3.0
+In-Reply-To: <C7BE55D9-6A17-4093-9F1D-4855C699D974@r-project.org>
+References: <CAG=M9LpuNL28-Bjyq8cW7u6gVmnC10ajK1jc_mVQQ-NQU+=-gQ@mail.gmail.com>
+	<C7BE55D9-6A17-4093-9F1D-4855C699D974@r-project.org>
+Message-ID: <CB5B76D6-73FD-4B23-8A85-10A99CBDAC67@collocations.de>
+
+
+> ... because it has nothing to do with R itself. It was merely a packaging bonus that inadvertently disappeared as we switched OS on the build machine. You can still do it yourself - either by copying the vecLib.dylib from the previous version
+
+Yes, that's what I did.  I recently switched back from a locally compiled GotoBLAS to VecLib because that latter is consistently faster on my current machine (Retina MacBook Pro) and OS (10.8).  I've previously had issues with VecLib BLAS that prompted me to explore various alternatives, but they seem to have gone away ... so I'm very much in favour of resuscitating VecLib BLAS in the Mac installer package.
+
+Best,
+Stefan
+
+
+From ronert.obst at gmail.com  Fri May 24 23:20:45 2013
+From: ronert.obst at gmail.com (Ronert Obst)
+Date: Fri, 24 May 2013 23:20:45 +0200
+Subject: [R-SIG-Mac] Compiled R from source under OS X with {Accelerate,
+ OpenMP,
+ MKL}. All 3 versions crash when using mclapply() from parallel library.
+Message-ID: <CACSfVHFCSEAQh8Egn5m8sj9RE+3QyeFNN0zZfiB5NyfeUy9rtw@mail.gmail.com>
+
+An embedded and charset-unspecified text was scrubbed...
+Name: not available
+URL: <https://stat.ethz.ch/pipermail/r-sig-mac/attachments/20130524/867d9b87/attachment.pl>
+
+From andrew.decker.steen at gmail.com  Mon May 27 04:46:03 2013
+From: andrew.decker.steen at gmail.com (Andrew Steen)
+Date: Sun, 26 May 2013 22:46:03 -0400
+Subject: [R-SIG-Mac] tiff does not seem to respect resolution & compression
+Message-ID: <CAMQJ13ftFfBEB7WseA81PyjpB85iir61WmnuVaxbQtuQLg4Bng@mail.gmail.com>
+
+Running R 3.0.0 on Mac OSX 10.7.5, tiff() does not seem to respect the
+res and compression arguments. For example,
+
+x <- rnorm(1000)
+tiff("nocompress.tif", height=6, width=6, res=200, units="in")
+hist(x)
+dev.off()
+
+yields a file of 5.8 MB.
+
+tiff("compress.tif", height=6, width=6, res=200, units="in", compression="lzw")
+hist(x)
+dev.off()
+
+also yields a file of 5.8 MB (which seems very large for a 6in x 6in,
+black-and-white lzw compressed image!) Furthermore, Photoshop seems to
+think that it is a 16.67 x 16.67 inch image at 72 ppi, as if tiff is
+calculating the number of pixels correctly but not setting some kind
+of image attribute for size.
+
+A Stack Overflow user describes a similar problem at
+http://stackoverflow.com/questions/12609816/r-tiff-wont-compress-or-set-resolution-to-300-ppi.
+That thread shows that the issue crops up on several R releases and
+versions of OSX, but I can't find anyone who has diagnosed the problem
+or identified a solution.
+
+Thanks,
+Drew
+
+
+From mcherron at mac.com  Wed May 29 03:28:05 2013
+From: mcherron at mac.com (Michael Herron)
+Date: Tue, 28 May 2013 21:28:05 -0400
+Subject: [R-SIG-Mac] R quits on update.packages()
+Message-ID: <AD762AD2-C70C-4991-B1A8-6B506FEB50B0@mac.com>
+
+Hello.
+
+I have installed 3.0.1 on an iMac.  I just logged in remotely, tried to update.packages(), and R quit.  For example:
+
+[brahms:~] herron% R
+
+R version 3.0.1 (2013-05-16) -- "Good Sport"
+Copyright (C) 2013 The R Foundation for Statistical Computing
+Platform: x86_64-apple-darwin10.8.0 (64-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+  Natural language support but running in an English locale
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+> update.packages()
+--- Please select a CRAN mirror for use in this session ---
+[brahms:~] herron%
+
+I never get a chance to select a mirror; R just quits.  
+
+Any thoughts on this?  I have never seen this behavior before.
+
+Thanks, mh
+
+
+From ripley at stats.ox.ac.uk  Wed May 29 08:20:14 2013
+From: ripley at stats.ox.ac.uk (Prof Brian Ripley)
+Date: Wed, 29 May 2013 07:20:14 +0100
+Subject: [R-SIG-Mac] R quits on update.packages()
+In-Reply-To: <AD762AD2-C70C-4991-B1A8-6B506FEB50B0@mac.com>
+References: <AD762AD2-C70C-4991-B1A8-6B506FEB50B0@mac.com>
+Message-ID: <51A59E1E.6000102@stats.ox.ac.uk>
+
+On 29/05/2013 02:28, Michael Herron wrote:
+> Hello.
+>
+> I have installed 3.0.1 on an iMac.  I just logged in remotely, tried to update.packages(), and R quit.  For example:
+>
+> [brahms:~] herron% R
+>
+> R version 3.0.1 (2013-05-16) -- "Good Sport"
+> Copyright (C) 2013 The R Foundation for Statistical Computing
+> Platform: x86_64-apple-darwin10.8.0 (64-bit)
+>
+> R is free software and comes with ABSOLUTELY NO WARRANTY.
+> You are welcome to redistribute it under certain conditions.
+> Type 'license()' or 'licence()' for distribution details.
+>
+>    Natural language support but running in an English locale
+>
+> R is a collaborative project with many contributors.
+> Type 'contributors()' for more information and
+> 'citation()' on how to cite R or R packages in publications.
+>
+> Type 'demo()' for some demos, 'help()' for on-line help, or
+> 'help.start()' for an HTML browser interface to help.
+> Type 'q()' to quit R.
+>
+>> update.packages()
+> --- Please select a CRAN mirror for use in this session ---
+> [brahms:~] herron%
+>
+> I never get a chance to select a mirror; R just quits.
+>
+> Any thoughts on this?  I have never seen this behavior before.
+
+Nor have I, nor can I reproduce it.
+
+In any case, see ?chooseCRANmirror and its 'graphics' argument.  When 
+running R remotely you want to set option "menu.graphics" to false.
+
+>
+> Thanks, mh
+>
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>
+
+
+-- 
+Brian D. Ripley,                  ripley at stats.ox.ac.uk
+Professor of Applied Statistics,  http://www.stats.ox.ac.uk/~ripley/
+University of Oxford,             Tel:  +44 1865 272861 (self)
+1 South Parks Road,                     +44 1865 272866 (PA)
+Oxford OX1 3TG, UK                Fax:  +44 1865 272595
+
+
+From na.uytten at gmail.com  Wed May 29 15:12:43 2013
+From: na.uytten at gmail.com (Nathan Uyttendaele)
+Date: Wed, 29 May 2013 15:12:43 +0200
+Subject: [R-SIG-Mac] Same code, working with R.app Mac GUI 1.61 (R 3.0.1),
+ not with R 3.0.1 from terminal
+Message-ID: <CAFzdfg3+VbibC6jusb8zbtOL5aW2B9gqMThHJahCdn3f52YTKg@mail.gmail.com>
+
+An embedded and charset-unspecified text was scrubbed...
+Name: not available
+URL: <https://stat.ethz.ch/pipermail/r-sig-mac/attachments/20130529/0eea1524/attachment.pl>
+
+From pdalgd at gmail.com  Wed May 29 15:58:06 2013
+From: pdalgd at gmail.com (peter dalgaard)
+Date: Wed, 29 May 2013 15:58:06 +0200
+Subject: [R-SIG-Mac] Same code, working with R.app Mac GUI 1.61 (R 3.0.1),
+	not with R 3.0.1 from terminal
+In-Reply-To: <CAFzdfg3+VbibC6jusb8zbtOL5aW2B9gqMThHJahCdn3f52YTKg@mail.gmail.com>
+References: <CAFzdfg3+VbibC6jusb8zbtOL5aW2B9gqMThHJahCdn3f52YTKg@mail.gmail.com>
+Message-ID: <AD2B5194-4FB2-4E63-B05A-5DB74B69EDA5@gmail.com>
+
+You're giving us essentially nothing to go on, but I'd try running under a debugger (R -d gdb), hit ctr-C and look at a backtrace, to see where it is getting stuck. Or connnect gdb to the running process with "gdb -p PID".
+
+-pd
+
+On May 29, 2013, at 15:12 , Nathan Uyttendaele wrote:
+
+> Hello,
+> 
+> I have a very peculiar problem to share.
+> 
+> I wrote a (rather) large R function that also includes some C code.
+> 
+> When I run it with R.app Mac GUI 1.61 (R 3.0.1), no problem at all.
+> When I run it from R 3.0.1 from terminal (on the same Mac), I get the
+> output of the function, and that output is fine, the prompt appears but
+> when I submit a new command, nothing happens and the processor keeps on
+> running even though no calculations are necessary.
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+
+-- 
+Peter Dalgaard, Professor
+Center for Statistics, Copenhagen Business School
+Solbjerg Plads 3, 2000 Frederiksberg, Denmark
+Phone: (+45)38153501
+Email: pd.mes at cbs.dk  Priv: PDalgd at gmail.com
+
+
+From ripley at stats.ox.ac.uk  Wed May 29 16:00:28 2013
+From: ripley at stats.ox.ac.uk (Prof Brian Ripley)
+Date: Wed, 29 May 2013 15:00:28 +0100
+Subject: [R-SIG-Mac] Same code, working with R.app Mac GUI 1.61 (R 3.0.1),
+ not with R 3.0.1 from terminal
+In-Reply-To: <CAFzdfg3+VbibC6jusb8zbtOL5aW2B9gqMThHJahCdn3f52YTKg@mail.gmail.com>
+References: <CAFzdfg3+VbibC6jusb8zbtOL5aW2B9gqMThHJahCdn3f52YTKg@mail.gmail.com>
+Message-ID: <51A609FC.7020706@stats.ox.ac.uk>
+
+On 29/05/2013 14:12, Nathan Uyttendaele wrote:
+> Hello,
+>
+> I have a very peculiar problem to share.
+>
+> I wrote a (rather) large R function that also includes some C code.
+>
+> When I run it with R.app Mac GUI 1.61 (R 3.0.1), no problem at all.
+> When I run it from R 3.0.1 from terminal (on the same Mac), I get the
+> output of the function, and that output is fine, the prompt appears but
+> when I submit a new command, nothing happens and the processor keeps on
+> running even though no calculations are necessary.
+
+A symptom of memory corruption, and actually not uncommon.  Check your 
+compiled code.
+
+>
+> 	[[alternative HTML version deleted]]
+>
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>
+
+
+-- 
+Brian D. Ripley,                  ripley at stats.ox.ac.uk
+Professor of Applied Statistics,  http://www.stats.ox.ac.uk/~ripley/
+University of Oxford,             Tel:  +44 1865 272861 (self)
+1 South Parks Road,                     +44 1865 272866 (PA)
+Oxford OX1 3TG, UK                Fax:  +44 1865 272595
+
+
+From hanson at depauw.edu  Wed May 29 17:19:38 2013
+From: hanson at depauw.edu (Bryan Hanson)
+Date: Wed, 29 May 2013 11:19:38 -0400
+Subject: [R-SIG-Mac] rgl crashes after one successful draw on R.app
+Message-ID: <5CB028AD-687D-4A2B-9B12-2E49F784188F@depauw.edu>
+
+[originally on R-help, reposted here as the most relevent place]
+
+NOTE: problem is with R.app, looks OK on command line R
+
+This is really odd, and probably 100% local to me, but I'm at a loss as to a next step.
+
+After narrowing things down, here's how to reproduce:
+
+library("rgl")
+showSomething <- function() {
+	open3d()
+	points3d(rnorm(10),rnorm(10),rnorm(10))
+	axes3d()  
+	title3d('main','sub','xlab','ylab','zlab')
+	}
+showSomething() # works as expected.
+# Close the current rgl window
+showSomething() # crashes R with the following report:
+
+*** caught segfault ***
+address 0x0, cause 'unknown'
+
+Traceback:
+1: .C(rgl_dev_open, success = FALSE)
+2: rgl.open()
+3: open3d()
+4: showSomething()
+
+This will probably work fine for any of you, it's so simple and fundamental.  If I don't close the open rgl windows, it doesn't crash, and I can execute the function over and over successfully.  And the same thing happens if I just do the commands inside the function individually.  SessionInfo() below.
+
+Perhaps something is corrupt with my X11 window system?  Thanks, Bryan
+
+R version 3.0.1 (2013-05-16)
+Platform: x86_64-apple-darwin10.8.0 (64-bit)
+
+locale:
+[1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+
+attached base packages:
+[1] stats     graphics  grDevices utils     datasets  methods   base     
+
+other attached packages:
+[1] rgl_0.93.940 sos_1.3-5    brew_1.0-6  
+
+From f.calboli at imperial.ac.uk  Wed May 29 17:43:32 2013
+From: f.calboli at imperial.ac.uk (Federico Calboli)
+Date: Wed, 29 May 2013 16:43:32 +0100
+Subject: [R-SIG-Mac] rgl crashes after one successful draw on R.app
+In-Reply-To: <5CB028AD-687D-4A2B-9B12-2E49F784188F@depauw.edu>
+References: <5CB028AD-687D-4A2B-9B12-2E49F784188F@depauw.edu>
+Message-ID: <6612A1AE-C489-4402-83B3-91B4D7D7A49C@imperial.ac.uk>
+
+On 29 May 2013, at 16:19, Bryan Hanson <hanson at depauw.edu> wrote:
+
+> [originally on R-help, reposted here as the most relevent place]
+> 
+> NOTE: problem is with R.app, looks OK on command line R
+> 
+> This is really odd, and probably 100% local to me
+
+No, same here.  I'm on OS 10.8.3, Xcode command line, all bells and whistles, R 3.0.1, R.app GUI 1.61 (6492) x86_64-apple-darwin10.8.0 
+
+BW
+
+F
+
+
+
+
+
+
+
+> , but I'm at a loss as to a next step.
+> 
+> After narrowing things down, here's how to reproduce:
+> 
+> library("rgl")
+> showSomething <- function() {
+> 	open3d()
+> 	points3d(rnorm(10),rnorm(10),rnorm(10))
+> 	axes3d()  
+> 	title3d('main','sub','xlab','ylab','zlab')
+> 	}
+> showSomething() # works as expected.
+> # Close the current rgl window
+> showSomething() # crashes R with the following report:
+> 
+> *** caught segfault ***
+> address 0x0, cause 'unknown'
+> 
+> Traceback:
+> 1: .C(rgl_dev_open, success = FALSE)
+> 2: rgl.open()
+> 3: open3d()
+> 4: showSomething()
+> 
+> This will probably work fine for any of you, it's so simple and fundamental.  If I don't close the open rgl windows, it doesn't crash, and I can execute the function over and over successfully.  And the same thing happens if I just do the commands inside the function individually.  SessionInfo() below.
+> 
+> Perhaps something is corrupt with my X11 window system?  Thanks, Bryan
+> 
+> R version 3.0.1 (2013-05-16)
+> Platform: x86_64-apple-darwin10.8.0 (64-bit)
+> 
+> locale:
+> [1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+> 
+> attached base packages:
+> [1] stats     graphics  grDevices utils     datasets  methods   base     
+> 
+> other attached packages:
+> [1] rgl_0.93.940 sos_1.3-5    brew_1.0-6  
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+
+
+From rkoenker at illinois.edu  Wed May 29 17:37:44 2013
+From: rkoenker at illinois.edu (Roger Koenker)
+Date: Wed, 29 May 2013 10:37:44 -0500
+Subject: [R-SIG-Mac] rgl crashes after one successful draw on R.app
+In-Reply-To: <965738034af54e4390ec285356fc0a83@CITESHT4.ad.uillinois.edu>
+References: <965738034af54e4390ec285356fc0a83@CITESHT4.ad.uillinois.edu>
+Message-ID: <45F3A875-7D10-4CE7-AC20-5AD3CC43A5AD@illinois.edu>
+
+FWIW,  I'm also having difficulties with rgl since upgrading to R 3.0  
+
+> sessionInfo()
+R version 3.0.0 (2013-04-03)
+Platform: x86_64-apple-darwin10.8.0 (64-bit)
+
+locale:
+[1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+
+attached base packages:
+[1] stats     graphics  grDevices utils     datasets  methods   base     
+
+other attached packages:
+[1] rgl_0.93.935
+
+and XQuartz 2.6.5 (xorg-server 1.10.6)  as soon as I do rgl.open()  I get:
+
+*** caught segfault ***
+address 0xe8, cause 'memory not mapped'
+
+Traceback:
+ 1: .C(rgl_dev_open, success = FALSE)
+ 2: rgl.open()
+ 3: open3d()
+ 4: eval(expr, envir, enclos)
+ 5: eval(ei, envir)
+ 6: withVisible(eval(ei, envir))
+ 7: source(tf, local, echo = echo, prompt.echo = paste0(prompt.prefix,     getOption("prompt")), continue.echo = paste0(prompt.prefix,     getOption("continue")), verbose = verbose, max.deparse.length = Inf,     encoding = "UTF-8", skip.echo = skips, keep.source = TRUE)
+
+maybe this is a better hint though -- suspending the unresponsive process produced the additional message:
+
+Warning message:
+In rgl.open() : RGL: no suitable visual available
+
+
+Roger
+
+url:    www.econ.uiuc.edu/~roger            Roger Koenker
+email    rkoenker at uiuc.edu            Department of Economics
+vox:     217-333-4558                University of Illinois
+fax:       217-244-6678                Urbana, IL 61801
+
+On May 29, 2013, at 10:19 AM, Bryan Hanson wrote:
+
+> [originally on R-help, reposted here as the most relevent place]
+> 
+> NOTE: problem is with R.app, looks OK on command line R
+> 
+> This is really odd, and probably 100% local to me, but I'm at a loss as to a next step.
+> 
+> After narrowing things down, here's how to reproduce:
+> 
+> library("rgl")
+> showSomething <- function() {
+> 	open3d()
+> 	points3d(rnorm(10),rnorm(10),rnorm(10))
+> 	axes3d()  
+> 	title3d('main','sub','xlab','ylab','zlab')
+> 	}
+> showSomething() # works as expected.
+> # Close the current rgl window
+> showSomething() # crashes R with the following report:
+> 
+> *** caught segfault ***
+> address 0x0, cause 'unknown'
+> 
+> Traceback:
+> 1: .C(rgl_dev_open, success = FALSE)
+> 2: rgl.open()
+> 3: open3d()
+> 4: showSomething()
+> 
+> This will probably work fine for any of you, it's so simple and fundamental.  If I don't close the open rgl windows, it doesn't crash, and I can execute the function over and over successfully.  And the same thing happens if I just do the commands inside the function individually.  SessionInfo() below.
+> 
+> Perhaps something is corrupt with my X11 window system?  Thanks, Bryan
+> 
+> R version 3.0.1 (2013-05-16)
+> Platform: x86_64-apple-darwin10.8.0 (64-bit)
+> 
+> locale:
+> [1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+> 
+> attached base packages:
+> [1] stats     graphics  grDevices utils     datasets  methods   base     
+> 
+> other attached packages:
+> [1] rgl_0.93.940 sos_1.3-5    brew_1.0-6  
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+
+
+From murdoch.duncan at gmail.com  Wed May 29 23:37:59 2013
+From: murdoch.duncan at gmail.com (Duncan Murdoch)
+Date: Wed, 29 May 2013 17:37:59 -0400
+Subject: [R-SIG-Mac] rgl crashes after one successful draw on R.app
+In-Reply-To: <5CB028AD-687D-4A2B-9B12-2E49F784188F@depauw.edu>
+References: <5CB028AD-687D-4A2B-9B12-2E49F784188F@depauw.edu>
+Message-ID: <51A67537.4060505@gmail.com>
+
+On 13-05-29 11:19 AM, Bryan Hanson wrote:
+> [originally on R-help, reposted here as the most relevent place]
+>
+> NOTE: problem is with R.app, looks OK on command line R
+>
+> This is really odd, and probably 100% local to me, but I'm at a loss as to a next step.
+>
+> After narrowing things down, here's how to reproduce:
+
+I don't see it, but it looks to me like it may be a timing problem.  I'm 
+guessing the destruction of the old window triggers events in the wrong 
+order and leaves rgl in an unstable state.  Unfortunately, without being 
+able to reproduce this, it looks really hard to track down.  Can anyone 
+reproduce it while running in gdb or some other debugger?
+
+Duncan Murdoch
+
+>
+> library("rgl")
+> showSomething <- function() {
+> 	open3d()
+> 	points3d(rnorm(10),rnorm(10),rnorm(10))
+> 	axes3d()
+> 	title3d('main','sub','xlab','ylab','zlab')
+> 	}
+> showSomething() # works as expected.
+> # Close the current rgl window
+> showSomething() # crashes R with the following report:
+>
+> *** caught segfault ***
+> address 0x0, cause 'unknown'
+>
+> Traceback:
+> 1: .C(rgl_dev_open, success = FALSE)
+> 2: rgl.open()
+> 3: open3d()
+> 4: showSomething()
+>
+> This will probably work fine for any of you, it's so simple and fundamental.  If I don't close the open rgl windows, it doesn't crash, and I can execute the function over and over successfully.  And the same thing happens if I just do the commands inside the function individually.  SessionInfo() below.
+>
+> Perhaps something is corrupt with my X11 window system?  Thanks, Bryan
+>
+> R version 3.0.1 (2013-05-16)
+> Platform: x86_64-apple-darwin10.8.0 (64-bit)
+>
+> locale:
+> [1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+>
+> attached base packages:
+> [1] stats     graphics  grDevices utils     datasets  methods   base
+>
+> other attached packages:
+> [1] rgl_0.93.940 sos_1.3-5    brew_1.0-6
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>
+
+
+From rkoenker at illinois.edu  Wed May 29 23:49:57 2013
+From: rkoenker at illinois.edu (Roger Koenker)
+Date: Wed, 29 May 2013 16:49:57 -0500
+Subject: [R-SIG-Mac] rgl crashes after one successful draw on R.app
+In-Reply-To: <caab02b750b646ce88d3c93d42810a87@CHIHT4.ad.uillinois.edu>
+References: <5CB028AD-687D-4A2B-9B12-2E49F784188F@depauw.edu>
+	<caab02b750b646ce88d3c93d42810a87@CHIHT4.ad.uillinois.edu>
+Message-ID: <93DE26A3-7956-4AB5-B0A4-97A759DA0E6E@illinois.edu>
+
+I doubt that this is helpful, but I get:
+
+> rgl.open()
+Reading symbols for shared libraries . done
+
+Program received signal EXC_BAD_ACCESS, Could not access memory.
+Reason: KERN_INVALID_ADDRESS at address: 0x00000000000000e8
+0x0000000102e31a90 in gui::X11GUIFactory::createWindowImpl (this=0x1006871d0, 
+    window=0x7fff5fbfd330) at x11gui.cpp:612
+612	  ::Window xparent = RootWindow(xdisplay, DefaultScreen(xdisplay));
+(gdb) Quit
+
+url:    www.econ.uiuc.edu/~roger            Roger Koenker
+email    rkoenker at uiuc.edu            Department of Economics
+vox:     217-333-4558                University of Illinois
+fax:       217-244-6678                Urbana, IL 61801
+
+On May 29, 2013, at 4:37 PM, Duncan Murdoch wrote:
+
+> On 13-05-29 11:19 AM, Bryan Hanson wrote:
+>> [originally on R-help, reposted here as the most relevent place]
+>> 
+>> NOTE: problem is with R.app, looks OK on command line R
+>> 
+>> This is really odd, and probably 100% local to me, but I'm at a loss as to a next step.
+>> 
+>> After narrowing things down, here's how to reproduce:
+> 
+> I don't see it, but it looks to me like it may be a timing problem.  I'm 
+> guessing the destruction of the old window triggers events in the wrong 
+> order and leaves rgl in an unstable state.  Unfortunately, without being 
+> able to reproduce this, it looks really hard to track down.  Can anyone 
+> reproduce it while running in gdb or some other debugger?
+> 
+> Duncan Murdoch
+> 
+>> 
+>> library("rgl")
+>> showSomething <- function() {
+>> 	open3d()
+>> 	points3d(rnorm(10),rnorm(10),rnorm(10))
+>> 	axes3d()
+>> 	title3d('main','sub','xlab','ylab','zlab')
+>> 	}
+>> showSomething() # works as expected.
+>> # Close the current rgl window
+>> showSomething() # crashes R with the following report:
+>> 
+>> *** caught segfault ***
+>> address 0x0, cause 'unknown'
+>> 
+>> Traceback:
+>> 1: .C(rgl_dev_open, success = FALSE)
+>> 2: rgl.open()
+>> 3: open3d()
+>> 4: showSomething()
+>> 
+>> This will probably work fine for any of you, it's so simple and fundamental.  If I don't close the open rgl windows, it doesn't crash, and I can execute the function over and over successfully.  And the same thing happens if I just do the commands inside the function individually.  SessionInfo() below.
+>> 
+>> Perhaps something is corrupt with my X11 window system?  Thanks, Bryan
+>> 
+>> R version 3.0.1 (2013-05-16)
+>> Platform: x86_64-apple-darwin10.8.0 (64-bit)
+>> 
+>> locale:
+>> [1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+>> 
+>> attached base packages:
+>> [1] stats     graphics  grDevices utils     datasets  methods   base
+>> 
+>> other attached packages:
+>> [1] rgl_0.93.940 sos_1.3-5    brew_1.0-6
+>> _______________________________________________
+>> R-SIG-Mac mailing list
+>> R-SIG-Mac at r-project.org
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>> 
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+
+
+From goedman at icloud.com  Thu May 30 00:17:28 2013
+From: goedman at icloud.com (Robert J Goedman)
+Date: Wed, 29 May 2013 15:17:28 -0700
+Subject: [R-SIG-Mac] rgl crashes after one successful draw on R.app
+In-Reply-To: <93DE26A3-7956-4AB5-B0A4-97A759DA0E6E@illinois.edu>
+References: <5CB028AD-687D-4A2B-9B12-2E49F784188F@depauw.edu>
+	<caab02b750b646ce88d3c93d42810a87@CHIHT4.ad.uillinois.edu>
+	<93DE26A3-7956-4AB5-B0A4-97A759DA0E6E@illinois.edu>
+Message-ID: <9AEE3B5C-8ED8-4494-8F42-4E62941D4FB3@icloud.com>
+
+An embedded and charset-unspecified text was scrubbed...
+Name: not available
+URL: <https://stat.ethz.ch/pipermail/r-sig-mac/attachments/20130529/5b24de78/attachment.pl>
+
+From rkoenker at illinois.edu  Thu May 30 00:19:27 2013
+From: rkoenker at illinois.edu (Roger Koenker)
+Date: Wed, 29 May 2013 17:19:27 -0500
+Subject: [R-SIG-Mac] rgl crashes after one successful draw on R.app
+In-Reply-To: <11a0e200688d4c1d969bf255a0492f9e@CHIHT3.ad.uillinois.edu>
+References: <5CB028AD-687D-4A2B-9B12-2E49F784188F@depauw.edu>
+	<caab02b750b646ce88d3c93d42810a87@CHIHT4.ad.uillinois.edu>
+	<93DE26A3-7956-4AB5-B0A4-97A759DA0E6E@illinois.edu>
+	<11a0e200688d4c1d969bf255a0492f9e@CHIHT3.ad.uillinois.edu>
+Message-ID: <DFD3591D-F4BF-4677-AC63-920525BE8C55@illinois.edu>
+
+no,  I never get a window....  I get an immediate segfault as soon as
+rgl.open() is called.
+
+
+url:    www.econ.uiuc.edu/~roger            Roger Koenker
+email    rkoenker at uiuc.edu            Department of Economics
+vox:     217-333-4558                University of Illinois
+fax:       217-244-6678                Urbana, IL 61801
+
+On May 29, 2013, at 5:17 PM, Robert J Goedman wrote:
+
+> Roger,
+> 
+> Do you ever see an rgl window pop-up? Just wondering if this is the same issue.
+> 
+> Rob J. Goedman
+> goedman at icloud.com
+> 
+> 
+> 
+> 
+> On May 29, 2013, at 2:49 PM, Roger Koenker <rkoenker at illinois.edu> wrote:
+> 
+>> I doubt that this is helpful, but I get:
+>> 
+>>> rgl.open()
+>> Reading symbols for shared libraries . done
+>> 
+>> Program received signal EXC_BAD_ACCESS, Could not access memory.
+>> Reason: KERN_INVALID_ADDRESS at address: 0x00000000000000e8
+>> 0x0000000102e31a90 in gui::X11GUIFactory::createWindowImpl (this=0x1006871d0, 
+>>    window=0x7fff5fbfd330) at x11gui.cpp:612
+>> 612  ::Window xparent = RootWindow(xdisplay, DefaultScreen(xdisplay));
+>> (gdb) Quit
+>> 
+>> url:    www.econ.uiuc.edu/~roger            Roger Koenker
+>> email    rkoenker at uiuc.edu            Department of Economics
+>> vox:     217-333-4558                University of Illinois
+>> fax:       217-244-6678                Urbana, IL 61801
+>> 
+>> On May 29, 2013, at 4:37 PM, Duncan Murdoch wrote:
+>> 
+>>> On 13-05-29 11:19 AM, Bryan Hanson wrote:
+>>>> [originally on R-help, reposted here as the most relevent place]
+>>>> 
+>>>> NOTE: problem is with R.app, looks OK on command line R
+>>>> 
+>>>> This is really odd, and probably 100% local to me, but I'm at a loss as to a next step.
+>>>> 
+>>>> After narrowing things down, here's how to reproduce:
+>>> 
+>>> I don't see it, but it looks to me like it may be a timing problem.  I'm 
+>>> guessing the destruction of the old window triggers events in the wrong 
+>>> order and leaves rgl in an unstable state.  Unfortunately, without being 
+>>> able to reproduce this, it looks really hard to track down.  Can anyone 
+>>> reproduce it while running in gdb or some other debugger?
+>>> 
+>>> Duncan Murdoch
+>>> 
+>>>> 
+>>>> library("rgl")
+>>>> showSomething <- function() {
+>>>> open3d()
+>>>> points3d(rnorm(10),rnorm(10),rnorm(10))
+>>>> axes3d()
+>>>> title3d('main','sub','xlab','ylab','zlab')
+>>>> }
+>>>> showSomething() # works as expected.
+>>>> # Close the current rgl window
+>>>> showSomething() # crashes R with the following report:
+>>>> 
+>>>> *** caught segfault ***
+>>>> address 0x0, cause 'unknown'
+>>>> 
+>>>> Traceback:
+>>>> 1: .C(rgl_dev_open, success = FALSE)
+>>>> 2: rgl.open()
+>>>> 3: open3d()
+>>>> 4: showSomething()
+>>>> 
+>>>> This will probably work fine for any of you, it's so simple and fundamental.  If I don't close the open rgl windows, it doesn't crash, and I can execute the function over and over successfully.  And the same thing happens if I just do the commands inside the function individually.  SessionInfo() below.
+>>>> 
+>>>> Perhaps something is corrupt with my X11 window system?  Thanks, Bryan
+>>>> 
+>>>> R version 3.0.1 (2013-05-16)
+>>>> Platform: x86_64-apple-darwin10.8.0 (64-bit)
+>>>> 
+>>>> locale:
+>>>> [1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+>>>> 
+>>>> attached base packages:
+>>>> [1] stats     graphics  grDevices utils     datasets  methods   base
+>>>> 
+>>>> other attached packages:
+>>>> [1] rgl_0.93.940 sos_1.3-5    brew_1.0-6
+>>>> _______________________________________________
+>>>> R-SIG-Mac mailing list
+>>>> R-SIG-Mac at r-project.org
+>>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>>>> 
+>>> 
+>>> _______________________________________________
+>>> R-SIG-Mac mailing list
+>>> R-SIG-Mac at r-project.org
+>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>> 
+>> _______________________________________________
+>> R-SIG-Mac mailing list
+>> R-SIG-Mac at r-project.org
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+> 
+
+
+From goedman at icloud.com  Thu May 30 00:41:22 2013
+From: goedman at icloud.com (Robert J Goedman)
+Date: Wed, 29 May 2013 15:41:22 -0700
+Subject: [R-SIG-Mac] rgl crashes after one successful draw on R.app
+In-Reply-To: <DFD3591D-F4BF-4677-AC63-920525BE8C55@illinois.edu>
+References: <5CB028AD-687D-4A2B-9B12-2E49F784188F@depauw.edu>
+	<caab02b750b646ce88d3c93d42810a87@CHIHT4.ad.uillinois.edu>
+	<93DE26A3-7956-4AB5-B0A4-97A759DA0E6E@illinois.edu>
+	<11a0e200688d4c1d969bf255a0492f9e@CHIHT3.ad.uillinois.edu>
+	<DFD3591D-F4BF-4677-AC63-920525BE8C55@illinois.edu>
+Message-ID: <CCF4435F-5865-4707-A7A2-35B15953283B@icloud.com>
+
+An embedded and charset-unspecified text was scrubbed...
+Name: not available
+URL: <https://stat.ethz.ch/pipermail/r-sig-mac/attachments/20130529/5f6327d4/attachment.pl>
+
+From rkoenker at illinois.edu  Thu May 30 00:57:02 2013
+From: rkoenker at illinois.edu (Roger Koenker)
+Date: Wed, 29 May 2013 17:57:02 -0500
+Subject: [R-SIG-Mac] rgl crashes after one successful draw on R.app
+In-Reply-To: <f2d393b73ca047d6a2aad72deed99772@CITESHT3.ad.uillinois.edu>
+References: <5CB028AD-687D-4A2B-9B12-2E49F784188F@depauw.edu>
+	<caab02b750b646ce88d3c93d42810a87@CHIHT4.ad.uillinois.edu>
+	<93DE26A3-7956-4AB5-B0A4-97A759DA0E6E@illinois.edu>
+	<11a0e200688d4c1d969bf255a0492f9e@CHIHT3.ad.uillinois.edu>
+	<DFD3591D-F4BF-4677-AC63-920525BE8C55@illinois.edu>
+	<f2d393b73ca047d6a2aad72deed99772@CITESHT3.ad.uillinois.edu>
+Message-ID: <8495C9D7-C452-4C55-BC20-2A7514931BDE@illinois.edu>
+
+Rob,
+
+Well, that was easy....  I upgraded to XQuartz 2.7.4  and now can run example(rgl) 
+and also close the windows that are created. ;-).  Many thanks!
+
+Roger
+
+url:    www.econ.uiuc.edu/~roger            Roger Koenker
+email    rkoenker at uiuc.edu            Department of Economics
+vox:     217-333-4558                University of Illinois
+fax:       217-244-6678                Urbana, IL 61801
+
+On May 29, 2013, at 5:41 PM, Robert J Goedman wrote:
+
+> Roger,
+> 
+> Not sure if that would fix it, but my system is the patched R.3.0.1, using XQuartz 2.7.4 and a slightly newer version of rgl (rgl_0.93.940).
+> 
+> Rob J. Goedman
+> goedman at icloud.com
+> 
+> 
+> 
+> 
+> On May 29, 2013, at 3:19 PM, Roger Koenker <rkoenker at illinois.edu> wrote:
+> 
+>> no,  I never get a window....  I get an immediate segfault as soon as
+>> rgl.open() is called.
+>> 
+>> 
+>> url:    www.econ.uiuc.edu/~roger            Roger Koenker
+>> email    rkoenker at uiuc.edu            Department of Economics
+>> vox:     217-333-4558                University of Illinois
+>> fax:       217-244-6678                Urbana, IL 61801
+>> 
+>> On May 29, 2013, at 5:17 PM, Robert J Goedman wrote:
+>> 
+>>> Roger,
+>>> 
+>>> Do you ever see an rgl window pop-up? Just wondering if this is the same issue.
+>>> 
+>>> Rob J. Goedman
+>>> goedman at icloud.com
+>>> 
+>>> 
+>>> 
+>>> 
+>>> On May 29, 2013, at 2:49 PM, Roger Koenker <rkoenker at illinois.edu> wrote:
+>>> 
+>>>> I doubt that this is helpful, but I get:
+>>>> 
+>>>>> rgl.open()
+>>>> Reading symbols for shared libraries . done
+>>>> 
+>>>> Program received signal EXC_BAD_ACCESS, Could not access memory.
+>>>> Reason: KERN_INVALID_ADDRESS at address: 0x00000000000000e8
+>>>> 0x0000000102e31a90 in gui::X11GUIFactory::createWindowImpl (this=0x1006871d0, 
+>>>>   window=0x7fff5fbfd330) at x11gui.cpp:612
+>>>> 612  ::Window xparent = RootWindow(xdisplay, DefaultScreen(xdisplay));
+>>>> (gdb) Quit
+>>>> 
+>>>> url:    www.econ.uiuc.edu/~roger            Roger Koenker
+>>>> email    rkoenker at uiuc.edu            Department of Economics
+>>>> vox:     217-333-4558                University of Illinois
+>>>> fax:       217-244-6678                Urbana, IL 61801
+>>>> 
+>>>> On May 29, 2013, at 4:37 PM, Duncan Murdoch wrote:
+>>>> 
+>>>>> On 13-05-29 11:19 AM, Bryan Hanson wrote:
+>>>>>> [originally on R-help, reposted here as the most relevent place]
+>>>>>> 
+>>>>>> NOTE: problem is with R.app, looks OK on command line R
+>>>>>> 
+>>>>>> This is really odd, and probably 100% local to me, but I'm at a loss as to a next step.
+>>>>>> 
+>>>>>> After narrowing things down, here's how to reproduce:
+>>>>> 
+>>>>> I don't see it, but it looks to me like it may be a timing problem.  I'm 
+>>>>> guessing the destruction of the old window triggers events in the wrong 
+>>>>> order and leaves rgl in an unstable state.  Unfortunately, without being 
+>>>>> able to reproduce this, it looks really hard to track down.  Can anyone 
+>>>>> reproduce it while running in gdb or some other debugger?
+>>>>> 
+>>>>> Duncan Murdoch
+>>>>> 
+>>>>>> 
+>>>>>> library("rgl")
+>>>>>> showSomething <- function() {
+>>>>>> open3d()
+>>>>>> points3d(rnorm(10),rnorm(10),rnorm(10))
+>>>>>> axes3d()
+>>>>>> title3d('main','sub','xlab','ylab','zlab')
+>>>>>> }
+>>>>>> showSomething() # works as expected.
+>>>>>> # Close the current rgl window
+>>>>>> showSomething() # crashes R with the following report:
+>>>>>> 
+>>>>>> *** caught segfault ***
+>>>>>> address 0x0, cause 'unknown'
+>>>>>> 
+>>>>>> Traceback:
+>>>>>> 1: .C(rgl_dev_open, success = FALSE)
+>>>>>> 2: rgl.open()
+>>>>>> 3: open3d()
+>>>>>> 4: showSomething()
+>>>>>> 
+>>>>>> This will probably work fine for any of you, it's so simple and fundamental.  If I don't close the open rgl windows, it doesn't crash, and I can execute the function over and over successfully.  And the same thing happens if I just do the commands inside the function individually.  SessionInfo() below.
+>>>>>> 
+>>>>>> Perhaps something is corrupt with my X11 window system?  Thanks, Bryan
+>>>>>> 
+>>>>>> R version 3.0.1 (2013-05-16)
+>>>>>> Platform: x86_64-apple-darwin10.8.0 (64-bit)
+>>>>>> 
+>>>>>> locale:
+>>>>>> [1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+>>>>>> 
+>>>>>> attached base packages:
+>>>>>> [1] stats     graphics  grDevices utils     datasets  methods   base
+>>>>>> 
+>>>>>> other attached packages:
+>>>>>> [1] rgl_0.93.940 sos_1.3-5    brew_1.0-6
+>>>>>> _______________________________________________
+>>>>>> R-SIG-Mac mailing list
+>>>>>> R-SIG-Mac at r-project.org
+>>>>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>>>>>> 
+>>>>> 
+>>>>> _______________________________________________
+>>>>> R-SIG-Mac mailing list
+>>>>> R-SIG-Mac at r-project.org
+>>>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>>>> 
+>>>> _______________________________________________
+>>>> R-SIG-Mac mailing list
+>>>> R-SIG-Mac at r-project.org
+>>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>>> 
+>> 
+> 
+
+
+From goedman at icloud.com  Thu May 30 01:16:58 2013
+From: goedman at icloud.com (Robert J Goedman)
+Date: Wed, 29 May 2013 16:16:58 -0700
+Subject: [R-SIG-Mac] rgl crashes after one successful draw on R.app
+In-Reply-To: <8495C9D7-C452-4C55-BC20-2A7514931BDE@illinois.edu>
+References: <5CB028AD-687D-4A2B-9B12-2E49F784188F@depauw.edu>
+	<caab02b750b646ce88d3c93d42810a87@CHIHT4.ad.uillinois.edu>
+	<93DE26A3-7956-4AB5-B0A4-97A759DA0E6E@illinois.edu>
+	<11a0e200688d4c1d969bf255a0492f9e@CHIHT3.ad.uillinois.edu>
+	<DFD3591D-F4BF-4677-AC63-920525BE8C55@illinois.edu>
+	<f2d393b73ca047d6a2aad72deed99772@CITESHT3.ad.uillinois.edu>
+	<8495C9D7-C452-4C55-BC20-2A7514931BDE@illinois.edu>
+Message-ID: <E9149A42-97BA-40E9-8E61-95146E2A89EE@icloud.com>
+
+An embedded and charset-unspecified text was scrubbed...
+Name: not available
+URL: <https://stat.ethz.ch/pipermail/r-sig-mac/attachments/20130529/6e394155/attachment.pl>
+
+From hanson at depauw.edu  Thu May 30 03:27:46 2013
+From: hanson at depauw.edu (Bryan Hanson)
+Date: Wed, 29 May 2013 21:27:46 -0400
+Subject: [R-SIG-Mac] rgl crashes after one successful draw on R.app
+In-Reply-To: <E9149A42-97BA-40E9-8E61-95146E2A89EE@icloud.com>
+References: <5CB028AD-687D-4A2B-9B12-2E49F784188F@depauw.edu>
+	<caab02b750b646ce88d3c93d42810a87@CHIHT4.ad.uillinois.edu>
+	<93DE26A3-7956-4AB5-B0A4-97A759DA0E6E@illinois.edu>
+	<11a0e200688d4c1d969bf255a0492f9e@CHIHT3.ad.uillinois.edu>
+	<DFD3591D-F4BF-4677-AC63-920525BE8C55@illinois.edu>
+	<f2d393b73ca047d6a2aad72deed99772@CITESHT3.ad.uillinois.edu>
+	<8495C9D7-C452-4C55-BC20-2A7514931BDE@illinois.edu>
+	<E9149A42-97BA-40E9-8E61-95146E2A89EE@icloud.com>
+Message-ID: <49E9F7D5-40DA-43D5-A51C-6C1E2CF90C51@depauw.edu>
+
+Unfortunately, I already have XQuartz 2.7.4 and it gives the problem I reported. :-(  Bryan
+
+On May 29, 2013, at 7:16 PM, Robert J Goedman <goedman at icloud.com> wrote:
+
+> Great, like with Rcmdr, example(rgl) seems to work well.
+> 
+> Repeatedly just 'example(plot3d)' and each time removing all rgl windows, will lead to the same problem Bryan mentioned this morning.
+> 
+> Rob J. Goedman
+> goedman at icloud.com
+> 
+> 
+> 
+> 
+> On May 29, 2013, at 3:57 PM, Roger Koenker <rkoenker at illinois.edu> wrote:
+> 
+>> Rob,
+>> 
+>> Well, that was easy....  I upgraded to XQuartz 2.7.4  and now can run example(rgl) 
+>> and also close the windows that are created. ;-).  Many thanks!
+>> 
+>> Roger
+>> 
+>> url:    www.econ.uiuc.edu/~roger            Roger Koenker
+>> email    rkoenker at uiuc.edu            Department of Economics
+>> vox:     217-333-4558                University of Illinois
+>> fax:       217-244-6678                Urbana, IL 61801
+>> 
+>> On May 29, 2013, at 5:41 PM, Robert J Goedman wrote:
+>> 
+>>> Roger,
+>>> 
+>>> Not sure if that would fix it, but my system is the patched R.3.0.1, using XQuartz 2.7.4 and a slightly newer version of rgl (rgl_0.93.940).
+>>> 
+>>> Rob J. Goedman
+>>> goedman at icloud.com
+>>> 
+>>> 
+>>> 
+>>> 
+>>> On May 29, 2013, at 3:19 PM, Roger Koenker <rkoenker at illinois.edu> wrote:
+>>> 
+>>>> no,  I never get a window....  I get an immediate segfault as soon as
+>>>> rgl.open() is called.
+>>>> 
+>>>> 
+>>>> url:    www.econ.uiuc.edu/~roger            Roger Koenker
+>>>> email    rkoenker at uiuc.edu            Department of Economics
+>>>> vox:     217-333-4558                University of Illinois
+>>>> fax:       217-244-6678                Urbana, IL 61801
+>>>> 
+>>>> On May 29, 2013, at 5:17 PM, Robert J Goedman wrote:
+>>>> 
+>>>>> Roger,
+>>>>> 
+>>>>> Do you ever see an rgl window pop-up? Just wondering if this is the same issue.
+>>>>> 
+>>>>> Rob J. Goedman
+>>>>> goedman at icloud.com
+>>>>> 
+>>>>> 
+>>>>> 
+>>>>> 
+>>>>> On May 29, 2013, at 2:49 PM, Roger Koenker <rkoenker at illinois.edu> wrote:
+>>>>> 
+>>>>>> I doubt that this is helpful, but I get:
+>>>>>> 
+>>>>>>> rgl.open()
+>>>>>> Reading symbols for shared libraries . done
+>>>>>> 
+>>>>>> Program received signal EXC_BAD_ACCESS, Could not access memory.
+>>>>>> Reason: KERN_INVALID_ADDRESS at address: 0x00000000000000e8
+>>>>>> 0x0000000102e31a90 in gui::X11GUIFactory::createWindowImpl (this=0x1006871d0, 
+>>>>>> window=0x7fff5fbfd330) at x11gui.cpp:612
+>>>>>> 612  ::Window xparent = RootWindow(xdisplay, DefaultScreen(xdisplay));
+>>>>>> (gdb) Quit
+>>>>>> 
+>>>>>> url:    www.econ.uiuc.edu/~roger            Roger Koenker
+>>>>>> email    rkoenker at uiuc.edu            Department of Economics
+>>>>>> vox:     217-333-4558                University of Illinois
+>>>>>> fax:       217-244-6678                Urbana, IL 61801
+>>>>>> 
+>>>>>> On May 29, 2013, at 4:37 PM, Duncan Murdoch wrote:
+>>>>>> 
+>>>>>>> On 13-05-29 11:19 AM, Bryan Hanson wrote:
+>>>>>>>> [originally on R-help, reposted here as the most relevent place]
+>>>>>>>> 
+>>>>>>>> NOTE: problem is with R.app, looks OK on command line R
+>>>>>>>> 
+>>>>>>>> This is really odd, and probably 100% local to me, but I'm at a loss as to a next step.
+>>>>>>>> 
+>>>>>>>> After narrowing things down, here's how to reproduce:
+>>>>>>> 
+>>>>>>> I don't see it, but it looks to me like it may be a timing problem.  I'm 
+>>>>>>> guessing the destruction of the old window triggers events in the wrong 
+>>>>>>> order and leaves rgl in an unstable state.  Unfortunately, without being 
+>>>>>>> able to reproduce this, it looks really hard to track down.  Can anyone 
+>>>>>>> reproduce it while running in gdb or some other debugger?
+>>>>>>> 
+>>>>>>> Duncan Murdoch
+>>>>>>> 
+>>>>>>>> 
+>>>>>>>> library("rgl")
+>>>>>>>> showSomething <- function() {
+>>>>>>>> open3d()
+>>>>>>>> points3d(rnorm(10),rnorm(10),rnorm(10))
+>>>>>>>> axes3d()
+>>>>>>>> title3d('main','sub','xlab','ylab','zlab')
+>>>>>>>> }
+>>>>>>>> showSomething() # works as expected.
+>>>>>>>> # Close the current rgl window
+>>>>>>>> showSomething() # crashes R with the following report:
+>>>>>>>> 
+>>>>>>>> *** caught segfault ***
+>>>>>>>> address 0x0, cause 'unknown'
+>>>>>>>> 
+>>>>>>>> Traceback:
+>>>>>>>> 1: .C(rgl_dev_open, success = FALSE)
+>>>>>>>> 2: rgl.open()
+>>>>>>>> 3: open3d()
+>>>>>>>> 4: showSomething()
+>>>>>>>> 
+>>>>>>>> This will probably work fine for any of you, it's so simple and fundamental.  If I don't close the open rgl windows, it doesn't crash, and I can execute the function over and over successfully.  And the same thing happens if I just do the commands inside the function individually.  SessionInfo() below.
+>>>>>>>> 
+>>>>>>>> Perhaps something is corrupt with my X11 window system?  Thanks, Bryan
+>>>>>>>> 
+>>>>>>>> R version 3.0.1 (2013-05-16)
+>>>>>>>> Platform: x86_64-apple-darwin10.8.0 (64-bit)
+>>>>>>>> 
+>>>>>>>> locale:
+>>>>>>>> [1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+>>>>>>>> 
+>>>>>>>> attached base packages:
+>>>>>>>> [1] stats     graphics  grDevices utils     datasets  methods   base
+>>>>>>>> 
+>>>>>>>> other attached packages:
+>>>>>>>> [1] rgl_0.93.940 sos_1.3-5    brew_1.0-6
+>>>>>>>> _______________________________________________
+>>>>>>>> R-SIG-Mac mailing list
+>>>>>>>> R-SIG-Mac at r-project.org
+>>>>>>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>>>>>>>> 
+>>>>>>> 
+>>>>>>> _______________________________________________
+>>>>>>> R-SIG-Mac mailing list
+>>>>>>> R-SIG-Mac at r-project.org
+>>>>>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>>>>>> 
+>>>>>> _______________________________________________
+>>>>>> R-SIG-Mac mailing list
+>>>>>> R-SIG-Mac at r-project.org
+>>>>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>>>>> 
+>>>> 
+>>> 
+>> 
+> 
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+
+
+From ripley at stats.ox.ac.uk  Thu May 30 10:05:05 2013
+From: ripley at stats.ox.ac.uk (Prof Brian Ripley)
+Date: Thu, 30 May 2013 09:05:05 +0100
+Subject: [R-SIG-Mac] rgl crashes after one successful draw on R.app
+In-Reply-To: <49E9F7D5-40DA-43D5-A51C-6C1E2CF90C51@depauw.edu>
+References: <5CB028AD-687D-4A2B-9B12-2E49F784188F@depauw.edu>
+	<caab02b750b646ce88d3c93d42810a87@CHIHT4.ad.uillinois.edu>
+	<93DE26A3-7956-4AB5-B0A4-97A759DA0E6E@illinois.edu>
+	<11a0e200688d4c1d969bf255a0492f9e@CHIHT3.ad.uillinois.edu>
+	<DFD3591D-F4BF-4677-AC63-920525BE8C55@illinois.edu>
+	<f2d393b73ca047d6a2aad72deed99772@CITESHT3.ad.uillinois.edu>
+	<8495C9D7-C452-4C55-BC20-2A7514931BDE@illinois.edu>
+	<E9149A42-97BA-40E9-8E61-95146E2A89EE@icloud.com>
+	<49E9F7D5-40DA-43D5-A51C-6C1E2CF90C51@depauw.edu>
+Message-ID: <51A70831.1020409@stats.ox.ac.uk>
+
+On 30/05/2013 02:27, Bryan Hanson wrote:
+> Unfortunately, I already have XQuartz 2.7.4 and it gives the problem I reported. :-(  Bryan
+
+But as I said way back in this thread, there are two different rgl 
+devices and this trhead has conflated two problems, on in each.
+
+Roger was using the X11-based version, and that seemed to be an Xquartz 
+issue.
+
+You are using the AGL-based version in R.app, which does not use X11 AFAIK.
+
+> On May 29, 2013, at 7:16 PM, Robert J Goedman <goedman at icloud.com> wrote:
+>
+>> Great, like with Rcmdr, example(rgl) seems to work well.
+>>
+>> Repeatedly just 'example(plot3d)' and each time removing all rgl windows, will lead to the same problem Bryan mentioned this morning.
+>>
+>> Rob J. Goedman
+>> goedman at icloud.com
+>>
+>>
+>>
+>>
+>> On May 29, 2013, at 3:57 PM, Roger Koenker <rkoenker at illinois.edu> wrote:
+>>
+>>> Rob,
+>>>
+>>> Well, that was easy....  I upgraded to XQuartz 2.7.4  and now can run example(rgl)
+>>> and also close the windows that are created. ;-).  Many thanks!
+>>>
+>>> Roger
+>>>
+>>> url:    www.econ.uiuc.edu/~roger            Roger Koenker
+>>> email    rkoenker at uiuc.edu            Department of Economics
+>>> vox:     217-333-4558                University of Illinois
+>>> fax:       217-244-6678                Urbana, IL 61801
+>>>
+>>> On May 29, 2013, at 5:41 PM, Robert J Goedman wrote:
+>>>
+>>>> Roger,
+>>>>
+>>>> Not sure if that would fix it, but my system is the patched R.3.0.1, using XQuartz 2.7.4 and a slightly newer version of rgl (rgl_0.93.940).
+>>>>
+>>>> Rob J. Goedman
+>>>> goedman at icloud.com
+>>>>
+>>>>
+>>>>
+>>>>
+>>>> On May 29, 2013, at 3:19 PM, Roger Koenker <rkoenker at illinois.edu> wrote:
+>>>>
+>>>>> no,  I never get a window....  I get an immediate segfault as soon as
+>>>>> rgl.open() is called.
+>>>>>
+>>>>>
+>>>>> url:    www.econ.uiuc.edu/~roger            Roger Koenker
+>>>>> email    rkoenker at uiuc.edu            Department of Economics
+>>>>> vox:     217-333-4558                University of Illinois
+>>>>> fax:       217-244-6678                Urbana, IL 61801
+>>>>>
+>>>>> On May 29, 2013, at 5:17 PM, Robert J Goedman wrote:
+>>>>>
+>>>>>> Roger,
+>>>>>>
+>>>>>> Do you ever see an rgl window pop-up? Just wondering if this is the same issue.
+>>>>>>
+>>>>>> Rob J. Goedman
+>>>>>> goedman at icloud.com
+>>>>>>
+>>>>>>
+>>>>>>
+>>>>>>
+>>>>>> On May 29, 2013, at 2:49 PM, Roger Koenker <rkoenker at illinois.edu> wrote:
+>>>>>>
+>>>>>>> I doubt that this is helpful, but I get:
+>>>>>>>
+>>>>>>>> rgl.open()
+>>>>>>> Reading symbols for shared libraries . done
+>>>>>>>
+>>>>>>> Program received signal EXC_BAD_ACCESS, Could not access memory.
+>>>>>>> Reason: KERN_INVALID_ADDRESS at address: 0x00000000000000e8
+>>>>>>> 0x0000000102e31a90 in gui::X11GUIFactory::createWindowImpl (this=0x1006871d0,
+>>>>>>> window=0x7fff5fbfd330) at x11gui.cpp:612
+>>>>>>> 612  ::Window xparent = RootWindow(xdisplay, DefaultScreen(xdisplay));
+>>>>>>> (gdb) Quit
+>>>>>>>
+>>>>>>> url:    www.econ.uiuc.edu/~roger            Roger Koenker
+>>>>>>> email    rkoenker at uiuc.edu            Department of Economics
+>>>>>>> vox:     217-333-4558                University of Illinois
+>>>>>>> fax:       217-244-6678                Urbana, IL 61801
+>>>>>>>
+>>>>>>> On May 29, 2013, at 4:37 PM, Duncan Murdoch wrote:
+>>>>>>>
+>>>>>>>> On 13-05-29 11:19 AM, Bryan Hanson wrote:
+>>>>>>>>> [originally on R-help, reposted here as the most relevent place]
+>>>>>>>>>
+>>>>>>>>> NOTE: problem is with R.app, looks OK on command line R
+>>>>>>>>>
+>>>>>>>>> This is really odd, and probably 100% local to me, but I'm at a loss as to a next step.
+>>>>>>>>>
+>>>>>>>>> After narrowing things down, here's how to reproduce:
+>>>>>>>>
+>>>>>>>> I don't see it, but it looks to me like it may be a timing problem.  I'm
+>>>>>>>> guessing the destruction of the old window triggers events in the wrong
+>>>>>>>> order and leaves rgl in an unstable state.  Unfortunately, without being
+>>>>>>>> able to reproduce this, it looks really hard to track down.  Can anyone
+>>>>>>>> reproduce it while running in gdb or some other debugger?
+>>>>>>>>
+>>>>>>>> Duncan Murdoch
+>>>>>>>>
+>>>>>>>>>
+>>>>>>>>> library("rgl")
+>>>>>>>>> showSomething <- function() {
+>>>>>>>>> open3d()
+>>>>>>>>> points3d(rnorm(10),rnorm(10),rnorm(10))
+>>>>>>>>> axes3d()
+>>>>>>>>> title3d('main','sub','xlab','ylab','zlab')
+>>>>>>>>> }
+>>>>>>>>> showSomething() # works as expected.
+>>>>>>>>> # Close the current rgl window
+>>>>>>>>> showSomething() # crashes R with the following report:
+>>>>>>>>>
+>>>>>>>>> *** caught segfault ***
+>>>>>>>>> address 0x0, cause 'unknown'
+>>>>>>>>>
+>>>>>>>>> Traceback:
+>>>>>>>>> 1: .C(rgl_dev_open, success = FALSE)
+>>>>>>>>> 2: rgl.open()
+>>>>>>>>> 3: open3d()
+>>>>>>>>> 4: showSomething()
+>>>>>>>>>
+>>>>>>>>> This will probably work fine for any of you, it's so simple and fundamental.  If I don't close the open rgl windows, it doesn't crash, and I can execute the function over and over successfully.  And the same thing happens if I just do the commands inside the function individually.  SessionInfo() below.
+>>>>>>>>>
+>>>>>>>>> Perhaps something is corrupt with my X11 window system?  Thanks, Bryan
+>>>>>>>>>
+>>>>>>>>> R version 3.0.1 (2013-05-16)
+>>>>>>>>> Platform: x86_64-apple-darwin10.8.0 (64-bit)
+>>>>>>>>>
+>>>>>>>>> locale:
+>>>>>>>>> [1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+>>>>>>>>>
+>>>>>>>>> attached base packages:
+>>>>>>>>> [1] stats     graphics  grDevices utils     datasets  methods   base
+>>>>>>>>>
+>>>>>>>>> other attached packages:
+>>>>>>>>> [1] rgl_0.93.940 sos_1.3-5    brew_1.0-6
+>>>>>>>>> _______________________________________________
+>>>>>>>>> R-SIG-Mac mailing list
+>>>>>>>>> R-SIG-Mac at r-project.org
+>>>>>>>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>>>>>>>>>
+>>>>>>>>
+>>>>>>>> _______________________________________________
+>>>>>>>> R-SIG-Mac mailing list
+>>>>>>>> R-SIG-Mac at r-project.org
+>>>>>>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>>>>>>>
+>>>>>>> _______________________________________________
+>>>>>>> R-SIG-Mac mailing list
+>>>>>>> R-SIG-Mac at r-project.org
+>>>>>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>>>>>>
+>>>>>
+>>>>
+>>>
+>>
+>>
+>> 	[[alternative HTML version deleted]]
+>>
+>> _______________________________________________
+>> R-SIG-Mac mailing list
+>> R-SIG-Mac at r-project.org
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>
+
+
+-- 
+Brian D. Ripley,                  ripley at stats.ox.ac.uk
+Professor of Applied Statistics,  http://www.stats.ox.ac.uk/~ripley/
+University of Oxford,             Tel:  +44 1865 272861 (self)
+1 South Parks Road,                     +44 1865 272866 (PA)
+Oxford OX1 3TG, UK                Fax:  +44 1865 272595
+
+
+From hanson at depauw.edu  Thu May 30 14:06:46 2013
+From: hanson at depauw.edu (Bryan Hanson)
+Date: Thu, 30 May 2013 08:06:46 -0400
+Subject: [R-SIG-Mac] rgl crashes after one successful draw on R.app
+In-Reply-To: <51A70831.1020409@stats.ox.ac.uk>
+References: <5CB028AD-687D-4A2B-9B12-2E49F784188F@depauw.edu>
+	<caab02b750b646ce88d3c93d42810a87@CHIHT4.ad.uillinois.edu>
+	<93DE26A3-7956-4AB5-B0A4-97A759DA0E6E@illinois.edu>
+	<11a0e200688d4c1d969bf255a0492f9e@CHIHT3.ad.uillinois.edu>
+	<DFD3591D-F4BF-4677-AC63-920525BE8C55@illinois.edu>
+	<f2d393b73ca047d6a2aad72deed99772@CITESHT3.ad.uillinois.edu>
+	<8495C9D7-C452-4C55-BC20-2A7514931BDE@illinois.edu>
+	<E9149A42-97BA-40E9-8E61-95146E2A89EE@icloud.com>
+	<49E9F7D5-40DA-43D5-A51C-6C1E2CF90C51@depauw.edu>
+	<51A70831.1020409@stats.ox.ac.uk>
+Message-ID: <B3B727CC-1D94-403C-A7FA-EE27A7FB485D@depauw.edu>
+
+Yes, sorry.  I just confirmed (for myself) that showSomething() works just fine from command line R where it uses XQuartz ( 2.7.4) and fails from R.app.  Bryan
+
+On May 30, 2013, at 4:05 AM, Prof Brian Ripley <ripley at stats.ox.ac.uk> wrote:
+
+> On 30/05/2013 02:27, Bryan Hanson wrote:
+>> Unfortunately, I already have XQuartz 2.7.4 and it gives the problem I reported. :-(  Bryan
+> 
+> But as I said way back in this thread, there are two different rgl devices and this trhead has conflated two problems, on in each.
+> 
+> Roger was using the X11-based version, and that seemed to be an Xquartz issue.
+> 
+> You are using the AGL-based version in R.app, which does not use X11 AFAIK.
+> 
+>> On May 29, 2013, at 7:16 PM, Robert J Goedman <goedman at icloud.com> wrote:
+>> 
+>>> Great, like with Rcmdr, example(rgl) seems to work well.
+>>> 
+>>> Repeatedly just 'example(plot3d)' and each time removing all rgl windows, will lead to the same problem Bryan mentioned this morning.
+>>> 
+>>> Rob J. Goedman
+>>> goedman at icloud.com
+>>> 
+>>> 
+>>> 
+>>> 
+>>> On May 29, 2013, at 3:57 PM, Roger Koenker <rkoenker at illinois.edu> wrote:
+>>> 
+>>>> Rob,
+>>>> 
+>>>> Well, that was easy....  I upgraded to XQuartz 2.7.4  and now can run example(rgl)
+>>>> and also close the windows that are created. ;-).  Many thanks!
+>>>> 
+>>>> Roger
+>>>> 
+>>>> url:    www.econ.uiuc.edu/~roger            Roger Koenker
+>>>> email    rkoenker at uiuc.edu            Department of Economics
+>>>> vox:     217-333-4558                University of Illinois
+>>>> fax:       217-244-6678                Urbana, IL 61801
+>>>> 
+>>>> On May 29, 2013, at 5:41 PM, Robert J Goedman wrote:
+>>>> 
+>>>>> Roger,
+>>>>> 
+>>>>> Not sure if that would fix it, but my system is the patched R.3.0.1, using XQuartz 2.7.4 and a slightly newer version of rgl (rgl_0.93.940).
+>>>>> 
+>>>>> Rob J. Goedman
+>>>>> goedman at icloud.com
+>>>>> 
+>>>>> 
+>>>>> 
+>>>>> 
+>>>>> On May 29, 2013, at 3:19 PM, Roger Koenker <rkoenker at illinois.edu> wrote:
+>>>>> 
+>>>>>> no,  I never get a window....  I get an immediate segfault as soon as
+>>>>>> rgl.open() is called.
+>>>>>> 
+>>>>>> 
+>>>>>> url:    www.econ.uiuc.edu/~roger            Roger Koenker
+>>>>>> email    rkoenker at uiuc.edu            Department of Economics
+>>>>>> vox:     217-333-4558                University of Illinois
+>>>>>> fax:       217-244-6678                Urbana, IL 61801
+>>>>>> 
+>>>>>> On May 29, 2013, at 5:17 PM, Robert J Goedman wrote:
+>>>>>> 
+>>>>>>> Roger,
+>>>>>>> 
+>>>>>>> Do you ever see an rgl window pop-up? Just wondering if this is the same issue.
+>>>>>>> 
+>>>>>>> Rob J. Goedman
+>>>>>>> goedman at icloud.com
+>>>>>>> 
+>>>>>>> 
+>>>>>>> 
+>>>>>>> 
+>>>>>>> On May 29, 2013, at 2:49 PM, Roger Koenker <rkoenker at illinois.edu> wrote:
+>>>>>>> 
+>>>>>>>> I doubt that this is helpful, but I get:
+>>>>>>>> 
+>>>>>>>>> rgl.open()
+>>>>>>>> Reading symbols for shared libraries . done
+>>>>>>>> 
+>>>>>>>> Program received signal EXC_BAD_ACCESS, Could not access memory.
+>>>>>>>> Reason: KERN_INVALID_ADDRESS at address: 0x00000000000000e8
+>>>>>>>> 0x0000000102e31a90 in gui::X11GUIFactory::createWindowImpl (this=0x1006871d0,
+>>>>>>>> window=0x7fff5fbfd330) at x11gui.cpp:612
+>>>>>>>> 612  ::Window xparent = RootWindow(xdisplay, DefaultScreen(xdisplay));
+>>>>>>>> (gdb) Quit
+>>>>>>>> 
+>>>>>>>> url:    www.econ.uiuc.edu/~roger            Roger Koenker
+>>>>>>>> email    rkoenker at uiuc.edu            Department of Economics
+>>>>>>>> vox:     217-333-4558                University of Illinois
+>>>>>>>> fax:       217-244-6678                Urbana, IL 61801
+>>>>>>>> 
+>>>>>>>> On May 29, 2013, at 4:37 PM, Duncan Murdoch wrote:
+>>>>>>>> 
+>>>>>>>>> On 13-05-29 11:19 AM, Bryan Hanson wrote:
+>>>>>>>>>> [originally on R-help, reposted here as the most relevent place]
+>>>>>>>>>> 
+>>>>>>>>>> NOTE: problem is with R.app, looks OK on command line R
+>>>>>>>>>> 
+>>>>>>>>>> This is really odd, and probably 100% local to me, but I'm at a loss as to a next step.
+>>>>>>>>>> 
+>>>>>>>>>> After narrowing things down, here's how to reproduce:
+>>>>>>>>> 
+>>>>>>>>> I don't see it, but it looks to me like it may be a timing problem.  I'm
+>>>>>>>>> guessing the destruction of the old window triggers events in the wrong
+>>>>>>>>> order and leaves rgl in an unstable state.  Unfortunately, without being
+>>>>>>>>> able to reproduce this, it looks really hard to track down.  Can anyone
+>>>>>>>>> reproduce it while running in gdb or some other debugger?
+>>>>>>>>> 
+>>>>>>>>> Duncan Murdoch
+>>>>>>>>> 
+>>>>>>>>>> 
+>>>>>>>>>> library("rgl")
+>>>>>>>>>> showSomething <- function() {
+>>>>>>>>>> open3d()
+>>>>>>>>>> points3d(rnorm(10),rnorm(10),rnorm(10))
+>>>>>>>>>> axes3d()
+>>>>>>>>>> title3d('main','sub','xlab','ylab','zlab')
+>>>>>>>>>> }
+>>>>>>>>>> showSomething() # works as expected.
+>>>>>>>>>> # Close the current rgl window
+>>>>>>>>>> showSomething() # crashes R with the following report:
+>>>>>>>>>> 
+>>>>>>>>>> *** caught segfault ***
+>>>>>>>>>> address 0x0, cause 'unknown'
+>>>>>>>>>> 
+>>>>>>>>>> Traceback:
+>>>>>>>>>> 1: .C(rgl_dev_open, success = FALSE)
+>>>>>>>>>> 2: rgl.open()
+>>>>>>>>>> 3: open3d()
+>>>>>>>>>> 4: showSomething()
+>>>>>>>>>> 
+>>>>>>>>>> This will probably work fine for any of you, it's so simple and fundamental.  If I don't close the open rgl windows, it doesn't crash, and I can execute the function over and over successfully.  And the same thing happens if I just do the commands inside the function individually.  SessionInfo() below.
+>>>>>>>>>> 
+>>>>>>>>>> Perhaps something is corrupt with my X11 window system?  Thanks, Bryan
+>>>>>>>>>> 
+>>>>>>>>>> R version 3.0.1 (2013-05-16)
+>>>>>>>>>> Platform: x86_64-apple-darwin10.8.0 (64-bit)
+>>>>>>>>>> 
+>>>>>>>>>> locale:
+>>>>>>>>>> [1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+>>>>>>>>>> 
+>>>>>>>>>> attached base packages:
+>>>>>>>>>> [1] stats     graphics  grDevices utils     datasets  methods   base
+>>>>>>>>>> 
+>>>>>>>>>> other attached packages:
+>>>>>>>>>> [1] rgl_0.93.940 sos_1.3-5    brew_1.0-6
+>>>>>>>>>> _______________________________________________
+>>>>>>>>>> R-SIG-Mac mailing list
+>>>>>>>>>> R-SIG-Mac at r-project.org
+>>>>>>>>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>>>>>>>>>> 
+>>>>>>>>> 
+>>>>>>>>> _______________________________________________
+>>>>>>>>> R-SIG-Mac mailing list
+>>>>>>>>> R-SIG-Mac at r-project.org
+>>>>>>>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>>>>>>>> 
+>>>>>>>> _______________________________________________
+>>>>>>>> R-SIG-Mac mailing list
+>>>>>>>> R-SIG-Mac at r-project.org
+>>>>>>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>>>>>>> 
+>>>>>> 
+>>>>> 
+>>>> 
+>>> 
+>>> 
+>>> 	[[alternative HTML version deleted]]
+>>> 
+>>> _______________________________________________
+>>> R-SIG-Mac mailing list
+>>> R-SIG-Mac at r-project.org
+>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>> 
+>> _______________________________________________
+>> R-SIG-Mac mailing list
+>> R-SIG-Mac at r-project.org
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>> 
+> 
+> 
+> -- 
+> Brian D. Ripley,                  ripley at stats.ox.ac.uk
+> Professor of Applied Statistics,  http://www.stats.ox.ac.uk/~ripley/
+> University of Oxford,             Tel:  +44 1865 272861 (self)
+> 1 South Parks Road,                     +44 1865 272866 (PA)
+> Oxford OX1 3TG, UK                Fax:  +44 1865 272595
+
+
+From mcherron at mac.com  Tue May 21 03:47:25 2013
+From: mcherron at mac.com (Michael Herron)
+Date: Tue, 21 May 2013 01:47:25 -0000
+Subject: [R-SIG-Mac] R 3.0.1 quits after a graphics command
+Message-ID: <0024ABA0-DC00-4B74-AD24-C7707D9F3890@mac.com>
+
+Hello.
+
+I am noticing what appears to be puzzling behavior in R 3.0.1.  If I start R (in Aquamacs, using ESS) and execute a graphics command, R quits.  See below.
+
+If I open a graphics window with quartz() and then try to make a histogram, no problem.  But, graphics() and then dev.off() and then hist(x) will cause R to quit.
+
+If I run R through a terminal as opposed to through Aquamacs, there are no problems.
+
+I am running Mac OS X 10.8.3.
+
+Any thoughts would be appreciate.
+
+Thanks, mh
+
+------------------------------------------
+
+
+
+R version 3.0.1 (2013-05-16) -- "Good Sport"
+Copyright (C) 2013 The R Foundation for Statistical Computing
+Platform: x86_64-apple-darwin10.8.0 (64-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+  Natural language support but running in an English locale
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+> .help.ESS <- help
+> options(STERM='iESS', editor='emacsclient')
+> x <- rnorm(100)
+> hist(x)
+
+Process R finished at Mon May 20 21:39:49 2013
+
+
+From heckmann.mark at gmail.com  Mon May 27 16:50:59 2013
+From: heckmann.mark at gmail.com (Mark Heckmann)
+Date: Mon, 27 May 2013 14:50:59 -0000
+Subject: [R-SIG-Mac] GTK2 problems since R 3.0
+Message-ID: <5132632E-6F01-4E66-8D7E-D3294342BC7A@gmail.com>
+
+An embedded and charset-unspecified text was scrubbed...
+Name: not available
+URL: <https://stat.ethz.ch/pipermail/r-sig-mac/attachments/20130527/ffb407d9/attachment.pl>
+
+From goedman at icloud.com  Wed May 29 23:55:15 2013
+From: goedman at icloud.com (Robert J Goedman)
+Date: Wed, 29 May 2013 21:55:15 -0000
+Subject: [R-SIG-Mac] rgl crashes after one successful draw on R.app
+In-Reply-To: <51A67537.4060505@gmail.com>
+References: <5CB028AD-687D-4A2B-9B12-2E49F784188F@depauw.edu>
+	<51A67537.4060505@gmail.com>
+Message-ID: <97CC5D4B-2F9A-4584-8B44-8D2136FFE771@icloud.com>
+
+Duncan,
+
+Not sure if this helps, but here are 2 screen shots and the crash dump (the latter not from within the debugger). Will probably not make it to the list, but you should get them.
+
+On my system I've noted:
+
+1) The example from Bryan always pretty quickly seem to crash R,
+2) the rgl demos usually takes a bit longer,
+3) I haven't seen it happen using Rcmdr 3d graphics (X.11?).
+
+The crash is always in the dispatch thread 1.
+
+Let me know if other info can be of help, regards,
+Rob J. Goedman
+goedman at icloud.com
+
+
+
+
+
+
+
+
+
+
+
+On May 29, 2013, at 2:37 PM, Duncan Murdoch <murdoch.duncan at gmail.com> wrote:
+
+> On 13-05-29 11:19 AM, Bryan Hanson wrote:
+>> [originally on R-help, reposted here as the most relevent place]
+>> 
+>> NOTE: problem is with R.app, looks OK on command line R
+>> 
+>> This is really odd, and probably 100% local to me, but I'm at a loss as to a next step.
+>> 
+>> After narrowing things down, here's how to reproduce:
+> 
+> I don't see it, but it looks to me like it may be a timing problem.  I'm guessing the destruction of the old window triggers events in the wrong order and leaves rgl in an unstable state.  Unfortunately, without being able to reproduce this, it looks really hard to track down.  Can anyone reproduce it while running in gdb or some other debugger?
+> 
+> Duncan Murdoch
+> 
+>> 
+>> library("rgl")
+>> showSomething <- function() {
+>> 	open3d()
+>> 	points3d(rnorm(10),rnorm(10),rnorm(10))
+>> 	axes3d()
+>> 	title3d('main','sub','xlab','ylab','zlab')
+>> 	}
+>> showSomething() # works as expected.
+>> # Close the current rgl window
+>> showSomething() # crashes R with the following report:
+>> 
+>> *** caught segfault ***
+>> address 0x0, cause 'unknown'
+>> 
+>> Traceback:
+>> 1: .C(rgl_dev_open, success = FALSE)
+>> 2: rgl.open()
+>> 3: open3d()
+>> 4: showSomething()
+>> 
+>> This will probably work fine for any of you, it's so simple and fundamental.  If I don't close the open rgl windows, it doesn't crash, and I can execute the function over and over successfully.  And the same thing happens if I just do the commands inside the function individually.  SessionInfo() below.
+>> 
+>> Perhaps something is corrupt with my X11 window system?  Thanks, Bryan
+>> 
+>> R version 3.0.1 (2013-05-16)
+>> Platform: x86_64-apple-darwin10.8.0 (64-bit)
+>> 
+>> locale:
+>> [1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+>> 
+>> attached base packages:
+>> [1] stats     graphics  grDevices utils     datasets  methods   base
+>> 
+>> other attached packages:
+>> [1] rgl_0.93.940 sos_1.3-5    brew_1.0-6
+>> _______________________________________________
+>> R-SIG-Mac mailing list
+>> R-SIG-Mac at r-project.org
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>> 
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <https://stat.ethz.ch/pipermail/r-sig-mac/attachments/20130529/23edf584/attachment-0004.html>
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: Screen Shot 2013-05-29 at 2.42.44 PM.png
+Type: image/png
+Size: 375656 bytes
+Desc: not available
+URL: <https://stat.ethz.ch/pipermail/r-sig-mac/attachments/20130529/23edf584/attachment-0002.png>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <https://stat.ethz.ch/pipermail/r-sig-mac/attachments/20130529/23edf584/attachment-0005.html>
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: Screen Shot 2013-05-29 at 2.41.12 PM.png
+Type: image/png
+Size: 609685 bytes
+Desc: not available
+URL: <https://stat.ethz.ch/pipermail/r-sig-mac/attachments/20130529/23edf584/attachment-0003.png>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <https://stat.ethz.ch/pipermail/r-sig-mac/attachments/20130529/23edf584/attachment-0006.html>
+-------------- next part --------------
+An embedded and charset-unspecified text was scrubbed...
+Name: details.txt
+URL: <https://stat.ethz.ch/pipermail/r-sig-mac/attachments/20130529/23edf584/attachment-0001.txt>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <https://stat.ethz.ch/pipermail/r-sig-mac/attachments/20130529/23edf584/attachment-0007.html>
+

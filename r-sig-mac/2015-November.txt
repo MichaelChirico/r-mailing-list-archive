@@ -1,0 +1,4487 @@
+From paciorek at stat.berkeley.edu  Mon Nov  2 20:03:29 2015
+From: paciorek at stat.berkeley.edu (Chris Paciorek)
+Date: Mon, 2 Nov 2015 11:03:29 -0800
+Subject: [R-SIG-Mac] value of FLIBS and installation of packages from source
+Message-ID: <CAG=M9Lo+_jmpxfLx67-x1vFUqT+DXFXcYzjDqC0KWhWXdKEmLA@mail.gmail.com>
+
+I'm having trouble installing a number of R packages from source on
+Mac OS X (Yosemite) when the packages reference FLIBS in their
+src/Makevars.
+
+I have what I think is a fairly standard R install on Yosemite -
+installed from R-3.2.2.pkg.
+
+Here's where an example install fails (in this case the 'actuar' package):
+clang -dynamiclib -Wl,-headerpad_max_install_names -undefined
+dynamic_lookup -single_module -multiply_defined suppress
+-L/Library/Frameworks/R.framework/Resources/lib -L/usr/local/lib -o
+actuar.so beta.o burr.o chisq.o dpq.o dpqphtype.o exp.o gamma.o
+genbeta.o genpareto.o hierarc.o init.o invburr.o invexp.o invgamma.o
+invgauss.o invparalogis.o invpareto.o invtrgamma.o invweibull.o
+lgamma.o llogis.o lnorm.o names.o normal.o panjer.o paralogis.o
+pareto.o pareto1.o phtype.o random.o randomphtype.o trbeta.o trgamma.o
+unif.o util.o weibull.o
+-L/Library/Frameworks/R.framework/Resources/lib -lRlapack
+-L/Library/Frameworks/R.framework/Resources/lib -lRblas
+-L/usr/local/lib/gcc/x86_64-apple-darwin13.0.0/4.8.2 -lgfortran
+-lquadmath -lm -F/Library/Frameworks/R.framework/.. -framework R
+-Wl,-framework -Wl,CoreFoundation
+ld: warning: directory not found for option
+'-L/usr/local/lib/gcc/x86_64-apple-darwin13.0.0/4.8.2'
+ld: library not found for -lgfortran
+clang: error: linker command failed with exit code 1 (use -v to see invocation)
+
+Some likely relevant facts:
+
+1)
+/Library/Frameworks/R.framework/Resources/etc/Makeconf has
+FLIBS = -L/usr/local/lib/gcc/x86_64-apple-darwin13.0.0/4.8.2
+-lgfortran -lquadmath -lm
+but /usr/local/lib/gcc does not exist on my machine.
+
+2) libquadmath.0.dylib and libgfortran.3.dylib exist in
+/Library/Framework/R.framework/Resources/lib
+The following kludge allows the 'actuar' package to be installed from source:
+cd /Library/Framework/R.framework/Resources/lib
+ln -s libgfortran.3.dylib libgfortran.dylib
+ln -s libquadmath.0.dylib libquadmath.dylib
+
+albeit of course still with the warning about the nonexistent
+/usr/local/lib/gcc/x86_64-apple-darwin13.0.0/4.8.2
+
+3) Alternatively I can install the gfortran Mac package provided by
+CRAN and manually set FLIBS in Makeconf to point to
+/usr/local/gfortran/lib
+
+So, any ideas why R is being installed such that FLIBS points to a
+non-existent directory? And for packages that don't need the fortran
+compiler, but merely libgfortran, is there a way to install packages
+that have FLIBS in their Makevars without installing the gfortran
+package and monkeying with FLIBS in Makeconf?
+
+I'll note that this is occurring on a few machines I have access to,
+including a new Macbook Air purchased in June 2015, with R and Xcode
+installed thereafter. So it doesn't seem that it is a result of having
+versions of OS X and command line tools from before Yosemite.
+
+I have command line tools installed:
+
+paciorek:/tmp> gcc --version
+Configured with:
+--prefix=/Applications/Xcode.app/Contents/Developer/usr
+--with-gxx-include-dir=/usr/include/c++/4.2.1
+Apple LLVM version 6.1.0 (clang-602.0.49) (based on LLVM 3.6.0svn)
+Target: x86_64-apple-darwin14.3.0
+Thread model: posix
+
+
+Here's sessionInfo():
+
+> sessionInfo()
+R version 3.2.2 (2015-08-14)
+Platform: x86_64-apple-darwin13.4.0 (64-bit)
+Running under: OS X 10.10.3 (Yosemite)
+
+locale:
+[1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+
+attached base packages:
+[1] stats     graphics  grDevices utils     datasets  methods   base
+
+
+thanks,
+Chris
+
+----------------------------------------------------------------------------------------------
+Chris Paciorek
+
+Associate Research Statistician, Lecturer, Statistical Computing Consultant
+
+Office: 495 Evans Hall                      Email: paciorek at stat.berkeley.edu
+Mailing Address:                            Voice: 510-842-6670
+Department of Statistics                    Fax:   510-642-7892
+367 Evans Hall                              Skype: cjpaciorek
+University of California, Berkeley          WWW:
+www.stat.berkeley.edu/~paciorek
+Berkeley, CA 94720 USA                      Permanent forward:
+paciorek at alumni.cmu.edu
+
+
+From simon.urbanek at r-project.org  Mon Nov  2 22:31:00 2015
+From: simon.urbanek at r-project.org (Simon Urbanek)
+Date: Mon, 2 Nov 2015 16:31:00 -0500
+Subject: [R-SIG-Mac] value of FLIBS and installation of packages from
+	source
+In-Reply-To: <CAG=M9Lo+_jmpxfLx67-x1vFUqT+DXFXcYzjDqC0KWhWXdKEmLA@mail.gmail.com>
+References: <CAG=M9Lo+_jmpxfLx67-x1vFUqT+DXFXcYzjDqC0KWhWXdKEmLA@mail.gmail.com>
+Message-ID: <BE49E694-C675-47AA-A981-C6DFD79F6DD6@r-project.org>
+
+Chris,
+
+it seems that you didn't install the necessary Fortran compiler from
+http://r.research.att.com/libs/gfortran-4.8.2-darwin13.tar.bz2
+
+Cheers,
+Simon
+
+
+> On Nov 2, 2015, at 2:03 PM, Chris Paciorek <paciorek at stat.berkeley.edu> wrote:
+> 
+> I'm having trouble installing a number of R packages from source on
+> Mac OS X (Yosemite) when the packages reference FLIBS in their
+> src/Makevars.
+> 
+> I have what I think is a fairly standard R install on Yosemite -
+> installed from R-3.2.2.pkg.
+> 
+> Here's where an example install fails (in this case the 'actuar' package):
+> clang -dynamiclib -Wl,-headerpad_max_install_names -undefined
+> dynamic_lookup -single_module -multiply_defined suppress
+> -L/Library/Frameworks/R.framework/Resources/lib -L/usr/local/lib -o
+> actuar.so beta.o burr.o chisq.o dpq.o dpqphtype.o exp.o gamma.o
+> genbeta.o genpareto.o hierarc.o init.o invburr.o invexp.o invgamma.o
+> invgauss.o invparalogis.o invpareto.o invtrgamma.o invweibull.o
+> lgamma.o llogis.o lnorm.o names.o normal.o panjer.o paralogis.o
+> pareto.o pareto1.o phtype.o random.o randomphtype.o trbeta.o trgamma.o
+> unif.o util.o weibull.o
+> -L/Library/Frameworks/R.framework/Resources/lib -lRlapack
+> -L/Library/Frameworks/R.framework/Resources/lib -lRblas
+> -L/usr/local/lib/gcc/x86_64-apple-darwin13.0.0/4.8.2 -lgfortran
+> -lquadmath -lm -F/Library/Frameworks/R.framework/.. -framework R
+> -Wl,-framework -Wl,CoreFoundation
+> ld: warning: directory not found for option
+> '-L/usr/local/lib/gcc/x86_64-apple-darwin13.0.0/4.8.2'
+> ld: library not found for -lgfortran
+> clang: error: linker command failed with exit code 1 (use -v to see invocation)
+> 
+> Some likely relevant facts:
+> 
+> 1)
+> /Library/Frameworks/R.framework/Resources/etc/Makeconf has
+> FLIBS = -L/usr/local/lib/gcc/x86_64-apple-darwin13.0.0/4.8.2
+> -lgfortran -lquadmath -lm
+> but /usr/local/lib/gcc does not exist on my machine.
+> 
+> 2) libquadmath.0.dylib and libgfortran.3.dylib exist in
+> /Library/Framework/R.framework/Resources/lib
+> The following kludge allows the 'actuar' package to be installed from source:
+> cd /Library/Framework/R.framework/Resources/lib
+> ln -s libgfortran.3.dylib libgfortran.dylib
+> ln -s libquadmath.0.dylib libquadmath.dylib
+> 
+> albeit of course still with the warning about the nonexistent
+> /usr/local/lib/gcc/x86_64-apple-darwin13.0.0/4.8.2
+> 
+> 3) Alternatively I can install the gfortran Mac package provided by
+> CRAN and manually set FLIBS in Makeconf to point to
+> /usr/local/gfortran/lib
+> 
+> So, any ideas why R is being installed such that FLIBS points to a
+> non-existent directory? And for packages that don't need the fortran
+> compiler, but merely libgfortran, is there a way to install packages
+> that have FLIBS in their Makevars without installing the gfortran
+> package and monkeying with FLIBS in Makeconf?
+> 
+> I'll note that this is occurring on a few machines I have access to,
+> including a new Macbook Air purchased in June 2015, with R and Xcode
+> installed thereafter. So it doesn't seem that it is a result of having
+> versions of OS X and command line tools from before Yosemite.
+> 
+> I have command line tools installed:
+> 
+> paciorek:/tmp> gcc --version
+> Configured with:
+> --prefix=/Applications/Xcode.app/Contents/Developer/usr
+> --with-gxx-include-dir=/usr/include/c++/4.2.1
+> Apple LLVM version 6.1.0 (clang-602.0.49) (based on LLVM 3.6.0svn)
+> Target: x86_64-apple-darwin14.3.0
+> Thread model: posix
+> 
+> 
+> Here's sessionInfo():
+> 
+>> sessionInfo()
+> R version 3.2.2 (2015-08-14)
+> Platform: x86_64-apple-darwin13.4.0 (64-bit)
+> Running under: OS X 10.10.3 (Yosemite)
+> 
+> locale:
+> [1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+> 
+> attached base packages:
+> [1] stats     graphics  grDevices utils     datasets  methods   base
+> 
+> 
+> thanks,
+> Chris
+> 
+> ----------------------------------------------------------------------------------------------
+> Chris Paciorek
+> 
+> Associate Research Statistician, Lecturer, Statistical Computing Consultant
+> 
+> Office: 495 Evans Hall                      Email: paciorek at stat.berkeley.edu
+> Mailing Address:                            Voice: 510-842-6670
+> Department of Statistics                    Fax:   510-642-7892
+> 367 Evans Hall                              Skype: cjpaciorek
+> University of California, Berkeley          WWW:
+> www.stat.berkeley.edu/~paciorek
+> Berkeley, CA 94720 USA                      Permanent forward:
+> paciorek at alumni.cmu.edu
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+> 
+
+
+From paciorek at stat.berkeley.edu  Mon Nov  2 22:50:49 2015
+From: paciorek at stat.berkeley.edu (Chris Paciorek)
+Date: Mon, 2 Nov 2015 13:50:49 -0800
+Subject: [R-SIG-Mac] value of FLIBS and installation of packages from
+	source
+In-Reply-To: <BE49E694-C675-47AA-A981-C6DFD79F6DD6@r-project.org>
+References: <CAG=M9Lo+_jmpxfLx67-x1vFUqT+DXFXcYzjDqC0KWhWXdKEmLA@mail.gmail.com>
+	<BE49E694-C675-47AA-A981-C6DFD79F6DD6@r-project.org>
+Message-ID: <CAG=M9Lr-ooa3rYjqf0rzj2nHLYuh1b8_sQRppCE3+=Fk0jyKjw@mail.gmail.com>
+
+Thanks, that worked. But is it a concern that users can't easily
+install a package on OS X from source? Perhaps not since there should
+be Mac binaries for packages on CRAN?
+
+In particular, on CRAN (https://cran.r-project.org/bin/macosx/tools/)
+I was seeing gfortran 4.2.3 and overlooked the note about more recent
+Fortran binaries.  But even in clicking on that link to get to
+http://r.research.att.com/tools/, I don't see the 4.8.2 version.
+Should any of these items be updated?  It's not clear to me how one
+would find 4.8.2 if one didn't know where to look.
+
+
+chris
+
+On Mon, Nov 2, 2015 at 1:31 PM, Simon Urbanek
+<simon.urbanek at r-project.org> wrote:
+> Chris,
+>
+> it seems that you didn't install the necessary Fortran compiler from
+> http://r.research.att.com/libs/gfortran-4.8.2-darwin13.tar.bz2
+>
+> Cheers,
+> Simon
+>
+>
+>> On Nov 2, 2015, at 2:03 PM, Chris Paciorek <paciorek at stat.berkeley.edu> wrote:
+>>
+>> I'm having trouble installing a number of R packages from source on
+>> Mac OS X (Yosemite) when the packages reference FLIBS in their
+>> src/Makevars.
+>>
+>> I have what I think is a fairly standard R install on Yosemite -
+>> installed from R-3.2.2.pkg.
+>>
+>> Here's where an example install fails (in this case the 'actuar' package):
+>> clang -dynamiclib -Wl,-headerpad_max_install_names -undefined
+>> dynamic_lookup -single_module -multiply_defined suppress
+>> -L/Library/Frameworks/R.framework/Resources/lib -L/usr/local/lib -o
+>> actuar.so beta.o burr.o chisq.o dpq.o dpqphtype.o exp.o gamma.o
+>> genbeta.o genpareto.o hierarc.o init.o invburr.o invexp.o invgamma.o
+>> invgauss.o invparalogis.o invpareto.o invtrgamma.o invweibull.o
+>> lgamma.o llogis.o lnorm.o names.o normal.o panjer.o paralogis.o
+>> pareto.o pareto1.o phtype.o random.o randomphtype.o trbeta.o trgamma.o
+>> unif.o util.o weibull.o
+>> -L/Library/Frameworks/R.framework/Resources/lib -lRlapack
+>> -L/Library/Frameworks/R.framework/Resources/lib -lRblas
+>> -L/usr/local/lib/gcc/x86_64-apple-darwin13.0.0/4.8.2 -lgfortran
+>> -lquadmath -lm -F/Library/Frameworks/R.framework/.. -framework R
+>> -Wl,-framework -Wl,CoreFoundation
+>> ld: warning: directory not found for option
+>> '-L/usr/local/lib/gcc/x86_64-apple-darwin13.0.0/4.8.2'
+>> ld: library not found for -lgfortran
+>> clang: error: linker command failed with exit code 1 (use -v to see invocation)
+>>
+>> Some likely relevant facts:
+>>
+>> 1)
+>> /Library/Frameworks/R.framework/Resources/etc/Makeconf has
+>> FLIBS = -L/usr/local/lib/gcc/x86_64-apple-darwin13.0.0/4.8.2
+>> -lgfortran -lquadmath -lm
+>> but /usr/local/lib/gcc does not exist on my machine.
+>>
+>> 2) libquadmath.0.dylib and libgfortran.3.dylib exist in
+>> /Library/Framework/R.framework/Resources/lib
+>> The following kludge allows the 'actuar' package to be installed from source:
+>> cd /Library/Framework/R.framework/Resources/lib
+>> ln -s libgfortran.3.dylib libgfortran.dylib
+>> ln -s libquadmath.0.dylib libquadmath.dylib
+>>
+>> albeit of course still with the warning about the nonexistent
+>> /usr/local/lib/gcc/x86_64-apple-darwin13.0.0/4.8.2
+>>
+>> 3) Alternatively I can install the gfortran Mac package provided by
+>> CRAN and manually set FLIBS in Makeconf to point to
+>> /usr/local/gfortran/lib
+>>
+>> So, any ideas why R is being installed such that FLIBS points to a
+>> non-existent directory? And for packages that don't need the fortran
+>> compiler, but merely libgfortran, is there a way to install packages
+>> that have FLIBS in their Makevars without installing the gfortran
+>> package and monkeying with FLIBS in Makeconf?
+>>
+>> I'll note that this is occurring on a few machines I have access to,
+>> including a new Macbook Air purchased in June 2015, with R and Xcode
+>> installed thereafter. So it doesn't seem that it is a result of having
+>> versions of OS X and command line tools from before Yosemite.
+>>
+>> I have command line tools installed:
+>>
+>> paciorek:/tmp> gcc --version
+>> Configured with:
+>> --prefix=/Applications/Xcode.app/Contents/Developer/usr
+>> --with-gxx-include-dir=/usr/include/c++/4.2.1
+>> Apple LLVM version 6.1.0 (clang-602.0.49) (based on LLVM 3.6.0svn)
+>> Target: x86_64-apple-darwin14.3.0
+>> Thread model: posix
+>>
+>>
+>> Here's sessionInfo():
+>>
+>>> sessionInfo()
+>> R version 3.2.2 (2015-08-14)
+>> Platform: x86_64-apple-darwin13.4.0 (64-bit)
+>> Running under: OS X 10.10.3 (Yosemite)
+>>
+>> locale:
+>> [1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+>>
+>> attached base packages:
+>> [1] stats     graphics  grDevices utils     datasets  methods   base
+>>
+>>
+>> thanks,
+>> Chris
+>>
+>> ----------------------------------------------------------------------------------------------
+>> Chris Paciorek
+>>
+>> Associate Research Statistician, Lecturer, Statistical Computing Consultant
+>>
+>> Office: 495 Evans Hall                      Email: paciorek at stat.berkeley.edu
+>> Mailing Address:                            Voice: 510-842-6670
+>> Department of Statistics                    Fax:   510-642-7892
+>> 367 Evans Hall                              Skype: cjpaciorek
+>> University of California, Berkeley          WWW:
+>> www.stat.berkeley.edu/~paciorek
+>> Berkeley, CA 94720 USA                      Permanent forward:
+>> paciorek at alumni.cmu.edu
+>>
+>> _______________________________________________
+>> R-SIG-Mac mailing list
+>> R-SIG-Mac at r-project.org
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>>
+>
+
+
+From simon.urbanek at r-project.org  Tue Nov  3 00:03:32 2015
+From: simon.urbanek at r-project.org (Simon Urbanek)
+Date: Mon, 2 Nov 2015 18:03:32 -0500
+Subject: [R-SIG-Mac] value of FLIBS and installation of packages from
+	source
+In-Reply-To: <CAG=M9Lr-ooa3rYjqf0rzj2nHLYuh1b8_sQRppCE3+=Fk0jyKjw@mail.gmail.com>
+References: <CAG=M9Lo+_jmpxfLx67-x1vFUqT+DXFXcYzjDqC0KWhWXdKEmLA@mail.gmail.com>
+	<BE49E694-C675-47AA-A981-C6DFD79F6DD6@r-project.org>
+	<CAG=M9Lr-ooa3rYjqf0rzj2nHLYuh1b8_sQRppCE3+=Fk0jyKjw@mail.gmail.com>
+Message-ID: <38BD530D-F82B-4473-B844-4AFA4CC2EE65@r-project.org>
+
+
+> On Nov 2, 2015, at 4:50 PM, Chris Paciorek <paciorek at stat.berkeley.edu> wrote:
+> 
+> Thanks, that worked. But is it a concern that users can't easily
+> install a package on OS X from source? Perhaps not since there should
+> be Mac binaries for packages on CRAN?
+> 
+> In particular, on CRAN (https://cran.r-project.org/bin/macosx/tools/)
+> I was seeing gfortran 4.2.3 and overlooked the note about more recent
+> Fortran binaries.  But even in clicking on that link to get to
+> http://r.research.att.com/tools/, I don't see the 4.8.2 version.
+> Should any of these items be updated?  It's not clear to me how one
+> would find 4.8.2 if one didn't know where to look.
+> 
+
+Either should work - at least last time I checked it did. If I understand your report you didn't have *any* Fortran libraries installed, but you need Fortran to compile Fortran packages -- on CRAN it says
+"GNU Fortran isNOT included (needed if you want to compile packages from sources that contain FORTRAN code) please see the tools directory."
+
+That said, I guess it would be reasonable to provide a pkg for the Mavericks Fortran and add it to the tools as well.
+
+Cheers,
+Simon
+
+
+> 
+> On Mon, Nov 2, 2015 at 1:31 PM, Simon Urbanek
+> <simon.urbanek at r-project.org> wrote:
+>> Chris,
+>> 
+>> it seems that you didn't install the necessary Fortran compiler from
+>> http://r.research.att.com/libs/gfortran-4.8.2-darwin13.tar.bz2
+>> 
+>> Cheers,
+>> Simon
+>> 
+>> 
+>>> On Nov 2, 2015, at 2:03 PM, Chris Paciorek <paciorek at stat.berkeley.edu> wrote:
+>>> 
+>>> I'm having trouble installing a number of R packages from source on
+>>> Mac OS X (Yosemite) when the packages reference FLIBS in their
+>>> src/Makevars.
+>>> 
+>>> I have what I think is a fairly standard R install on Yosemite -
+>>> installed from R-3.2.2.pkg.
+>>> 
+>>> Here's where an example install fails (in this case the 'actuar' package):
+>>> clang -dynamiclib -Wl,-headerpad_max_install_names -undefined
+>>> dynamic_lookup -single_module -multiply_defined suppress
+>>> -L/Library/Frameworks/R.framework/Resources/lib -L/usr/local/lib -o
+>>> actuar.so beta.o burr.o chisq.o dpq.o dpqphtype.o exp.o gamma.o
+>>> genbeta.o genpareto.o hierarc.o init.o invburr.o invexp.o invgamma.o
+>>> invgauss.o invparalogis.o invpareto.o invtrgamma.o invweibull.o
+>>> lgamma.o llogis.o lnorm.o names.o normal.o panjer.o paralogis.o
+>>> pareto.o pareto1.o phtype.o random.o randomphtype.o trbeta.o trgamma.o
+>>> unif.o util.o weibull.o
+>>> -L/Library/Frameworks/R.framework/Resources/lib -lRlapack
+>>> -L/Library/Frameworks/R.framework/Resources/lib -lRblas
+>>> -L/usr/local/lib/gcc/x86_64-apple-darwin13.0.0/4.8.2 -lgfortran
+>>> -lquadmath -lm -F/Library/Frameworks/R.framework/.. -framework R
+>>> -Wl,-framework -Wl,CoreFoundation
+>>> ld: warning: directory not found for option
+>>> '-L/usr/local/lib/gcc/x86_64-apple-darwin13.0.0/4.8.2'
+>>> ld: library not found for -lgfortran
+>>> clang: error: linker command failed with exit code 1 (use -v to see invocation)
+>>> 
+>>> Some likely relevant facts:
+>>> 
+>>> 1)
+>>> /Library/Frameworks/R.framework/Resources/etc/Makeconf has
+>>> FLIBS = -L/usr/local/lib/gcc/x86_64-apple-darwin13.0.0/4.8.2
+>>> -lgfortran -lquadmath -lm
+>>> but /usr/local/lib/gcc does not exist on my machine.
+>>> 
+>>> 2) libquadmath.0.dylib and libgfortran.3.dylib exist in
+>>> /Library/Framework/R.framework/Resources/lib
+>>> The following kludge allows the 'actuar' package to be installed from source:
+>>> cd /Library/Framework/R.framework/Resources/lib
+>>> ln -s libgfortran.3.dylib libgfortran.dylib
+>>> ln -s libquadmath.0.dylib libquadmath.dylib
+>>> 
+>>> albeit of course still with the warning about the nonexistent
+>>> /usr/local/lib/gcc/x86_64-apple-darwin13.0.0/4.8.2
+>>> 
+>>> 3) Alternatively I can install the gfortran Mac package provided by
+>>> CRAN and manually set FLIBS in Makeconf to point to
+>>> /usr/local/gfortran/lib
+>>> 
+>>> So, any ideas why R is being installed such that FLIBS points to a
+>>> non-existent directory? And for packages that don't need the fortran
+>>> compiler, but merely libgfortran, is there a way to install packages
+>>> that have FLIBS in their Makevars without installing the gfortran
+>>> package and monkeying with FLIBS in Makeconf?
+>>> 
+>>> I'll note that this is occurring on a few machines I have access to,
+>>> including a new Macbook Air purchased in June 2015, with R and Xcode
+>>> installed thereafter. So it doesn't seem that it is a result of having
+>>> versions of OS X and command line tools from before Yosemite.
+>>> 
+>>> I have command line tools installed:
+>>> 
+>>> paciorek:/tmp> gcc --version
+>>> Configured with:
+>>> --prefix=/Applications/Xcode.app/Contents/Developer/usr
+>>> --with-gxx-include-dir=/usr/include/c++/4.2.1
+>>> Apple LLVM version 6.1.0 (clang-602.0.49) (based on LLVM 3.6.0svn)
+>>> Target: x86_64-apple-darwin14.3.0
+>>> Thread model: posix
+>>> 
+>>> 
+>>> Here's sessionInfo():
+>>> 
+>>>> sessionInfo()
+>>> R version 3.2.2 (2015-08-14)
+>>> Platform: x86_64-apple-darwin13.4.0 (64-bit)
+>>> Running under: OS X 10.10.3 (Yosemite)
+>>> 
+>>> locale:
+>>> [1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+>>> 
+>>> attached base packages:
+>>> [1] stats     graphics  grDevices utils     datasets  methods   base
+>>> 
+>>> 
+>>> thanks,
+>>> Chris
+>>> 
+>>> ----------------------------------------------------------------------------------------------
+>>> Chris Paciorek
+>>> 
+>>> Associate Research Statistician, Lecturer, Statistical Computing Consultant
+>>> 
+>>> Office: 495 Evans Hall                      Email: paciorek at stat.berkeley.edu
+>>> Mailing Address:                            Voice: 510-842-6670
+>>> Department of Statistics                    Fax:   510-642-7892
+>>> 367 Evans Hall                              Skype: cjpaciorek
+>>> University of California, Berkeley          WWW:
+>>> www.stat.berkeley.edu/~paciorek
+>>> Berkeley, CA 94720 USA                      Permanent forward:
+>>> paciorek at alumni.cmu.edu
+>>> 
+>>> _______________________________________________
+>>> R-SIG-Mac mailing list
+>>> R-SIG-Mac at r-project.org
+>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>>> 
+>> 
+> 
+
+
+From paciorek at stat.berkeley.edu  Tue Nov  3 00:31:28 2015
+From: paciorek at stat.berkeley.edu (Chris Paciorek)
+Date: Mon, 2 Nov 2015 15:31:28 -0800
+Subject: [R-SIG-Mac] value of FLIBS and installation of packages from
+	source
+In-Reply-To: <38BD530D-F82B-4473-B844-4AFA4CC2EE65@r-project.org>
+References: <CAG=M9Lo+_jmpxfLx67-x1vFUqT+DXFXcYzjDqC0KWhWXdKEmLA@mail.gmail.com>
+	<BE49E694-C675-47AA-A981-C6DFD79F6DD6@r-project.org>
+	<CAG=M9Lr-ooa3rYjqf0rzj2nHLYuh1b8_sQRppCE3+=Fk0jyKjw@mail.gmail.com>
+	<38BD530D-F82B-4473-B844-4AFA4CC2EE65@r-project.org>
+Message-ID: <CAG=M9LpiZ5BP_FpWUCEDuHEijYpR9GO-myjGTjhVVzV52-vaww@mail.gmail.com>
+
+I may have been unclear in my original message -- I had gfortran 4.2.3
+installed previously and was having the problem with that older
+version installed.  With 4.2.3, if I _manually_ set FLIBS in
+etc/Makeconf to point to /usr/local/gfortran/lib, then the problem
+went away.
+
+Once I installed 4.8.2, things were fine without having to change
+FLIBS in etc/Makeconf.
+
+chris
+
+On Mon, Nov 2, 2015 at 3:03 PM, Simon Urbanek
+<simon.urbanek at r-project.org> wrote:
+>
+>> On Nov 2, 2015, at 4:50 PM, Chris Paciorek <paciorek at stat.berkeley.edu> wrote:
+>>
+>> Thanks, that worked. But is it a concern that users can't easily
+>> install a package on OS X from source? Perhaps not since there should
+>> be Mac binaries for packages on CRAN?
+>>
+>> In particular, on CRAN (https://cran.r-project.org/bin/macosx/tools/)
+>> I was seeing gfortran 4.2.3 and overlooked the note about more recent
+>> Fortran binaries.  But even in clicking on that link to get to
+>> http://r.research.att.com/tools/, I don't see the 4.8.2 version.
+>> Should any of these items be updated?  It's not clear to me how one
+>> would find 4.8.2 if one didn't know where to look.
+>>
+>
+> Either should work - at least last time I checked it did. If I understand your report you didn't have *any* Fortran libraries installed, but you need Fortran to compile Fortran packages -- on CRAN it says
+> "GNU Fortran isNOT included (needed if you want to compile packages from sources that contain FORTRAN code) please see the tools directory."
+>
+> That said, I guess it would be reasonable to provide a pkg for the Mavericks Fortran and add it to the tools as well.
+>
+> Cheers,
+> Simon
+>
+>
+>>
+>> On Mon, Nov 2, 2015 at 1:31 PM, Simon Urbanek
+>> <simon.urbanek at r-project.org> wrote:
+>>> Chris,
+>>>
+>>> it seems that you didn't install the necessary Fortran compiler from
+>>> http://r.research.att.com/libs/gfortran-4.8.2-darwin13.tar.bz2
+>>>
+>>> Cheers,
+>>> Simon
+>>>
+>>>
+>>>> On Nov 2, 2015, at 2:03 PM, Chris Paciorek <paciorek at stat.berkeley.edu> wrote:
+>>>>
+>>>> I'm having trouble installing a number of R packages from source on
+>>>> Mac OS X (Yosemite) when the packages reference FLIBS in their
+>>>> src/Makevars.
+>>>>
+>>>> I have what I think is a fairly standard R install on Yosemite -
+>>>> installed from R-3.2.2.pkg.
+>>>>
+>>>> Here's where an example install fails (in this case the 'actuar' package):
+>>>> clang -dynamiclib -Wl,-headerpad_max_install_names -undefined
+>>>> dynamic_lookup -single_module -multiply_defined suppress
+>>>> -L/Library/Frameworks/R.framework/Resources/lib -L/usr/local/lib -o
+>>>> actuar.so beta.o burr.o chisq.o dpq.o dpqphtype.o exp.o gamma.o
+>>>> genbeta.o genpareto.o hierarc.o init.o invburr.o invexp.o invgamma.o
+>>>> invgauss.o invparalogis.o invpareto.o invtrgamma.o invweibull.o
+>>>> lgamma.o llogis.o lnorm.o names.o normal.o panjer.o paralogis.o
+>>>> pareto.o pareto1.o phtype.o random.o randomphtype.o trbeta.o trgamma.o
+>>>> unif.o util.o weibull.o
+>>>> -L/Library/Frameworks/R.framework/Resources/lib -lRlapack
+>>>> -L/Library/Frameworks/R.framework/Resources/lib -lRblas
+>>>> -L/usr/local/lib/gcc/x86_64-apple-darwin13.0.0/4.8.2 -lgfortran
+>>>> -lquadmath -lm -F/Library/Frameworks/R.framework/.. -framework R
+>>>> -Wl,-framework -Wl,CoreFoundation
+>>>> ld: warning: directory not found for option
+>>>> '-L/usr/local/lib/gcc/x86_64-apple-darwin13.0.0/4.8.2'
+>>>> ld: library not found for -lgfortran
+>>>> clang: error: linker command failed with exit code 1 (use -v to see invocation)
+>>>>
+>>>> Some likely relevant facts:
+>>>>
+>>>> 1)
+>>>> /Library/Frameworks/R.framework/Resources/etc/Makeconf has
+>>>> FLIBS = -L/usr/local/lib/gcc/x86_64-apple-darwin13.0.0/4.8.2
+>>>> -lgfortran -lquadmath -lm
+>>>> but /usr/local/lib/gcc does not exist on my machine.
+>>>>
+>>>> 2) libquadmath.0.dylib and libgfortran.3.dylib exist in
+>>>> /Library/Framework/R.framework/Resources/lib
+>>>> The following kludge allows the 'actuar' package to be installed from source:
+>>>> cd /Library/Framework/R.framework/Resources/lib
+>>>> ln -s libgfortran.3.dylib libgfortran.dylib
+>>>> ln -s libquadmath.0.dylib libquadmath.dylib
+>>>>
+>>>> albeit of course still with the warning about the nonexistent
+>>>> /usr/local/lib/gcc/x86_64-apple-darwin13.0.0/4.8.2
+>>>>
+>>>> 3) Alternatively I can install the gfortran Mac package provided by
+>>>> CRAN and manually set FLIBS in Makeconf to point to
+>>>> /usr/local/gfortran/lib
+>>>>
+>>>> So, any ideas why R is being installed such that FLIBS points to a
+>>>> non-existent directory? And for packages that don't need the fortran
+>>>> compiler, but merely libgfortran, is there a way to install packages
+>>>> that have FLIBS in their Makevars without installing the gfortran
+>>>> package and monkeying with FLIBS in Makeconf?
+>>>>
+>>>> I'll note that this is occurring on a few machines I have access to,
+>>>> including a new Macbook Air purchased in June 2015, with R and Xcode
+>>>> installed thereafter. So it doesn't seem that it is a result of having
+>>>> versions of OS X and command line tools from before Yosemite.
+>>>>
+>>>> I have command line tools installed:
+>>>>
+>>>> paciorek:/tmp> gcc --version
+>>>> Configured with:
+>>>> --prefix=/Applications/Xcode.app/Contents/Developer/usr
+>>>> --with-gxx-include-dir=/usr/include/c++/4.2.1
+>>>> Apple LLVM version 6.1.0 (clang-602.0.49) (based on LLVM 3.6.0svn)
+>>>> Target: x86_64-apple-darwin14.3.0
+>>>> Thread model: posix
+>>>>
+>>>>
+>>>> Here's sessionInfo():
+>>>>
+>>>>> sessionInfo()
+>>>> R version 3.2.2 (2015-08-14)
+>>>> Platform: x86_64-apple-darwin13.4.0 (64-bit)
+>>>> Running under: OS X 10.10.3 (Yosemite)
+>>>>
+>>>> locale:
+>>>> [1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+>>>>
+>>>> attached base packages:
+>>>> [1] stats     graphics  grDevices utils     datasets  methods   base
+>>>>
+>>>>
+>>>> thanks,
+>>>> Chris
+>>>>
+>>>> ----------------------------------------------------------------------------------------------
+>>>> Chris Paciorek
+>>>>
+>>>> Associate Research Statistician, Lecturer, Statistical Computing Consultant
+>>>>
+>>>> Office: 495 Evans Hall                      Email: paciorek at stat.berkeley.edu
+>>>> Mailing Address:                            Voice: 510-842-6670
+>>>> Department of Statistics                    Fax:   510-642-7892
+>>>> 367 Evans Hall                              Skype: cjpaciorek
+>>>> University of California, Berkeley          WWW:
+>>>> www.stat.berkeley.edu/~paciorek
+>>>> Berkeley, CA 94720 USA                      Permanent forward:
+>>>> paciorek at alumni.cmu.edu
+>>>>
+>>>> _______________________________________________
+>>>> R-SIG-Mac mailing list
+>>>> R-SIG-Mac at r-project.org
+>>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>>>>
+>>>
+>>
+>
+
+
+From simon.urbanek at r-project.org  Tue Nov  3 03:35:24 2015
+From: simon.urbanek at r-project.org (Simon Urbanek)
+Date: Mon, 2 Nov 2015 21:35:24 -0500
+Subject: [R-SIG-Mac] value of FLIBS and installation of packages from
+	source
+In-Reply-To: <CAG=M9LpiZ5BP_FpWUCEDuHEijYpR9GO-myjGTjhVVzV52-vaww@mail.gmail.com>
+References: <CAG=M9Lo+_jmpxfLx67-x1vFUqT+DXFXcYzjDqC0KWhWXdKEmLA@mail.gmail.com>
+	<BE49E694-C675-47AA-A981-C6DFD79F6DD6@r-project.org>
+	<CAG=M9Lr-ooa3rYjqf0rzj2nHLYuh1b8_sQRppCE3+=Fk0jyKjw@mail.gmail.com>
+	<38BD530D-F82B-4473-B844-4AFA4CC2EE65@r-project.org>
+	<CAG=M9LpiZ5BP_FpWUCEDuHEijYpR9GO-myjGTjhVVzV52-vaww@mail.gmail.com>
+Message-ID: <898AB722-405C-4282-B25B-5F1FE0A7B307@r-project.org>
+
+
+On Nov 2, 2015, at 6:31 PM, Chris Paciorek <paciorek at stat.berkeley.edu> wrote:
+
+> I may have been unclear in my original message -- I had gfortran 4.2.3
+> installed previously and was having the problem with that older
+> version installed.  With 4.2.3, if I _manually_ set FLIBS in
+> etc/Makeconf to point to /usr/local/gfortran/lib, then the problem
+> went away.
+> 
+
+... but that is *not* what the CRAN Fortran uses - so I guess you had different Fortran installed - which is why it didn't work. I suspect that if you had actually [re?]installed the Fortran from Tools it would work, but you [or some script] have possibly removed the libraries from /usr/local/lib or had a different Fortran which is why you got the error.
+
+Cheers,
+Simon
+
+
+> Once I installed 4.8.2, things were fine without having to change
+> FLIBS in etc/Makeconf.
+> 
+> chris
+> 
+> On Mon, Nov 2, 2015 at 3:03 PM, Simon Urbanek
+> <simon.urbanek at r-project.org> wrote:
+>> 
+>>> On Nov 2, 2015, at 4:50 PM, Chris Paciorek <paciorek at stat.berkeley.edu> wrote:
+>>> 
+>>> Thanks, that worked. But is it a concern that users can't easily
+>>> install a package on OS X from source? Perhaps not since there should
+>>> be Mac binaries for packages on CRAN?
+>>> 
+>>> In particular, on CRAN (https://cran.r-project.org/bin/macosx/tools/)
+>>> I was seeing gfortran 4.2.3 and overlooked the note about more recent
+>>> Fortran binaries.  But even in clicking on that link to get to
+>>> http://r.research.att.com/tools/, I don't see the 4.8.2 version.
+>>> Should any of these items be updated?  It's not clear to me how one
+>>> would find 4.8.2 if one didn't know where to look.
+>>> 
+>> 
+>> Either should work - at least last time I checked it did. If I understand your report you didn't have *any* Fortran libraries installed, but you need Fortran to compile Fortran packages -- on CRAN it says
+>> "GNU Fortran isNOT included (needed if you want to compile packages from sources that contain FORTRAN code) please see the tools directory."
+>> 
+>> That said, I guess it would be reasonable to provide a pkg for the Mavericks Fortran and add it to the tools as well.
+>> 
+>> Cheers,
+>> Simon
+>> 
+>> 
+>>> 
+>>> On Mon, Nov 2, 2015 at 1:31 PM, Simon Urbanek
+>>> <simon.urbanek at r-project.org> wrote:
+>>>> Chris,
+>>>> 
+>>>> it seems that you didn't install the necessary Fortran compiler from
+>>>> http://r.research.att.com/libs/gfortran-4.8.2-darwin13.tar.bz2
+>>>> 
+>>>> Cheers,
+>>>> Simon
+>>>> 
+>>>> 
+>>>>> On Nov 2, 2015, at 2:03 PM, Chris Paciorek <paciorek at stat.berkeley.edu> wrote:
+>>>>> 
+>>>>> I'm having trouble installing a number of R packages from source on
+>>>>> Mac OS X (Yosemite) when the packages reference FLIBS in their
+>>>>> src/Makevars.
+>>>>> 
+>>>>> I have what I think is a fairly standard R install on Yosemite -
+>>>>> installed from R-3.2.2.pkg.
+>>>>> 
+>>>>> Here's where an example install fails (in this case the 'actuar' package):
+>>>>> clang -dynamiclib -Wl,-headerpad_max_install_names -undefined
+>>>>> dynamic_lookup -single_module -multiply_defined suppress
+>>>>> -L/Library/Frameworks/R.framework/Resources/lib -L/usr/local/lib -o
+>>>>> actuar.so beta.o burr.o chisq.o dpq.o dpqphtype.o exp.o gamma.o
+>>>>> genbeta.o genpareto.o hierarc.o init.o invburr.o invexp.o invgamma.o
+>>>>> invgauss.o invparalogis.o invpareto.o invtrgamma.o invweibull.o
+>>>>> lgamma.o llogis.o lnorm.o names.o normal.o panjer.o paralogis.o
+>>>>> pareto.o pareto1.o phtype.o random.o randomphtype.o trbeta.o trgamma.o
+>>>>> unif.o util.o weibull.o
+>>>>> -L/Library/Frameworks/R.framework/Resources/lib -lRlapack
+>>>>> -L/Library/Frameworks/R.framework/Resources/lib -lRblas
+>>>>> -L/usr/local/lib/gcc/x86_64-apple-darwin13.0.0/4.8.2 -lgfortran
+>>>>> -lquadmath -lm -F/Library/Frameworks/R.framework/.. -framework R
+>>>>> -Wl,-framework -Wl,CoreFoundation
+>>>>> ld: warning: directory not found for option
+>>>>> '-L/usr/local/lib/gcc/x86_64-apple-darwin13.0.0/4.8.2'
+>>>>> ld: library not found for -lgfortran
+>>>>> clang: error: linker command failed with exit code 1 (use -v to see invocation)
+>>>>> 
+>>>>> Some likely relevant facts:
+>>>>> 
+>>>>> 1)
+>>>>> /Library/Frameworks/R.framework/Resources/etc/Makeconf has
+>>>>> FLIBS = -L/usr/local/lib/gcc/x86_64-apple-darwin13.0.0/4.8.2
+>>>>> -lgfortran -lquadmath -lm
+>>>>> but /usr/local/lib/gcc does not exist on my machine.
+>>>>> 
+>>>>> 2) libquadmath.0.dylib and libgfortran.3.dylib exist in
+>>>>> /Library/Framework/R.framework/Resources/lib
+>>>>> The following kludge allows the 'actuar' package to be installed from source:
+>>>>> cd /Library/Framework/R.framework/Resources/lib
+>>>>> ln -s libgfortran.3.dylib libgfortran.dylib
+>>>>> ln -s libquadmath.0.dylib libquadmath.dylib
+>>>>> 
+>>>>> albeit of course still with the warning about the nonexistent
+>>>>> /usr/local/lib/gcc/x86_64-apple-darwin13.0.0/4.8.2
+>>>>> 
+>>>>> 3) Alternatively I can install the gfortran Mac package provided by
+>>>>> CRAN and manually set FLIBS in Makeconf to point to
+>>>>> /usr/local/gfortran/lib
+>>>>> 
+>>>>> So, any ideas why R is being installed such that FLIBS points to a
+>>>>> non-existent directory? And for packages that don't need the fortran
+>>>>> compiler, but merely libgfortran, is there a way to install packages
+>>>>> that have FLIBS in their Makevars without installing the gfortran
+>>>>> package and monkeying with FLIBS in Makeconf?
+>>>>> 
+>>>>> I'll note that this is occurring on a few machines I have access to,
+>>>>> including a new Macbook Air purchased in June 2015, with R and Xcode
+>>>>> installed thereafter. So it doesn't seem that it is a result of having
+>>>>> versions of OS X and command line tools from before Yosemite.
+>>>>> 
+>>>>> I have command line tools installed:
+>>>>> 
+>>>>> paciorek:/tmp> gcc --version
+>>>>> Configured with:
+>>>>> --prefix=/Applications/Xcode.app/Contents/Developer/usr
+>>>>> --with-gxx-include-dir=/usr/include/c++/4.2.1
+>>>>> Apple LLVM version 6.1.0 (clang-602.0.49) (based on LLVM 3.6.0svn)
+>>>>> Target: x86_64-apple-darwin14.3.0
+>>>>> Thread model: posix
+>>>>> 
+>>>>> 
+>>>>> Here's sessionInfo():
+>>>>> 
+>>>>>> sessionInfo()
+>>>>> R version 3.2.2 (2015-08-14)
+>>>>> Platform: x86_64-apple-darwin13.4.0 (64-bit)
+>>>>> Running under: OS X 10.10.3 (Yosemite)
+>>>>> 
+>>>>> locale:
+>>>>> [1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+>>>>> 
+>>>>> attached base packages:
+>>>>> [1] stats     graphics  grDevices utils     datasets  methods   base
+>>>>> 
+>>>>> 
+>>>>> thanks,
+>>>>> Chris
+>>>>> 
+>>>>> ----------------------------------------------------------------------------------------------
+>>>>> Chris Paciorek
+>>>>> 
+>>>>> Associate Research Statistician, Lecturer, Statistical Computing Consultant
+>>>>> 
+>>>>> Office: 495 Evans Hall                      Email: paciorek at stat.berkeley.edu
+>>>>> Mailing Address:                            Voice: 510-842-6670
+>>>>> Department of Statistics                    Fax:   510-642-7892
+>>>>> 367 Evans Hall                              Skype: cjpaciorek
+>>>>> University of California, Berkeley          WWW:
+>>>>> www.stat.berkeley.edu/~paciorek
+>>>>> Berkeley, CA 94720 USA                      Permanent forward:
+>>>>> paciorek at alumni.cmu.edu
+>>>>> 
+>>>>> _______________________________________________
+>>>>> R-SIG-Mac mailing list
+>>>>> R-SIG-Mac at r-project.org
+>>>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>>>>> 
+>>>> 
+>>> 
+>> 
+> 
+
+
+From paciorek at stat.berkeley.edu  Tue Nov  3 04:31:22 2015
+From: paciorek at stat.berkeley.edu (Chris Paciorek)
+Date: Mon, 2 Nov 2015 19:31:22 -0800
+Subject: [R-SIG-Mac] value of FLIBS and installation of packages from
+	source
+In-Reply-To: <898AB722-405C-4282-B25B-5F1FE0A7B307@r-project.org>
+References: <CAG=M9Lo+_jmpxfLx67-x1vFUqT+DXFXcYzjDqC0KWhWXdKEmLA@mail.gmail.com>
+	<BE49E694-C675-47AA-A981-C6DFD79F6DD6@r-project.org>
+	<CAG=M9Lr-ooa3rYjqf0rzj2nHLYuh1b8_sQRppCE3+=Fk0jyKjw@mail.gmail.com>
+	<38BD530D-F82B-4473-B844-4AFA4CC2EE65@r-project.org>
+	<CAG=M9LpiZ5BP_FpWUCEDuHEijYpR9GO-myjGTjhVVzV52-vaww@mail.gmail.com>
+	<898AB722-405C-4282-B25B-5F1FE0A7B307@r-project.org>
+Message-ID: <CAG=M9LoxDrNdYaMijiwoiNGbKxToApMHwco6R2E47YGv+-i1zw@mail.gmail.com>
+
+Yes, good point, I think on one of my machines I did have gfortran
+from a different source.
+
+That said, on a different machine, I had Xcode and R installed but not
+gfortran.  So I just now installed the 4.2.3 gfortran from CRAN, and as
+seen below, FLIBS is still pointing to a non-existent directory and
+while libgfortran.dylib is now available, libquadmath.dylib is not, so
+any installation from source of a package that uses FLIBS will fail
+(and will also warn about the non-existing
+/usr/local/lib/gcc/x86_64-apple-darwin13.0.0). That was with R 3.2.0.
+I also tried installing R 3.2.2 after gfortran 4.2.3 was already
+installed and FLIBS is still pointing to the non-existent location.
+(I'm guessing
+FLIBS in etc/Makeconf is being set based on the OS X version and
+not based on any looking for gfortran on the user's system.)
+
+So am I misreading things that the 4.2.3 gfortran provided by R is not
+fully compatible with R on recent OS X versions and that installing
+FLIBS-reliant packages from source will generally fail unless one gets
+the 4.8.2 gfortran?  If that is the case, I do think it would be
+helpful if you could provide the 4.8.2 gfortran as the default so that
+users who try to install FLIBS-reliant packages from source will be
+able to.
+
+chris
+
+===================
+
+paciorek at glinda:~/Downloads> R CMD config FLIBS
+-L/usr/local/lib/gcc/x86_64-apple-darwin13.0.0/4.8.2 -lgfortran -lquadmath -lm
+
+paciorek at glinda:~/Downloads> ls /usr/local/lib/gcc
+i686-apple-darwin8    powerpc-apple-darwin8
+
+paciorek at glinda:~/Downloads> ls /usr/local/lib/libgfortran*
+/usr/local/lib/libgfortran.2.0.0.dylib /usr/local/lib/libgfortran.dylib
+/usr/local/lib/libgfortran.2.dylib     /usr/local/lib/libgfortran.la
+/usr/local/lib/libgfortran.a
+
+paciorek at glinda:~/Downloads> ls /usr/local/lib/libquadmath*
+ls: /usr/local/lib/libquadmath*: No such file or directory
+
+On Mon, Nov 2, 2015 at 6:35 PM, Simon Urbanek
+<simon.urbanek at r-project.org> wrote:
+>
+> On Nov 2, 2015, at 6:31 PM, Chris Paciorek <paciorek at stat.berkeley.edu> wrote:
+>
+>> I may have been unclear in my original message -- I had gfortran 4.2.3
+>> installed previously and was having the problem with that older
+>> version installed.  With 4.2.3, if I _manually_ set FLIBS in
+>> etc/Makeconf to point to /usr/local/gfortran/lib, then the problem
+>> went away.
+>>
+>
+> ... but that is *not* what the CRAN Fortran uses - so I guess you had different Fortran installed - which is why it didn't work. I suspect that if you had actually [re?]installed the Fortran from Tools it would work, but you [or some script] have possibly removed the libraries from /usr/local/lib or had a different Fortran which is why you got the error.
+>
+> Cheers,
+> Simon
+>
+>
+>> Once I installed 4.8.2, things were fine without having to change
+>> FLIBS in etc/Makeconf.
+>>
+>> chris
+>>
+>> On Mon, Nov 2, 2015 at 3:03 PM, Simon Urbanek
+>> <simon.urbanek at r-project.org> wrote:
+>>>
+>>>> On Nov 2, 2015, at 4:50 PM, Chris Paciorek <paciorek at stat.berkeley.edu> wrote:
+>>>>
+>>>> Thanks, that worked. But is it a concern that users can't easily
+>>>> install a package on OS X from source? Perhaps not since there should
+>>>> be Mac binaries for packages on CRAN?
+>>>>
+>>>> In particular, on CRAN (https://cran.r-project.org/bin/macosx/tools/)
+>>>> I was seeing gfortran 4.2.3 and overlooked the note about more recent
+>>>> Fortran binaries.  But even in clicking on that link to get to
+>>>> http://r.research.att.com/tools/, I don't see the 4.8.2 version.
+>>>> Should any of these items be updated?  It's not clear to me how one
+>>>> would find 4.8.2 if one didn't know where to look.
+>>>>
+>>>
+>>> Either should work - at least last time I checked it did. If I understand your report you didn't have *any* Fortran libraries installed, but you need Fortran to compile Fortran packages -- on CRAN it says
+>>> "GNU Fortran isNOT included (needed if you want to compile packages from sources that contain FORTRAN code) please see the tools directory."
+>>>
+>>> That said, I guess it would be reasonable to provide a pkg for the Mavericks Fortran and add it to the tools as well.
+>>>
+>>> Cheers,
+>>> Simon
+>>>
+>>>
+>>>>
+>>>> On Mon, Nov 2, 2015 at 1:31 PM, Simon Urbanek
+>>>> <simon.urbanek at r-project.org> wrote:
+>>>>> Chris,
+>>>>>
+>>>>> it seems that you didn't install the necessary Fortran compiler from
+>>>>> http://r.research.att.com/libs/gfortran-4.8.2-darwin13.tar.bz2
+>>>>>
+>>>>> Cheers,
+>>>>> Simon
+>>>>>
+>>>>>
+>>>>>> On Nov 2, 2015, at 2:03 PM, Chris Paciorek <paciorek at stat.berkeley.edu> wrote:
+>>>>>>
+>>>>>> I'm having trouble installing a number of R packages from source on
+>>>>>> Mac OS X (Yosemite) when the packages reference FLIBS in their
+>>>>>> src/Makevars.
+>>>>>>
+>>>>>> I have what I think is a fairly standard R install on Yosemite -
+>>>>>> installed from R-3.2.2.pkg.
+>>>>>>
+>>>>>> Here's where an example install fails (in this case the 'actuar' package):
+>>>>>> clang -dynamiclib -Wl,-headerpad_max_install_names -undefined
+>>>>>> dynamic_lookup -single_module -multiply_defined suppress
+>>>>>> -L/Library/Frameworks/R.framework/Resources/lib -L/usr/local/lib -o
+>>>>>> actuar.so beta.o burr.o chisq.o dpq.o dpqphtype.o exp.o gamma.o
+>>>>>> genbeta.o genpareto.o hierarc.o init.o invburr.o invexp.o invgamma.o
+>>>>>> invgauss.o invparalogis.o invpareto.o invtrgamma.o invweibull.o
+>>>>>> lgamma.o llogis.o lnorm.o names.o normal.o panjer.o paralogis.o
+>>>>>> pareto.o pareto1.o phtype.o random.o randomphtype.o trbeta.o trgamma.o
+>>>>>> unif.o util.o weibull.o
+>>>>>> -L/Library/Frameworks/R.framework/Resources/lib -lRlapack
+>>>>>> -L/Library/Frameworks/R.framework/Resources/lib -lRblas
+>>>>>> -L/usr/local/lib/gcc/x86_64-apple-darwin13.0.0/4.8.2 -lgfortran
+>>>>>> -lquadmath -lm -F/Library/Frameworks/R.framework/.. -framework R
+>>>>>> -Wl,-framework -Wl,CoreFoundation
+>>>>>> ld: warning: directory not found for option
+>>>>>> '-L/usr/local/lib/gcc/x86_64-apple-darwin13.0.0/4.8.2'
+>>>>>> ld: library not found for -lgfortran
+>>>>>> clang: error: linker command failed with exit code 1 (use -v to see invocation)
+>>>>>>
+>>>>>> Some likely relevant facts:
+>>>>>>
+>>>>>> 1)
+>>>>>> /Library/Frameworks/R.framework/Resources/etc/Makeconf has
+>>>>>> FLIBS = -L/usr/local/lib/gcc/x86_64-apple-darwin13.0.0/4.8.2
+>>>>>> -lgfortran -lquadmath -lm
+>>>>>> but /usr/local/lib/gcc does not exist on my machine.
+>>>>>>
+>>>>>> 2) libquadmath.0.dylib and libgfortran.3.dylib exist in
+>>>>>> /Library/Framework/R.framework/Resources/lib
+>>>>>> The following kludge allows the 'actuar' package to be installed from source:
+>>>>>> cd /Library/Framework/R.framework/Resources/lib
+>>>>>> ln -s libgfortran.3.dylib libgfortran.dylib
+>>>>>> ln -s libquadmath.0.dylib libquadmath.dylib
+>>>>>>
+>>>>>> albeit of course still with the warning about the nonexistent
+>>>>>> /usr/local/lib/gcc/x86_64-apple-darwin13.0.0/4.8.2
+>>>>>>
+>>>>>> 3) Alternatively I can install the gfortran Mac package provided by
+>>>>>> CRAN and manually set FLIBS in Makeconf to point to
+>>>>>> /usr/local/gfortran/lib
+>>>>>>
+>>>>>> So, any ideas why R is being installed such that FLIBS points to a
+>>>>>> non-existent directory? And for packages that don't need the fortran
+>>>>>> compiler, but merely libgfortran, is there a way to install packages
+>>>>>> that have FLIBS in their Makevars without installing the gfortran
+>>>>>> package and monkeying with FLIBS in Makeconf?
+>>>>>>
+>>>>>> I'll note that this is occurring on a few machines I have access to,
+>>>>>> including a new Macbook Air purchased in June 2015, with R and Xcode
+>>>>>> installed thereafter. So it doesn't seem that it is a result of having
+>>>>>> versions of OS X and command line tools from before Yosemite.
+>>>>>>
+>>>>>> I have command line tools installed:
+>>>>>>
+>>>>>> paciorek:/tmp> gcc --version
+>>>>>> Configured with:
+>>>>>> --prefix=/Applications/Xcode.app/Contents/Developer/usr
+>>>>>> --with-gxx-include-dir=/usr/include/c++/4.2.1
+>>>>>> Apple LLVM version 6.1.0 (clang-602.0.49) (based on LLVM 3.6.0svn)
+>>>>>> Target: x86_64-apple-darwin14.3.0
+>>>>>> Thread model: posix
+>>>>>>
+>>>>>>
+>>>>>> Here's sessionInfo():
+>>>>>>
+>>>>>>> sessionInfo()
+>>>>>> R version 3.2.2 (2015-08-14)
+>>>>>> Platform: x86_64-apple-darwin13.4.0 (64-bit)
+>>>>>> Running under: OS X 10.10.3 (Yosemite)
+>>>>>>
+>>>>>> locale:
+>>>>>> [1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+>>>>>>
+>>>>>> attached base packages:
+>>>>>> [1] stats     graphics  grDevices utils     datasets  methods   base
+>>>>>>
+>>>>>>
+>>>>>> thanks,
+>>>>>> Chris
+>>>>>>
+>>>>>> ----------------------------------------------------------------------------------------------
+>>>>>> Chris Paciorek
+>>>>>>
+>>>>>> Associate Research Statistician, Lecturer, Statistical Computing Consultant
+>>>>>>
+>>>>>> Office: 495 Evans Hall                      Email: paciorek at stat.berkeley.edu
+>>>>>> Mailing Address:                            Voice: 510-842-6670
+>>>>>> Department of Statistics                    Fax:   510-642-7892
+>>>>>> 367 Evans Hall                              Skype: cjpaciorek
+>>>>>> University of California, Berkeley          WWW:
+>>>>>> www.stat.berkeley.edu/~paciorek
+>>>>>> Berkeley, CA 94720 USA                      Permanent forward:
+>>>>>> paciorek at alumni.cmu.edu
+>>>>>>
+>>>>>> _______________________________________________
+>>>>>> R-SIG-Mac mailing list
+>>>>>> R-SIG-Mac at r-project.org
+>>>>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>>>>>>
+>>>>>
+>>>>
+>>>
+>>
+>
+
+
+From kevinushey at gmail.com  Tue Nov  3 06:07:30 2015
+From: kevinushey at gmail.com (Kevin Ushey)
+Date: Mon, 2 Nov 2015 21:07:30 -0800
+Subject: [R-SIG-Mac] value of FLIBS and installation of packages from
+	source
+In-Reply-To: <CAG=M9LoxDrNdYaMijiwoiNGbKxToApMHwco6R2E47YGv+-i1zw@mail.gmail.com>
+References: <CAG=M9Lo+_jmpxfLx67-x1vFUqT+DXFXcYzjDqC0KWhWXdKEmLA@mail.gmail.com>
+	<BE49E694-C675-47AA-A981-C6DFD79F6DD6@r-project.org>
+	<CAG=M9Lr-ooa3rYjqf0rzj2nHLYuh1b8_sQRppCE3+=Fk0jyKjw@mail.gmail.com>
+	<38BD530D-F82B-4473-B844-4AFA4CC2EE65@r-project.org>
+	<CAG=M9LpiZ5BP_FpWUCEDuHEijYpR9GO-myjGTjhVVzV52-vaww@mail.gmail.com>
+	<898AB722-405C-4282-B25B-5F1FE0A7B307@r-project.org>
+	<CAG=M9LoxDrNdYaMijiwoiNGbKxToApMHwco6R2E47YGv+-i1zw@mail.gmail.com>
+Message-ID: <CAJXgQP3YHVj2E=AaiZ7=BhHN8qUfVYyhM_gEUuuXh0A5CVBtLA@mail.gmail.com>
+
+My understanding is that gfortran 4.2.3 was used with CRAN R built
+with pre-Mavericks OSes (ie, before Apple made the move from gcc to
+clang); nowadays gfortran 4.8.2 is used. Considering that you're on
+Yosemite, you want to be installing gfortran 4.8.2.
+
+Unfortunately, this information is not very well advertised on the
+tools pages; it would be helpful if these pages were updated:
+
+   https://cran.r-project.org/bin/macosx/tools/
+   http://r.research.att.com/tools/
+
+Best,
+Kevin
+
+On Mon, Nov 2, 2015 at 7:31 PM, Chris Paciorek
+<paciorek at stat.berkeley.edu> wrote:
+> Yes, good point, I think on one of my machines I did have gfortran
+> from a different source.
+>
+> That said, on a different machine, I had Xcode and R installed but not
+> gfortran.  So I just now installed the 4.2.3 gfortran from CRAN, and as
+> seen below, FLIBS is still pointing to a non-existent directory and
+> while libgfortran.dylib is now available, libquadmath.dylib is not, so
+> any installation from source of a package that uses FLIBS will fail
+> (and will also warn about the non-existing
+> /usr/local/lib/gcc/x86_64-apple-darwin13.0.0). That was with R 3.2.0.
+> I also tried installing R 3.2.2 after gfortran 4.2.3 was already
+> installed and FLIBS is still pointing to the non-existent location.
+> (I'm guessing
+> FLIBS in etc/Makeconf is being set based on the OS X version and
+> not based on any looking for gfortran on the user's system.)
+>
+> So am I misreading things that the 4.2.3 gfortran provided by R is not
+> fully compatible with R on recent OS X versions and that installing
+> FLIBS-reliant packages from source will generally fail unless one gets
+> the 4.8.2 gfortran?  If that is the case, I do think it would be
+> helpful if you could provide the 4.8.2 gfortran as the default so that
+> users who try to install FLIBS-reliant packages from source will be
+> able to.
+>
+> chris
+>
+> ===================
+>
+> paciorek at glinda:~/Downloads> R CMD config FLIBS
+> -L/usr/local/lib/gcc/x86_64-apple-darwin13.0.0/4.8.2 -lgfortran -lquadmath -lm
+>
+> paciorek at glinda:~/Downloads> ls /usr/local/lib/gcc
+> i686-apple-darwin8    powerpc-apple-darwin8
+>
+> paciorek at glinda:~/Downloads> ls /usr/local/lib/libgfortran*
+> /usr/local/lib/libgfortran.2.0.0.dylib /usr/local/lib/libgfortran.dylib
+> /usr/local/lib/libgfortran.2.dylib     /usr/local/lib/libgfortran.la
+> /usr/local/lib/libgfortran.a
+>
+> paciorek at glinda:~/Downloads> ls /usr/local/lib/libquadmath*
+> ls: /usr/local/lib/libquadmath*: No such file or directory
+>
+> On Mon, Nov 2, 2015 at 6:35 PM, Simon Urbanek
+> <simon.urbanek at r-project.org> wrote:
+>>
+>> On Nov 2, 2015, at 6:31 PM, Chris Paciorek <paciorek at stat.berkeley.edu> wrote:
+>>
+>>> I may have been unclear in my original message -- I had gfortran 4.2.3
+>>> installed previously and was having the problem with that older
+>>> version installed.  With 4.2.3, if I _manually_ set FLIBS in
+>>> etc/Makeconf to point to /usr/local/gfortran/lib, then the problem
+>>> went away.
+>>>
+>>
+>> ... but that is *not* what the CRAN Fortran uses - so I guess you had different Fortran installed - which is why it didn't work. I suspect that if you had actually [re?]installed the Fortran from Tools it would work, but you [or some script] have possibly removed the libraries from /usr/local/lib or had a different Fortran which is why you got the error.
+>>
+>> Cheers,
+>> Simon
+>>
+>>
+>>> Once I installed 4.8.2, things were fine without having to change
+>>> FLIBS in etc/Makeconf.
+>>>
+>>> chris
+>>>
+>>> On Mon, Nov 2, 2015 at 3:03 PM, Simon Urbanek
+>>> <simon.urbanek at r-project.org> wrote:
+>>>>
+>>>>> On Nov 2, 2015, at 4:50 PM, Chris Paciorek <paciorek at stat.berkeley.edu> wrote:
+>>>>>
+>>>>> Thanks, that worked. But is it a concern that users can't easily
+>>>>> install a package on OS X from source? Perhaps not since there should
+>>>>> be Mac binaries for packages on CRAN?
+>>>>>
+>>>>> In particular, on CRAN (https://cran.r-project.org/bin/macosx/tools/)
+>>>>> I was seeing gfortran 4.2.3 and overlooked the note about more recent
+>>>>> Fortran binaries.  But even in clicking on that link to get to
+>>>>> http://r.research.att.com/tools/, I don't see the 4.8.2 version.
+>>>>> Should any of these items be updated?  It's not clear to me how one
+>>>>> would find 4.8.2 if one didn't know where to look.
+>>>>>
+>>>>
+>>>> Either should work - at least last time I checked it did. If I understand your report you didn't have *any* Fortran libraries installed, but you need Fortran to compile Fortran packages -- on CRAN it says
+>>>> "GNU Fortran isNOT included (needed if you want to compile packages from sources that contain FORTRAN code) please see the tools directory."
+>>>>
+>>>> That said, I guess it would be reasonable to provide a pkg for the Mavericks Fortran and add it to the tools as well.
+>>>>
+>>>> Cheers,
+>>>> Simon
+>>>>
+>>>>
+>>>>>
+>>>>> On Mon, Nov 2, 2015 at 1:31 PM, Simon Urbanek
+>>>>> <simon.urbanek at r-project.org> wrote:
+>>>>>> Chris,
+>>>>>>
+>>>>>> it seems that you didn't install the necessary Fortran compiler from
+>>>>>> http://r.research.att.com/libs/gfortran-4.8.2-darwin13.tar.bz2
+>>>>>>
+>>>>>> Cheers,
+>>>>>> Simon
+>>>>>>
+>>>>>>
+>>>>>>> On Nov 2, 2015, at 2:03 PM, Chris Paciorek <paciorek at stat.berkeley.edu> wrote:
+>>>>>>>
+>>>>>>> I'm having trouble installing a number of R packages from source on
+>>>>>>> Mac OS X (Yosemite) when the packages reference FLIBS in their
+>>>>>>> src/Makevars.
+>>>>>>>
+>>>>>>> I have what I think is a fairly standard R install on Yosemite -
+>>>>>>> installed from R-3.2.2.pkg.
+>>>>>>>
+>>>>>>> Here's where an example install fails (in this case the 'actuar' package):
+>>>>>>> clang -dynamiclib -Wl,-headerpad_max_install_names -undefined
+>>>>>>> dynamic_lookup -single_module -multiply_defined suppress
+>>>>>>> -L/Library/Frameworks/R.framework/Resources/lib -L/usr/local/lib -o
+>>>>>>> actuar.so beta.o burr.o chisq.o dpq.o dpqphtype.o exp.o gamma.o
+>>>>>>> genbeta.o genpareto.o hierarc.o init.o invburr.o invexp.o invgamma.o
+>>>>>>> invgauss.o invparalogis.o invpareto.o invtrgamma.o invweibull.o
+>>>>>>> lgamma.o llogis.o lnorm.o names.o normal.o panjer.o paralogis.o
+>>>>>>> pareto.o pareto1.o phtype.o random.o randomphtype.o trbeta.o trgamma.o
+>>>>>>> unif.o util.o weibull.o
+>>>>>>> -L/Library/Frameworks/R.framework/Resources/lib -lRlapack
+>>>>>>> -L/Library/Frameworks/R.framework/Resources/lib -lRblas
+>>>>>>> -L/usr/local/lib/gcc/x86_64-apple-darwin13.0.0/4.8.2 -lgfortran
+>>>>>>> -lquadmath -lm -F/Library/Frameworks/R.framework/.. -framework R
+>>>>>>> -Wl,-framework -Wl,CoreFoundation
+>>>>>>> ld: warning: directory not found for option
+>>>>>>> '-L/usr/local/lib/gcc/x86_64-apple-darwin13.0.0/4.8.2'
+>>>>>>> ld: library not found for -lgfortran
+>>>>>>> clang: error: linker command failed with exit code 1 (use -v to see invocation)
+>>>>>>>
+>>>>>>> Some likely relevant facts:
+>>>>>>>
+>>>>>>> 1)
+>>>>>>> /Library/Frameworks/R.framework/Resources/etc/Makeconf has
+>>>>>>> FLIBS = -L/usr/local/lib/gcc/x86_64-apple-darwin13.0.0/4.8.2
+>>>>>>> -lgfortran -lquadmath -lm
+>>>>>>> but /usr/local/lib/gcc does not exist on my machine.
+>>>>>>>
+>>>>>>> 2) libquadmath.0.dylib and libgfortran.3.dylib exist in
+>>>>>>> /Library/Framework/R.framework/Resources/lib
+>>>>>>> The following kludge allows the 'actuar' package to be installed from source:
+>>>>>>> cd /Library/Framework/R.framework/Resources/lib
+>>>>>>> ln -s libgfortran.3.dylib libgfortran.dylib
+>>>>>>> ln -s libquadmath.0.dylib libquadmath.dylib
+>>>>>>>
+>>>>>>> albeit of course still with the warning about the nonexistent
+>>>>>>> /usr/local/lib/gcc/x86_64-apple-darwin13.0.0/4.8.2
+>>>>>>>
+>>>>>>> 3) Alternatively I can install the gfortran Mac package provided by
+>>>>>>> CRAN and manually set FLIBS in Makeconf to point to
+>>>>>>> /usr/local/gfortran/lib
+>>>>>>>
+>>>>>>> So, any ideas why R is being installed such that FLIBS points to a
+>>>>>>> non-existent directory? And for packages that don't need the fortran
+>>>>>>> compiler, but merely libgfortran, is there a way to install packages
+>>>>>>> that have FLIBS in their Makevars without installing the gfortran
+>>>>>>> package and monkeying with FLIBS in Makeconf?
+>>>>>>>
+>>>>>>> I'll note that this is occurring on a few machines I have access to,
+>>>>>>> including a new Macbook Air purchased in June 2015, with R and Xcode
+>>>>>>> installed thereafter. So it doesn't seem that it is a result of having
+>>>>>>> versions of OS X and command line tools from before Yosemite.
+>>>>>>>
+>>>>>>> I have command line tools installed:
+>>>>>>>
+>>>>>>> paciorek:/tmp> gcc --version
+>>>>>>> Configured with:
+>>>>>>> --prefix=/Applications/Xcode.app/Contents/Developer/usr
+>>>>>>> --with-gxx-include-dir=/usr/include/c++/4.2.1
+>>>>>>> Apple LLVM version 6.1.0 (clang-602.0.49) (based on LLVM 3.6.0svn)
+>>>>>>> Target: x86_64-apple-darwin14.3.0
+>>>>>>> Thread model: posix
+>>>>>>>
+>>>>>>>
+>>>>>>> Here's sessionInfo():
+>>>>>>>
+>>>>>>>> sessionInfo()
+>>>>>>> R version 3.2.2 (2015-08-14)
+>>>>>>> Platform: x86_64-apple-darwin13.4.0 (64-bit)
+>>>>>>> Running under: OS X 10.10.3 (Yosemite)
+>>>>>>>
+>>>>>>> locale:
+>>>>>>> [1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+>>>>>>>
+>>>>>>> attached base packages:
+>>>>>>> [1] stats     graphics  grDevices utils     datasets  methods   base
+>>>>>>>
+>>>>>>>
+>>>>>>> thanks,
+>>>>>>> Chris
+>>>>>>>
+>>>>>>> ----------------------------------------------------------------------------------------------
+>>>>>>> Chris Paciorek
+>>>>>>>
+>>>>>>> Associate Research Statistician, Lecturer, Statistical Computing Consultant
+>>>>>>>
+>>>>>>> Office: 495 Evans Hall                      Email: paciorek at stat.berkeley.edu
+>>>>>>> Mailing Address:                            Voice: 510-842-6670
+>>>>>>> Department of Statistics                    Fax:   510-642-7892
+>>>>>>> 367 Evans Hall                              Skype: cjpaciorek
+>>>>>>> University of California, Berkeley          WWW:
+>>>>>>> www.stat.berkeley.edu/~paciorek
+>>>>>>> Berkeley, CA 94720 USA                      Permanent forward:
+>>>>>>> paciorek at alumni.cmu.edu
+>>>>>>>
+>>>>>>> _______________________________________________
+>>>>>>> R-SIG-Mac mailing list
+>>>>>>> R-SIG-Mac at r-project.org
+>>>>>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>>>>>>>
+>>>>>>
+>>>>>
+>>>>
+>>>
+>>
+>
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+
+
+From ripley at stats.ox.ac.uk  Tue Nov  3 10:34:58 2015
+From: ripley at stats.ox.ac.uk (Brian Ripley)
+Date: Tue, 3 Nov 2015 09:34:58 +0000
+Subject: [R-SIG-Mac] value of FLIBS and installation of packages from
+	source
+In-Reply-To: <CAJXgQP3YHVj2E=AaiZ7=BhHN8qUfVYyhM_gEUuuXh0A5CVBtLA@mail.gmail.com>
+References: <CAG=M9Lo+_jmpxfLx67-x1vFUqT+DXFXcYzjDqC0KWhWXdKEmLA@mail.gmail.com>
+	<BE49E694-C675-47AA-A981-C6DFD79F6DD6@r-project.org>
+	<CAG=M9Lr-ooa3rYjqf0rzj2nHLYuh1b8_sQRppCE3+=Fk0jyKjw@mail.gmail.com>
+	<38BD530D-F82B-4473-B844-4AFA4CC2EE65@r-project.org>
+	<CAG=M9LpiZ5BP_FpWUCEDuHEijYpR9GO-myjGTjhVVzV52-vaww@mail.gmail.com>
+	<898AB722-405C-4282-B25B-5F1FE0A7B307@r-project.org>
+	<CAG=M9LoxDrNdYaMijiwoiNGbKxToApMHwco6R2E47YGv+-i1zw@mail.gmail.com>
+	<CAJXgQP3YHVj2E=AaiZ7=BhHN8qUfVYyhM_gEUuuXh0A5CVBtLA@mail.gmail.com>
+Message-ID: <56080DA1-315D-4A78-86D0-CCC27B590628@stats.ox.ac.uk>
+
+
+
+> On 3 Nov 2015, at 05:07, Kevin Ushey <kevinushey at gmail.com> wrote:
+> 
+> My understanding is that gfortran 4.2.3 was used with CRAN R built
+> with pre-Mavericks OSes (ie, before Apple made the move from gcc to
+> clang); nowadays gfortran 4.8.2 is used. Considering that you're on
+> Yosemite, you want to be installing gfortran 4.8.2.
+> 
+> Unfortunately, this information is not very well advertised on the
+> tools pages; it would be helpful if these pages were updated:
+
+But the R-admin manual is very clear about this, and the posting guide does require checking the manual before posting ....
+> 
+>   https://cran.r-project.org/bin/macosx/tools/
+>   http://r.research.att.com/tools/
+> 
+> Best,
+> Kevin
+> 
+> On Mon, Nov 2, 2015 at 7:31 PM, Chris Paciorek
+> <paciorek at stat.berkeley.edu> wrote:
+>> Yes, good point, I think on one of my machines I did have gfortran
+>> from a different source.
+>> 
+>> That said, on a different machine, I had Xcode and R installed but not
+>> gfortran.  So I just now installed the 4.2.3 gfortran from CRAN, and as
+>> seen below, FLIBS is still pointing to a non-existent directory and
+>> while libgfortran.dylib is now available, libquadmath.dylib is not, so
+>> any installation from source of a package that uses FLIBS will fail
+>> (and will also warn about the non-existing
+>> /usr/local/lib/gcc/x86_64-apple-darwin13.0.0). That was with R 3.2.0.
+>> I also tried installing R 3.2.2 after gfortran 4.2.3 was already
+>> installed and FLIBS is still pointing to the non-existent location.
+>> (I'm guessing
+>> FLIBS in etc/Makeconf is being set based on the OS X version and
+>> not based on any looking for gfortran on the user's system.)
+>> 
+>> So am I misreading things that the 4.2.3 gfortran provided by R is not
+>> fully compatible with R on recent OS X versions and that installing
+>> FLIBS-reliant packages from source will generally fail unless one gets
+>> the 4.8.2 gfortran?  If that is the case, I do think it would be
+>> helpful if you could provide the 4.8.2 gfortran as the default so that
+>> users who try to install FLIBS-reliant packages from source will be
+>> able to.
+>> 
+>> chris
+>> 
+>> ===================
+>> 
+>> paciorek at glinda:~/Downloads> R CMD config FLIBS
+>> -L/usr/local/lib/gcc/x86_64-apple-darwin13.0.0/4.8.2 -lgfortran -lquadmath -lm
+>> 
+>> paciorek at glinda:~/Downloads> ls /usr/local/lib/gcc
+>> i686-apple-darwin8    powerpc-apple-darwin8
+>> 
+>> paciorek at glinda:~/Downloads> ls /usr/local/lib/libgfortran*
+>> /usr/local/lib/libgfortran.2.0.0.dylib /usr/local/lib/libgfortran.dylib
+>> /usr/local/lib/libgfortran.2.dylib     /usr/local/lib/libgfortran.la
+>> /usr/local/lib/libgfortran.a
+>> 
+>> paciorek at glinda:~/Downloads> ls /usr/local/lib/libquadmath*
+>> ls: /usr/local/lib/libquadmath*: No such file or directory
+>> 
+>> On Mon, Nov 2, 2015 at 6:35 PM, Simon Urbanek
+>> <simon.urbanek at r-project.org> wrote:
+>>> 
+>>>> On Nov 2, 2015, at 6:31 PM, Chris Paciorek <paciorek at stat.berkeley.edu> wrote:
+>>>> 
+>>>> I may have been unclear in my original message -- I had gfortran 4.2.3
+>>>> installed previously and was having the problem with that older
+>>>> version installed.  With 4.2.3, if I _manually_ set FLIBS in
+>>>> etc/Makeconf to point to /usr/local/gfortran/lib, then the problem
+>>>> went away.
+>>> 
+>>> ... but that is *not* what the CRAN Fortran uses - so I guess you had different Fortran installed - which is why it didn't work. I suspect that if you had actually [re?]installed the Fortran from Tools it would work, but you [or some script] have possibly removed the libraries from /usr/local/lib or had a different Fortran which is why you got the error.
+>>> 
+>>> Cheers,
+>>> Simon
+>>> 
+>>> 
+>>>> Once I installed 4.8.2, things were fine without having to change
+>>>> FLIBS in etc/Makeconf.
+>>>> 
+>>>> chris
+>>>> 
+>>>> On Mon, Nov 2, 2015 at 3:03 PM, Simon Urbanek
+>>>> <simon.urbanek at r-project.org> wrote:
+>>>>> 
+>>>>>> On Nov 2, 2015, at 4:50 PM, Chris Paciorek <paciorek at stat.berkeley.edu> wrote:
+>>>>>> 
+>>>>>> Thanks, that worked. But is it a concern that users can't easily
+>>>>>> install a package on OS X from source? Perhaps not since there should
+>>>>>> be Mac binaries for packages on CRAN?
+>>>>>> 
+>>>>>> In particular, on CRAN (https://cran.r-project.org/bin/macosx/tools/)
+>>>>>> I was seeing gfortran 4.2.3 and overlooked the note about more recent
+>>>>>> Fortran binaries.  But even in clicking on that link to get to
+>>>>>> http://r.research.att.com/tools/, I don't see the 4.8.2 version.
+>>>>>> Should any of these items be updated?  It's not clear to me how one
+>>>>>> would find 4.8.2 if one didn't know where to look.
+>>>>> 
+>>>>> Either should work - at least last time I checked it did. If I understand your report you didn't have *any* Fortran libraries installed, but you need Fortran to compile Fortran packages -- on CRAN it says
+>>>>> "GNU Fortran isNOT included (needed if you want to compile packages from sources that contain FORTRAN code) please see the tools directory."
+>>>>> 
+>>>>> That said, I guess it would be reasonable to provide a pkg for the Mavericks Fortran and add it to the tools as well.
+>>>>> 
+>>>>> Cheers,
+>>>>> Simon
+>>>>> 
+>>>>> 
+>>>>>> 
+>>>>>> On Mon, Nov 2, 2015 at 1:31 PM, Simon Urbanek
+>>>>>> <simon.urbanek at r-project.org> wrote:
+>>>>>>> Chris,
+>>>>>>> 
+>>>>>>> it seems that you didn't install the necessary Fortran compiler from
+>>>>>>> http://r.research.att.com/libs/gfortran-4.8.2-darwin13.tar.bz2
+>>>>>>> 
+>>>>>>> Cheers,
+>>>>>>> Simon
+>>>>>>> 
+>>>>>>> 
+>>>>>>>> On Nov 2, 2015, at 2:03 PM, Chris Paciorek <paciorek at stat.berkeley.edu> wrote:
+>>>>>>>> 
+>>>>>>>> I'm having trouble installing a number of R packages from source on
+>>>>>>>> Mac OS X (Yosemite) when the packages reference FLIBS in their
+>>>>>>>> src/Makevars.
+>>>>>>>> 
+>>>>>>>> I have what I think is a fairly standard R install on Yosemite -
+>>>>>>>> installed from R-3.2.2.pkg.
+>>>>>>>> 
+>>>>>>>> Here's where an example install fails (in this case the 'actuar' package):
+>>>>>>>> clang -dynamiclib -Wl,-headerpad_max_install_names -undefined
+>>>>>>>> dynamic_lookup -single_module -multiply_defined suppress
+>>>>>>>> -L/Library/Frameworks/R.framework/Resources/lib -L/usr/local/lib -o
+>>>>>>>> actuar.so beta.o burr.o chisq.o dpq.o dpqphtype.o exp.o gamma.o
+>>>>>>>> genbeta.o genpareto.o hierarc.o init.o invburr.o invexp.o invgamma.o
+>>>>>>>> invgauss.o invparalogis.o invpareto.o invtrgamma.o invweibull.o
+>>>>>>>> lgamma.o llogis.o lnorm.o names.o normal.o panjer.o paralogis.o
+>>>>>>>> pareto.o pareto1.o phtype.o random.o randomphtype.o trbeta.o trgamma.o
+>>>>>>>> unif.o util.o weibull.o
+>>>>>>>> -L/Library/Frameworks/R.framework/Resources/lib -lRlapack
+>>>>>>>> -L/Library/Frameworks/R.framework/Resources/lib -lRblas
+>>>>>>>> -L/usr/local/lib/gcc/x86_64-apple-darwin13.0.0/4.8.2 -lgfortran
+>>>>>>>> -lquadmath -lm -F/Library/Frameworks/R.framework/.. -framework R
+>>>>>>>> -Wl,-framework -Wl,CoreFoundation
+>>>>>>>> ld: warning: directory not found for option
+>>>>>>>> '-L/usr/local/lib/gcc/x86_64-apple-darwin13.0.0/4.8.2'
+>>>>>>>> ld: library not found for -lgfortran
+>>>>>>>> clang: error: linker command failed with exit code 1 (use -v to see invocation)
+>>>>>>>> 
+>>>>>>>> Some likely relevant facts:
+>>>>>>>> 
+>>>>>>>> 1)
+>>>>>>>> /Library/Frameworks/R.framework/Resources/etc/Makeconf has
+>>>>>>>> FLIBS = -L/usr/local/lib/gcc/x86_64-apple-darwin13.0.0/4.8.2
+>>>>>>>> -lgfortran -lquadmath -lm
+>>>>>>>> but /usr/local/lib/gcc does not exist on my machine.
+>>>>>>>> 
+>>>>>>>> 2) libquadmath.0.dylib and libgfortran.3.dylib exist in
+>>>>>>>> /Library/Framework/R.framework/Resources/lib
+>>>>>>>> The following kludge allows the 'actuar' package to be installed from source:
+>>>>>>>> cd /Library/Framework/R.framework/Resources/lib
+>>>>>>>> ln -s libgfortran.3.dylib libgfortran.dylib
+>>>>>>>> ln -s libquadmath.0.dylib libquadmath.dylib
+>>>>>>>> 
+>>>>>>>> albeit of course still with the warning about the nonexistent
+>>>>>>>> /usr/local/lib/gcc/x86_64-apple-darwin13.0.0/4.8.2
+>>>>>>>> 
+>>>>>>>> 3) Alternatively I can install the gfortran Mac package provided by
+>>>>>>>> CRAN and manually set FLIBS in Makeconf to point to
+>>>>>>>> /usr/local/gfortran/lib
+>>>>>>>> 
+>>>>>>>> So, any ideas why R is being installed such that FLIBS points to a
+>>>>>>>> non-existent directory? And for packages that don't need the fortran
+>>>>>>>> compiler, but merely libgfortran, is there a way to install packages
+>>>>>>>> that have FLIBS in their Makevars without installing the gfortran
+>>>>>>>> package and monkeying with FLIBS in Makeconf?
+>>>>>>>> 
+>>>>>>>> I'll note that this is occurring on a few machines I have access to,
+>>>>>>>> including a new Macbook Air purchased in June 2015, with R and Xcode
+>>>>>>>> installed thereafter. So it doesn't seem that it is a result of having
+>>>>>>>> versions of OS X and command line tools from before Yosemite.
+>>>>>>>> 
+>>>>>>>> I have command line tools installed:
+>>>>>>>> 
+>>>>>>>> paciorek:/tmp> gcc --version
+>>>>>>>> Configured with:
+>>>>>>>> --prefix=/Applications/Xcode.app/Contents/Developer/usr
+>>>>>>>> --with-gxx-include-dir=/usr/include/c++/4.2.1
+>>>>>>>> Apple LLVM version 6.1.0 (clang-602.0.49) (based on LLVM 3.6.0svn)
+>>>>>>>> Target: x86_64-apple-darwin14.3.0
+>>>>>>>> Thread model: posix
+>>>>>>>> 
+>>>>>>>> 
+>>>>>>>> Here's sessionInfo():
+>>>>>>>> 
+>>>>>>>>> sessionInfo()
+>>>>>>>> R version 3.2.2 (2015-08-14)
+>>>>>>>> Platform: x86_64-apple-darwin13.4.0 (64-bit)
+>>>>>>>> Running under: OS X 10.10.3 (Yosemite)
+>>>>>>>> 
+>>>>>>>> locale:
+>>>>>>>> [1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+>>>>>>>> 
+>>>>>>>> attached base packages:
+>>>>>>>> [1] stats     graphics  grDevices utils     datasets  methods   base
+>>>>>>>> 
+>>>>>>>> 
+>>>>>>>> thanks,
+>>>>>>>> Chris
+>>>>>>>> 
+>>>>>>>> ----------------------------------------------------------------------------------------------
+>>>>>>>> Chris Paciorek
+>>>>>>>> 
+>>>>>>>> Associate Research Statistician, Lecturer, Statistical Computing Consultant
+>>>>>>>> 
+>>>>>>>> Office: 495 Evans Hall                      Email: paciorek at stat.berkeley.edu
+>>>>>>>> Mailing Address:                            Voice: 510-842-6670
+>>>>>>>> Department of Statistics                    Fax:   510-642-7892
+>>>>>>>> 367 Evans Hall                              Skype: cjpaciorek
+>>>>>>>> University of California, Berkeley          WWW:
+>>>>>>>> www.stat.berkeley.edu/~paciorek
+>>>>>>>> Berkeley, CA 94720 USA                      Permanent forward:
+>>>>>>>> paciorek at alumni.cmu.edu
+>>>>>>>> 
+>>>>>>>> _______________________________________________
+>>>>>>>> R-SIG-Mac mailing list
+>>>>>>>> R-SIG-Mac at r-project.org
+>>>>>>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>> 
+>> _______________________________________________
+>> R-SIG-Mac mailing list
+>> R-SIG-Mac at r-project.org
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+
+
+From marius.hofert at uwaterloo.ca  Tue Nov  3 22:20:52 2015
+From: marius.hofert at uwaterloo.ca (Marius Hofert)
+Date: Tue, 3 Nov 2015 16:20:52 -0500
+Subject: [R-SIG-Mac] rJava: configure error: One or more JNI types differ
+ from the corresponding native type
+Message-ID: <CAM3-KjbTNwS35+RALNpUQ7=OdpgTU5n1OKJM1KfporY8y1pWpA@mail.gmail.com>
+
+Hi,
+
+I run R (devel and 3.2.2) under Mac OS X 10.11.1. I installed the JDK
+via jdk-8u66-macosx-x64.dmg ("java -version" works in the terminal).
+When I do install.packages("rJava"), I receive:
+
+...
+checking whether JNI programs can be compiled... yes
+checking JNI data types... configure: error: One or more JNI types
+differ from the corresponding native type. You may need to use
+non-standard compiler flags or a different compiler in order to fix
+this.
+ERROR: configuration failed for package ?rJava?
+
+I tried:
+- Using R CMD javareconf as recommended on
+http://www.rforge.net/rJava/ (do I need to have R compiled with
+--enable-R-shlib?)
+- Setting R_JAVA_LD_LIBRARY_PATH before starting R (as described on
+https://cran.r-project.org/doc/manuals/r-patched/R-admin.html#Java-support)
+
+I also found http://r.789695.n4.nabble.com/Installation-problems-Linux-Java-and-R-not-working-together-td4680718.html.
+Although this concerns Linux, below I included the output of
+rJava/config.log after R CMD INSTALL rJava.
+
+Do I have to configure R in a special way and/or set specific flags?
+
+Cheers,
+Marius
+
+
+  $ ./configure
+
+## --------- ##
+## Platform. ##
+## --------- ##
+
+hostname = v1020-wn-126-174.campus-dynamic.uwaterloo.ca
+uname -m = x86_64
+uname -r = 15.0.0
+uname -s = Darwin
+uname -v = Darwin Kernel Version 15.0.0: Sat Sep 19 15:53:46 PDT 2015;
+root:xnu-3247.10.11~1/RELEASE_X86_64
+
+/usr/bin/uname -p = i386
+/bin/uname -X     = unknown
+
+/bin/arch              = unknown
+/usr/bin/arch -k       = unknown
+/usr/convex/getsysinfo = unknown
+/usr/bin/hostinfo      = Mach kernel version:
+Darwin Kernel Version 15.0.0: Sat Sep 19 15:53:46 PDT 2015;
+root:xnu-3247.10.11~1/RELEASE_X86_64
+Kernel configured for up to 8 processors.
+4 processors are physically available.
+8 processors are logically available.
+Processor type: x86_64h (Intel x86-64h Haswell)
+Processors active: 0 1 2 3 4 5 6 7
+Primary memory available: 16.00 gigabytes
+Default processor set: 305 tasks, 1236 threads, 8 processors
+Load average: 1.24, Mach factor: 6.74
+/bin/machine           = unknown
+/usr/bin/oslevel       = unknown
+/bin/universe          = unknown
+
+PATH: /Applications/Emacs.app/Contents/MacOS
+PATH: /Applications/Emacs.app/Contents/MacOS/bin
+PATH: /usr/local
+PATH: /usr/local/bin
+PATH: /usr/bin
+PATH: /bin
+PATH: /usr/sbin
+PATH: /sbin
+PATH: /opt/X11/bin
+PATH: /Library/TeX/texbin
+PATH: /Applications/Emacs.app/Contents/MacOS/bin-x86_64-10_9
+PATH: /Applications/Emacs.app/Contents/MacOS/libexec-x86_64-10_9
+
+
+## ----------- ##
+## Core tests. ##
+## ----------- ##
+
+configure:2245: checking for gcc
+configure:2272: result: gcc
+configure:2501: checking for C compiler version
+configure:2510: gcc --version >&5
+Apple LLVM version 7.0.0 (clang-700.1.76)
+Target: x86_64-apple-darwin15.0.0
+Thread model: posix
+Configured with:
+--prefix=/Applications/Xcode.app/Contents/Developer/usr
+--with-gxx-include-dir=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.11.sdk/usr/include/c++/4.2.1
+configure:2521: $? = 0
+configure:2510: gcc -v >&5
+Configured with:
+--prefix=/Applications/Xcode.app/Contents/Developer/usr
+--with-gxx-include-dir=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.11.sdk/usr/include/c++/4.2.1
+Apple LLVM version 7.0.0 (clang-700.1.76)
+Target: x86_64-apple-darwin15.0.0
+Thread model: posix
+configure:2521: $? = 0
+configure:2510: gcc -V >&5
+clang: error: argument to '-V' is missing (expected 1 value)
+clang: error: no input files
+configure:2521: $? = 1
+configure:2510: gcc -qversion >&5
+clang: error: unknown argument: '-qversion'
+clang: error: no input files
+configure:2521: $? = 1
+configure:2541: checking whether the C compiler works
+configure:2563: gcc -g -O2   conftest.c  >&5
+configure:2567: $? = 0
+configure:2615: result: yes
+configure:2618: checking for C compiler default output file name
+configure:2620: result: a.out
+configure:2626: checking for suffix of executables
+configure:2633: gcc -o conftest -g -O2   conftest.c  >&5
+configure:2637: $? = 0
+configure:2659: result:
+configure:2681: checking whether we are cross compiling
+configure:2689: gcc -o conftest -g -O2   conftest.c  >&5
+configure:2693: $? = 0
+configure:2700: ./conftest
+configure:2704: $? = 0
+configure:2719: result: no
+configure:2724: checking for suffix of object files
+configure:2746: gcc -c -g -O2  conftest.c >&5
+configure:2750: $? = 0
+configure:2771: result: o
+configure:2775: checking whether we are using the GNU C compiler
+configure:2794: gcc -c -g -O2  conftest.c >&5
+configure:2794: $? = 0
+configure:2803: result: yes
+configure:2812: checking whether gcc accepts -g
+configure:2832: gcc -c -g  conftest.c >&5
+configure:2832: $? = 0
+configure:2873: result: yes
+configure:2890: checking for gcc option to accept ISO C89
+configure:2953: gcc  -c -g -O2  conftest.c >&5
+configure:2953: $? = 0
+configure:2966: result: none needed
+configure:2996: checking how to run the C preprocessor
+configure:3027: gcc -E  conftest.c
+configure:3027: $? = 0
+configure:3041: gcc -E  conftest.c
+conftest.c:9:10: fatal error: 'ac_nonexistent.h' file not found
+#include <ac_nonexistent.h>
+         ^
+1 error generated.
+configure:3041: $? = 1
+configure: failed program was:
+| /* confdefs.h */
+| #define PACKAGE_NAME "rJava"
+| #define PACKAGE_TARNAME "rjava"
+| #define PACKAGE_VERSION "0.8"
+| #define PACKAGE_STRING "rJava 0.8"
+| #define PACKAGE_BUGREPORT "Simon.Urbanek at r-project.org"
+| #define PACKAGE_URL ""
+| /* end confdefs.h.  */
+| #include <ac_nonexistent.h>
+configure:3066: result: gcc -E
+configure:3086: gcc -E  conftest.c
+configure:3086: $? = 0
+configure:3100: gcc -E  conftest.c
+conftest.c:9:10: fatal error: 'ac_nonexistent.h' file not found
+#include <ac_nonexistent.h>
+         ^
+1 error generated.
+configure:3100: $? = 1
+configure: failed program was:
+| /* confdefs.h */
+| #define PACKAGE_NAME "rJava"
+| #define PACKAGE_TARNAME "rjava"
+| #define PACKAGE_VERSION "0.8"
+| #define PACKAGE_STRING "rJava 0.8"
+| #define PACKAGE_BUGREPORT "Simon.Urbanek at r-project.org"
+| #define PACKAGE_URL ""
+| /* end confdefs.h.  */
+| #include <ac_nonexistent.h>
+configure:3129: checking for grep that handles long lines and -e
+configure:3187: result: /usr/local/bin/grep
+configure:3192: checking for egrep
+configure:3254: result: /usr/local/bin/grep -E
+configure:3259: checking for ANSI C header files
+configure:3279: gcc -c -g -O2  conftest.c >&5
+configure:3279: $? = 0
+configure:3352: gcc -o conftest -g -O2   conftest.c  >&5
+configure:3352: $? = 0
+configure:3352: ./conftest
+configure:3352: $? = 0
+configure:3363: result: yes
+configure:3371: checking for sys/wait.h that is POSIX.1 compatible
+configure:3397: gcc -c -g -O2  conftest.c >&5
+configure:3397: $? = 0
+configure:3404: result: yes
+configure:3417: checking for sys/types.h
+configure:3417: gcc -c -g -O2  conftest.c >&5
+configure:3417: $? = 0
+configure:3417: result: yes
+configure:3417: checking for sys/stat.h
+configure:3417: gcc -c -g -O2  conftest.c >&5
+configure:3417: $? = 0
+configure:3417: result: yes
+configure:3417: checking for stdlib.h
+configure:3417: gcc -c -g -O2  conftest.c >&5
+configure:3417: $? = 0
+configure:3417: result: yes
+configure:3417: checking for string.h
+configure:3417: gcc -c -g -O2  conftest.c >&5
+configure:3417: $? = 0
+configure:3417: result: yes
+configure:3417: checking for memory.h
+configure:3417: gcc -c -g -O2  conftest.c >&5
+configure:3417: $? = 0
+configure:3417: result: yes
+configure:3417: checking for strings.h
+configure:3417: gcc -c -g -O2  conftest.c >&5
+configure:3417: $? = 0
+configure:3417: result: yes
+configure:3417: checking for inttypes.h
+configure:3417: gcc -c -g -O2  conftest.c >&5
+configure:3417: $? = 0
+configure:3417: result: yes
+configure:3417: checking for stdint.h
+configure:3417: gcc -c -g -O2  conftest.c >&5
+configure:3417: $? = 0
+configure:3417: result: yes
+configure:3417: checking for unistd.h
+configure:3417: gcc -c -g -O2  conftest.c >&5
+configure:3417: $? = 0
+configure:3417: result: yes
+configure:3432: checking for string.h
+configure:3432: result: yes
+configure:3432: checking sys/time.h usability
+configure:3432: gcc -c -g -O2  conftest.c >&5
+configure:3432: $? = 0
+configure:3432: result: yes
+configure:3432: checking sys/time.h presence
+configure:3432: gcc -E  conftest.c
+configure:3432: $? = 0
+configure:3432: result: yes
+configure:3432: checking for sys/time.h
+configure:3432: result: yes
+configure:3432: checking for unistd.h
+configure:3432: result: yes
+configure:3444: checking for an ANSI C-conforming const
+configure:3510: gcc -c -g -O2  conftest.c >&5
+configure:3510: $? = 0
+configure:3517: result: yes
+configure:3525: checking whether time.h and sys/time.h may both be included
+configure:3545: gcc -c -g -O2  conftest.c >&5
+configure:3545: $? = 0
+configure:3552: result: yes
+configure:3561: checking whether gcc supports static inline...
+configure:3574: gcc -c -g -O2  conftest.c >&5
+conftest.c:26:8: warning: type specifier missing, defaults to 'int'
+[-Wimplicit-int]
+static f = 1;
+~~~~~~ ^
+1 warning generated.
+configure:3574: $? = 0
+configure:3578: result: yes
+configure:3587: checking whether setjmp.h is POSIX.1 compatible
+configure:3605: gcc -c -g -O2  conftest.c >&5
+configure:3605: $? = 0
+configure:3612: result: yes
+configure:3614: checking whether sigsetjmp is declared
+configure:3614: gcc -c -g -O2  conftest.c >&5
+configure:3614: $? = 0
+configure:3614: result: yes
+configure:3625: checking whether siglongjmp is declared
+configure:3625: gcc -c -g -O2  conftest.c >&5
+configure:3625: $? = 0
+configure:3625: result: yes
+configure:3649: checking Java support in R
+configure:3677: result: present:
+interpreter : '/usr/bin/java'
+archiver    : '/usr/bin/jar'
+compiler    : '/usr/bin/javac'
+header prep.: '/usr/bin/javah'
+cpp flags   : '-I/Library/Java/JavaVirtualMachines/jdk1.8.0_66.jdk/Contents/Home/jre/../include
+-I/Library/Java/JavaVirtualMachines/jdk1.8.0_66.jdk/Contents/Home/jre/../include/darwin'
+java libs   : '-L/Library/Java/JavaVirtualMachines/jdk1.8.0_66.jdk/Contents/Home/jre/lib/server
+-ljvm'
+configure:3727: checking whether Java run-time works
+configure:3730: result: yes
+configure:3739: checking whether -Xrs is supported
+configure:3747: result: yes
+configure:3750: checking whether JNI programs can be compiled
+configure:3763: gcc -o conftest -g -O2
+-I/Library/Java/JavaVirtualMachines/jdk1.8.0_66.jdk/Contents/Home/jre/../include
+-I/Library/Java/JavaVirtualMachines/jdk1.8.0_66.jdk/Contents/Home/jre/../include/darwin
+  conftest.c  -L/Library/Java/JavaVirtualMachines/jdk1.8.0_66.jdk/Contents/Home/jre/lib/server
+-ljvm >&5
+configure:3763: $? = 0
+configure:3764: result: yes
+configure:3776: checking JNI data types
+configure:3791: gcc -o conftest -g -O2
+-I/Library/Java/JavaVirtualMachines/jdk1.8.0_66.jdk/Contents/Home/jre/../include
+-I/Library/Java/JavaVirtualMachines/jdk1.8.0_66.jdk/Contents/Home/jre/../include/darwin
+  conftest.c  -L/Library/Java/JavaVirtualMachines/jdk1.8.0_66.jdk/Contents/Home/jre/lib/server
+-ljvm >&5
+configure:3791: $? = 0
+configure:3791: ./conftest
+dyld: Library not loaded: @rpath/libjvm.dylib
+  Referenced from: /Users/mhofert/Downloads/rJava/./conftest
+  Reason: image not found
+./configure: line 1527: 81965 Trace/BPT trap: 5       ./conftest$ac_exeext
+configure:3791: $? = 133
+configure: program exited with status 133
+configure: failed program was:
+| /* confdefs.h */
+| #define PACKAGE_NAME "rJava"
+| #define PACKAGE_TARNAME "rjava"
+| #define PACKAGE_VERSION "0.8"
+| #define PACKAGE_STRING "rJava 0.8"
+| #define PACKAGE_BUGREPORT "Simon.Urbanek at r-project.org"
+| #define PACKAGE_URL ""
+| #define STDC_HEADERS 1
+| #define HAVE_SYS_WAIT_H 1
+| #define HAVE_SYS_TYPES_H 1
+| #define HAVE_SYS_STAT_H 1
+| #define HAVE_STDLIB_H 1
+| #define HAVE_STRING_H 1
+| #define HAVE_MEMORY_H 1
+| #define HAVE_STRINGS_H 1
+| #define HAVE_INTTYPES_H 1
+| #define HAVE_STDINT_H 1
+| #define HAVE_UNISTD_H 1
+| #define HAVE_STRING_H 1
+| #define HAVE_SYS_TIME_H 1
+| #define HAVE_UNISTD_H 1
+| #define TIME_WITH_SYS_TIME 1
+| #define HAVE_STATIC_INLINE 1
+| #define HAVE_DECL_SIGSETJMP 1
+| #define HAVE_DECL_SIGLONGJMP 1
+| #define HAVE_POSIX_SETJMP 1
+| #define HAVE_XRS 1
+| /* end confdefs.h.  */
+|
+| #include <jni.h>
+| int main(void) {
+|   return (sizeof(int)==sizeof(jint) && sizeof(long)==sizeof(long) &&
+sizeof(jbyte)==sizeof(char) && sizeof(jshort)==sizeof(short) &&
+sizeof(jfloat)==sizeof(float) && sizeof(jdouble)==sizeof(double))?0:1;
+| }
+|
+configure:3795: error: One or more JNI types differ from the
+corresponding native type. You may need to use non-standard compiler
+flags or a different compiler in order to fix this.
+
+## ---------------- ##
+## Cache variables. ##
+## ---------------- ##
+
+ac_cv_c_compiler_gnu=yes
+ac_cv_c_const=yes
+ac_cv_env_CC_set=
+ac_cv_env_CC_value=
+ac_cv_env_CFLAGS_set=
+ac_cv_env_CFLAGS_value=
+ac_cv_env_CPPFLAGS_set=
+ac_cv_env_CPPFLAGS_value=
+ac_cv_env_CPP_set=
+ac_cv_env_CPP_value=
+ac_cv_env_LDFLAGS_set=
+ac_cv_env_LDFLAGS_value=
+ac_cv_env_LIBS_set=
+ac_cv_env_LIBS_value=
+ac_cv_env_build_alias_set=
+ac_cv_env_build_alias_value=
+ac_cv_env_host_alias_set=
+ac_cv_env_host_alias_value=
+ac_cv_env_target_alias_set=
+ac_cv_env_target_alias_value=
+ac_cv_have_decl_siglongjmp=yes
+ac_cv_have_decl_sigsetjmp=yes
+ac_cv_header_inttypes_h=yes
+ac_cv_header_memory_h=yes
+ac_cv_header_stdc=yes
+ac_cv_header_stdint_h=yes
+ac_cv_header_stdlib_h=yes
+ac_cv_header_string_h=yes
+ac_cv_header_strings_h=yes
+ac_cv_header_sys_stat_h=yes
+ac_cv_header_sys_time_h=yes
+ac_cv_header_sys_types_h=yes
+ac_cv_header_sys_wait_h=yes
+ac_cv_header_time=yes
+ac_cv_header_unistd_h=yes
+ac_cv_objext=o
+ac_cv_path_EGREP='/usr/local/bin/grep -E'
+ac_cv_path_GREP=/usr/local/bin/grep
+ac_cv_prog_CPP='gcc -E'
+ac_cv_prog_ac_ct_CC=gcc
+ac_cv_prog_cc_c89=
+ac_cv_prog_cc_g=yes
+r_cv_header_setjmp_posix=yes
+
+## ----------------- ##
+## Output variables. ##
+## ----------------- ##
+
+CC='gcc'
+CFLAGS='-g -O2 -I/Library/Java/JavaVirtualMachines/jdk1.8.0_66.jdk/Contents/Home/jre/../include
+-I/Library/Java/JavaVirtualMachines/jdk1.8.0_66.jdk/Contents/Home/jre/../include/darwin'
+CPP='gcc -E'
+CPPFLAGS=''
+DEFS=''
+ECHO_C='\c'
+ECHO_N=''
+ECHO_T=''
+EGREP='/usr/local/bin/grep -E'
+EXEEXT=''
+GREP='/usr/local/bin/grep'
+JAVA='/usr/bin/java'
+JAVAC='/usr/bin/javac'
+JAVAH='/usr/bin/javah'
+JAVA_CPPFLAGS='-I/Library/Java/JavaVirtualMachines/jdk1.8.0_66.jdk/Contents/Home/jre/../include
+-I/Library/Java/JavaVirtualMachines/jdk1.8.0_66.jdk/Contents/Home/jre/../include/darwin'
+JAVA_HOME='/Library/Java/JavaVirtualMachines/jdk1.8.0_66.jdk/Contents/Home/jre'
+JAVA_LIBS='-L/Library/Java/JavaVirtualMachines/jdk1.8.0_66.jdk/Contents/Home/jre/lib/server
+-ljvm'
+LDFLAGS=''
+LIBOBJS=''
+LIBS=' -L/Library/Java/JavaVirtualMachines/jdk1.8.0_66.jdk/Contents/Home/jre/lib/server
+-ljvm'
+LTLIBOBJS=''
+OBJEXT='o'
+PACKAGE_BUGREPORT='Simon.Urbanek at r-project.org'
+PACKAGE_NAME='rJava'
+PACKAGE_STRING='rJava 0.8'
+PACKAGE_TARNAME='rjava'
+PACKAGE_URL=''
+PACKAGE_VERSION='0.8'
+PATH_SEPARATOR=':'
+R_HOME='/usr/local/R/R-devel_build'
+SHELL='/bin/sh'
+WANT_JRI_FALSE=''
+WANT_JRI_TRUE=''
+ac_ct_CC='gcc'
+bindir='${exec_prefix}/bin'
+build_alias=''
+datadir='${datarootdir}'
+datarootdir='${prefix}/share'
+docdir='${datarootdir}/doc/${PACKAGE_TARNAME}'
+dvidir='${docdir}'
+exec_prefix='NONE'
+host_alias=''
+htmldir='${docdir}'
+includedir='${prefix}/include'
+infodir='${datarootdir}/info'
+libdir='${exec_prefix}/lib'
+libexecdir='${exec_prefix}/libexec'
+localedir='${datarootdir}/locale'
+localstatedir='${prefix}/var'
+mandir='${datarootdir}/man'
+oldincludedir='/usr/include'
+pdfdir='${docdir}'
+prefix='NONE'
+program_transform_name='s,x,x,'
+psdir='${docdir}'
+sbindir='${exec_prefix}/sbin'
+sharedstatedir='${prefix}/com'
+subdirs=''
+sysconfdir='${prefix}/etc'
+target_alias=''
+
+## ----------- ##
+## confdefs.h. ##
+## ----------- ##
+
+/* confdefs.h */
+#define PACKAGE_NAME "rJava"
+#define PACKAGE_TARNAME "rjava"
+#define PACKAGE_VERSION "0.8"
+#define PACKAGE_STRING "rJava 0.8"
+#define PACKAGE_BUGREPORT "Simon.Urbanek at r-project.org"
+#define PACKAGE_URL ""
+#define STDC_HEADERS 1
+#define HAVE_SYS_WAIT_H 1
+#define HAVE_SYS_TYPES_H 1
+#define HAVE_SYS_STAT_H 1
+#define HAVE_STDLIB_H 1
+#define HAVE_STRING_H 1
+#define HAVE_MEMORY_H 1
+#define HAVE_STRINGS_H 1
+#define HAVE_INTTYPES_H 1
+#define HAVE_STDINT_H 1
+#define HAVE_UNISTD_H 1
+#define HAVE_STRING_H 1
+#define HAVE_SYS_TIME_H 1
+#define HAVE_UNISTD_H 1
+#define TIME_WITH_SYS_TIME 1
+#define HAVE_STATIC_INLINE 1
+#define HAVE_DECL_SIGSETJMP 1
+#define HAVE_DECL_SIGLONGJMP 1
+#define HAVE_POSIX_SETJMP 1
+#define HAVE_XRS 1
+
+configure: exit 133
+
+
+From simon.urbanek at r-project.org  Tue Nov  3 22:57:53 2015
+From: simon.urbanek at r-project.org (Simon Urbanek)
+Date: Tue, 3 Nov 2015 16:57:53 -0500
+Subject: [R-SIG-Mac] rJava: configure error: One or more JNI types
+	differ from the corresponding native type
+In-Reply-To: <CAM3-KjbTNwS35+RALNpUQ7=OdpgTU5n1OKJM1KfporY8y1pWpA@mail.gmail.com>
+References: <CAM3-KjbTNwS35+RALNpUQ7=OdpgTU5n1OKJM1KfporY8y1pWpA@mail.gmail.com>
+Message-ID: <43C5311C-3731-4770-8A05-32794896ACB4@r-project.org>
+
+Please make sure you are using rJava 0.9-8 since your JVM is lacking the path in libjvm and you are on 10.11 which has issues with passing env vars.
+
+Cheers,
+Simon
+
+
+> On Nov 3, 2015, at 4:20 PM, Marius Hofert <marius.hofert at uwaterloo.ca> wrote:
+> 
+> Hi,
+> 
+> I run R (devel and 3.2.2) under Mac OS X 10.11.1. I installed the JDK
+> via jdk-8u66-macosx-x64.dmg ("java -version" works in the terminal).
+> When I do install.packages("rJava"), I receive:
+> 
+> ...
+> checking whether JNI programs can be compiled... yes
+> checking JNI data types... configure: error: One or more JNI types
+> differ from the corresponding native type. You may need to use
+> non-standard compiler flags or a different compiler in order to fix
+> this.
+> ERROR: configuration failed for package ?rJava?
+> 
+> I tried:
+> - Using R CMD javareconf as recommended on
+> http://www.rforge.net/rJava/ (do I need to have R compiled with
+> --enable-R-shlib?)
+> - Setting R_JAVA_LD_LIBRARY_PATH before starting R (as described on
+> https://cran.r-project.org/doc/manuals/r-patched/R-admin.html#Java-support)
+> 
+> I also found http://r.789695.n4.nabble.com/Installation-problems-Linux-Java-and-R-not-working-together-td4680718.html.
+> Although this concerns Linux, below I included the output of
+> rJava/config.log after R CMD INSTALL rJava.
+> 
+> Do I have to configure R in a special way and/or set specific flags?
+> 
+> Cheers,
+> Marius
+> 
+> 
+>  $ ./configure
+> 
+> ## --------- ##
+> ## Platform. ##
+> ## --------- ##
+> 
+> hostname = v1020-wn-126-174.campus-dynamic.uwaterloo.ca
+> uname -m = x86_64
+> uname -r = 15.0.0
+> uname -s = Darwin
+> uname -v = Darwin Kernel Version 15.0.0: Sat Sep 19 15:53:46 PDT 2015;
+> root:xnu-3247.10.11~1/RELEASE_X86_64
+> 
+> /usr/bin/uname -p = i386
+> /bin/uname -X     = unknown
+> 
+> /bin/arch              = unknown
+> /usr/bin/arch -k       = unknown
+> /usr/convex/getsysinfo = unknown
+> /usr/bin/hostinfo      = Mach kernel version:
+> Darwin Kernel Version 15.0.0: Sat Sep 19 15:53:46 PDT 2015;
+> root:xnu-3247.10.11~1/RELEASE_X86_64
+> Kernel configured for up to 8 processors.
+> 4 processors are physically available.
+> 8 processors are logically available.
+> Processor type: x86_64h (Intel x86-64h Haswell)
+> Processors active: 0 1 2 3 4 5 6 7
+> Primary memory available: 16.00 gigabytes
+> Default processor set: 305 tasks, 1236 threads, 8 processors
+> Load average: 1.24, Mach factor: 6.74
+> /bin/machine           = unknown
+> /usr/bin/oslevel       = unknown
+> /bin/universe          = unknown
+> 
+> PATH: /Applications/Emacs.app/Contents/MacOS
+> PATH: /Applications/Emacs.app/Contents/MacOS/bin
+> PATH: /usr/local
+> PATH: /usr/local/bin
+> PATH: /usr/bin
+> PATH: /bin
+> PATH: /usr/sbin
+> PATH: /sbin
+> PATH: /opt/X11/bin
+> PATH: /Library/TeX/texbin
+> PATH: /Applications/Emacs.app/Contents/MacOS/bin-x86_64-10_9
+> PATH: /Applications/Emacs.app/Contents/MacOS/libexec-x86_64-10_9
+> 
+> 
+> ## ----------- ##
+> ## Core tests. ##
+> ## ----------- ##
+> 
+> configure:2245: checking for gcc
+> configure:2272: result: gcc
+> configure:2501: checking for C compiler version
+> configure:2510: gcc --version >&5
+> Apple LLVM version 7.0.0 (clang-700.1.76)
+> Target: x86_64-apple-darwin15.0.0
+> Thread model: posix
+> Configured with:
+> --prefix=/Applications/Xcode.app/Contents/Developer/usr
+> --with-gxx-include-dir=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.11.sdk/usr/include/c++/4.2.1
+> configure:2521: $? = 0
+> configure:2510: gcc -v >&5
+> Configured with:
+> --prefix=/Applications/Xcode.app/Contents/Developer/usr
+> --with-gxx-include-dir=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.11.sdk/usr/include/c++/4.2.1
+> Apple LLVM version 7.0.0 (clang-700.1.76)
+> Target: x86_64-apple-darwin15.0.0
+> Thread model: posix
+> configure:2521: $? = 0
+> configure:2510: gcc -V >&5
+> clang: error: argument to '-V' is missing (expected 1 value)
+> clang: error: no input files
+> configure:2521: $? = 1
+> configure:2510: gcc -qversion >&5
+> clang: error: unknown argument: '-qversion'
+> clang: error: no input files
+> configure:2521: $? = 1
+> configure:2541: checking whether the C compiler works
+> configure:2563: gcc -g -O2   conftest.c  >&5
+> configure:2567: $? = 0
+> configure:2615: result: yes
+> configure:2618: checking for C compiler default output file name
+> configure:2620: result: a.out
+> configure:2626: checking for suffix of executables
+> configure:2633: gcc -o conftest -g -O2   conftest.c  >&5
+> configure:2637: $? = 0
+> configure:2659: result:
+> configure:2681: checking whether we are cross compiling
+> configure:2689: gcc -o conftest -g -O2   conftest.c  >&5
+> configure:2693: $? = 0
+> configure:2700: ./conftest
+> configure:2704: $? = 0
+> configure:2719: result: no
+> configure:2724: checking for suffix of object files
+> configure:2746: gcc -c -g -O2  conftest.c >&5
+> configure:2750: $? = 0
+> configure:2771: result: o
+> configure:2775: checking whether we are using the GNU C compiler
+> configure:2794: gcc -c -g -O2  conftest.c >&5
+> configure:2794: $? = 0
+> configure:2803: result: yes
+> configure:2812: checking whether gcc accepts -g
+> configure:2832: gcc -c -g  conftest.c >&5
+> configure:2832: $? = 0
+> configure:2873: result: yes
+> configure:2890: checking for gcc option to accept ISO C89
+> configure:2953: gcc  -c -g -O2  conftest.c >&5
+> configure:2953: $? = 0
+> configure:2966: result: none needed
+> configure:2996: checking how to run the C preprocessor
+> configure:3027: gcc -E  conftest.c
+> configure:3027: $? = 0
+> configure:3041: gcc -E  conftest.c
+> conftest.c:9:10: fatal error: 'ac_nonexistent.h' file not found
+> #include <ac_nonexistent.h>
+>         ^
+> 1 error generated.
+> configure:3041: $? = 1
+> configure: failed program was:
+> | /* confdefs.h */
+> | #define PACKAGE_NAME "rJava"
+> | #define PACKAGE_TARNAME "rjava"
+> | #define PACKAGE_VERSION "0.8"
+> | #define PACKAGE_STRING "rJava 0.8"
+> | #define PACKAGE_BUGREPORT "Simon.Urbanek at r-project.org"
+> | #define PACKAGE_URL ""
+> | /* end confdefs.h.  */
+> | #include <ac_nonexistent.h>
+> configure:3066: result: gcc -E
+> configure:3086: gcc -E  conftest.c
+> configure:3086: $? = 0
+> configure:3100: gcc -E  conftest.c
+> conftest.c:9:10: fatal error: 'ac_nonexistent.h' file not found
+> #include <ac_nonexistent.h>
+>         ^
+> 1 error generated.
+> configure:3100: $? = 1
+> configure: failed program was:
+> | /* confdefs.h */
+> | #define PACKAGE_NAME "rJava"
+> | #define PACKAGE_TARNAME "rjava"
+> | #define PACKAGE_VERSION "0.8"
+> | #define PACKAGE_STRING "rJava 0.8"
+> | #define PACKAGE_BUGREPORT "Simon.Urbanek at r-project.org"
+> | #define PACKAGE_URL ""
+> | /* end confdefs.h.  */
+> | #include <ac_nonexistent.h>
+> configure:3129: checking for grep that handles long lines and -e
+> configure:3187: result: /usr/local/bin/grep
+> configure:3192: checking for egrep
+> configure:3254: result: /usr/local/bin/grep -E
+> configure:3259: checking for ANSI C header files
+> configure:3279: gcc -c -g -O2  conftest.c >&5
+> configure:3279: $? = 0
+> configure:3352: gcc -o conftest -g -O2   conftest.c  >&5
+> configure:3352: $? = 0
+> configure:3352: ./conftest
+> configure:3352: $? = 0
+> configure:3363: result: yes
+> configure:3371: checking for sys/wait.h that is POSIX.1 compatible
+> configure:3397: gcc -c -g -O2  conftest.c >&5
+> configure:3397: $? = 0
+> configure:3404: result: yes
+> configure:3417: checking for sys/types.h
+> configure:3417: gcc -c -g -O2  conftest.c >&5
+> configure:3417: $? = 0
+> configure:3417: result: yes
+> configure:3417: checking for sys/stat.h
+> configure:3417: gcc -c -g -O2  conftest.c >&5
+> configure:3417: $? = 0
+> configure:3417: result: yes
+> configure:3417: checking for stdlib.h
+> configure:3417: gcc -c -g -O2  conftest.c >&5
+> configure:3417: $? = 0
+> configure:3417: result: yes
+> configure:3417: checking for string.h
+> configure:3417: gcc -c -g -O2  conftest.c >&5
+> configure:3417: $? = 0
+> configure:3417: result: yes
+> configure:3417: checking for memory.h
+> configure:3417: gcc -c -g -O2  conftest.c >&5
+> configure:3417: $? = 0
+> configure:3417: result: yes
+> configure:3417: checking for strings.h
+> configure:3417: gcc -c -g -O2  conftest.c >&5
+> configure:3417: $? = 0
+> configure:3417: result: yes
+> configure:3417: checking for inttypes.h
+> configure:3417: gcc -c -g -O2  conftest.c >&5
+> configure:3417: $? = 0
+> configure:3417: result: yes
+> configure:3417: checking for stdint.h
+> configure:3417: gcc -c -g -O2  conftest.c >&5
+> configure:3417: $? = 0
+> configure:3417: result: yes
+> configure:3417: checking for unistd.h
+> configure:3417: gcc -c -g -O2  conftest.c >&5
+> configure:3417: $? = 0
+> configure:3417: result: yes
+> configure:3432: checking for string.h
+> configure:3432: result: yes
+> configure:3432: checking sys/time.h usability
+> configure:3432: gcc -c -g -O2  conftest.c >&5
+> configure:3432: $? = 0
+> configure:3432: result: yes
+> configure:3432: checking sys/time.h presence
+> configure:3432: gcc -E  conftest.c
+> configure:3432: $? = 0
+> configure:3432: result: yes
+> configure:3432: checking for sys/time.h
+> configure:3432: result: yes
+> configure:3432: checking for unistd.h
+> configure:3432: result: yes
+> configure:3444: checking for an ANSI C-conforming const
+> configure:3510: gcc -c -g -O2  conftest.c >&5
+> configure:3510: $? = 0
+> configure:3517: result: yes
+> configure:3525: checking whether time.h and sys/time.h may both be included
+> configure:3545: gcc -c -g -O2  conftest.c >&5
+> configure:3545: $? = 0
+> configure:3552: result: yes
+> configure:3561: checking whether gcc supports static inline...
+> configure:3574: gcc -c -g -O2  conftest.c >&5
+> conftest.c:26:8: warning: type specifier missing, defaults to 'int'
+> [-Wimplicit-int]
+> static f = 1;
+> ~~~~~~ ^
+> 1 warning generated.
+> configure:3574: $? = 0
+> configure:3578: result: yes
+> configure:3587: checking whether setjmp.h is POSIX.1 compatible
+> configure:3605: gcc -c -g -O2  conftest.c >&5
+> configure:3605: $? = 0
+> configure:3612: result: yes
+> configure:3614: checking whether sigsetjmp is declared
+> configure:3614: gcc -c -g -O2  conftest.c >&5
+> configure:3614: $? = 0
+> configure:3614: result: yes
+> configure:3625: checking whether siglongjmp is declared
+> configure:3625: gcc -c -g -O2  conftest.c >&5
+> configure:3625: $? = 0
+> configure:3625: result: yes
+> configure:3649: checking Java support in R
+> configure:3677: result: present:
+> interpreter : '/usr/bin/java'
+> archiver    : '/usr/bin/jar'
+> compiler    : '/usr/bin/javac'
+> header prep.: '/usr/bin/javah'
+> cpp flags   : '-I/Library/Java/JavaVirtualMachines/jdk1.8.0_66.jdk/Contents/Home/jre/../include
+> -I/Library/Java/JavaVirtualMachines/jdk1.8.0_66.jdk/Contents/Home/jre/../include/darwin'
+> java libs   : '-L/Library/Java/JavaVirtualMachines/jdk1.8.0_66.jdk/Contents/Home/jre/lib/server
+> -ljvm'
+> configure:3727: checking whether Java run-time works
+> configure:3730: result: yes
+> configure:3739: checking whether -Xrs is supported
+> configure:3747: result: yes
+> configure:3750: checking whether JNI programs can be compiled
+> configure:3763: gcc -o conftest -g -O2
+> -I/Library/Java/JavaVirtualMachines/jdk1.8.0_66.jdk/Contents/Home/jre/../include
+> -I/Library/Java/JavaVirtualMachines/jdk1.8.0_66.jdk/Contents/Home/jre/../include/darwin
+>  conftest.c  -L/Library/Java/JavaVirtualMachines/jdk1.8.0_66.jdk/Contents/Home/jre/lib/server
+> -ljvm >&5
+> configure:3763: $? = 0
+> configure:3764: result: yes
+> configure:3776: checking JNI data types
+> configure:3791: gcc -o conftest -g -O2
+> -I/Library/Java/JavaVirtualMachines/jdk1.8.0_66.jdk/Contents/Home/jre/../include
+> -I/Library/Java/JavaVirtualMachines/jdk1.8.0_66.jdk/Contents/Home/jre/../include/darwin
+>  conftest.c  -L/Library/Java/JavaVirtualMachines/jdk1.8.0_66.jdk/Contents/Home/jre/lib/server
+> -ljvm >&5
+> configure:3791: $? = 0
+> configure:3791: ./conftest
+> dyld: Library not loaded: @rpath/libjvm.dylib
+>  Referenced from: /Users/mhofert/Downloads/rJava/./conftest
+>  Reason: image not found
+> ./configure: line 1527: 81965 Trace/BPT trap: 5       ./conftest$ac_exeext
+> configure:3791: $? = 133
+> configure: program exited with status 133
+> configure: failed program was:
+> | /* confdefs.h */
+> | #define PACKAGE_NAME "rJava"
+> | #define PACKAGE_TARNAME "rjava"
+> | #define PACKAGE_VERSION "0.8"
+> | #define PACKAGE_STRING "rJava 0.8"
+> | #define PACKAGE_BUGREPORT "Simon.Urbanek at r-project.org"
+> | #define PACKAGE_URL ""
+> | #define STDC_HEADERS 1
+> | #define HAVE_SYS_WAIT_H 1
+> | #define HAVE_SYS_TYPES_H 1
+> | #define HAVE_SYS_STAT_H 1
+> | #define HAVE_STDLIB_H 1
+> | #define HAVE_STRING_H 1
+> | #define HAVE_MEMORY_H 1
+> | #define HAVE_STRINGS_H 1
+> | #define HAVE_INTTYPES_H 1
+> | #define HAVE_STDINT_H 1
+> | #define HAVE_UNISTD_H 1
+> | #define HAVE_STRING_H 1
+> | #define HAVE_SYS_TIME_H 1
+> | #define HAVE_UNISTD_H 1
+> | #define TIME_WITH_SYS_TIME 1
+> | #define HAVE_STATIC_INLINE 1
+> | #define HAVE_DECL_SIGSETJMP 1
+> | #define HAVE_DECL_SIGLONGJMP 1
+> | #define HAVE_POSIX_SETJMP 1
+> | #define HAVE_XRS 1
+> | /* end confdefs.h.  */
+> |
+> | #include <jni.h>
+> | int main(void) {
+> |   return (sizeof(int)==sizeof(jint) && sizeof(long)==sizeof(long) &&
+> sizeof(jbyte)==sizeof(char) && sizeof(jshort)==sizeof(short) &&
+> sizeof(jfloat)==sizeof(float) && sizeof(jdouble)==sizeof(double))?0:1;
+> | }
+> |
+> configure:3795: error: One or more JNI types differ from the
+> corresponding native type. You may need to use non-standard compiler
+> flags or a different compiler in order to fix this.
+> 
+> ## ---------------- ##
+> ## Cache variables. ##
+> ## ---------------- ##
+> 
+> ac_cv_c_compiler_gnu=yes
+> ac_cv_c_const=yes
+> ac_cv_env_CC_set=
+> ac_cv_env_CC_value=
+> ac_cv_env_CFLAGS_set=
+> ac_cv_env_CFLAGS_value=
+> ac_cv_env_CPPFLAGS_set=
+> ac_cv_env_CPPFLAGS_value=
+> ac_cv_env_CPP_set=
+> ac_cv_env_CPP_value=
+> ac_cv_env_LDFLAGS_set=
+> ac_cv_env_LDFLAGS_value=
+> ac_cv_env_LIBS_set=
+> ac_cv_env_LIBS_value=
+> ac_cv_env_build_alias_set=
+> ac_cv_env_build_alias_value=
+> ac_cv_env_host_alias_set=
+> ac_cv_env_host_alias_value=
+> ac_cv_env_target_alias_set=
+> ac_cv_env_target_alias_value=
+> ac_cv_have_decl_siglongjmp=yes
+> ac_cv_have_decl_sigsetjmp=yes
+> ac_cv_header_inttypes_h=yes
+> ac_cv_header_memory_h=yes
+> ac_cv_header_stdc=yes
+> ac_cv_header_stdint_h=yes
+> ac_cv_header_stdlib_h=yes
+> ac_cv_header_string_h=yes
+> ac_cv_header_strings_h=yes
+> ac_cv_header_sys_stat_h=yes
+> ac_cv_header_sys_time_h=yes
+> ac_cv_header_sys_types_h=yes
+> ac_cv_header_sys_wait_h=yes
+> ac_cv_header_time=yes
+> ac_cv_header_unistd_h=yes
+> ac_cv_objext=o
+> ac_cv_path_EGREP='/usr/local/bin/grep -E'
+> ac_cv_path_GREP=/usr/local/bin/grep
+> ac_cv_prog_CPP='gcc -E'
+> ac_cv_prog_ac_ct_CC=gcc
+> ac_cv_prog_cc_c89=
+> ac_cv_prog_cc_g=yes
+> r_cv_header_setjmp_posix=yes
+> 
+> ## ----------------- ##
+> ## Output variables. ##
+> ## ----------------- ##
+> 
+> CC='gcc'
+> CFLAGS='-g -O2 -I/Library/Java/JavaVirtualMachines/jdk1.8.0_66.jdk/Contents/Home/jre/../include
+> -I/Library/Java/JavaVirtualMachines/jdk1.8.0_66.jdk/Contents/Home/jre/../include/darwin'
+> CPP='gcc -E'
+> CPPFLAGS=''
+> DEFS=''
+> ECHO_C='\c'
+> ECHO_N=''
+> ECHO_T=''
+> EGREP='/usr/local/bin/grep -E'
+> EXEEXT=''
+> GREP='/usr/local/bin/grep'
+> JAVA='/usr/bin/java'
+> JAVAC='/usr/bin/javac'
+> JAVAH='/usr/bin/javah'
+> JAVA_CPPFLAGS='-I/Library/Java/JavaVirtualMachines/jdk1.8.0_66.jdk/Contents/Home/jre/../include
+> -I/Library/Java/JavaVirtualMachines/jdk1.8.0_66.jdk/Contents/Home/jre/../include/darwin'
+> JAVA_HOME='/Library/Java/JavaVirtualMachines/jdk1.8.0_66.jdk/Contents/Home/jre'
+> JAVA_LIBS='-L/Library/Java/JavaVirtualMachines/jdk1.8.0_66.jdk/Contents/Home/jre/lib/server
+> -ljvm'
+> LDFLAGS=''
+> LIBOBJS=''
+> LIBS=' -L/Library/Java/JavaVirtualMachines/jdk1.8.0_66.jdk/Contents/Home/jre/lib/server
+> -ljvm'
+> LTLIBOBJS=''
+> OBJEXT='o'
+> PACKAGE_BUGREPORT='Simon.Urbanek at r-project.org'
+> PACKAGE_NAME='rJava'
+> PACKAGE_STRING='rJava 0.8'
+> PACKAGE_TARNAME='rjava'
+> PACKAGE_URL=''
+> PACKAGE_VERSION='0.8'
+> PATH_SEPARATOR=':'
+> R_HOME='/usr/local/R/R-devel_build'
+> SHELL='/bin/sh'
+> WANT_JRI_FALSE=''
+> WANT_JRI_TRUE=''
+> ac_ct_CC='gcc'
+> bindir='${exec_prefix}/bin'
+> build_alias=''
+> datadir='${datarootdir}'
+> datarootdir='${prefix}/share'
+> docdir='${datarootdir}/doc/${PACKAGE_TARNAME}'
+> dvidir='${docdir}'
+> exec_prefix='NONE'
+> host_alias=''
+> htmldir='${docdir}'
+> includedir='${prefix}/include'
+> infodir='${datarootdir}/info'
+> libdir='${exec_prefix}/lib'
+> libexecdir='${exec_prefix}/libexec'
+> localedir='${datarootdir}/locale'
+> localstatedir='${prefix}/var'
+> mandir='${datarootdir}/man'
+> oldincludedir='/usr/include'
+> pdfdir='${docdir}'
+> prefix='NONE'
+> program_transform_name='s,x,x,'
+> psdir='${docdir}'
+> sbindir='${exec_prefix}/sbin'
+> sharedstatedir='${prefix}/com'
+> subdirs=''
+> sysconfdir='${prefix}/etc'
+> target_alias=''
+> 
+> ## ----------- ##
+> ## confdefs.h. ##
+> ## ----------- ##
+> 
+> /* confdefs.h */
+> #define PACKAGE_NAME "rJava"
+> #define PACKAGE_TARNAME "rjava"
+> #define PACKAGE_VERSION "0.8"
+> #define PACKAGE_STRING "rJava 0.8"
+> #define PACKAGE_BUGREPORT "Simon.Urbanek at r-project.org"
+> #define PACKAGE_URL ""
+> #define STDC_HEADERS 1
+> #define HAVE_SYS_WAIT_H 1
+> #define HAVE_SYS_TYPES_H 1
+> #define HAVE_SYS_STAT_H 1
+> #define HAVE_STDLIB_H 1
+> #define HAVE_STRING_H 1
+> #define HAVE_MEMORY_H 1
+> #define HAVE_STRINGS_H 1
+> #define HAVE_INTTYPES_H 1
+> #define HAVE_STDINT_H 1
+> #define HAVE_UNISTD_H 1
+> #define HAVE_STRING_H 1
+> #define HAVE_SYS_TIME_H 1
+> #define HAVE_UNISTD_H 1
+> #define TIME_WITH_SYS_TIME 1
+> #define HAVE_STATIC_INLINE 1
+> #define HAVE_DECL_SIGSETJMP 1
+> #define HAVE_DECL_SIGLONGJMP 1
+> #define HAVE_POSIX_SETJMP 1
+> #define HAVE_XRS 1
+> 
+> configure: exit 133
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+
+
+From marius.hofert at uwaterloo.ca  Tue Nov  3 23:24:13 2015
+From: marius.hofert at uwaterloo.ca (Marius Hofert)
+Date: Tue, 3 Nov 2015 17:24:13 -0500
+Subject: [R-SIG-Mac] rJava: configure error: One or more JNI types
+ differ from the corresponding native type
+In-Reply-To: <30be49fa03e641c9a2e91ed784be3972@CONNHUB1.connect.uwaterloo.ca>
+References: <CAM3-KjbTNwS35+RALNpUQ7=OdpgTU5n1OKJM1KfporY8y1pWpA@mail.gmail.com>
+	<30be49fa03e641c9a2e91ed784be3972@CONNHUB1.connect.uwaterloo.ca>
+Message-ID: <CAM3-KjaTxeBXFpBg136vPHtOXA3P_Vt6UG720D5Qr8YzeCENFA@mail.gmail.com>
+
+... worked flawlessly with rJava 0.9-8 from
+https://www.rforge.net/rJava/files/ -- thanks a ton, Simon!
+
+Cheers,
+Marius
+
+On Tue, Nov 3, 2015 at 4:57 PM, Simon Urbanek
+<simon.urbanek at r-project.org> wrote:
+> Please make sure you are using rJava 0.9-8 since your JVM is lacking the path in libjvm and you are on 10.11 which has issues with passing env vars.
+>
+> Cheers,
+> Simon
+>
+
+
+From ali.uenlue at tum.de  Thu Nov 12 17:56:59 2015
+From: ali.uenlue at tum.de (=?iso-8859-1?B?3G5s/CwgQWxp?=)
+Date: Thu, 12 Nov 2015 16:56:59 +0000
+Subject: [R-SIG-Mac] R.app GUI under El Capitan: No response or
+ "CGContextGetCTM: invalid context 0x0"
+Message-ID: <f34367ebb35c4c9585d6ebab13a0b353@BADWLRZ-SW13MB2.ads.mwn.de>
+
+Hi,
+
+working in the R.app GUI, when trying to save a document or plot in the
+editor or quartz windows, respectively, the R.app
+
+- either hangs (the rotating Apple wheel, which I do force-quit then), or
+
+- in the R console window, the following information is produced:
+Nov 11 20:31:17  R[730] <Error>: CGContextGetCTM: invalid context 0x0. If
+you want to see the backtrace, please set CG_CONTEXT_SHOW_BACKTRACE
+environmental variable.
+Nov 11 20:31:17  R[730] <Error>: CGContextGetCTM: invalid context 0x0. If
+you want to see the backtrace, please set CG_CONTEXT_SHOW_BACKTRACE
+environmental variable.
+Nov 11 20:31:17  R[730] <Error>: CGContextGetCTM: invalid context 0x0. If
+you want to see the backtrace, please set CG_CONTEXT_SHOW_BACKTRACE
+environmental variable.
+Nov 11 20:31:17  R[730] <Error>: CGContextGetCTM: invalid context 0x0. If
+you want to see the backtrace, please set CG_CONTEXT_SHOW_BACKTRACE
+environmental variable.
+Nov 11 20:31:17  R[730] <Error>: CGContextGetCTM: invalid context 0x0. If
+you want to see the backtrace, please set CG_CONTEXT_SHOW_BACKTRACE
+environmental variable.
+
+
+On iMac (Late 2012), the used system is: OS X El Capitan 10.11.1, Xcode
+(including CLT) 7.1.1 (7B1005).
+I have observed the above mentioned behaviors under the current
+pre-compiled binary versions of R, including:
+
+> sessionInfo()
+R version 3.2.2 Patched (2015-11-06 r69617)
+Platform: x86_64-apple-darwin13.4.0 (64-bit)
+Running under: OS X 10.11.1 (El Capitan)
+
+locale:
+[1] de_DE.UTF-8/de_DE.UTF-8/de_DE.UTF-8/C/de_DE.UTF-8/de_DE.UTF-8
+
+attached base packages:
+[1] stats     graphics  grDevices utils     datasets  methods   base
+
+other attached packages:
+[1] quadprog_1.5-5
+
+
+Thanks much for any possible help in this respect!
+
+
+Best regards, Ali 
+
+--
+Prof. Ali ?nl?
+TUM School of Education
+Technical University of Munich (TUM)
+
+
+From PDalgd at gmail.com  Thu Nov 12 18:38:57 2015
+From: PDalgd at gmail.com (peter dalgaard)
+Date: Thu, 12 Nov 2015 18:38:57 +0100
+Subject: [R-SIG-Mac] R.app GUI under El Capitan: No response or
+	"CGContextGetCTM: invalid context 0x0"
+In-Reply-To: <f34367ebb35c4c9585d6ebab13a0b353@BADWLRZ-SW13MB2.ads.mwn.de>
+References: <f34367ebb35c4c9585d6ebab13a0b353@BADWLRZ-SW13MB2.ads.mwn.de>
+Message-ID: <F19071CA-00DC-4DF6-B066-7FA56328A75D@gmail.com>
+
+
+On 12 Nov 2015, at 17:56 , ?nl?, Ali <ali.uenlue at tum.de> wrote:
+
+> Nov 11 20:31:17  R[730] <Error>: CGContextGetCTM: invalid context 0x0. If
+> you want to see the backtrace, please set CG_CONTEXT_SHOW_BACKTRACE
+> environmental variable.
+
+I think we'd like to see the backtrace. Could you try setting the variable?
+
+(Presumably, starting a Terminal and doing 
+
+CG_CONTEXT_SHOW_BACKTRACE=yes open -a R.app
+
+will do it. Otherwise someone here will probably tell us both how it should be done.)
+
+There have been several reports of problems already with Yosemite, but noone have given us any clues to follow up on, and none of the developers were seeing the problem. This one sounds like it could give us a chance. Maybe...
+ 
+-- 
+Peter Dalgaard, Professor,
+Center for Statistics, Copenhagen Business School
+Solbjerg Plads 3, 2000 Frederiksberg, Denmark
+Phone: (+45)38153501
+Office: A 4.23
+Email: pd.mes at cbs.dk  Priv: PDalgd at gmail.com
+
+
+From ali.uenlue at tum.de  Thu Nov 12 21:01:22 2015
+From: ali.uenlue at tum.de (=?iso-8859-1?B?3G5s/CwgQWxp?=)
+Date: Thu, 12 Nov 2015 20:01:22 +0000
+Subject: [R-SIG-Mac] R.app GUI under El Capitan: No response or
+ "CGContextGetCTM: invalid context 0x0"
+In-Reply-To: <F19071CA-00DC-4DF6-B066-7FA56328A75D@gmail.com>
+References: <f34367ebb35c4c9585d6ebab13a0b353@BADWLRZ-SW13MB2.ads.mwn.de>
+	<F19071CA-00DC-4DF6-B066-7FA56328A75D@gmail.com>
+Message-ID: <D26AA501.104F7%ali.uenlue@tum.de>
+
+
+Am 12.11.15, 18:38 schrieb "peter dalgaard" unter <PDalgd at gmail.com>:
+
+>
+>On 12 Nov 2015, at 17:56 , ?nl?, Ali <ali.uenlue at tum.de> wrote:
+>
+>> Nov 11 20:31:17  R[730] <Error>: CGContextGetCTM: invalid context 0x0.
+>>If
+>> you want to see the backtrace, please set CG_CONTEXT_SHOW_BACKTRACE
+>> environmental variable.
+>
+>I think we'd like to see the backtrace. Could you try setting the
+>variable?
+>
+>(Presumably, starting a Terminal and doing
+>
+>CG_CONTEXT_SHOW_BACKTRACE=yes open -a R.app
+>
+>will do it. Otherwise someone here will probably tell us both how it
+>should be done.)
+>
+>There have been several reports of problems already with Yosemite, but
+>noone have given us any clues to follow up on, and none of the developers
+>were seeing the problem. This one sounds like it could give us a chance.
+>Maybe...
+> 
+>-- 
+>Peter Dalgaard, Professor,
+>Center for Statistics, Copenhagen Business School
+>Solbjerg Plads 3, 2000 Frederiksberg, Denmark
+>Phone: (+45)38153501
+>Office: A 4.23
+>Email: pd.mes at cbs.dk  Priv: PDalgd at gmail.com
+
+
+Thank you. Following your suggested procedure (i.e.,
+CG_CONTEXT_SHOW_BACKTRACE=yes open -a R.app), this is what is then
+displayed in the R.app console window (although the output seems to be
+redundant in parts, let me copy and paste all of it). Hope that helps!
+
+Prof. Ali ?nl?
+TUM School of Education
+Technical University of Munich (TUM)
+
+
+--
+Nov 12 20:07:24  R[21311] <Error>: CGContextGetCTM: invalid context 0x0.
+Backtrace:
+	  <NSMenuItemShapeEnumerate+111>
+	   <HIShapeEnumerate+130>
+	    <NSMenuItemCarbonEventHandler+10874>
+	     
+<_ZL23DispatchEventToHandlersP14EventTargetRecP14OpaqueEventRefP14HandlerCa
+llRec+1231>
+	      
+<_ZL30SendEventToEventTargetInternalP14OpaqueEventRefP20OpaqueEventTargetRe
+fP14HandlerCallRec+404>
+	       <SendEventToEventTargetWithOptions+43>
+	        <_ZN6HIView8SendDrawEsP13OpaqueGrafPtrPK9__HIShapeP9CGContext+337>
+	         
+<_ZN6HIView23RecursiveDrawCompositedEPK9__HIShapeS2_jPS_P9CGContexthd+557>
+	          
+<_ZN6HIView23RecursiveDrawCompositedEPK9__HIShapeS2_jPS_P9CGContexthd+1293>
+	           
+<_ZN6HIView23RecursiveDrawCompositedEPK9__HIShapeS2_jPS_P9CGContexthd+1293>
+	            
+<_ZN6HIView23RecursiveDrawCompositedEPK9__HIShapeS2_jPS_P9CGContexthd+1293>
+	             
+<_ZN6HIView14DrawCompositedEsP13OpaqueGrafPtrPK9__HIShapejPS_P9CGContext+10
+31>
+	              <_ZN6HIView6RenderEjP9CGContext+54>
+	               
+<_ZN10WindowData11BaseHandlerEP25OpaqueEventHandlerCallRefP14OpaqueEventRef
+Pv+1125>
+	                
+<_ZL23DispatchEventToHandlersP14EventTargetRecP14OpaqueEventRefP14HandlerCa
+llRec+1231>
+	                 
+<_ZL30SendEventToEventTargetInternalP14OpaqueEventRefP20OpaqueEventTargetRe
+fP14HandlerCallRec+404>
+	                  <SendEventToEventTarget+40>
+	                  
+<_Z11PaintWindowP10WindowDataP15OpaqueRgnHandle11PaintReasonb+199>
+	                  
+<_ZL24MoveResizeWindowInternalP10WindowDataiiiihhhhPK4Rectj+1430>
+	                     <_ZN10WindowData9SetBoundsEtPK4RectS2_jPh+415>
+	                  
+<_ZL30SetWindowBoundsAndUpdateEffectR16WindowWithRefConjtPK4RectP10Transiti
+on+46>
+	                       <_ZL15TransitionTimerP16__EventLoopTimerPv+2190>
+	                  
+<__CFRUNLOOP_IS_CALLING_OUT_TO_A_TIMER_CALLBACK_FUNCTION__+20>
+	                         <__CFRunLoopDoTimer+1075>
+	                          <__CFRunLoopDoTimers+298>
+	                           <__CFRunLoopRun+1841>
+	                            <CFRunLoopRunSpecific+296>
+	                             <RunCurrentEventLoopInMode+235>
+	                              <_ZL14RunTransitionsj+382>
+	                               <TransitionWindowWithOptions+4131>
+	                  
+<_ZL31SelectItemAndRestoreAllMenuBitsR14MenuSelectDataP13SelectionDataP10Me
+nuResultS4_+2741>
+	                  
+<_ZL15TrackMenuCommonR14MenuSelectDataPhP13SelectionDataP10MenuResultS5_+18
+72>
+	                  
+<_ZL19PopUpMenuSelectCoreP8MenuData5PointdS1_tjPK4RecttjS4_S4_PK14__CFDicti
+onaryPK10__CFStrin
+	                  
+<_ZL26_HandlePopUpMenuSelection8P13OpaqueMenuRefP14OpaqueEventRefj5PointtjP
+K4RecttS6_S6_PK14
+	                  
+<_HandlePopUpMenuSelectionWithDictionary+287>
+	                                     <_NSSLMPopUpCarbonMenu3+6168>
+	                                      <_NSPopUpCarbonMenu3+153>
+	                                       <-[NSCarbonMenuImpl
+popUpMenu:atLocation:width:forView:withSelectedItem:withFont:withFla
+	                                        <-[NSPopUpButtonCell
+trackMouse:inRect:ofView:untilMouseUp:]+559>
+	                                         <-[NSControl mouseDown:]+669>
+	                                          <-[NSWindow
+_handleMouseDownEvent:isDelayedEvent:]+6322>
+	                                           <-[NSWindow
+_reallySendEvent:isDelayedEvent:]+212>
+	                                            <-[NSWindow sendEvent:]+517>
+	                                             <-[NSApplication
+sendEvent:]+2540>
+	                                              <-[RController
+doProcessEvents:]+221>
+	                                               <-[RController
+handleReadConsole:]+186>
+	                                               <Re_ReadConsole+185>
+	                                               <R_ReplDLLdo1+143>
+	                                               <run_REngineRmainloop+295>
+	                                               <-[REngine runREPL]+138>
+	                                               <main+815>
+Nov 12 20:11:40  R[21311] <Error>: CGContextGetCTM: invalid context 0x0.
+Backtrace:
+	  <NSMenuItemShapeEnumerate+111>
+	   <HIShapeEnumerate+130>
+	    <NSMenuItemCarbonEventHandler+10874>
+	     
+<_ZL23DispatchEventToHandlersP14EventTargetRecP14OpaqueEventRefP14HandlerCa
+llRec+1231>
+	      
+<_ZL30SendEventToEventTargetInternalP14OpaqueEventRefP20OpaqueEventTargetRe
+fP14HandlerCallRec+404>
+	       <SendEventToEventTargetWithOptions+43>
+	        <_ZN6HIView8SendDrawEsP13OpaqueGrafPtrPK9__HIShapeP9CGContext+337>
+	         
+<_ZN6HIView23RecursiveDrawCompositedEPK9__HIShapeS2_jPS_P9CGContexthd+557>
+	          
+<_ZN6HIView23RecursiveDrawCompositedEPK9__HIShapeS2_jPS_P9CGContexthd+1293>
+	           
+<_ZN6HIView23RecursiveDrawCompositedEPK9__HIShapeS2_jPS_P9CGContexthd+1293>
+	            
+<_ZN6HIView23RecursiveDrawCompositedEPK9__HIShapeS2_jPS_P9CGContexthd+1293>
+	             
+<_ZN6HIView14DrawCompositedEsP13OpaqueGrafPtrPK9__HIShapejPS_P9CGContext+10
+31>
+	              <_ZN6HIView6RenderEjP9CGContext+54>
+	               
+<_ZN10WindowData11BaseHandlerEP25OpaqueEventHandlerCallRefP14OpaqueEventRef
+Pv+1125>
+	                
+<_ZL23DispatchEventToHandlersP14EventTargetRecP14OpaqueEventRefP14HandlerCa
+llRec+1231>
+	                 
+<_ZL30SendEventToEventTargetInternalP14OpaqueEventRefP20OpaqueEventTargetRe
+fP14HandlerCallRec+404>
+	                  <SendEventToEventTarget+40>
+	                  
+<_Z11PaintWindowP10WindowDataP15OpaqueRgnHandle11PaintReasonb+199>
+	                  
+<_ZL24MoveResizeWindowInternalP10WindowDataiiiihhhhPK4Rectj+1430>
+	                     <_ZN10WindowData9SetBoundsEtPK4RectS2_jPh+415>
+	                  
+<_ZL30SetWindowBoundsAndUpdateEffectR16WindowWithRefConjtPK4RectP10Transiti
+on+46>
+	                       <_ZL15TransitionTimerP16__EventLoopTimerPv+2190>
+	                  
+<__CFRUNLOOP_IS_CALLING_OUT_TO_A_TIMER_CALLBACK_FUNCTION__+20>
+	                         <__CFRunLoopDoTimer+1075>
+	                          <__CFRunLoopDoTimers+298>
+	                           <__CFRunLoopRun+1841>
+	                            <CFRunLoopRunSpecific+296>
+	                             <RunCurrentEventLoopInMode+235>
+	                              <_ZL14RunTransitionsj+382>
+	                               <TransitionWindowWithOptions+4131>
+	                  
+<_ZL31SelectItemAndRestoreAllMenuBitsR14MenuSelectDataP13SelectionDataP10Me
+nuResultS4_+2741>
+	                  
+<_ZL15TrackMenuCommonR14MenuSelectDataPhP13SelectionDataP10MenuResultS5_+18
+72>
+	                  
+<_ZL19PopUpMenuSelectCoreP8MenuData5PointdS1_tjPK4RecttjS4_S4_PK14__CFDicti
+onaryPK10__CFStrin
+	                  
+<_ZL26_HandlePopUpMenuSelection8P13OpaqueMenuRefP14OpaqueEventRefj5PointtjP
+K4RecttS6_S6_PK14
+	                  
+<_HandlePopUpMenuSelectionWithDictionary+287>
+	                                     <_NSSLMPopUpCarbonMenu3+6168>
+	                                      <_NSPopUpCarbonMenu3+153>
+	                                       <-[NSCarbonMenuImpl
+popUpMenu:atLocation:width:forView:withSelectedItem:withFont:withFla
+	                                        <-[NSPopUpButtonCell
+trackMouse:inRect:ofView:untilMouseUp:]+559>
+	                                         <-[NSControl mouseDown:]+669>
+	                                          <-[NSWindow
+_handleMouseDownEvent:isDelayedEvent:]+6322>
+	                                           <-[NSWindow
+_reallySendEvent:isDelayedEvent:]+212>
+	                                            <-[NSWindow sendEvent:]+517>
+	                                             <-[NSApplication
+sendEvent:]+2540>
+	                                              <-[NSApplication
+_realDoModalLoop:peek:]+751>
+	                                               <-[NSApplication
+runModalForWindow:]+238>
+	                                               <-[NSSavePanel
+runModal]+627>
+	                                               <-[QuartzCocoaView
+saveDocumentAs:]+102>
+	                                               <_os_activity_initiate+75>
+	                                               <-[NSApplication
+sendAction:to:from:]+460>
+	                                               <-[NSMenuItem
+_corePerformAction]+336>
+	                                               <-[NSCarbonMenuImpl
+performActionWithHighlightingForItemAtIndex:]+114>
+	                                               <_os_activity_initiate+75>
+	                                               <-[NSMenu
+performActionForItemAtIndex:]+131>
+	                                               <-[NSMenu
+_internalPerformActionForItemAtIndex:]+35>
+	                                               <-[NSCarbonMenuImpl
+_carbonCommandProcessEvent:handlerCallRef:]+107>
+	                                               <NSSLMMenuEventHandler+708>
+	                  
+<_ZL23DispatchEventToHandlersP14EventTargetRecP14OpaqueEventRefP14HandlerCa
+llRec
+	                  
+<_ZL30SendEventToEventTargetInternalP14OpaqueEventRefP20OpaqueEventTargetRe
+fP14H
+	                                               <SendEventToEventTarget+40>
+	                  
+<_ZL18SendHICommandEventjPK9HICommandjjhPKvP20OpaqueEventTargetRefS5_PP14Op
+aqueE
+	                  
+<SendMenuCommandWithContextAndModifiers+59>
+	                  
+<SendMenuItemSelectedEvent+188>
+	                  
+<_ZL19FinishMenuSelectionP13SelectionDataP10MenuResultS2_+96>
+	                  
+<_ZL14MenuSelectCoreP8MenuData5PointdjPP13OpaqueMenuRefPt+711>
+	                                               <_HandleMenuSelection2+460>
+	                  
+<_NSHandleCarbonMenuEvent+277>
+	                                               <_DPSNextEvent+1906>
+	                                               <-[NSApplication
+_nextEventMatchingEventMask:untilDate:inMode:dequeue:]+454>
+	                                               <-[RController
+doProcessEvents:]+204>
+	                                               <-[RController
+handleReadConsole:]+186>
+	                                               <Re_ReadConsole+185>
+	                                               <R_ReplDLLdo1+143>
+	                                               <run_REngineRmainloop+295>
+	                                               <-[REngine runREPL]+138>
+	                                               <main+815>
+Nov 12 20:11:40  R[21311] <Error>: CGContextGetCTM: invalid context 0x0.
+Backtrace:
+	  <NSMenuItemShapeEnumerate+111>
+	   <HIShapeEnumerate+130>
+	    <NSMenuItemCarbonEventHandler+10874>
+	     
+<_ZL23DispatchEventToHandlersP14EventTargetRecP14OpaqueEventRefP14HandlerCa
+llRec+1231>
+	      
+<_ZL30SendEventToEventTargetInternalP14OpaqueEventRefP20OpaqueEventTargetRe
+fP14HandlerCallRec+404>
+	       <SendEventToEventTargetWithOptions+43>
+	        <_ZN6HIView8SendDrawEsP13OpaqueGrafPtrPK9__HIShapeP9CGContext+337>
+	         
+<_ZN6HIView23RecursiveDrawCompositedEPK9__HIShapeS2_jPS_P9CGContexthd+557>
+	          
+<_ZN6HIView23RecursiveDrawCompositedEPK9__HIShapeS2_jPS_P9CGContexthd+1293>
+	           
+<_ZN6HIView23RecursiveDrawCompositedEPK9__HIShapeS2_jPS_P9CGContexthd+1293>
+	            
+<_ZN6HIView23RecursiveDrawCompositedEPK9__HIShapeS2_jPS_P9CGContexthd+1293>
+	             
+<_ZN6HIView14DrawCompositedEsP13OpaqueGrafPtrPK9__HIShapejPS_P9CGContext+10
+31>
+	              <_ZN6HIView6RenderEjP9CGContext+54>
+	               
+<_ZN10WindowData11BaseHandlerEP25OpaqueEventHandlerCallRefP14OpaqueEventRef
+Pv+1125>
+	                
+<_ZL23DispatchEventToHandlersP14EventTargetRecP14OpaqueEventRefP14HandlerCa
+llRec+1231>
+	                 
+<_ZL30SendEventToEventTargetInternalP14OpaqueEventRefP20OpaqueEventTargetRe
+fP14HandlerCallRec+404>
+	                  <SendEventToEventTarget+40>
+	                  
+<_Z11PaintWindowP10WindowDataP15OpaqueRgnHandle11PaintReasonb+199>
+	                  
+<_ZL24MoveResizeWindowInternalP10WindowDataiiiihhhhPK4Rectj+1430>
+	                     <_ZN10WindowData9SetBoundsEtPK4RectS2_jPh+415>
+	                  
+<_ZL30SetWindowBoundsAndUpdateEffectR16WindowWithRefConjtPK4RectP10Transiti
+on+46>
+	                       <_ZL15TransitionTimerP16__EventLoopTimerPv+2190>
+	                  
+<__CFRUNLOOP_IS_CALLING_OUT_TO_A_TIMER_CALLBACK_FUNCTION__+20>
+	                         <__CFRunLoopDoTimer+1075>
+	                          <__CFRunLoopDoTimers+298>
+	                           <__CFRunLoopRun+1841>
+	                            <CFRunLoopRunSpecific+296>
+	                             <RunCurrentEventLoopInMode+235>
+	                              <_ZL14RunTransitionsj+382>
+	                               <TransitionWindowWithOptions+4131>
+	                  
+<_ZL31SelectItemAndRestoreAllMenuBitsR14MenuSelectDataP13SelectionDataP10Me
+nuResultS4_+2741>
+	                  
+<_ZL15TrackMenuCommonR14MenuSelectDataPhP13SelectionDataP10MenuResultS5_+18
+72>
+	                  
+<_ZL19PopUpMenuSelectCoreP8MenuData5PointdS1_tjPK4RecttjS4_S4_PK14__CFDicti
+onaryPK10__CFStrin
+	                  
+<_ZL26_HandlePopUpMenuSelection8P13OpaqueMenuRefP14OpaqueEventRefj5PointtjP
+K4RecttS6_S6_PK14
+	                  
+<_HandlePopUpMenuSelectionWithDictionary+287>
+	                                     <_NSSLMPopUpCarbonMenu3+6168>
+	                                      <_NSPopUpCarbonMenu3+153>
+	                                       <-[NSCarbonMenuImpl
+popUpMenu:atLocation:width:forView:withSelectedItem:withFont:withFla
+	                                        <-[NSPopUpButtonCell
+trackMouse:inRect:ofView:untilMouseUp:]+559>
+	                                         <-[NSControl mouseDown:]+669>
+	                                          <-[NSWindow
+_handleMouseDownEvent:isDelayedEvent:]+6322>
+	                                           <-[NSWindow
+_reallySendEvent:isDelayedEvent:]+212>
+	                                            <-[NSWindow sendEvent:]+517>
+	                                             <-[NSApplication
+sendEvent:]+2540>
+	                                              <-[NSApplication
+_realDoModalLoop:peek:]+751>
+	                                               <-[NSApplication
+runModalForWindow:]+238>
+	                                               <-[NSSavePanel
+runModal]+627>
+	                                               <-[QuartzCocoaView
+saveDocumentAs:]+102>
+	                                               <_os_activity_initiate+75>
+	                                               <-[NSApplication
+sendAction:to:from:]+460>
+	                                               <-[NSMenuItem
+_corePerformAction]+336>
+	                                               <-[NSCarbonMenuImpl
+performActionWithHighlightingForItemAtIndex:]+114>
+	                                               <_os_activity_initiate+75>
+	                                               <-[NSMenu
+performActionForItemAtIndex:]+131>
+	                                               <-[NSMenu
+_internalPerformActionForItemAtIndex:]+35>
+	                                               <-[NSCarbonMenuImpl
+_carbonCommandProcessEvent:handlerCallRef:]+107>
+	                                               <NSSLMMenuEventHandler+708>
+	                  
+<_ZL23DispatchEventToHandlersP14EventTargetRecP14OpaqueEventRefP14HandlerCa
+llRec
+	                  
+<_ZL30SendEventToEventTargetInternalP14OpaqueEventRefP20OpaqueEventTargetRe
+fP14H
+	                                               <SendEventToEventTarget+40>
+	                  
+<_ZL18SendHICommandEventjPK9HICommandjjhPKvP20OpaqueEventTargetRefS5_PP14Op
+aqueE
+	                  
+<SendMenuCommandWithContextAndModifiers+59>
+	                  
+<SendMenuItemSelectedEvent+188>
+	                  
+<_ZL19FinishMenuSelectionP13SelectionDataP10MenuResultS2_+96>
+	                  
+<_ZL14MenuSelectCoreP8MenuData5PointdjPP13OpaqueMenuRefPt+711>
+	                                               <_HandleMenuSelection2+460>
+	                  
+<_NSHandleCarbonMenuEvent+277>
+	                                               <_DPSNextEvent+1906>
+	                                               <-[NSApplication
+_nextEventMatchingEventMask:untilDate:inMode:dequeue:]+454>
+	                                               <-[RController
+doProcessEvents:]+204>
+	                                               <-[RController
+handleReadConsole:]+186>
+	                                               <Re_ReadConsole+185>
+	                                               <R_ReplDLLdo1+143>
+	                                               <run_REngineRmainloop+295>
+	                                               <-[REngine runREPL]+138>
+	                                               <main+815>
+Nov 12 20:11:40  R[21311] <Error>: CGContextGetCTM: invalid context 0x0.
+Backtrace:
+	  <NSMenuItemShapeEnumerate+111>
+	   <HIShapeEnumerate+130>
+	    <NSMenuItemCarbonEventHandler+10874>
+	     
+<_ZL23DispatchEventToHandlersP14EventTargetRecP14OpaqueEventRefP14HandlerCa
+llRec+1231>
+	      
+<_ZL30SendEventToEventTargetInternalP14OpaqueEventRefP20OpaqueEventTargetRe
+fP14HandlerCallRec+404>
+	       <SendEventToEventTargetWithOptions+43>
+	        <_ZN6HIView8SendDrawEsP13OpaqueGrafPtrPK9__HIShapeP9CGContext+337>
+	         
+<_ZN6HIView23RecursiveDrawCompositedEPK9__HIShapeS2_jPS_P9CGContexthd+557>
+	          
+<_ZN6HIView23RecursiveDrawCompositedEPK9__HIShapeS2_jPS_P9CGContexthd+1293>
+	           
+<_ZN6HIView23RecursiveDrawCompositedEPK9__HIShapeS2_jPS_P9CGContexthd+1293>
+	            
+<_ZN6HIView23RecursiveDrawCompositedEPK9__HIShapeS2_jPS_P9CGContexthd+1293>
+	             
+<_ZN6HIView14DrawCompositedEsP13OpaqueGrafPtrPK9__HIShapejPS_P9CGContext+10
+31>
+	              <_ZN6HIView6RenderEjP9CGContext+54>
+	               
+<_ZN10WindowData11BaseHandlerEP25OpaqueEventHandlerCallRefP14OpaqueEventRef
+Pv+1125>
+	                
+<_ZL23DispatchEventToHandlersP14EventTargetRecP14OpaqueEventRefP14HandlerCa
+llRec+1231>
+	                 
+<_ZL30SendEventToEventTargetInternalP14OpaqueEventRefP20OpaqueEventTargetRe
+fP14HandlerCallRec+404>
+	                  <SendEventToEventTarget+40>
+	                  
+<_Z11PaintWindowP10WindowDataP15OpaqueRgnHandle11PaintReasonb+199>
+	                  
+<_ZL24MoveResizeWindowInternalP10WindowDataiiiihhhhPK4Rectj+1430>
+	                     <_ZN10WindowData9SetBoundsEtPK4RectS2_jPh+415>
+	                  
+<_ZL30SetWindowBoundsAndUpdateEffectR16WindowWithRefConjtPK4RectP10Transiti
+on+46>
+	                       <_ZL15TransitionTimerP16__EventLoopTimerPv+2190>
+	                  
+<__CFRUNLOOP_IS_CALLING_OUT_TO_A_TIMER_CALLBACK_FUNCTION__+20>
+	                         <__CFRunLoopDoTimer+1075>
+	                          <__CFRunLoopDoTimers+298>
+	                           <__CFRunLoopRun+1841>
+	                            <CFRunLoopRunSpecific+296>
+	                             <RunCurrentEventLoopInMode+235>
+	                              <_ZL14RunTransitionsj+382>
+	                               <TransitionWindowWithOptions+4131>
+	                  
+<_ZL31SelectItemAndRestoreAllMenuBitsR14MenuSelectDataP13SelectionDataP10Me
+nuResultS4_+2741>
+	                  
+<_ZL15TrackMenuCommonR14MenuSelectDataPhP13SelectionDataP10MenuResultS5_+18
+72>
+	                  
+<_ZL19PopUpMenuSelectCoreP8MenuData5PointdS1_tjPK4RecttjS4_S4_PK14__CFDicti
+onaryPK10__CFStrin
+	                  
+<_ZL26_HandlePopUpMenuSelection8P13OpaqueMenuRefP14OpaqueEventRefj5PointtjP
+K4RecttS6_S6_PK14
+	                  
+<_HandlePopUpMenuSelectionWithDictionary+287>
+	                                     <_NSSLMPopUpCarbonMenu3+6168>
+	                                      <_NSPopUpCarbonMenu3+153>
+	                                       <-[NSCarbonMenuImpl
+popUpMenu:atLocation:width:forView:withSelectedItem:withFont:withFla
+	                                        <-[NSPopUpButtonCell
+trackMouse:inRect:ofView:untilMouseUp:]+559>
+	                                         <-[NSControl mouseDown:]+669>
+	                                          <-[NSWindow
+_handleMouseDownEvent:isDelayedEvent:]+6322>
+	                                           <-[NSWindow
+_reallySendEvent:isDelayedEvent:]+212>
+	                                            <-[NSWindow sendEvent:]+517>
+	                                             <-[NSApplication
+sendEvent:]+2540>
+	                                              <-[NSApplication
+_realDoModalLoop:peek:]+751>
+	                                               <-[NSApplication
+runModalForWindow:]+238>
+	                                               <-[NSSavePanel
+runModal]+627>
+	                                               <-[QuartzCocoaView
+saveDocumentAs:]+102>
+	                                               <_os_activity_initiate+75>
+	                                               <-[NSApplication
+sendAction:to:from:]+460>
+	                                               <-[NSMenuItem
+_corePerformAction]+336>
+	                                               <-[NSCarbonMenuImpl
+performActionWithHighlightingForItemAtIndex:]+114>
+	                                               <_os_activity_initiate+75>
+	                                               <-[NSMenu
+performActionForItemAtIndex:]+131>
+	                                               <-[NSMenu
+_internalPerformActionForItemAtIndex:]+35>
+	                                               <-[NSCarbonMenuImpl
+_carbonCommandProcessEvent:handlerCallRef:]+107>
+	                                               <NSSLMMenuEventHandler+708>
+	                  
+<_ZL23DispatchEventToHandlersP14EventTargetRecP14OpaqueEventRefP14HandlerCa
+llRec
+	                  
+<_ZL30SendEventToEventTargetInternalP14OpaqueEventRefP20OpaqueEventTargetRe
+fP14H
+	                                               <SendEventToEventTarget+40>
+	                  
+<_ZL18SendHICommandEventjPK9HICommandjjhPKvP20OpaqueEventTargetRefS5_PP14Op
+aqueE
+	                  
+<SendMenuCommandWithContextAndModifiers+59>
+	                  
+<SendMenuItemSelectedEvent+188>
+	                  
+<_ZL19FinishMenuSelectionP13SelectionDataP10MenuResultS2_+96>
+	                  
+<_ZL14MenuSelectCoreP8MenuData5PointdjPP13OpaqueMenuRefPt+711>
+	                                               <_HandleMenuSelection2+460>
+	                  
+<_NSHandleCarbonMenuEvent+277>
+	                                               <_DPSNextEvent+1906>
+	                                               <-[NSApplication
+_nextEventMatchingEventMask:untilDate:inMode:dequeue:]+454>
+	                                               <-[RController
+doProcessEvents:]+204>
+	                                               <-[RController
+handleReadConsole:]+186>
+	                                               <Re_ReadConsole+185>
+	                                               <R_ReplDLLdo1+143>
+	                                               <run_REngineRmainloop+295>
+	                                               <-[REngine runREPL]+138>
+	                                               <main+815>
+Nov 12 20:11:40  R[21311] <Error>: CGContextGetCTM: invalid context 0x0.
+Backtrace:
+	  <NSMenuItemShapeEnumerate+111>
+	   <HIShapeEnumerate+130>
+	    <NSMenuItemCarbonEventHandler+10874>
+	     
+<_ZL23DispatchEventToHandlersP14EventTargetRecP14OpaqueEventRefP14HandlerCa
+llRec+1231>
+	      
+<_ZL30SendEventToEventTargetInternalP14OpaqueEventRefP20OpaqueEventTargetRe
+fP14HandlerCallRec+404>
+	       <SendEventToEventTargetWithOptions+43>
+	        <_ZN6HIView8SendDrawEsP13OpaqueGrafPtrPK9__HIShapeP9CGContext+337>
+	         
+<_ZN6HIView23RecursiveDrawCompositedEPK9__HIShapeS2_jPS_P9CGContexthd+557>
+	          
+<_ZN6HIView23RecursiveDrawCompositedEPK9__HIShapeS2_jPS_P9CGContexthd+1293>
+	           
+<_ZN6HIView23RecursiveDrawCompositedEPK9__HIShapeS2_jPS_P9CGContexthd+1293>
+	            
+<_ZN6HIView23RecursiveDrawCompositedEPK9__HIShapeS2_jPS_P9CGContexthd+1293>
+	             
+<_ZN6HIView14DrawCompositedEsP13OpaqueGrafPtrPK9__HIShapejPS_P9CGContext+10
+31>
+	              <_ZN6HIView6RenderEjP9CGContext+54>
+	               
+<_ZN10WindowData11BaseHandlerEP25OpaqueEventHandlerCallRefP14OpaqueEventRef
+Pv+1125>
+	                
+<_ZL23DispatchEventToHandlersP14EventTargetRecP14OpaqueEventRefP14HandlerCa
+llRec+1231>
+	                 
+<_ZL30SendEventToEventTargetInternalP14OpaqueEventRefP20OpaqueEventTargetRe
+fP14HandlerCallRec+404>
+	                  <SendEventToEventTarget+40>
+	                  
+<_Z11PaintWindowP10WindowDataP15OpaqueRgnHandle11PaintReasonb+199>
+	                  
+<_ZL24MoveResizeWindowInternalP10WindowDataiiiihhhhPK4Rectj+1430>
+	                     <_ZN10WindowData9SetBoundsEtPK4RectS2_jPh+415>
+	                  
+<_ZL30SetWindowBoundsAndUpdateEffectR16WindowWithRefConjtPK4RectP10Transiti
+on+46>
+	                       <_ZL15TransitionTimerP16__EventLoopTimerPv+2190>
+	                  
+<__CFRUNLOOP_IS_CALLING_OUT_TO_A_TIMER_CALLBACK_FUNCTION__+20>
+	                         <__CFRunLoopDoTimer+1075>
+	                          <__CFRunLoopDoTimers+298>
+	                           <__CFRunLoopRun+1841>
+	                            <CFRunLoopRunSpecific+296>
+	                             <RunCurrentEventLoopInMode+235>
+	                              <_ZL14RunTransitionsj+382>
+	                               <TransitionWindowWithOptions+4131>
+	                  
+<_ZL31SelectItemAndRestoreAllMenuBitsR14MenuSelectDataP13SelectionDataP10Me
+nuResultS4_+2741>
+	                  
+<_ZL15TrackMenuCommonR14MenuSelectDataPhP13SelectionDataP10MenuResultS5_+18
+72>
+	                  
+<_ZL19PopUpMenuSelectCoreP8MenuData5PointdS1_tjPK4RecttjS4_S4_PK14__CFDicti
+onaryPK10__CFStrin
+	                  
+<_ZL26_HandlePopUpMenuSelection8P13OpaqueMenuRefP14OpaqueEventRefj5PointtjP
+K4RecttS6_S6_PK14
+	                  
+<_HandlePopUpMenuSelectionWithDictionary+287>
+	                                     <_NSSLMPopUpCarbonMenu3+6168>
+	                                      <_NSPopUpCarbonMenu3+153>
+	                                       <-[NSCarbonMenuImpl
+popUpMenu:atLocation:width:forView:withSelectedItem:withFont:withFla
+	                                        <-[NSPopUpButtonCell
+trackMouse:inRect:ofView:untilMouseUp:]+559>
+	                                         <-[NSControl mouseDown:]+669>
+	                                          <-[NSWindow
+_handleMouseDownEvent:isDelayedEvent:]+6322>
+	                                           <-[NSWindow
+_reallySendEvent:isDelayedEvent:]+212>
+	                                            <-[NSWindow sendEvent:]+517>
+	                                             <-[NSApplication
+sendEvent:]+2540>
+	                                              <-[NSApplication
+_realDoModalLoop:peek:]+751>
+	                                               <-[NSApplication
+runModalForWindow:]+238>
+	                                               <-[NSSavePanel
+runModal]+627>
+	                                               <-[QuartzCocoaView
+saveDocumentAs:]+102>
+	                                               <_os_activity_initiate+75>
+	                                               <-[NSApplication
+sendAction:to:from:]+460>
+	                                               <-[NSMenuItem
+_corePerformAction]+336>
+	                                               <-[NSCarbonMenuImpl
+performActionWithHighlightingForItemAtIndex:]+114>
+	                                               <_os_activity_initiate+75>
+	                                               <-[NSMenu
+performActionForItemAtIndex:]+131>
+	                                               <-[NSMenu
+_internalPerformActionForItemAtIndex:]+35>
+	                                               <-[NSCarbonMenuImpl
+_carbonCommandProcessEvent:handlerCallRef:]+107>
+	                                               <NSSLMMenuEventHandler+708>
+	                  
+<_ZL23DispatchEventToHandlersP14EventTargetRecP14OpaqueEventRefP14HandlerCa
+llRec
+	                  
+<_ZL30SendEventToEventTargetInternalP14OpaqueEventRefP20OpaqueEventTargetRe
+fP14H
+	                                               <SendEventToEventTarget+40>
+	                  
+<_ZL18SendHICommandEventjPK9HICommandjjhPKvP20OpaqueEventTargetRefS5_PP14Op
+aqueE
+	                  
+<SendMenuCommandWithContextAndModifiers+59>
+	                  
+<SendMenuItemSelectedEvent+188>
+	                  
+<_ZL19FinishMenuSelectionP13SelectionDataP10MenuResultS2_+96>
+	                  
+<_ZL14MenuSelectCoreP8MenuData5PointdjPP13OpaqueMenuRefPt+711>
+	                                               <_HandleMenuSelection2+460>
+	                  
+<_NSHandleCarbonMenuEvent+277>
+	                                               <_DPSNextEvent+1906>
+	                                               <-[NSApplication
+_nextEventMatchingEventMask:untilDate:inMode:dequeue:]+454>
+	                                               <-[RController
+doProcessEvents:]+204>
+	                                               <-[RController
+handleReadConsole:]+186>
+	                                               <Re_ReadConsole+185>
+	                                               <R_ReplDLLdo1+143>
+	                                               <run_REngineRmainloop+295>
+	                                               <-[REngine runREPL]+138>
+	                                               <main+815>
+Nov 12 20:11:40  R[21311] <Error>: CGContextGetCTM: invalid context 0x0.
+Backtrace:
+	  <NSMenuItemShapeEnumerate+111>
+	   <HIShapeEnumerate+130>
+	    <NSMenuItemCarbonEventHandler+10874>
+	     
+<_ZL23DispatchEventToHandlersP14EventTargetRecP14OpaqueEventRefP14HandlerCa
+llRec+1231>
+	      
+<_ZL30SendEventToEventTargetInternalP14OpaqueEventRefP20OpaqueEventTargetRe
+fP14HandlerCallRec+404>
+	       <SendEventToEventTargetWithOptions+43>
+	        <_ZN6HIView8SendDrawEsP13OpaqueGrafPtrPK9__HIShapeP9CGContext+337>
+	         
+<_ZN6HIView23RecursiveDrawCompositedEPK9__HIShapeS2_jPS_P9CGContexthd+557>
+	          
+<_ZN6HIView23RecursiveDrawCompositedEPK9__HIShapeS2_jPS_P9CGContexthd+1293>
+	           
+<_ZN6HIView23RecursiveDrawCompositedEPK9__HIShapeS2_jPS_P9CGContexthd+1293>
+	            
+<_ZN6HIView23RecursiveDrawCompositedEPK9__HIShapeS2_jPS_P9CGContexthd+1293>
+	             
+<_ZN6HIView14DrawCompositedEsP13OpaqueGrafPtrPK9__HIShapejPS_P9CGContext+10
+31>
+	              <_ZN6HIView6RenderEjP9CGContext+54>
+	               
+<_ZN10WindowData11BaseHandlerEP25OpaqueEventHandlerCallRefP14OpaqueEventRef
+Pv+1125>
+	                
+<_ZL23DispatchEventToHandlersP14EventTargetRecP14OpaqueEventRefP14HandlerCa
+llRec+1231>
+	                 
+<_ZL30SendEventToEventTargetInternalP14OpaqueEventRefP20OpaqueEventTargetRe
+fP14HandlerCallRec+404>
+	                  <SendEventToEventTarget+40>
+	                  
+<_Z11PaintWindowP10WindowDataP15OpaqueRgnHandle11PaintReasonb+199>
+	                  
+<_ZL24MoveResizeWindowInternalP10WindowDataiiiihhhhPK4Rectj+1430>
+	                     <_ZN10WindowData9SetBoundsEtPK4RectS2_jPh+415>
+	                  
+<_ZL30SetWindowBoundsAndUpdateEffectR16WindowWithRefConjtPK4RectP10Transiti
+on+46>
+	                       <_ZL15TransitionTimerP16__EventLoopTimerPv+2190>
+	                  
+<__CFRUNLOOP_IS_CALLING_OUT_TO_A_TIMER_CALLBACK_FUNCTION__+20>
+	                         <__CFRunLoopDoTimer+1075>
+	                          <__CFRunLoopDoTimers+298>
+	                           <__CFRunLoopRun+1841>
+	                            <CFRunLoopRunSpecific+296>
+	                             <RunCurrentEventLoopInMode+235>
+	                              <_ZL14RunTransitionsj+382>
+	                               <TransitionWindowWithOptions+4131>
+	                                
+<_ZL31SelectItemAndRestoreAllMenuBitsR14MenuSelectDataP13SelectionDataP10Me
+nuResultS4_+2741>
+	                                 
+<_ZL15TrackMenuCommonR14MenuSelectDataPhP13SelectionDataP10MenuResultS5_+18
+72>
+	                                  
+<_ZL19PopUpMenuSelectCoreP8MenuData5PointdS1_tjPK4RecttjS4_S4_PK14__CFDicti
+onaryPK10__CFStrin
+	                                   
+<_ZL26_HandlePopUpMenuSelection8P13OpaqueMenuRefP14OpaqueEventRefj5PointtjP
+K4RecttS6_S6_PK14
+	                                    
+<_HandlePopUpMenuSelectionWithDictionary+287>
+	                                     <_NSSLMPopUpCarbonMenu3+6168>
+	                                      <_NSPopUpCarbonMenu3+153>
+	                                       <-[NSCarbonMenuImpl 
+popUpMenu:atLocation:width:forView:withSelectedItem:withFont:withFla
+	                                        <-[NSPopUpButtonCell 
+trackMouse:inRect:ofView:untilMouseUp:]+559>
+	                                         <-[NSControl mouseDown:]+669>
+	                                          <-[NSWindow 
+_handleMouseDownEvent:isDelayedEvent:]+6322>
+	                                           <-[NSWindow 
+_reallySendEvent:isDelayedEvent:]+212>
+	                                            <-[NSWindow sendEvent:]+517>
+	                                             <-[NSApplication 
+sendEvent:]+2540>
+	                                              <-[NSApplication 
+_realDoModalLoop:peek:]+751>
+	                                               <-[NSApplication 
+runModalForWindow:]+238>
+	                                               <-[NSSavePanel 
+runModal]+627>
+	                                               <-[QuartzCocoaView 
+saveDocumentAs:]+102>
+	                                               <_os_activity_initiate+75>
+	                                               <-[NSApplication 
+sendAction:to:from:]+460>
+	                                               <-[NSMenuItem 
+_corePerformAction]+336>
+	                                               <-[NSCarbonMenuImpl 
+performActionWithHighlightingForItemAtIndex:]+114>
+	                                               <_os_activity_initiate+75>
+	                                               <-[NSMenu 
+performActionForItemAtIndex:]+131>
+	                                               <-[NSMenu 
+_internalPerformActionForItemAtIndex:]+35>
+	                                               <-[NSCarbonMenuImpl 
+_carbonCommandProcessEvent:handlerCallRef:]+107>
+	                                               <NSSLMMenuEventHandler+708>
+	                                               
+<_ZL23DispatchEventToHandlersP14EventTargetRecP14OpaqueEventRefP14HandlerCa
+llRec
+	                                               
+<_ZL30SendEventToEventTargetInternalP14OpaqueEventRefP20OpaqueEventTargetRe
+fP14H
+	                                               <SendEventToEventTarget+40>
+	                                               
+<_ZL18SendHICommandEventjPK9HICommandjjhPKvP20OpaqueEventTargetRefS5_PP14Op
+aqueE
+	                                               
+<SendMenuCommandWithContextAndModifiers+59>
+	                                               
+<SendMenuItemSelectedEvent+188>
+	                                               
+<_ZL19FinishMenuSelectionP13SelectionDataP10MenuResultS2_+96>
+	                                               
+<_ZL14MenuSelectCoreP8MenuData5PointdjPP13OpaqueMenuRefPt+711>
+	                                               <_HandleMenuSelection2+460>
+	                                               
+<_NSHandleCarbonMenuEvent+277>
+	                                               <_DPSNextEvent+1906>
+	                                               <-[NSApplication 
+_nextEventMatchingEventMask:untilDate:inMode:dequeue:]+454>
+	                                               <-[RController 
+doProcessEvents:]+204>
+	                                               <-[RController 
+handleReadConsole:]+186>
+	                                               <Re_ReadConsole+185>
+	                                               <R_ReplDLLdo1+143>
+	                                               <run_REngineRmainloop+295>
+	                                               <-[REngine runREPL]+138>
+	                                               <main+815>
+Nov 12 20:11:40  R[21311] <Error>: CGContextGetCTM: invalid context 0x0. 
+Backtrace:
+	  <NSMenuItemShapeEnumerate+111>
+	   <HIShapeEnumerate+130>
+	    <NSMenuItemCarbonEventHandler+10874>
+	     
+<_ZL23DispatchEventToHandlersP14EventTargetRecP14OpaqueEventRefP14HandlerCa
+llRec+1231>
+	      
+<_ZL30SendEventToEventTargetInternalP14OpaqueEventRefP20OpaqueEventTargetRe
+fP14HandlerCallRec+404>
+	       <SendEventToEventTargetWithOptions+43>
+	        <_ZN6HIView8SendDrawEsP13OpaqueGrafPtrPK9__HIShapeP9CGContext+337>
+	         
+<_ZN6HIView23RecursiveDrawCompositedEPK9__HIShapeS2_jPS_P9CGContexthd+557>
+	          
+<_ZN6HIView23RecursiveDrawCompositedEPK9__HIShapeS2_jPS_P9CGContexthd+1293>
+	           
+<_ZN6HIView23RecursiveDrawCompositedEPK9__HIShapeS2_jPS_P9CGContexthd+1293>
+	            
+<_ZN6HIView23RecursiveDrawCompositedEPK9__HIShapeS2_jPS_P9CGContexthd+1293>
+	             
+<_ZN6HIView14DrawCompositedEsP13OpaqueGrafPtrPK9__HIShapejPS_P9CGContext+10
+31>
+	              <_ZN6HIView6RenderEjP9CGContext+54>
+	               
+<_ZN10WindowData11BaseHandlerEP25OpaqueEventHandlerCallRefP14OpaqueEventRef
+Pv+1125>
+	                
+<_ZL23DispatchEventToHandlersP14EventTargetRecP14OpaqueEventRefP14HandlerCa
+llRec+1231>
+	                 
+<_ZL30SendEventToEventTargetInternalP14OpaqueEventRefP20OpaqueEventTargetRe
+fP14HandlerCallRec+404>
+	                  <SendEventToEventTarget+40>
+	                   
+<_Z11PaintWindowP10WindowDataP15OpaqueRgnHandle11PaintReasonb+199>
+	                    
+<_ZL24MoveResizeWindowInternalP10WindowDataiiiihhhhPK4Rectj+1430>
+	                     <_ZN10WindowData9SetBoundsEtPK4RectS2_jPh+415>
+	                      
+<_ZL30SetWindowBoundsAndUpdateEffectR16WindowWithRefConjtPK4RectP10Transiti
+on+46>
+	                       <_ZL15TransitionTimerP16__EventLoopTimerPv+2190>
+	                        
+<__CFRUNLOOP_IS_CALLING_OUT_TO_A_TIMER_CALLBACK_FUNCTION__+20>
+	                         <__CFRunLoopDoTimer+1075>
+	                          <__CFRunLoopDoTimers+298>
+	                           <__CFRunLoopRun+1841>
+	                            <CFRunLoopRunSpecific+296>
+	                             <RunCurrentEventLoopInMode+235>
+	                              <_ZL14RunTransitionsj+382>
+	                               <TransitionWindowWithOptions+4131>
+	                                
+<_ZL31SelectItemAndRestoreAllMenuBitsR14MenuSelectDataP13SelectionDataP10Me
+nuResultS4_+2741>
+	                                 
+<_ZL15TrackMenuCommonR14MenuSelectDataPhP13SelectionDataP10MenuResultS5_+18
+72>
+	                                  
+<_ZL19PopUpMenuSelectCoreP8MenuData5PointdS1_tjPK4RecttjS4_S4_PK14__CFDicti
+onaryPK10__CFStrin
+	                                   
+<_ZL26_HandlePopUpMenuSelection8P13OpaqueMenuRefP14OpaqueEventRefj5PointtjP
+K4RecttS6_S6_PK14
+	                                    
+<_HandlePopUpMenuSelectionWithDictionary+287>
+	                                     <_NSSLMPopUpCarbonMenu3+6168>
+	                                      <_NSPopUpCarbonMenu3+153>
+	                                       <-[NSCarbonMenuImpl 
+popUpMenu:atLocation:width:forView:withSelectedItem:withFont:withFla
+	                                        <-[NSPopUpButtonCell 
+trackMouse:inRect:ofView:untilMouseUp:]+559>
+	                                         <-[NSControl mouseDown:]+669>
+	                                          <-[NSWindow 
+_handleMouseDownEvent:isDelayedEvent:]+6322>
+	                                           <-[NSWindow 
+_reallySendEvent:isDelayedEvent:]+212>
+	                                            <-[NSWindow sendEvent:]+517>
+	                                             <-[NSApplication 
+sendEvent:]+2540>
+	                                              <-[NSApplication 
+_realDoModalLoop:peek:]+751>
+	                                               <-[NSApplication 
+runModalForWindow:]+238>
+	                                               <-[NSSavePanel 
+runModal]+627>
+	                                               <-[QuartzCocoaView 
+saveDocumentAs:]+102>
+	                                               <_os_activity_initiate+75>
+	                                               <-[NSApplication 
+sendAction:to:from:]+460>
+	                                               <-[NSMenuItem 
+_corePerformAction]+336>
+	                                               <-[NSCarbonMenuImpl 
+performActionWithHighlightingForItemAtIndex:]+114>
+	                                               <_os_activity_initiate+75>
+	                                               <-[NSMenu 
+performActionForItemAtIndex:]+131>
+	                                               <-[NSMenu 
+_internalPerformActionForItemAtIndex:]+35>
+	                                               <-[NSCarbonMenuImpl 
+_carbonCommandProcessEvent:handlerCallRef:]+107>
+	                                               <NSSLMMenuEventHandler+708>
+	                                               
+<_ZL23DispatchEventToHandlersP14EventTargetRecP14OpaqueEventRefP14HandlerCa
+llRec
+	                                               
+<_ZL30SendEventToEventTargetInternalP14OpaqueEventRefP20OpaqueEventTargetRe
+fP14H
+	                                               <SendEventToEventTarget+40>
+	                                               
+<_ZL18SendHICommandEventjPK9HICommandjjhPKvP20OpaqueEventTargetRefS5_PP14Op
+aqueE
+	                                               
+<SendMenuCommandWithContextAndModifiers+59>
+	                                               
+<SendMenuItemSelectedEvent+188>
+	                                               
+<_ZL19FinishMenuSelectionP13SelectionDataP10MenuResultS2_+96>
+	                                               
+<_ZL14MenuSelectCoreP8MenuData5PointdjPP13OpaqueMenuRefPt+711>
+	                                               <_HandleMenuSelection2+460>
+	                                               
+<_NSHandleCarbonMenuEvent+277>
+	                                               <_DPSNextEvent+1906>
+	                                               <-[NSApplication 
+_nextEventMatchingEventMask:untilDate:inMode:dequeue:]+454>
+	                                               <-[RController 
+doProcessEvents:]+204>
+	                                               <-[RController 
+handleReadConsole:]+186>
+	                                               <Re_ReadConsole+185>
+	                                               <R_ReplDLLdo1+143>
+	                                               <run_REngineRmainloop+295>
+	                                               <-[REngine runREPL]+138>
+	                                               <main+815>
+Nov 12 20:25:57  R[21311] <Error>: CGContextGetCTM: invalid context 0x0. 
+Backtrace:
+	  <NSMenuItemShapeEnumerate+111>
+	   <HIShapeEnumerate+130>
+	    <NSMenuItemCarbonEventHandler+10874>
+	     
+<_ZL23DispatchEventToHandlersP14EventTargetRecP14OpaqueEventRefP14HandlerCa
+llRec+1231>
+	      
+<_ZL30SendEventToEventTargetInternalP14OpaqueEventRefP20OpaqueEventTargetRe
+fP14HandlerCallRec+404>
+	       <SendEventToEventTargetWithOptions+43>
+	        <_ZN6HIView8SendDrawEsP13OpaqueGrafPtrPK9__HIShapeP9CGContext+337>
+	         
+<_ZN6HIView23RecursiveDrawCompositedEPK9__HIShapeS2_jPS_P9CGContexthd+557>
+	          
+<_ZN6HIView23RecursiveDrawCompositedEPK9__HIShapeS2_jPS_P9CGContexthd+1293>
+	           
+<_ZN6HIView23RecursiveDrawCompositedEPK9__HIShapeS2_jPS_P9CGContexthd+1293>
+	            
+<_ZN6HIView23RecursiveDrawCompositedEPK9__HIShapeS2_jPS_P9CGContexthd+1293>
+	             
+<_ZN6HIView14DrawCompositedEsP13OpaqueGrafPtrPK9__HIShapejPS_P9CGContext+10
+31>
+	              <_ZN6HIView6RenderEjP9CGContext+54>
+	               
+<_ZN10WindowData11BaseHandlerEP25OpaqueEventHandlerCallRefP14OpaqueEventRef
+Pv+1125>
+	                
+<_ZL23DispatchEventToHandlersP14EventTargetRecP14OpaqueEventRefP14HandlerCa
+llRec+1231>
+	                 
+<_ZL30SendEventToEventTargetInternalP14OpaqueEventRefP20OpaqueEventTargetRe
+fP14HandlerCallRec+404>
+	                  <SendEventToEventTarget+40>
+	                   
+<_Z11PaintWindowP10WindowDataP15OpaqueRgnHandle11PaintReasonb+199>
+	                    
+<_ZL24MoveResizeWindowInternalP10WindowDataiiiihhhhPK4Rectj+1430>
+	                     <_ZN10WindowData9SetBoundsEtPK4RectS2_jPh+415>
+	                      
+<_ZL30SetWindowBoundsAndUpdateEffectR16WindowWithRefConjtPK4RectP10Transiti
+on+46>
+	                       <_ZL15TransitionTimerP16__EventLoopTimerPv+2190>
+	                        
+<__CFRUNLOOP_IS_CALLING_OUT_TO_A_TIMER_CALLBACK_FUNCTION__+20>
+	                         <__CFRunLoopDoTimer+1075>
+	                          <__CFRunLoopDoTimers+298>
+	                           <__CFRunLoopRun+1841>
+	                            <CFRunLoopRunSpecific+296>
+	                             <RunCurrentEventLoopInMode+235>
+	                              <_ZL14RunTransitionsj+382>
+	                               <TransitionWindowWithOptions+4131>
+	                                
+<_ZL31SelectItemAndRestoreAllMenuBitsR14MenuSelectDataP13SelectionDataP10Me
+nuResultS4_+2741>
+	                                 
+<_ZL15TrackMenuCommonR14MenuSelectDataPhP13SelectionDataP10MenuResultS5_+18
+72>
+	                                  
+<_ZL19PopUpMenuSelectCoreP8MenuData5PointdS1_tjPK4RecttjS4_S4_PK14__CFDicti
+onaryPK10__CFStrin
+	                                   
+<_ZL26_HandlePopUpMenuSelection8P13OpaqueMenuRefP14OpaqueEventRefj5PointtjP
+K4RecttS6_S6_PK14
+	                                    
+<_HandlePopUpMenuSelectionWithDictionary+287>
+	                                     <_NSSLMPopUpCarbonMenu3+6168>
+	                                      <_NSPopUpCarbonMenu3+153>
+	                                       <-[NSCarbonMenuImpl 
+popUpMenu:atLocation:width:forView:withSelectedItem:withFont:withFla
+	                                        <-[NSPopUpButtonCell 
+trackMouse:inRect:ofView:untilMouseUp:]+559>
+	                                         <-[NSControl mouseDown:]+669>
+	                                          <-[NSWindow 
+_handleMouseDownEvent:isDelayedEvent:]+6322>
+	                                           <-[NSWindow 
+_reallySendEvent:isDelayedEvent:]+212>
+	                                            <-[NSWindow sendEvent:]+517>
+	                                             <-[NSApplication 
+sendEvent:]+2540>
+	                                              <-[RController 
+doProcessEvents:]+221>
+	                                               <-[RController 
+handleReadConsole:]+186>
+	                                               <Re_ReadConsole+185>
+	                                               <R_ReplDLLdo1+143>
+	                                               <run_REngineRmainloop+295>
+	                                               <-[REngine runREPL]+138>
+	                                               <main+815>
+Nov 12 20:25:57  R[21311] <Error>: CGContextGetCTM: invalid context 0x0. 
+Backtrace:
+	  <NSMenuItemShapeEnumerate+111>
+	   <HIShapeEnumerate+130>
+	    <NSMenuItemCarbonEventHandler+10874>
+	     
+<_ZL23DispatchEventToHandlersP14EventTargetRecP14OpaqueEventRefP14HandlerCa
+llRec+1231>
+	      
+<_ZL30SendEventToEventTargetInternalP14OpaqueEventRefP20OpaqueEventTargetRe
+fP14HandlerCallRec+404>
+	       <SendEventToEventTargetWithOptions+43>
+	        <_ZN6HIView8SendDrawEsP13OpaqueGrafPtrPK9__HIShapeP9CGContext+337>
+	         
+<_ZN6HIView23RecursiveDrawCompositedEPK9__HIShapeS2_jPS_P9CGContexthd+557>
+	          
+<_ZN6HIView23RecursiveDrawCompositedEPK9__HIShapeS2_jPS_P9CGContexthd+1293>
+	           
+<_ZN6HIView23RecursiveDrawCompositedEPK9__HIShapeS2_jPS_P9CGContexthd+1293>
+	            
+<_ZN6HIView23RecursiveDrawCompositedEPK9__HIShapeS2_jPS_P9CGContexthd+1293>
+	             
+<_ZN6HIView14DrawCompositedEsP13OpaqueGrafPtrPK9__HIShapejPS_P9CGContext+10
+31>
+	              <_ZN6HIView6RenderEjP9CGContext+54>
+	               
+<_ZN10WindowData11BaseHandlerEP25OpaqueEventHandlerCallRefP14OpaqueEventRef
+Pv+1125>
+	                
+<_ZL23DispatchEventToHandlersP14EventTargetRecP14OpaqueEventRefP14HandlerCa
+llRec+1231>
+	                 
+<_ZL30SendEventToEventTargetInternalP14OpaqueEventRefP20OpaqueEventTargetRe
+fP14HandlerCallRec+404>
+	                  <SendEventToEventTarget+40>
+	                   
+<_Z11PaintWindowP10WindowDataP15OpaqueRgnHandle11PaintReasonb+199>
+	                    
+<_ZL24MoveResizeWindowInternalP10WindowDataiiiihhhhPK4Rectj+1430>
+	                     <_ZN10WindowData9SetBoundsEtPK4RectS2_jPh+415>
+	                      
+<_ZL30SetWindowBoundsAndUpdateEffectR16WindowWithRefConjtPK4RectP10Transiti
+on+46>
+	                       <_ZL15TransitionTimerP16__EventLoopTimerPv+2190>
+	                        
+<__CFRUNLOOP_IS_CALLING_OUT_TO_A_TIMER_CALLBACK_FUNCTION__+20>
+	                         <__CFRunLoopDoTimer+1075>
+	                          <__CFRunLoopDoTimers+298>
+	                           <__CFRunLoopRun+1841>
+	                            <CFRunLoopRunSpecific+296>
+	                             <RunCurrentEventLoopInMode+235>
+	                              <_ZL14RunTransitionsj+382>
+	                               <TransitionWindowWithOptions+4131>
+	                                
+<_ZL31SelectItemAndRestoreAllMenuBitsR14MenuSelectDataP13SelectionDataP10Me
+nuResultS4_+2741>
+	                                 
+<_ZL15TrackMenuCommonR14MenuSelectDataPhP13SelectionDataP10MenuResultS5_+18
+72>
+	                                  
+<_ZL19PopUpMenuSelectCoreP8MenuData5PointdS1_tjPK4RecttjS4_S4_PK14__CFDicti
+onaryPK10__CFStrin
+	                                   
+<_ZL26_HandlePopUpMenuSelection8P13OpaqueMenuRefP14OpaqueEventRefj5PointtjP
+K4RecttS6_S6_PK14
+	                                    
+<_HandlePopUpMenuSelectionWithDictionary+287>
+	                                     <_NSSLMPopUpCarbonMenu3+6168>
+	                                      <_NSPopUpCarbonMenu3+153>
+	                                       <-[NSCarbonMenuImpl 
+popUpMenu:atLocation:width:forView:withSelectedItem:withFont:withFla
+	                                        <-[NSPopUpButtonCell 
+trackMouse:inRect:ofView:untilMouseUp:]+559>
+	                                         <-[NSControl mouseDown:]+669>
+	                                          <-[NSWindow 
+_handleMouseDownEvent:isDelayedEvent:]+6322>
+	                                           <-[NSWindow 
+_reallySendEvent:isDelayedEvent:]+212>
+	                                            <-[NSWindow sendEvent:]+517>
+	                                             <-[NSApplication 
+sendEvent:]+2540>
+	                                              <-[RController 
+doProcessEvents:]+221>
+	                                               <-[RController 
+handleReadConsole:]+186>
+	                                               <Re_ReadConsole+185>
+	                                               <R_ReplDLLdo1+143>
+	                                               <run_REngineRmainloop+295>
+	                                               <-[REngine runREPL]+138>
+	                                               <main+815>
+
+
+
+
+ 
+
+
+From Jean.Thioulouse at univ-lyon1.fr  Sat Nov 14 10:43:46 2015
+From: Jean.Thioulouse at univ-lyon1.fr (THIOULOUSE JEAN)
+Date: Sat, 14 Nov 2015 09:43:46 +0000
+Subject: [R-SIG-Mac] loading tkrplot causes a segfault
+In-Reply-To: <65680901.3947498.1436568871446.JavaMail.root@fredhutch.org>
+References: <65680901.3947498.1436568871446.JavaMail.root@fredhutch.org>
+Message-ID: <37F42753-D5B7-44F7-B915-B7F1C0F6DB52@univ-lyon1.fr>
+
+Hi
+
+Loading the CRAN binary version of the tkrplot package version 0.0-23 causes a segfault of R version 3.2.2 on OS X 10.11.1 too.
+
+Installing form sources solves the problem.
+
+Still no idea ?
+
+Jean
+
+
+[MacPro:~] jthioulo% R
+
+R version 3.2.2 (2015-08-14) -- "Fire Safety"
+Copyright (C) 2015 The R Foundation for Statistical Computing
+Platform: x86_64-apple-darwin13.4.0 (64-bit)
+
+R est un logiciel libre livr? sans AUCUNE GARANTIE.
+Vous pouvez le redistribuer sous certaines conditions.
+Tapez 'license()' ou 'licence()' pour plus de d?tails.
+
+R est un projet collaboratif avec de nombreux contributeurs.
+Tapez 'contributors()' pour plus d'information et
+'citation()' pour la fa?on de le citer dans les publications.
+
+Tapez 'demo()' pour des d?monstrations, 'help()' pour l'aide
+en ligne ou 'help.start()' pour obtenir l'aide au format HTML.
+Tapez 'q()' pour quitter R.
+
+[Sauvegarde de la session pr?c?dente restaur?e]
+
+> sessionInfo()
+R version 3.2.2 (2015-08-14)
+Platform: x86_64-apple-darwin13.4.0 (64-bit)
+Running under: OS X 10.11.1 (El Capitan)
+
+locale:
+[1] fr_FR.UTF-8/fr_FR.UTF-8/fr_FR.UTF-8/C/fr_FR.UTF-8/fr_FR.UTF-8
+
+attached base packages:
+[1] stats     graphics  grDevices utils     datasets  methods   base     
+> install.packages("tkrplot")
+essai de l'URL 'http://cran.univ-lyon1.fr/bin/macosx/mavericks/contrib/3.2/tkrplot_0.0-23.tgz'
+Content type 'application/x-gzip' length 24752 bytes (24 KB)
+==================================================
+downloaded 24 KB
+
+
+Les packages binaires t?l?charg?s sont dans
+	/var/folders/qg/wgr2ssj52259lkbxq2z_dwwc0000gn/T//RtmpWSrqzX/downloaded_packages
+> library(tkrplot)
+Le chargement a n?cessit? le package : tcltk
+
+ *** caught segfault ***
+address 0x998, cause 'memory not mapped'
+
+Traceback:
+ 1: structure(.External(.C_dotTclObjv, objv), class = "tclObj")
+ 2: .Tcl.objv(.Tcl.args.objv(...))
+ 3: tcl("load", file, "Rplot")
+ 4: doTryCatch(return(expr), name, parentenv, handler)
+ 5: tryCatchOne(expr, names, parentenv, handlers[[1L]])
+ 6: tryCatchList(expr, classes, parentenv, handlers)
+ 7: tryCatch(tcl("load", file, "Rplot"), error = function(e) warning("loading Rplot failed",     call. = FALSE))
+ 8: fun(libname, pkgname)
+ 9: doTryCatch(return(expr), name, parentenv, handler)
+10: tryCatchOne(expr, names, parentenv, handlers[[1L]])
+11: tryCatchList(expr, classes, parentenv, handlers)
+12: tryCatch(fun(libname, pkgname), error = identity)
+13: runHook(".onLoad", env, package.lib, package)
+14: loadNamespace(package, c(which.lib.loc, lib.loc))
+15: doTryCatch(return(expr), name, parentenv, handler)
+16: tryCatchOne(expr, names, parentenv, handlers[[1L]])
+17: tryCatchList(expr, classes, parentenv, handlers)
+18: tryCatch(expr, error = function(e) {    call <- conditionCall(e)    if (!is.null(call)) {        if (identical(call[[1L]], quote(doTryCatch)))             call <- sys.call(-4L)        dcall <- deparse(call)[1L]        prefix <- paste("Error in", dcall, ": ")        LONG <- 75L        msg <- conditionMessage(e)        sm <- strsplit(msg, "\n")[[1L]]        w <- 14L + nchar(dcall, type = "w") + nchar(sm[1L], type = "w")        if (is.na(w))             w <- 14L + nchar(dcall, type = "b") + nchar(sm[1L],                 type = "b")        if (w > LONG)             prefix <- paste0(prefix, "\n  ")    }    else prefix <- "Error : "    msg <- paste0(prefix, conditionMessage(e), "\n")    .Internal(seterrmessage(msg[1L]))    if (!silent && identical(getOption("show.error.messages"),         TRUE)) {        cat(msg, file = stderr())        .Internal(printDeferredWarnings())    }    invisible(structure(msg, class = "try-error", condition = e))})
+19: try({    ns <- loadNamespace(package, c(which.lib.loc, lib.loc))    env <- attachNamespace(ns, pos = pos, deps)})
+20: library(tkrplot)
+
+Possible actions:
+1: abort (with core dump, if enabled)
+2: normal R exit
+3: exit R without saving workspace
+4: exit R saving workspace
+Selection: 4
+[MacPro:~] jthioulo% R
+
+R version 3.2.2 (2015-08-14) -- "Fire Safety"
+Copyright (C) 2015 The R Foundation for Statistical Computing
+Platform: x86_64-apple-darwin13.4.0 (64-bit)
+
+R est un logiciel libre livr? sans AUCUNE GARANTIE.
+Vous pouvez le redistribuer sous certaines conditions.
+Tapez 'license()' ou 'licence()' pour plus de d?tails.
+
+R est un projet collaboratif avec de nombreux contributeurs.
+Tapez 'contributors()' pour plus d'information et
+'citation()' pour la fa?on de le citer dans les publications.
+
+Tapez 'demo()' pour des d?monstrations, 'help()' pour l'aide
+en ligne ou 'help.start()' pour obtenir l'aide au format HTML.
+Tapez 'q()' pour quitter R.
+
+[Sauvegarde de la session pr?c?dente restaur?e]
+
+> install.packages("tkrplot", type="source")
+essai de l'URL 'http://cran.univ-lyon1.fr/src/contrib/tkrplot_0.0-23.tar.gz'
+Content type 'application/x-gzip' length 39037 bytes (38 KB)
+==================================================
+downloaded 38 KB
+
+* installing *source* package ?tkrplot? ...
+** package ?tkrplot? correctement d?compress? et sommes MD5 v?rifi?es
+configure: creating ./config.status
+config.status: creating src/Makevars
+** libs
+clang -I/Library/Frameworks/R.framework/Resources/include -DNDEBUG -I/usr/local/include -I/usr/local/include -I/usr/X11/include -I/usr/local/include -I/usr/local/include/freetype2 -I/opt/X11/include    -fPIC  "-mtune=native -g -O2 -Wall -pedantic -Wconversion" -c tcltkimg.c -o tcltkimg.o
+clang -dynamiclib -Wl,-headerpad_max_install_names -undefined dynamic_lookup -single_module -multiply_defined suppress -L/Library/Frameworks/R.framework/Resources/lib -L/usr/local/lib -o tkrplot.so tcltkimg.o -L/usr/local/lib -ltcl8.6 -L/usr/local/lib -ltk8.6 -L/usr/X11/lib -lX11 -Wl,-weak-lXss -lXext -F/Library/Frameworks/R.framework/.. -framework R -Wl,-framework -Wl,CoreFoundation
+installing to /Library/Frameworks/R.framework/Versions/3.2/Resources/library/tkrplot/libs
+** R
+** preparing package for lazy loading
+** help
+*** installing help indices
+** building package indices
+** testing if installed package can be loaded
+* DONE (tkrplot)
+
+Les packages source t?l?charg?s sont dans
+	?/private/var/folders/qg/wgr2ssj52259lkbxq2z_dwwc0000gn/T/RtmpuiZDOB/downloaded_packages?
+> library(tkrplot)
+Le chargement a n?cessit? le package : tcltk
+> 
+Save workspace image? [y/n/c]: y
+[MacPro:~] jthioulo% 
+
+
+
+> Le 11 juil. 2015 ? 00:54, Dan Tenenbaum <dtenenba at fredhutch.org> a ?crit :
+> 
+> Hi,
+> 
+> loading the tkrplot package (version 0.0-23) causes a segfault. This only seems to happen on Mavericks, not Snow Leopard, Linux, or Windows. 
+> 
+>> library(tkrplot)
+> Loading required package: tcltk
+> 
+> *** caught segfault ***
+> address 0x998, cause 'memory not mapped'
+> 
+> Traceback:
+> 1: structure(.External(.C_dotTclObjv, objv), class = "tclObj")
+> 2: .Tcl.objv(.Tcl.args.objv(...))
+> 3: tcl("load", file, "Rplot")
+> 4: doTryCatch(return(expr), name, parentenv, handler)
+> 5: tryCatchOne(expr, names, parentenv, handlers[[1L]])
+> 6: tryCatchList(expr, classes, parentenv, handlers)
+> 7: tryCatch(tcl("load", file, "Rplot"), error = function(e) warning("loading Rplot failed",     call. = FALSE))
+> 8: fun(libname, pkgname)
+> 9: doTryCatch(return(expr), name, parentenv, handler)
+> 10: tryCatchOne(expr, names, parentenv, handlers[[1L]])
+> 11: tryCatchList(expr, classes, parentenv, handlers)
+> 12: tryCatch(fun(libname, pkgname), error = identity)
+> 13: runHook(".onLoad", env, package.lib, package)
+> 14: loadNamespace(package, c(which.lib.loc, lib.loc))
+> 15: doTryCatch(return(expr), name, parentenv, handler)
+> 16: tryCatchOne(expr, names, parentenv, handlers[[1L]])
+> 17: tryCatchList(expr, classes, parentenv, handlers)
+> 18: tryCatch(expr, error = function(e) {    call <- conditionCall(e)    if (!is.null(call)) {        if (identical(call[[1L]], quote(doTryCatch)))             call <- sys.call(-4L)        dcall <- deparse(call)[1L]        prefix <- paste("Error in", dcall, ": ")        LONG <- 75L        msg <- conditionMessage(e)        sm <- strsplit(msg, "\n")[[1L]]        w <- 14L + nchar(dcall, type = "w") + nchar(sm[1L], type = "w")        if (is.na(w))             w <- 14L + nchar(dcall, type = "b") + nchar(sm[1L],                 type = "b")        if (w > LONG)             prefix <- paste0(prefix, "\n  ")    }    else prefix <- "Error : "    msg <- paste0(prefix, conditionMessage(e), "\n")    .Internal(seterrmessage(msg[1L]))    if (!silent && identical(getOption("show.error.messages"),         TRUE)) {        cat(msg, file = stderr())        .Internal(printDeferredWarnings())    }    invisible(structure(msg, class = "try-error", condition = e))})
+> 19: try({    ns <- loadNamespace(package, c(which.lib.loc, lib.loc))    env <- attachNamespace(ns, pos = pos, deps)})
+> 20: library(tkrplot)
+> 
+> Possible actions:
+> 1: abort (with core dump, if enabled)
+> 2: normal R exit
+> 3: exit R without saving workspace
+> 4: exit R saving workspace
+> 
+> 
+> 
+> My sessionInfo() is:
+> 
+>> sessionInfo()
+> R version 3.2.1 (2015-06-18)
+> Platform: x86_64-apple-darwin13.4.0 (64-bit)
+> Running under: OS X 10.9.5 (Mavericks)
+> 
+> locale:
+> [1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+> 
+> attached base packages:
+> [1] stats     graphics  grDevices utils     datasets  methods   base     
+> 
+> 
+> Any ideas?
+> 
+> Thanks,
+> Dan
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+
+
+From brandon.hurr at gmail.com  Tue Nov 17 18:30:16 2015
+From: brandon.hurr at gmail.com (Brandon Hurr)
+Date: Tue, 17 Nov 2015 09:30:16 -0800
+Subject: [R-SIG-Mac] Color Profiles in R-gui and Editor
+Message-ID: <CAG2OMvuCMj3WyNMk8hZHu0prEYvYu=B_=PSb8LzOG6ZMczS-xA@mail.gmail.com>
+
+Hello,
+
+I primarily use R-gui as my main console and it's editor for editing
+my script files. It does what I need, but my eyes tire from staring at
+white all day. I've tried to change the colors manually through
+preferences to something like Solarized
+(http://www.zovirl.com/2011/07/22/solarized_cheat_sheet/), but then I
+seem to lose syntax highlighting.
+
+Is there an easier way to set color profiles in the gui and editor
+that retains syntax highlighting? Is there a way to input an entire
+profile like Solarized Light and Dark in a plist file or similar?
+Other than "defaults" there doesn't seem to be a dropdown to select
+other color profiles.
+
+My google-fu turns up very little and the FAQ only mentions the Pref Pane.
+
+Thanks,
+Brandon
+
+
+From brandon.hurr at gmail.com  Tue Nov 17 18:39:49 2015
+From: brandon.hurr at gmail.com (Brandon Hurr)
+Date: Tue, 17 Nov 2015 09:39:49 -0800
+Subject: [R-SIG-Mac] Color Profiles in R-gui and Editor
+In-Reply-To: <CAG2OMvuCMj3WyNMk8hZHu0prEYvYu=B_=PSb8LzOG6ZMczS-xA@mail.gmail.com>
+References: <CAG2OMvuCMj3WyNMk8hZHu0prEYvYu=B_=PSb8LzOG6ZMczS-xA@mail.gmail.com>
+Message-ID: <CAG2OMvtHPYvg+iVKNbr9fwX-b1=eWAW-7AP8rsDr2CtoMkobUw@mail.gmail.com>
+
+Apologies, forget the comment about syntax highlighting. The request
+for an easier way to add/select color profiles for R-gui and its
+editor stands.
+
+On Tue, Nov 17, 2015 at 9:30 AM, Brandon Hurr <brandon.hurr at gmail.com> wrote:
+> Hello,
+>
+> I primarily use R-gui as my main console and it's editor for editing
+> my script files. It does what I need, but my eyes tire from staring at
+> white all day. I've tried to change the colors manually through
+> preferences to something like Solarized
+> (http://www.zovirl.com/2011/07/22/solarized_cheat_sheet/), but then I
+> seem to lose syntax highlighting.
+>
+> Is there an easier way to set color profiles in the gui and editor
+> that retains syntax highlighting? Is there a way to input an entire
+> profile like Solarized Light and Dark in a plist file or similar?
+> Other than "defaults" there doesn't seem to be a dropdown to select
+> other color profiles.
+>
+> My google-fu turns up very little and the FAQ only mentions the Pref Pane.
+>
+> Thanks,
+> Brandon
+
+
+From charles.dimaggio at gmail.com  Sun Nov 29 16:34:40 2015
+From: charles.dimaggio at gmail.com (Charles DiMaggio)
+Date: Sun, 29 Nov 2015 10:34:40 -0500
+Subject: [R-SIG-Mac] R 3.2.2 Hangs Reading Files in El Capitan
+Message-ID: <C155FE58-D7FC-4C76-9FF6-45107EFDDBEF@gmail.com>
+
+Hi. After upgrading to el capitan R hangs on readRDS() and load()  for largish (say 500MB or larger) files, requiring a Force Quit of R.  I am working on a 64 GB Mac Pro machine and had no problem loading these size files prior to upgrade.  Reading and loading smaller files (1MB or less) seems to work fine. I re-installed R 3.2.2 GUI 1.66 Mavericks, XQuartz and CLT after the upgrade. Turned off SIP but experienced the same problem.
+
+I've looked over recent list posting about R behavior after upgrade to el capitan, and have not seen anything about this.  Am hoping soon-to-be-released R version 3.2.3 (Wooden Christmas-Tree) will address this weirdness, but wondering if anyone else has experienced anything similar?
+
+First few of lines of Mac Error Report below:   
+
+Date/Time:       2015-11-28 15:45:00 -0500
+OS Version:      Mac OS X 10.11.1 (Build 15B42)
+Architecture:    x86_64
+Report Version:  22
+
+Command:         R
+Path:            /Applications/R.app/Contents/MacOS/R
+Version:         R 3.2.2 GUI 1.66 Mavericks build (6996)
+Parent:          launchd [1]
+PID:             563
+
+Event:           hang
+Duration:        1.70s (process was unresponsive for 25 seconds before sampling)
+Steps:           17 (100ms sampling interval)
+
+Hardware model:  MacPro6,1
+Active cpus:     8
+
+...
+
+Heaviest stack for the main thread of the target process:
+  17  start + 1 (libdyld.dylib + 13741) [0x7fff88f2f5ad]
+  17  main + 815 (R + 5967) [0x1053e374f]
+  17  -[REngine runREPL] + 138 (R + 75578) [0x1053f473a]
+  17  run_REngineRmainloop + 295 (R + 123751) [0x105400367]
+  17  ??? (<56AA7B12-7A0D-3F36-8116-218A93BC3CB3> + 1243228) [0x10561d85c]
+  17  ??? (<56AA7B12-7A0D-3F36-8116-218A93BC3CB3> + 675070) [0x105592cfe]
+  17  ??? (<56AA7B12-7A0D-3F36-8116-218A93BC3CB3> + 1044002) [0x1055ece22]
+  17  ??? (<56AA7B12-7A0D-3F36-8116-218A93BC3CB3> + 674823) [0x105592c07]
+  17  ??? (<56AA7B12-7A0D-3F36-8116-218A93BC3CB3> + 1029000) [0x1055e9388]
+  17  ??? (<56AA7B12-7A0D-3F36-8116-218A93BC3CB3> + 673910) [0x105592876]
+  17  ??? (<56AA7B12-7A0D-3F36-8116-218A93BC3CB3> + 750621) [0x1055a541d]
+  17  ??? (<56AA7B12-7A0D-3F36-8116-218A93BC3CB3> + 1601435) [0x105674f9b]
+  17  ??? (<56AA7B12-7A0D-3F36-8116-218A93BC3CB3> + 1592422) [0x105672c66]
+  17  ??? (<56AA7B12-7A0D-3F36-8116-218A93BC3CB3> + 1594038) [0x1056732b6]
+  14  ??? (<56AA7B12-7A0D-3F36-8116-218A93BC3CB3> + 1596619) [0x105673ccb]
+  7   ??? (<56AA7B12-7A0D-3F36-8116-218A93BC3CB3> + 1595584) [0x1056738c0]
+  6   ??? (<56AA7B12-7A0D-3F36-8116-218A93BC3CB3> + 1592773) [0x105672dc5]
+  6   ??? (<56AA7B12-7A0D-3F36-8116-218A93BC3CB3> + 1600194) [0x105674ac2]
+  6   ??? (<56AA7B12-7A0D-3F36-8116-218A93BC3CB3> + 383889) [0x10554bb91]
+  6   ??? (<56AA7B12-7A0D-3F36-8116-218A93BC3CB3> + 316653) [0x10553b4ed]
+  1   inflate + 258 (libz.1.dylib + 20735) [0x7fff9e4e30ff] (running)
+
+
+Process:         R [563]
+Path:            /Applications/R.app/Contents/MacOS/R
+Architecture:    x86_64
+Parent:          launchd [1]
+UID:             501
+Task size:       350330 pages (+14553)
+CPU Time:        1.604s
+Note:            Unresponsive for 25 seconds before sampling
+Note:            2 idle work queue threads omitted
+
+
+Cheers
+
+Charles
+
+
+Charles DiMaggio, PhD, MPH
+Director of Injury Research
+Department of Surgery
+New York University School of Medicine
+Division of Trauma, Emergency Surgery and Critical Care Surgery
+Bellevue Hosptial Center
+462 First Avenue, NBV 15
+New York, NY 10016-9196
+Charles.Dimaggio at nyumc.org
+Office: 212.263.3202
+Mobile: 516.308.6426
+
+
+
+
+
+
+
+	[[alternative HTML version deleted]]
+
+
+From ashkan.labaf at gmail.com  Sat Nov 14 16:09:12 2015
+From: ashkan.labaf at gmail.com (Ashkan Labaf)
+Date: Sat, 14 Nov 2015 15:09:12 -0000
+Subject: [R-SIG-Mac] Installing older version of R on mac
+Message-ID: <A2BE6558-9C85-4AC5-A8E3-F32FB2230C4B@gmail.com>
+
+Hi,
+
+I have a problem downloading R in my mac which I have been dealing with for many hours now. I really hope that I can get some assistance from you.
+
+My purpose is to use propensity score matching in SPSS (from source forge). I am using SPSS version 22 on my mac OS X yosemite 10.10.5.
+
+After reading a lot on the different sites I need to use R.2.15 for SPSS 22 in order to use the psmatching 3.03 on source forge.
+
+However, I cannot seem to install R2.15 when I run the installation package. When I am going to select destination on the macintosh HD, it says that R2.15.0 for Mac OS X 10.5 or higher can?t be installed on this disk. How is this possible? My OS X version is higher than the demanded version for R2.15.
+
+Appreciate assistance.
+
+Kind regards
+
+Ashkan Labaf
+
+From jandeleeuw6 at gmail.com  Mon Nov  9 17:45:09 2015
+From: jandeleeuw6 at gmail.com (Jan Deleeuw)
+Date: Mon, 09 Nov 2015 16:45:09 -0000
+Subject: [R-SIG-Mac] rJava: configure error: One or more JNI types
+ differ from the corresponding native type
+In-Reply-To: <CAM3-KjaTxeBXFpBg136vPHtOXA3P_Vt6UG720D5Qr8YzeCENFA@mail.gmail.com>
+References: <CAM3-KjbTNwS35+RALNpUQ7=OdpgTU5n1OKJM1KfporY8y1pWpA@mail.gmail.com>
+	<30be49fa03e641c9a2e91ed784be3972@CONNHUB1.connect.uwaterloo.ca>
+	<CAM3-KjaTxeBXFpBg136vPHtOXA3P_Vt6UG720D5Qr8YzeCENFA@mail.gmail.com>
+Message-ID: <269bd4be-e4b3-4dca-b172-6bf9297534f6@googlegroups.com>
+
+0.9-8 solves the problem with environmental variables but I now get
+
+checking whether JRI should be compiled (autodetect)... yes
+
+./configure: line 3816: syntax error near unexpected token `WANT_JRI,'
+
+./configure: line 3816: `AM_CONDITIONAL(WANT_JRI, test "x${want_jri}" = 
+yes)'
+
+ERROR: configuration failed for package 'rJava'
+
+Thanks -- Jan
+
+On Tuesday, November 3, 2015 at 2:27:02 PM UTC-8, Marius Hofert wrote:
+>
+> ... worked flawlessly with rJava 0.9-8 from 
+> https://www.rforge.net/rJava/files/ -- thanks a ton, Simon! 
+>
+> Cheers, 
+> Marius 
+>
+> On Tue, Nov 3, 2015 at 4:57 PM, Simon Urbanek 
+> <simon.... at r-project.org <javascript:>> wrote: 
+> > Please make sure you are using rJava 0.9-8 since your JVM is lacking the 
+> path in libjvm and you are on 10.11 which has issues with passing env vars. 
+> > 
+> > Cheers, 
+> > Simon 
+> > 
+>
+> _______________________________________________ 
+> R-SIG-Mac mailing list 
+> R-SI... at r-project.org <javascript:> 
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac 
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <https://stat.ethz.ch/pipermail/r-sig-mac/attachments/20151109/b94f9758/attachment-0001.html>
+
+From jandeleeuw6 at gmail.com  Mon Nov  9 17:45:10 2015
+From: jandeleeuw6 at gmail.com (Jan Deleeuw)
+Date: Mon, 09 Nov 2015 16:45:10 -0000
+Subject: [R-SIG-Mac] rJava: configure error: One or more JNI types
+ differ from the corresponding native type
+In-Reply-To: <CAM3-KjaTxeBXFpBg136vPHtOXA3P_Vt6UG720D5Qr8YzeCENFA@mail.gmail.com>
+References: <CAM3-KjbTNwS35+RALNpUQ7=OdpgTU5n1OKJM1KfporY8y1pWpA@mail.gmail.com>
+	<30be49fa03e641c9a2e91ed784be3972@CONNHUB1.connect.uwaterloo.ca>
+	<CAM3-KjaTxeBXFpBg136vPHtOXA3P_Vt6UG720D5Qr8YzeCENFA@mail.gmail.com>
+Message-ID: <269bd4be-e4b3-4dca-b172-6bf9297534f6@googlegroups.com>
+
+0.9-8 solves the problem with environmental variables but I now get
+
+checking whether JRI should be compiled (autodetect)... yes
+
+./configure: line 3816: syntax error near unexpected token `WANT_JRI,'
+
+./configure: line 3816: `AM_CONDITIONAL(WANT_JRI, test "x${want_jri}" = 
+yes)'
+
+ERROR: configuration failed for package 'rJava'
+
+Thanks -- Jan
+
+On Tuesday, November 3, 2015 at 2:27:02 PM UTC-8, Marius Hofert wrote:
+>
+> ... worked flawlessly with rJava 0.9-8 from 
+> https://www.rforge.net/rJava/files/ -- thanks a ton, Simon! 
+>
+> Cheers, 
+> Marius 
+>
+> On Tue, Nov 3, 2015 at 4:57 PM, Simon Urbanek 
+> <simon.... at r-project.org <javascript:>> wrote: 
+> > Please make sure you are using rJava 0.9-8 since your JVM is lacking the 
+> path in libjvm and you are on 10.11 which has issues with passing env vars. 
+> > 
+> > Cheers, 
+> > Simon 
+> > 
+>
+> _______________________________________________ 
+> R-SIG-Mac mailing list 
+> R-SI... at r-project.org <javascript:> 
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac 
+>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <https://stat.ethz.ch/pipermail/r-sig-mac/attachments/20151109/b94f9758/attachment-0002.html>
+
+From joshgray at bu.edu  Wed Nov 25 13:21:18 2015
+From: joshgray at bu.edu (Gray, Joshua)
+Date: Wed, 25 Nov 2015 12:21:18 -0000
+Subject: [R-SIG-Mac] Help files not available
+Message-ID: <BB3FBD5749960C409DFD0882D28CB664E3B5CFF4@IST-EX10MBX-4.ad.bu.edu>
+
+I am having trouble with my R installation after upgrading to El Capitan (although the timing could be entirely coincidental). The help files are not available, for instance:
+
+> help("lm")
+
+Opens the help window in the R GUI, but the message there is: Error in file(out, "wt") : cannot open the connection
+
+Similarly:
+
+> ?lm
+Warning message:
+In file(out, "wt") :
+  cannot open file '/var/folders/68/x1590pm56yvbbhrkcshd1_yw0000gn/T//RtmpJfjb7P/Rhttpd3bb208bacf': No such file or directory
+>
+
+The problem persists after a restart of R and the computer.
+
+Installation details: R 3.2.1 GUI 1.66 Mavericks build
+System details: OS X 10.11.1
+
+Thanks in advance for your help
+
+
+	[[alternative HTML version deleted]]
+
+

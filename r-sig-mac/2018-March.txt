@@ -1,0 +1,3968 @@
+From simon.urbanek at R-project.org  Mon Mar  5 21:34:58 2018
+From: simon.urbanek at R-project.org (Simon Urbanek)
+Date: Mon, 5 Mar 2018 15:34:58 -0500
+Subject: [R-SIG-Mac] Replication runtime error on MacOS build machines
+In-Reply-To: <CAD6tx948AuoyB9uvi3AcUaYi-64+zqYigMT1YcuYbjpueug+Eg@mail.gmail.com>
+References: <CAD6tx948AuoyB9uvi3AcUaYi-64+zqYigMT1YcuYbjpueug+Eg@mail.gmail.com>
+Message-ID: <ACC859E9-2CB8-4658-BB4F-54C21467ED20@R-project.org>
+
+Jim,
+
+it?s hard to replicate anything with the package, because it?s messing with the filesystem in random places (really, a violation of the CRAN policy*! You should fix that as well - although running it properly would likely hide the segfault bug ;)). Here is the stack trace:
+
+Process 46691 stopped
+* thread #1: tid = 0x303a8b, 0x000000010262e351 fs.so`stat_(path=<unavailable>) + 2705 at file.cc:204, queue = 'com.apple.main-thread', stop reason = EXC_BAD_ACCESS (code=1, address=0x0)
+    frame #0: 0x000000010262e351 fs.so`stat_(path=<unavailable>) + 2705 at file.cc:204 [opt]
+   201 	#else
+   202 	    group* grp;
+   203 	    grp = getgrgid(st.st_gid);
+-> 204 	    SET_STRING_ELT(VECTOR_ELT(out, 6), i, Rf_mkCharCE(grp->gr_name, CE_UTF8));
+   205 	#endif
+   206 	
+   207 	    REAL(VECTOR_ELT(out, 7))[i] = st.st_rdev;
+(lldb) bt
+* thread #1: tid = 0x303a8b, 0x000000010262e351 fs.so`stat_(path=<unavailable>) + 2705 at file.cc:204, queue = 'com.apple.main-thread', stop reason = EXC_BAD_ACCESS (code=1, address=0x0)
+  * frame #0: 0x000000010262e351 fs.so`stat_(path=<unavailable>) + 2705 at file.cc:204 [opt]
+    frame #1: 0x00000001026344a6 fs.so`::_fs_stat_(pathSEXP=0x00007f825b8ba068) + 134 at RcppExports.cpp:73 [opt]
+    frame #2: 0x0000000100a003ca libR.dylib`R_doDotCall(ofun=<unavailable>, nargs=<unavailable>, cargs=<unavailable>, call=0x00007f825b1d0eb0) + 2282 at dotcode.c:570 [opt]
+    frame #3: 0x0000000100a3d71b libR.dylib`bcEval(body=<unavailable>, rho=0x00007f825b1d1cd0, useCache=<unavailable>) + 53899 at eval.c:6962 [opt]
+    frame #4: 0x0000000100a2fe31 libR.dylib`Rf_eval(e=<unavailable>, rho=<unavailable>) + 577 at eval.c:624 [opt]
+
+
+It looks like a true bug - you?re not checking for the case where grp is NULL (btw you have the same bug above for getpwuid).
+
+Cheers,
+Simon
+
+
+* - quote:
+
+"The code and examples provided in a package should never do anything which might be regarded as malicious or anti-social?
+[?]
+"Packages should not write in the user?s home filespace (including clipboards), nor anywhere else on the file system apart from the R session?s temporary directory (or during installation in the location pointed to by TMPDIR: and such usage should be cleaned up).?
+
+
+> On Feb 19, 2018, at 9:23 AM, Jim Hester <james.f.hester at gmail.com> wrote:
+> 
+> I maintain the fs package, which is currently failing _only_ on CRANs
+> MacOS build machine.
+> <https://www.r-project.org/nosvn/R.check/r-release-osx-x86_64/fs-00check.html>
+> 
+> I have been trying to replicate this error and unfortunately have been
+> unable to do so, the package works as expected locally (MacOS 10.12.6)
+> and for numerous other people using El Capitan (as used on CRAN's
+> system) <https://twitter.com/jimhester_/status/964513974942420994>. I
+> also tested it on a El Capitan VM without reproducing the failure.
+> 
+> The main difference I am aware of on CRAN's systems is the newer
+> (4.0.0) clang/llvm toolchain than that shipped with XCode. I tested
+> compiling / running fs with this toolchain however and did not
+> reproduce the crash.
+> 
+> If anyone has an idea of what could be causing the crash on CRAN's
+> system I would be grateful. I would really like to fix this so we can
+> have MacOS binaries for fs.
+> 
+> Jim
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+> 
+
+
+From simon.urbanek at R-project.org  Fri Mar  9 23:09:45 2018
+From: simon.urbanek at R-project.org (Simon Urbanek)
+Date: Fri, 9 Mar 2018 17:09:45 -0500
+Subject: [R-SIG-Mac] OS X builds for R-devel
+In-Reply-To: <CAMGHQ945AmimtVLby8NUbC1DhtHRfXqvegCCCNYZxerm3nS+ww@mail.gmail.com>
+References: <CAMGHQ945AmimtVLby8NUbC1DhtHRfXqvegCCCNYZxerm3nS+ww@mail.gmail.com>
+Message-ID: <52343DF1-BF33-4E8E-AD53-C54115944BB7@R-project.org>
+
+Alexey,
+
+due to frequent changes in R-devel and the long time is requires to build the binaries of all 10,000+ packages we don?t do full builds until closer to the release. I have kicked of one such full build now and I?ll enable the incremental builds so packages for R-devel should be available as binaries going forward.
+
+Cheers,
+Simon
+
+
+> On Feb 19, 2018, at 3:27 PM, Alexey Sergushichev <alsergbox at gmail.com> wrote:
+> 
+> Dear all,
+> 
+> Are there any plans on having package build for r-devel on CRAN? I
+> understand it's far from the highest priority but it would be good to have
+> any estimates. I'm aware of several packages on Bioconoductor-devel that
+> fail builds due to absence of binary versions of some packages (
+> http://bioconductor.org/checkResults/devel/bioc-LATEST/ChemmineR/merida2-buildsrc.html
+> http://bioconductor.org/checkResults/devel/bioc-LATEST/cbaf/merida2-buildsrc.html
+> ).
+> 
+> Thanks,
+> Alexey Sergushichev
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+> 
+
+
+From alsergbox at gmail.com  Sat Mar 10 08:38:33 2018
+From: alsergbox at gmail.com (Alexey Sergushichev)
+Date: Sat, 10 Mar 2018 10:38:33 +0300
+Subject: [R-SIG-Mac] OS X builds for R-devel
+In-Reply-To: <52343DF1-BF33-4E8E-AD53-C54115944BB7@R-project.org>
+References: <CAMGHQ945AmimtVLby8NUbC1DhtHRfXqvegCCCNYZxerm3nS+ww@mail.gmail.com>
+ <52343DF1-BF33-4E8E-AD53-C54115944BB7@R-project.org>
+Message-ID: <CAMGHQ95_E2TbufnvmTRrasYR2CvFs9Y_BuPYG-ik-hy3BP4QHA@mail.gmail.com>
+
+Simon,
+
+Cool, thank you!
+
+---
+Alexey
+
+On Mar 10, 2018 01:09, "Simon Urbanek" <simon.urbanek at r-project.org> wrote:
+
+> Alexey,
+>
+> due to frequent changes in R-devel and the long time is requires to build
+> the binaries of all 10,000+ packages we don?t do full builds until closer
+> to the release. I have kicked of one such full build now and I?ll enable
+> the incremental builds so packages for R-devel should be available as
+> binaries going forward.
+>
+> Cheers,
+> Simon
+>
+>
+> > On Feb 19, 2018, at 3:27 PM, Alexey Sergushichev <alsergbox at gmail.com>
+> wrote:
+> >
+> > Dear all,
+> >
+> > Are there any plans on having package build for r-devel on CRAN? I
+> > understand it's far from the highest priority but it would be good to
+> have
+> > any estimates. I'm aware of several packages on Bioconoductor-devel that
+> > fail builds due to absence of binary versions of some packages (
+> > http://bioconductor.org/checkResults/devel/bioc-
+> LATEST/ChemmineR/merida2-buildsrc.html
+> > http://bioconductor.org/checkResults/devel/bioc-
+> LATEST/cbaf/merida2-buildsrc.html
+> > ).
+> >
+> > Thanks,
+> > Alexey Sergushichev
+> >
+> >       [[alternative HTML version deleted]]
+> >
+> > _______________________________________________
+> > R-SIG-Mac mailing list
+> > R-SIG-Mac at r-project.org
+> > https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+> >
+>
+>
+
+	[[alternative HTML version deleted]]
+
+
+From james.f.hester at gmail.com  Sat Mar 10 21:42:59 2018
+From: james.f.hester at gmail.com (Jim Hester)
+Date: Sat, 10 Mar 2018 15:42:59 -0500
+Subject: [R-SIG-Mac] Replication runtime error on MacOS build machines
+In-Reply-To: <ACC859E9-2CB8-4658-BB4F-54C21467ED20@R-project.org>
+References: <CAD6tx948AuoyB9uvi3AcUaYi-64+zqYigMT1YcuYbjpueug+Eg@mail.gmail.com>
+ <ACC859E9-2CB8-4658-BB4F-54C21467ED20@R-project.org>
+Message-ID: <CAD6tx95_ieTyA_saDdeGwJ8k6w3WeQZ0LQWmV+8g0hQxP60Snw@mail.gmail.com>
+
+Thank you for looking at this Simon. I agree it is a bug in the package and
+have now fixed it (
+https://github.com/r-lib/fs/commit/901cb50fc2f4d25bb8b920514f52574be42d7aa5)
+
+I will also fix the examples and submit an update to CRAN early next week.
+
+Thanks again,
+
+Jim
+
+On Mon, Mar 5, 2018 at 3:34 PM, Simon Urbanek <simon.urbanek at r-project.org>
+wrote:
+
+> Jim,
+>
+> it?s hard to replicate anything with the package, because it?s messing
+> with the filesystem in random places (really, a violation of the CRAN
+> policy*! You should fix that as well - although running it properly would
+> likely hide the segfault bug ;)). Here is the stack trace:
+>
+> Process 46691 stopped
+> * thread #1: tid = 0x303a8b, 0x000000010262e351
+> fs.so`stat_(path=<unavailable>) + 2705 at file.cc:204, queue =
+> 'com.apple.main-thread', stop reason = EXC_BAD_ACCESS (code=1, address=0x0)
+>     frame #0: 0x000000010262e351 fs.so`stat_(path=<unavailable>) + 2705
+> at file.cc:204 [opt]
+>    201  #else
+>    202      group* grp;
+>    203      grp = getgrgid(st.st_gid);
+> -> 204      SET_STRING_ELT(VECTOR_ELT(out, 6), i,
+> Rf_mkCharCE(grp->gr_name, CE_UTF8));
+>    205  #endif
+>    206
+>    207      REAL(VECTOR_ELT(out, 7))[i] = st.st_rdev;
+> (lldb) bt
+> * thread #1: tid = 0x303a8b, 0x000000010262e351
+> fs.so`stat_(path=<unavailable>) + 2705 at file.cc:204, queue =
+> 'com.apple.main-thread', stop reason = EXC_BAD_ACCESS (code=1, address=0x0)
+>   * frame #0: 0x000000010262e351 fs.so`stat_(path=<unavailable>) + 2705
+> at file.cc:204 [opt]
+>     frame #1: 0x00000001026344a6 fs.so`::_fs_stat_(pathSEXP=0x00007f825b8ba068)
+> + 134 at RcppExports.cpp:73 [opt]
+>     frame #2: 0x0000000100a003ca libR.dylib`R_doDotCall(ofun=<unavailable>,
+> nargs=<unavailable>, cargs=<unavailable>, call=0x00007f825b1d0eb0) + 2282
+> at dotcode.c:570 [opt]
+>     frame #3: 0x0000000100a3d71b libR.dylib`bcEval(body=<unavailable>,
+> rho=0x00007f825b1d1cd0, useCache=<unavailable>) + 53899 at eval.c:6962 [opt]
+>     frame #4: 0x0000000100a2fe31 libR.dylib`Rf_eval(e=<unavailable>,
+> rho=<unavailable>) + 577 at eval.c:624 [opt]
+>
+>
+> It looks like a true bug - you?re not checking for the case where grp is
+> NULL (btw you have the same bug above for getpwuid).
+>
+> Cheers,
+> Simon
+>
+>
+> * - quote:
+>
+> "The code and examples provided in a package should never do anything
+> which might be regarded as malicious or anti-social?
+> [?]
+> "Packages should not write in the user?s home filespace (including
+> clipboards), nor anywhere else on the file system apart from the R
+> session?s temporary directory (or during installation in the location
+> pointed to by TMPDIR: and such usage should be cleaned up).?
+>
+>
+> > On Feb 19, 2018, at 9:23 AM, Jim Hester <james.f.hester at gmail.com>
+> wrote:
+> >
+> > I maintain the fs package, which is currently failing _only_ on CRANs
+> > MacOS build machine.
+> > <https://www.r-project.org/nosvn/R.check/r-release-osx-
+> x86_64/fs-00check.html>
+> >
+> > I have been trying to replicate this error and unfortunately have been
+> > unable to do so, the package works as expected locally (MacOS 10.12.6)
+> > and for numerous other people using El Capitan (as used on CRAN's
+> > system) <https://twitter.com/jimhester_/status/964513974942420994>. I
+> > also tested it on a El Capitan VM without reproducing the failure.
+> >
+> > The main difference I am aware of on CRAN's systems is the newer
+> > (4.0.0) clang/llvm toolchain than that shipped with XCode. I tested
+> > compiling / running fs with this toolchain however and did not
+> > reproduce the crash.
+> >
+> > If anyone has an idea of what could be causing the crash on CRAN's
+> > system I would be grateful. I would really like to fix this so we can
+> > have MacOS binaries for fs.
+> >
+> > Jim
+> >
+> > _______________________________________________
+> > R-SIG-Mac mailing list
+> > R-SIG-Mac at r-project.org
+> > https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+> >
+>
+>
+
+	[[alternative HTML version deleted]]
+
+
+From julia.silge at gmail.com  Tue Mar 13 00:01:46 2018
+From: julia.silge at gmail.com (Julia Silge)
+Date: Mon, 12 Mar 2018 23:01:46 +0000
+Subject: [R-SIG-Mac] package building
+Message-ID: <CA+mbi1djaMRo5ksEXyCEgxn+iXSTeENP18O+_UUk_iyf4eHGhw@mail.gmail.com>
+
+Hello there! I maintain the tidytext package:
+https://cran.r-project.org/web/checks/check_results_tidytext.html
+
+Recently I have been working to get tidytext to build on R-oldrel, and I
+believe that v0.1.7 should do so. The check page above shows that v0.1.6 is
+what is being checked for OSX on R-oldrel, though. (I do not expect v0.1.6
+to pass on R-oldrel.)
+
+Does anyone know why the most recent version isn't being tested?
+
+Thanks,
+Julia
+
+	[[alternative HTML version deleted]]
+
+
+From peter.langfelder at gmail.com  Tue Mar 13 00:25:27 2018
+From: peter.langfelder at gmail.com (Peter Langfelder)
+Date: Mon, 12 Mar 2018 16:25:27 -0700
+Subject: [R-SIG-Mac] package building
+In-Reply-To: <CA+mbi1djaMRo5ksEXyCEgxn+iXSTeENP18O+_UUk_iyf4eHGhw@mail.gmail.com>
+References: <CA+mbi1djaMRo5ksEXyCEgxn+iXSTeENP18O+_UUk_iyf4eHGhw@mail.gmail.com>
+Message-ID: <CA+hbrhU9hmsrrfXxA+8vi7EBjd8=T_JoW9Fci9AXqfOf_kt6-Q@mail.gmail.com>
+
+I may be wrong on this but I thought a new package submission to CRAN
+will only be available to current R version. Packages for older R
+versions are not updated.
+
+Peter
+
+On Mon, Mar 12, 2018 at 4:01 PM, Julia Silge <julia.silge at gmail.com> wrote:
+> Hello there! I maintain the tidytext package:
+> https://cran.r-project.org/web/checks/check_results_tidytext.html
+>
+> Recently I have been working to get tidytext to build on R-oldrel, and I
+> believe that v0.1.7 should do so. The check page above shows that v0.1.6 is
+> what is being checked for OSX on R-oldrel, though. (I do not expect v0.1.6
+> to pass on R-oldrel.)
+>
+> Does anyone know why the most recent version isn't being tested?
+>
+> Thanks,
+> Julia
+>
+>         [[alternative HTML version deleted]]
+>
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+
+
+From julia.silge at gmail.com  Tue Mar 13 03:06:58 2018
+From: julia.silge at gmail.com (Julia Silge)
+Date: Tue, 13 Mar 2018 02:06:58 +0000
+Subject: [R-SIG-Mac] package building
+In-Reply-To: <CA+hbrhU9hmsrrfXxA+8vi7EBjd8=T_JoW9Fci9AXqfOf_kt6-Q@mail.gmail.com>
+References: <CA+mbi1djaMRo5ksEXyCEgxn+iXSTeENP18O+_UUk_iyf4eHGhw@mail.gmail.com>
+ <CA+hbrhU9hmsrrfXxA+8vi7EBjd8=T_JoW9Fci9AXqfOf_kt6-Q@mail.gmail.com>
+Message-ID: <CA+mbi1d_OSOYLMnvvKx4MLjyHesUEVyHKw-NCjEA-shHCSKefQ@mail.gmail.com>
+
+Well, v0.1.6 is quite a recent release as well (from January) so I'm not
+sure that is the explanation. Also, the newest version is being checked on
+Windows for R-oldrel? My question here is why R-oldrel OSX is checking
+v0.1.6 and R-oldrel Windows is checking v0.1.7.
+
+I was directly asked by CRAN maintainers to fix and resubmit my package so
+it would pass on R-oldrel. This doesn't make sense to me if CRAN doesn't
+check new versions.
+
+Thanks,
+Julia
+
+On Mon, Mar 12, 2018 at 5:25 PM Peter Langfelder <peter.langfelder at gmail.com>
+wrote:
+
+> I may be wrong on this but I thought a new package submission to CRAN
+> will only be available to current R version. Packages for older R
+> versions are not updated.
+>
+> Peter
+>
+> On Mon, Mar 12, 2018 at 4:01 PM, Julia Silge <julia.silge at gmail.com>
+> wrote:
+> > Hello there! I maintain the tidytext package:
+> > https://cran.r-project.org/web/checks/check_results_tidytext.html
+> >
+> > Recently I have been working to get tidytext to build on R-oldrel, and I
+> > believe that v0.1.7 should do so. The check page above shows that v0.1.6
+> is
+> > what is being checked for OSX on R-oldrel, though. (I do not expect
+> v0.1.6
+> > to pass on R-oldrel.)
+> >
+> > Does anyone know why the most recent version isn't being tested?
+> >
+> > Thanks,
+> > Julia
+> >
+> >         [[alternative HTML version deleted]]
+> >
+> > _______________________________________________
+> > R-SIG-Mac mailing list
+> > R-SIG-Mac at r-project.org
+> > https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>
+
+	[[alternative HTML version deleted]]
+
+
+From ripley at stats.ox.ac.uk  Tue Mar 13 08:24:36 2018
+From: ripley at stats.ox.ac.uk (Prof Brian Ripley)
+Date: Tue, 13 Mar 2018 07:24:36 +0000
+Subject: [R-SIG-Mac] package building
+In-Reply-To: <CA+mbi1djaMRo5ksEXyCEgxn+iXSTeENP18O+_UUk_iyf4eHGhw@mail.gmail.com>
+References: <CA+mbi1djaMRo5ksEXyCEgxn+iXSTeENP18O+_UUk_iyf4eHGhw@mail.gmail.com>
+Message-ID: <c3da7250-49b5-f3cd-da8d-30a9fb2f1ab2@stats.ox.ac.uk>
+
+On 12/03/2018 23:01, Julia Silge wrote:
+> Hello there! I maintain the tidytext package:
+> https://cran.r-project.org/web/checks/check_results_tidytext.html
+> 
+> Recently I have been working to get tidytext to build on R-oldrel, and I
+> believe that v0.1.7 should do so. The check page above shows that v0.1.6 is
+> what is being checked for OSX on R-oldrel, though. (I do not expect v0.1.6
+> to pass on R-oldrel.)
+> 
+> Does anyone know why the most recent version isn't being tested?
+
+My understanding is that packages for r-oldrel-osx-x86_64 will not be 
+updated as the build machine has died.  Simon Urbanek has asked CRAN to 
+remove those results, and doing so is in progress.
+
+If you look at
+
+https://cran.r-project.org/bin/macosx/mavericks/contrib/r-oldrel/?C=M;O=D
+
+you will see the last package built was on 2018-01-11 .
+
+In any case, package support for R-oldrel (3.3.x) officially finishes 
+once the following series (3.4.x) is signed off, which is on Thursday 
+this week.
+
+> 
+> Thanks,
+> Julia
+
+
+-- 
+Brian D. Ripley,                  ripley at stats.ox.ac.uk
+Emeritus Professor of Applied Statistics, University of Oxford
+
+
+From pdalgd at gmail.com  Tue Mar 13 09:57:06 2018
+From: pdalgd at gmail.com (peter dalgaard)
+Date: Tue, 13 Mar 2018 09:57:06 +0100
+Subject: [R-SIG-Mac] package building
+In-Reply-To: <c3da7250-49b5-f3cd-da8d-30a9fb2f1ab2@stats.ox.ac.uk>
+References: <CA+mbi1djaMRo5ksEXyCEgxn+iXSTeENP18O+_UUk_iyf4eHGhw@mail.gmail.com>
+ <c3da7250-49b5-f3cd-da8d-30a9fb2f1ab2@stats.ox.ac.uk>
+Message-ID: <9324742E-D6A8-4F70-9232-DD94D33E5904@gmail.com>
+
+Or at the very least at 3.5.0 alpha, which happens a couple of weeks further down the line (schedule pending). 
+
+-pd
+
+> On 13 Mar 2018, at 08:24 , Prof Brian Ripley <ripley at stats.ox.ac.uk> wrote:
+> 
+> In any case, package support for R-oldrel (3.3.x) officially finishes once the following series (3.4.x) is signed off, which is on Thursday this week.
+
+-- 
+Peter Dalgaard, Professor,
+Center for Statistics, Copenhagen Business School
+Solbjerg Plads 3, 2000 Frederiksberg, Denmark
+Phone: (+45)38153501
+Office: A 4.23
+Email: pd.mes at cbs.dk  Priv: PDalgd at gmail.com
+
+
+From julia.silge at gmail.com  Tue Mar 13 12:53:03 2018
+From: julia.silge at gmail.com (Julia Silge)
+Date: Tue, 13 Mar 2018 11:53:03 +0000
+Subject: [R-SIG-Mac] package building
+In-Reply-To: <9324742E-D6A8-4F70-9232-DD94D33E5904@gmail.com>
+References: <CA+mbi1djaMRo5ksEXyCEgxn+iXSTeENP18O+_UUk_iyf4eHGhw@mail.gmail.com>
+ <c3da7250-49b5-f3cd-da8d-30a9fb2f1ab2@stats.ox.ac.uk>
+ <9324742E-D6A8-4F70-9232-DD94D33E5904@gmail.com>
+Message-ID: <CA+mbi1dLY32ZLz6Q2G1e=5eUkdjxn2FYZJa-c8m6uaht5zTBhA@mail.gmail.com>
+
+Thanks for the clarification, all!
+
+
+On Tue, Mar 13, 2018 at 2:57 AM peter dalgaard <pdalgd at gmail.com> wrote:
+
+> Or at the very least at 3.5.0 alpha, which happens a couple of weeks
+> further down the line (schedule pending).
+>
+> -pd
+>
+> > On 13 Mar 2018, at 08:24 , Prof Brian Ripley <ripley at stats.ox.ac.uk>
+> wrote:
+> >
+> > In any case, package support for R-oldrel (3.3.x) officially finishes
+> once the following series (3.4.x) is signed off, which is on Thursday this
+> week.
+>
+> --
+> Peter Dalgaard, Professor,
+> Center for Statistics, Copenhagen Business School
+> Solbjerg Plads 3, 2000 Frederiksberg, Denmark
+> Phone: (+45)38153501 <+45%2038%2015%2035%2001>
+> Office: A 4.23
+> Email: pd.mes at cbs.dk  Priv: PDalgd at gmail.com
+>
+>
+>
+>
+>
+>
+>
+>
+>
+>
+
+	[[alternative HTML version deleted]]
+
+
+From simon.urbanek at r-project.org  Sat Mar 17 02:00:27 2018
+From: simon.urbanek at r-project.org (Simon Urbanek)
+Date: Fri, 16 Mar 2018 21:00:27 -0400
+Subject: [R-SIG-Mac] package building
+In-Reply-To: <c3da7250-49b5-f3cd-da8d-30a9fb2f1ab2@stats.ox.ac.uk>
+References: <CA+mbi1djaMRo5ksEXyCEgxn+iXSTeENP18O+_UUk_iyf4eHGhw@mail.gmail.com>
+ <c3da7250-49b5-f3cd-da8d-30a9fb2f1ab2@stats.ox.ac.uk>
+Message-ID: <3882EABD-CF6B-4C75-BC3A-E250ACF22D10@r-project.org>
+
+Yes, indeed, since R-oldrel has not been released for the current El Capitan build, there are no such binaries. The previous Mavericks build is no longer supported due the OS no longer being maintained by Apple (last security update was close to 2 years ago) and the build machine having died. Hence the only releases that can be supported are 3.4.0 onwards as El Capitan builds. We are currently supporting package build for the 3.4 and 3.5 branches and will continue in the foreseeable future.
+
+Cheers,
+Simon
+
+
+> On Mar 13, 2018, at 3:24 AM, Prof Brian Ripley <ripley at stats.ox.ac.uk> wrote:
+> 
+> On 12/03/2018 23:01, Julia Silge wrote:
+>> Hello there! I maintain the tidytext package:
+>> https://cran.r-project.org/web/checks/check_results_tidytext.html
+>> Recently I have been working to get tidytext to build on R-oldrel, and I
+>> believe that v0.1.7 should do so. The check page above shows that v0.1.6 is
+>> what is being checked for OSX on R-oldrel, though. (I do not expect v0.1.6
+>> to pass on R-oldrel.)
+>> Does anyone know why the most recent version isn't being tested?
+> 
+> My understanding is that packages for r-oldrel-osx-x86_64 will not be updated as the build machine has died.  Simon Urbanek has asked CRAN to remove those results, and doing so is in progress.
+> 
+> If you look at
+> 
+> https://cran.r-project.org/bin/macosx/mavericks/contrib/r-oldrel/?C=M;O=D
+> 
+> you will see the last package built was on 2018-01-11 .
+> 
+> In any case, package support for R-oldrel (3.3.x) officially finishes once the following series (3.4.x) is signed off, which is on Thursday this week.
+> 
+>> Thanks,
+>> Julia
+> 
+> 
+> -- 
+> Brian D. Ripley,                  ripley at stats.ox.ac.uk
+> Emeritus Professor of Applied Statistics, University of Oxford
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+
+
+From andrewb at cadence.com  Sun Mar 18 15:45:58 2018
+From: andrewb at cadence.com (Andrew Beckett)
+Date: Sun, 18 Mar 2018 14:45:58 +0000
+Subject: [R-SIG-Mac] Continuous loop when using R on MacOS Sierra with 3.4.4
+ GUI 1.70 El Capitan build (7507)
+Message-ID: <EDA22CDB-4BEA-4750-BF23-3FD603E44F09@cadence.com>
+
+Dear All,
+
+I've been using R on my home MacBook Air for the last 3 years, but recently installed on my work MacBook Pro. Both with 3.4.3 and 3.4.4 (version in subject line) I get a continuous stream of messages (in red) in the R console when I start R:
+
+2018-03-18 11:57:25.151 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.151 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.152 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.153 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.154 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.154 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.186 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.186 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.187 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.188 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.222 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.222 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.255 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.255 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.288 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.288 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.328 R[23446:1805525] action _forceClickMonitorDidChange:
+2018-03-18 11:57:25.442 R[23446:1805525] action _forceClickMonitorDidChange:
+2018-03-18 11:57:25.442 R[23446:1805525] action _forceClickMonitorDidChange:
+2018-03-18 11:57:25.442 R[23446:1805525] action _forceClickMonitorDidChange:
+
+Any idea what is causing this or how to fix it? I've searched with Google and also using the FAQ, plus the GitHub issues, and not found anything. It makes R unusable because any output I produce from any R commands just gets lost amongst the continuous stream of red messages. There's no clue at the top of the console - it just looks like this:
+
+R version 3.4.4 (2018-03-15) -- "Someone to Lean On"
+Copyright (C) 2018 The R Foundation for Statistical Computing
+Platform: x86_64-apple-darwin15.6.0 (64-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+  Natural language support but running in an English locale
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+[R.app GUI 1.70 (7507) x86_64-apple-darwin15.6.0]
+
+[History restored from /Users/andrewb/.Rapp.history]
+
+2018-03-18 12:10:08.485 R[26425:1835450] action changeColor:
+2018-03-18 12:10:08.485 R[26425:1835450] action changeColor:
+2018-03-18 12:10:08.512 R[26425:1835450] action changeColor:
+2018-03-18 12:10:08.512 R[26425:1835450] action changeColor:
+2018-03-18 12:10:08.512 R[26425:1835450] action changeColor:
+2018-03-18 12:10:08.512 R[26425:1835450] action changeColor:
+
+Regards,
+
+Andrew.
+
+	[[alternative HTML version deleted]]
+
+
+From Eric.Gero at ge.com  Sun Mar 18 20:19:03 2018
+From: Eric.Gero at ge.com (Gero, Eric (GE Digital))
+Date: Sun, 18 Mar 2018 19:19:03 +0000
+Subject: [R-SIG-Mac] 
+ EXT: Continuous loop when using R on MacOS Sierra with
+ 3.4.4 GUI 1.70 El Capitan build (7507)
+In-Reply-To: <EDA22CDB-4BEA-4750-BF23-3FD603E44F09@cadence.com>
+References: <EDA22CDB-4BEA-4750-BF23-3FD603E44F09@cadence.com>
+Message-ID: <838768EA-FEF4-4376-952F-095E4C5982AA@ge.com>
+
+I have the exact same problem.  It works fine on my Mac at home, but scrolls the same error message on my MacBook Pro from work.  RStudio does work fine though. 
+
+Thank you, 
+Eric
+
+Sent from my iPhone
+
+> On Mar 18, 2018, at 10:46 AM, Andrew Beckett <andrewb at cadence.com> wrote:
+> 
+> Dear All,
+> 
+> I've been using R on my home MacBook Air for the last 3 years, but recently installed on my work MacBook Pro. Both with 3.4.3 and 3.4.4 (version in subject line) I get a continuous stream of messages (in red) in the R console when I start R:
+> 
+> 2018-03-18 11:57:25.151 R[23446:1805525] action changeColor:
+> 2018-03-18 11:57:25.151 R[23446:1805525] action changeColor:
+> 2018-03-18 11:57:25.152 R[23446:1805525] action changeColor:
+> 2018-03-18 11:57:25.153 R[23446:1805525] action changeColor:
+> 2018-03-18 11:57:25.154 R[23446:1805525] action changeColor:
+> 2018-03-18 11:57:25.154 R[23446:1805525] action changeColor:
+> 2018-03-18 11:57:25.186 R[23446:1805525] action changeColor:
+> 2018-03-18 11:57:25.186 R[23446:1805525] action changeColor:
+> 2018-03-18 11:57:25.187 R[23446:1805525] action changeColor:
+> 2018-03-18 11:57:25.188 R[23446:1805525] action changeColor:
+> 2018-03-18 11:57:25.222 R[23446:1805525] action changeColor:
+> 2018-03-18 11:57:25.222 R[23446:1805525] action changeColor:
+> 2018-03-18 11:57:25.255 R[23446:1805525] action changeColor:
+> 2018-03-18 11:57:25.255 R[23446:1805525] action changeColor:
+> 2018-03-18 11:57:25.288 R[23446:1805525] action changeColor:
+> 2018-03-18 11:57:25.288 R[23446:1805525] action changeColor:
+> 2018-03-18 11:57:25.328 R[23446:1805525] action _forceClickMonitorDidChange:
+> 2018-03-18 11:57:25.442 R[23446:1805525] action _forceClickMonitorDidChange:
+> 2018-03-18 11:57:25.442 R[23446:1805525] action _forceClickMonitorDidChange:
+> 2018-03-18 11:57:25.442 R[23446:1805525] action _forceClickMonitorDidChange:
+> 
+> Any idea what is causing this or how to fix it? I've searched with Google and also using the FAQ, plus the GitHub issues, and not found anything. It makes R unusable because any output I produce from any R commands just gets lost amongst the continuous stream of red messages. There's no clue at the top of the console - it just looks like this:
+> 
+> R version 3.4.4 (2018-03-15) -- "Someone to Lean On"
+> Copyright (C) 2018 The R Foundation for Statistical Computing
+> Platform: x86_64-apple-darwin15.6.0 (64-bit)
+> 
+> R is free software and comes with ABSOLUTELY NO WARRANTY.
+> You are welcome to redistribute it under certain conditions.
+> Type 'license()' or 'licence()' for distribution details.
+> 
+>  Natural language support but running in an English locale
+> 
+> R is a collaborative project with many contributors.
+> Type 'contributors()' for more information and
+> 'citation()' on how to cite R or R packages in publications.
+> 
+> Type 'demo()' for some demos, 'help()' for on-line help, or
+> 'help.start()' for an HTML browser interface to help.
+> Type 'q()' to quit R.
+> 
+> [R.app GUI 1.70 (7507) x86_64-apple-darwin15.6.0]
+> 
+> [History restored from /Users/andrewb/.Rapp.history]
+> 
+> 2018-03-18 12:10:08.485 R[26425:1835450] action changeColor:
+> 2018-03-18 12:10:08.485 R[26425:1835450] action changeColor:
+> 2018-03-18 12:10:08.512 R[26425:1835450] action changeColor:
+> 2018-03-18 12:10:08.512 R[26425:1835450] action changeColor:
+> 2018-03-18 12:10:08.512 R[26425:1835450] action changeColor:
+> 2018-03-18 12:10:08.512 R[26425:1835450] action changeColor:
+> 
+> Regards,
+> 
+> Andrew.
+> 
+>    [[alternative HTML version deleted]]
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+
+
+From dwinsemius at comcast.net  Sun Mar 18 22:05:21 2018
+From: dwinsemius at comcast.net (David Winsemius)
+Date: Sun, 18 Mar 2018 14:05:21 -0700
+Subject: [R-SIG-Mac] 
+ EXT: Continuous loop when using R on MacOS Sierra with
+ 3.4.4 GUI 1.70 El Capitan build (7507)
+In-Reply-To: <838768EA-FEF4-4376-952F-095E4C5982AA@ge.com>
+References: <EDA22CDB-4BEA-4750-BF23-3FD603E44F09@cadence.com>
+ <838768EA-FEF4-4376-952F-095E4C5982AA@ge.com>
+Message-ID: <3BCF39AB-F751-4468-965E-04FEF110A84F@comcast.net>
+
+
+> On Mar 18, 2018, at 12:19 PM, Gero, Eric (GE Digital) <Eric.Gero at ge.com> wrote:
+> 
+> I have the exact same problem.  It works fine on my Mac at home, but scrolls the same error message on my MacBook Pro from work.  RStudio does work fine though. 
+
+Have you tried deleting /Users/andrewb/.Rapp.history as well as /Users/andrewb/.Rdata?
+
+-- 
+David.
+> 
+> Thank you, 
+> Eric
+> 
+> Sent from my iPhone
+> 
+>> On Mar 18, 2018, at 10:46 AM, Andrew Beckett <andrewb at cadence.com> wrote:
+>> 
+>> Dear All,
+>> 
+>> I've been using R on my home MacBook Air for the last 3 years, but recently installed on my work MacBook Pro. Both with 3.4.3 and 3.4.4 (version in subject line) I get a continuous stream of messages (in red) in the R console when I start R:
+>> 
+>> 2018-03-18 11:57:25.151 R[23446:1805525] action changeColor:
+>> 2018-03-18 11:57:25.151 R[23446:1805525] action changeColor:
+>> 2018-03-18 11:57:25.152 R[23446:1805525] action changeColor:
+>> 2018-03-18 11:57:25.153 R[23446:1805525] action changeColor:
+>> 2018-03-18 11:57:25.154 R[23446:1805525] action changeColor:
+>> 2018-03-18 11:57:25.154 R[23446:1805525] action changeColor:
+>> 2018-03-18 11:57:25.186 R[23446:1805525] action changeColor:
+>> 2018-03-18 11:57:25.186 R[23446:1805525] action changeColor:
+>> 2018-03-18 11:57:25.187 R[23446:1805525] action changeColor:
+>> 2018-03-18 11:57:25.188 R[23446:1805525] action changeColor:
+>> 2018-03-18 11:57:25.222 R[23446:1805525] action changeColor:
+>> 2018-03-18 11:57:25.222 R[23446:1805525] action changeColor:
+>> 2018-03-18 11:57:25.255 R[23446:1805525] action changeColor:
+>> 2018-03-18 11:57:25.255 R[23446:1805525] action changeColor:
+>> 2018-03-18 11:57:25.288 R[23446:1805525] action changeColor:
+>> 2018-03-18 11:57:25.288 R[23446:1805525] action changeColor:
+>> 2018-03-18 11:57:25.328 R[23446:1805525] action _forceClickMonitorDidChange:
+>> 2018-03-18 11:57:25.442 R[23446:1805525] action _forceClickMonitorDidChange:
+>> 2018-03-18 11:57:25.442 R[23446:1805525] action _forceClickMonitorDidChange:
+>> 2018-03-18 11:57:25.442 R[23446:1805525] action _forceClickMonitorDidChange:
+>> 
+>> Any idea what is causing this or how to fix it? I've searched with Google and also using the FAQ, plus the GitHub issues, and not found anything. It makes R unusable because any output I produce from any R commands just gets lost amongst the continuous stream of red messages. There's no clue at the top of the console - it just looks like this:
+>> 
+>> R version 3.4.4 (2018-03-15) -- "Someone to Lean On"
+>> Copyright (C) 2018 The R Foundation for Statistical Computing
+>> Platform: x86_64-apple-darwin15.6.0 (64-bit)
+>> 
+>> R is free software and comes with ABSOLUTELY NO WARRANTY.
+>> You are welcome to redistribute it under certain conditions.
+>> Type 'license()' or 'licence()' for distribution details.
+>> 
+>> Natural language support but running in an English locale
+>> 
+>> R is a collaborative project with many contributors.
+>> Type 'contributors()' for more information and
+>> 'citation()' on how to cite R or R packages in publications.
+>> 
+>> Type 'demo()' for some demos, 'help()' for on-line help, or
+>> 'help.start()' for an HTML browser interface to help.
+>> Type 'q()' to quit R.
+>> 
+>> [R.app GUI 1.70 (7507) x86_64-apple-darwin15.6.0]
+>> 
+>> [History restored from /Users/andrewb/.Rapp.history]
+>> 
+>> 2018-03-18 12:10:08.485 R[26425:1835450] action changeColor:
+>> 2018-03-18 12:10:08.485 R[26425:1835450] action changeColor:
+>> 2018-03-18 12:10:08.512 R[26425:1835450] action changeColor:
+>> 2018-03-18 12:10:08.512 R[26425:1835450] action changeColor:
+>> 2018-03-18 12:10:08.512 R[26425:1835450] action changeColor:
+>> 2018-03-18 12:10:08.512 R[26425:1835450] action changeColor:
+>> 
+>> Regards,
+>> 
+>> Andrew.
+>> 
+>>   [[alternative HTML version deleted]]
+>> 
+>> _______________________________________________
+>> R-SIG-Mac mailing list
+>> R-SIG-Mac at r-project.org
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+
+David Winsemius
+Alameda, CA, USA
+
+'Any technology distinguishable from magic is insufficiently advanced.'   -Gehm's Corollary to Clarke's Third Law
+
+
+From andrewb at cadence.com  Mon Mar 19 09:46:19 2018
+From: andrewb at cadence.com (Andrew Beckett)
+Date: Mon, 19 Mar 2018 08:46:19 +0000
+Subject: [R-SIG-Mac] 
+ EXT: Continuous loop when using R on MacOS Sierra with
+ 3.4.4 GUI 1.70 El Capitan build (7507)
+In-Reply-To: <3BCF39AB-F751-4468-965E-04FEF110A84F@comcast.net>
+References: <EDA22CDB-4BEA-4750-BF23-3FD603E44F09@cadence.com>
+ <838768EA-FEF4-4376-952F-095E4C5982AA@ge.com>
+ <3BCF39AB-F751-4468-965E-04FEF110A84F@comcast.net>
+Message-ID: <0E680188-484E-40CC-88C4-BE5E6788DE28@cadence.com>
+
+David,
+
+Since I've never used R on this machine before, it seemed unlikely that this would help - but I checked (there's no .Rdata)
+
+[mac-andrewb:~] andrewb% more .Rapp.history
+1+2
+[mac-andrewb:~] andrewb% more .Rhistory
+[mac-andrewb:~] andrewb% ls -l .R*
+-rw-r--r--  1 andrewb  GLOBAL\Domain Users  4 Mar 18 12:13 .Rapp.history
+-rw-------  1 andrewb  GLOBAL\Domain Users  0 Feb 27 10:26 .Rhistory
+[mac-andrewb:~] andrewb% rm .Rapp.history .Rhistory
+
+I then re-ran R, and see exactly the same problem.
+
+Regards.
+
+Andrew.
+
+On Mar 18, 2018, at 9:05 PM, David Winsemius <dwinsemius at comcast.net<mailto:dwinsemius at comcast.net>> wrote:
+
+EXTERNAL MAIL
+
+
+
+On Mar 18, 2018, at 12:19 PM, Gero, Eric (GE Digital) <Eric.Gero at ge.com<mailto:Eric.Gero at ge.com>> wrote:
+
+I have the exact same problem.  It works fine on my Mac at home, but scrolls the same error message on my MacBook Pro from work.  RStudio does work fine though.
+
+Have you tried deleting /Users/andrewb/.Rapp.history as well as /Users/andrewb/.Rdata?
+
+--
+David.
+
+Thank you,
+Eric
+
+Sent from my iPhone
+
+On Mar 18, 2018, at 10:46 AM, Andrew Beckett <andrewb at cadence.com<mailto:andrewb at cadence.com>> wrote:
+
+Dear All,
+
+I've been using R on my home MacBook Air for the last 3 years, but recently installed on my work MacBook Pro. Both with 3.4.3 and 3.4.4 (version in subject line) I get a continuous stream of messages (in red) in the R console when I start R:
+
+2018-03-18 11:57:25.151 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.151 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.152 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.153 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.154 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.154 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.186 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.186 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.187 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.188 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.222 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.222 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.255 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.255 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.288 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.288 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.328 R[23446:1805525] action _forceClickMonitorDidChange:
+2018-03-18 11:57:25.442 R[23446:1805525] action _forceClickMonitorDidChange:
+2018-03-18 11:57:25.442 R[23446:1805525] action _forceClickMonitorDidChange:
+2018-03-18 11:57:25.442 R[23446:1805525] action _forceClickMonitorDidChange:
+
+Any idea what is causing this or how to fix it? I've searched with Google and also using the FAQ, plus the GitHub issues, and not found anything. It makes R unusable because any output I produce from any R commands just gets lost amongst the continuous stream of red messages. There's no clue at the top of the console - it just looks like this:
+
+R version 3.4.4 (2018-03-15) -- "Someone to Lean On"
+Copyright (C) 2018 The R Foundation for Statistical Computing
+Platform: x86_64-apple-darwin15.6.0 (64-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+Natural language support but running in an English locale
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+[R.app GUI 1.70 (7507) x86_64-apple-darwin15.6.0]
+
+[History restored from /Users/andrewb/.Rapp.history]
+
+2018-03-18 12:10:08.485 R[26425:1835450] action changeColor:
+2018-03-18 12:10:08.485 R[26425:1835450] action changeColor:
+2018-03-18 12:10:08.512 R[26425:1835450] action changeColor:
+2018-03-18 12:10:08.512 R[26425:1835450] action changeColor:
+2018-03-18 12:10:08.512 R[26425:1835450] action changeColor:
+2018-03-18 12:10:08.512 R[26425:1835450] action changeColor:
+
+Regards,
+
+Andrew.
+
+ [[alternative HTML version deleted]]
+
+_______________________________________________
+R-SIG-Mac mailing list
+R-SIG-Mac at r-project.org<mailto:R-SIG-Mac at r-project.org>
+https://urldefense.proofpoint.com/v2/url?u=https-3A__stat.ethz.ch_mailman_listinfo_r-2Dsig-2Dmac&d=DwIFAg&c=aUq983L2pue2FqKFoP6PGHMJQyoJ7kl3s3GZ-_haXqY&r=oQ6dxz5_MmND7omQRdV7uWFJSHk8m8M_vn27E5tBpJ8&m=uOR4NyuXGwk_x2ykFDXoD4bwC8Qu2AtOdDh-b0ddDqI&s=Ht-24MMYyCtIL71OkUtjRzf14sAraAr9tpfpI7uZNyg&e=
+
+_______________________________________________
+R-SIG-Mac mailing list
+R-SIG-Mac at r-project.org<mailto:R-SIG-Mac at r-project.org>
+https://urldefense.proofpoint.com/v2/url?u=https-3A__stat.ethz.ch_mailman_listinfo_r-2Dsig-2Dmac&d=DwIFAg&c=aUq983L2pue2FqKFoP6PGHMJQyoJ7kl3s3GZ-_haXqY&r=oQ6dxz5_MmND7omQRdV7uWFJSHk8m8M_vn27E5tBpJ8&m=uOR4NyuXGwk_x2ykFDXoD4bwC8Qu2AtOdDh-b0ddDqI&s=Ht-24MMYyCtIL71OkUtjRzf14sAraAr9tpfpI7uZNyg&e=
+
+David Winsemius
+Alameda, CA, USA
+
+'Any technology distinguishable from magic is insufficiently advanced.'   -Gehm's Corollary to Clarke's Third Law
+
+
+
+
+
+
+
+	[[alternative HTML version deleted]]
+
+
+From simon.urbanek at R-project.org  Mon Mar 19 15:09:56 2018
+From: simon.urbanek at R-project.org (Simon Urbanek)
+Date: Mon, 19 Mar 2018 10:09:56 -0400
+Subject: [R-SIG-Mac] 
+ EXT: Continuous loop when using R on MacOS Sierra with
+ 3.4.4 GUI 1.70 El Capitan build (7507)
+In-Reply-To: <0E680188-484E-40CC-88C4-BE5E6788DE28@cadence.com>
+References: <EDA22CDB-4BEA-4750-BF23-3FD603E44F09@cadence.com>
+ <838768EA-FEF4-4376-952F-095E4C5982AA@ge.com>
+ <3BCF39AB-F751-4468-965E-04FEF110A84F@comcast.net>
+ <0E680188-484E-40CC-88C4-BE5E6788DE28@cadence.com>
+Message-ID: <B57CD8C1-8CC0-45FA-88A7-F62A43DD9CFF@R-project.org>
+
+Andrew, this sounds like a bug in one of your input managers - it?s unlikely coming from R - see R for Mac FAQ 10.4 about it. You may want to remove that IM or durable stderr forwarding:
+
+http://r.research.att.com/bin/macosx/RMacOSX-FAQ.html#I-see-spurious-error-messages-when-starting-R_0021
+
+Cheers,
+Simon
+
+
+> On Mar 19, 2018, at 4:46 AM, Andrew Beckett <andrewb at cadence.com> wrote:
+> 
+> David,
+> 
+> Since I've never used R on this machine before, it seemed unlikely that this would help - but I checked (there's no .Rdata)
+> 
+> [mac-andrewb:~] andrewb% more .Rapp.history
+> 1+2
+> [mac-andrewb:~] andrewb% more .Rhistory
+> [mac-andrewb:~] andrewb% ls -l .R*
+> -rw-r--r--  1 andrewb  GLOBAL\Domain Users  4 Mar 18 12:13 .Rapp.history
+> -rw-------  1 andrewb  GLOBAL\Domain Users  0 Feb 27 10:26 .Rhistory
+> [mac-andrewb:~] andrewb% rm .Rapp.history .Rhistory
+> 
+> I then re-ran R, and see exactly the same problem.
+> 
+> Regards.
+> 
+> Andrew.
+> 
+> On Mar 18, 2018, at 9:05 PM, David Winsemius <dwinsemius at comcast.net<mailto:dwinsemius at comcast.net>> wrote:
+> 
+> EXTERNAL MAIL
+> 
+> 
+> 
+> On Mar 18, 2018, at 12:19 PM, Gero, Eric (GE Digital) <Eric.Gero at ge.com<mailto:Eric.Gero at ge.com>> wrote:
+> 
+> I have the exact same problem.  It works fine on my Mac at home, but scrolls the same error message on my MacBook Pro from work.  RStudio does work fine though.
+> 
+> Have you tried deleting /Users/andrewb/.Rapp.history as well as /Users/andrewb/.Rdata?
+> 
+> --
+> David.
+> 
+> Thank you,
+> Eric
+> 
+> Sent from my iPhone
+> 
+> On Mar 18, 2018, at 10:46 AM, Andrew Beckett <andrewb at cadence.com<mailto:andrewb at cadence.com>> wrote:
+> 
+> Dear All,
+> 
+> I've been using R on my home MacBook Air for the last 3 years, but recently installed on my work MacBook Pro. Both with 3.4.3 and 3.4.4 (version in subject line) I get a continuous stream of messages (in red) in the R console when I start R:
+> 
+> 2018-03-18 11:57:25.151 R[23446:1805525] action changeColor:
+> 2018-03-18 11:57:25.151 R[23446:1805525] action changeColor:
+> 2018-03-18 11:57:25.152 R[23446:1805525] action changeColor:
+> 2018-03-18 11:57:25.153 R[23446:1805525] action changeColor:
+> 2018-03-18 11:57:25.154 R[23446:1805525] action changeColor:
+> 2018-03-18 11:57:25.154 R[23446:1805525] action changeColor:
+> 2018-03-18 11:57:25.186 R[23446:1805525] action changeColor:
+> 2018-03-18 11:57:25.186 R[23446:1805525] action changeColor:
+> 2018-03-18 11:57:25.187 R[23446:1805525] action changeColor:
+> 2018-03-18 11:57:25.188 R[23446:1805525] action changeColor:
+> 2018-03-18 11:57:25.222 R[23446:1805525] action changeColor:
+> 2018-03-18 11:57:25.222 R[23446:1805525] action changeColor:
+> 2018-03-18 11:57:25.255 R[23446:1805525] action changeColor:
+> 2018-03-18 11:57:25.255 R[23446:1805525] action changeColor:
+> 2018-03-18 11:57:25.288 R[23446:1805525] action changeColor:
+> 2018-03-18 11:57:25.288 R[23446:1805525] action changeColor:
+> 2018-03-18 11:57:25.328 R[23446:1805525] action _forceClickMonitorDidChange:
+> 2018-03-18 11:57:25.442 R[23446:1805525] action _forceClickMonitorDidChange:
+> 2018-03-18 11:57:25.442 R[23446:1805525] action _forceClickMonitorDidChange:
+> 2018-03-18 11:57:25.442 R[23446:1805525] action _forceClickMonitorDidChange:
+> 
+> Any idea what is causing this or how to fix it? I've searched with Google and also using the FAQ, plus the GitHub issues, and not found anything. It makes R unusable because any output I produce from any R commands just gets lost amongst the continuous stream of red messages. There's no clue at the top of the console - it just looks like this:
+> 
+> R version 3.4.4 (2018-03-15) -- "Someone to Lean On"
+> Copyright (C) 2018 The R Foundation for Statistical Computing
+> Platform: x86_64-apple-darwin15.6.0 (64-bit)
+> 
+> R is free software and comes with ABSOLUTELY NO WARRANTY.
+> You are welcome to redistribute it under certain conditions.
+> Type 'license()' or 'licence()' for distribution details.
+> 
+> Natural language support but running in an English locale
+> 
+> R is a collaborative project with many contributors.
+> Type 'contributors()' for more information and
+> 'citation()' on how to cite R or R packages in publications.
+> 
+> Type 'demo()' for some demos, 'help()' for on-line help, or
+> 'help.start()' for an HTML browser interface to help.
+> Type 'q()' to quit R.
+> 
+> [R.app GUI 1.70 (7507) x86_64-apple-darwin15.6.0]
+> 
+> [History restored from /Users/andrewb/.Rapp.history]
+> 
+> 2018-03-18 12:10:08.485 R[26425:1835450] action changeColor:
+> 2018-03-18 12:10:08.485 R[26425:1835450] action changeColor:
+> 2018-03-18 12:10:08.512 R[26425:1835450] action changeColor:
+> 2018-03-18 12:10:08.512 R[26425:1835450] action changeColor:
+> 2018-03-18 12:10:08.512 R[26425:1835450] action changeColor:
+> 2018-03-18 12:10:08.512 R[26425:1835450] action changeColor:
+> 
+> Regards,
+> 
+> Andrew.
+> 
+> [[alternative HTML version deleted]]
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org<mailto:R-SIG-Mac at r-project.org>
+> https://urldefense.proofpoint.com/v2/url?u=https-3A__stat.ethz.ch_mailman_listinfo_r-2Dsig-2Dmac&d=DwIFAg&c=aUq983L2pue2FqKFoP6PGHMJQyoJ7kl3s3GZ-_haXqY&r=oQ6dxz5_MmND7omQRdV7uWFJSHk8m8M_vn27E5tBpJ8&m=uOR4NyuXGwk_x2ykFDXoD4bwC8Qu2AtOdDh-b0ddDqI&s=Ht-24MMYyCtIL71OkUtjRzf14sAraAr9tpfpI7uZNyg&e=
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org<mailto:R-SIG-Mac at r-project.org>
+> https://urldefense.proofpoint.com/v2/url?u=https-3A__stat.ethz.ch_mailman_listinfo_r-2Dsig-2Dmac&d=DwIFAg&c=aUq983L2pue2FqKFoP6PGHMJQyoJ7kl3s3GZ-_haXqY&r=oQ6dxz5_MmND7omQRdV7uWFJSHk8m8M_vn27E5tBpJ8&m=uOR4NyuXGwk_x2ykFDXoD4bwC8Qu2AtOdDh-b0ddDqI&s=Ht-24MMYyCtIL71OkUtjRzf14sAraAr9tpfpI7uZNyg&e=
+> 
+> David Winsemius
+> Alameda, CA, USA
+> 
+> 'Any technology distinguishable from magic is insufficiently advanced.'   -Gehm's Corollary to Clarke's Third Law
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+> 
+
+
+From andrewb at cadence.com  Mon Mar 19 15:30:48 2018
+From: andrewb at cadence.com (Andrew Beckett)
+Date: Mon, 19 Mar 2018 14:30:48 +0000
+Subject: [R-SIG-Mac] 
+ EXT: Continuous loop when using R on MacOS Sierra with
+ 3.4.4 GUI 1.70 El Capitan build (7507)
+In-Reply-To: <B57CD8C1-8CC0-45FA-88A7-F62A43DD9CFF@R-project.org>
+References: <EDA22CDB-4BEA-4750-BF23-3FD603E44F09@cadence.com>
+ <838768EA-FEF4-4376-952F-095E4C5982AA@ge.com>
+ <3BCF39AB-F751-4468-965E-04FEF110A84F@comcast.net>
+ <0E680188-484E-40CC-88C4-BE5E6788DE28@cadence.com>
+ <B57CD8C1-8CC0-45FA-88A7-F62A43DD9CFF@R-project.org>
+Message-ID: <F1539B02-D1CB-401B-BE0C-5BC283646B04@cadence.com>
+
+Hi Simon,
+
+I don't have any /Library/InputManagers anywhere on the machine (either under my user area or in the root file system) - only /Library/Input Methods - and they're empty.
+
+I did try entering this in a terminal window:
+
+  defaults write org.R-project.R 'Ignore stderr' YES
+
+Then when I start R it's silent and no longer spews out the messages. Slightly bothered that this blocks stderr from child processes (e.g using system) but at least R is now usable. Seems more of a band aid than a real fix though...
+
+Thanks for the suggestion!
+
+Regards,
+
+Andrew.
+
+On Mar 19, 2018, at 2:09 PM, Simon Urbanek <simon.urbanek at R-project.org<mailto:simon.urbanek at R-project.org>> wrote:
+
+EXTERNAL MAIL
+
+
+Andrew, this sounds like a bug in one of your input managers - it?s unlikely coming from R - see R for Mac FAQ 10.4 about it. You may want to remove that IM or durable stderr forwarding:
+
+https://urldefense.proofpoint.com/v2/url?u=http-3A__r.research.att.com_bin_macosx_RMacOSX-2DFAQ.html-23I-2Dsee-2Dspurious-2Derror-2Dmessages-2Dwhen-2Dstarting-2DR-5F0021&d=DwIFaQ&c=aUq983L2pue2FqKFoP6PGHMJQyoJ7kl3s3GZ-_haXqY&r=oQ6dxz5_MmND7omQRdV7uWFJSHk8m8M_vn27E5tBpJ8&m=HM68uSQ2Q1DkJKJAoEod4FDG6rlG-IPpulDA7wztSPk&s=Lnx-KIPiVKW34IAr9jmjm7Vd87inD5TIyC0A8xmCpZQ&e=
+
+Cheers,
+Simon
+
+
+On Mar 19, 2018, at 4:46 AM, Andrew Beckett <andrewb at cadence.com<mailto:andrewb at cadence.com>> wrote:
+
+David,
+
+Since I've never used R on this machine before, it seemed unlikely that this would help - but I checked (there's no .Rdata)
+
+[mac-andrewb:~] andrewb% more .Rapp.history
+1+2
+[mac-andrewb:~] andrewb% more .Rhistory
+[mac-andrewb:~] andrewb% ls -l .R*
+-rw-r--r--  1 andrewb  GLOBAL\Domain Users  4 Mar 18 12:13 .Rapp.history
+-rw-------  1 andrewb  GLOBAL\Domain Users  0 Feb 27 10:26 .Rhistory
+[mac-andrewb:~] andrewb% rm .Rapp.history .Rhistory
+
+I then re-ran R, and see exactly the same problem.
+
+Regards.
+
+Andrew.
+
+On Mar 18, 2018, at 9:05 PM, David Winsemius <dwinsemius at comcast.net<mailto:dwinsemius at comcast.net><mailto:dwinsemius at comcast.net>> wrote:
+
+EXTERNAL MAIL
+
+
+
+On Mar 18, 2018, at 12:19 PM, Gero, Eric (GE Digital) <Eric.Gero at ge.com<mailto:Eric.Gero at ge.com><mailto:Eric.Gero at ge.com>> wrote:
+
+I have the exact same problem.  It works fine on my Mac at home, but scrolls the same error message on my MacBook Pro from work.  RStudio does work fine though.
+
+Have you tried deleting /Users/andrewb/.Rapp.history as well as /Users/andrewb/.Rdata?
+
+--
+David.
+
+Thank you,
+Eric
+
+Sent from my iPhone
+
+On Mar 18, 2018, at 10:46 AM, Andrew Beckett <andrewb at cadence.com<mailto:andrewb at cadence.com><mailto:andrewb at cadence.com>> wrote:
+
+Dear All,
+
+I've been using R on my home MacBook Air for the last 3 years, but recently installed on my work MacBook Pro. Both with 3.4.3 and 3.4.4 (version in subject line) I get a continuous stream of messages (in red) in the R console when I start R:
+
+2018-03-18 11:57:25.151 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.151 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.152 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.153 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.154 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.154 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.186 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.186 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.187 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.188 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.222 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.222 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.255 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.255 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.288 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.288 R[23446:1805525] action changeColor:
+2018-03-18 11:57:25.328 R[23446:1805525] action _forceClickMonitorDidChange:
+2018-03-18 11:57:25.442 R[23446:1805525] action _forceClickMonitorDidChange:
+2018-03-18 11:57:25.442 R[23446:1805525] action _forceClickMonitorDidChange:
+2018-03-18 11:57:25.442 R[23446:1805525] action _forceClickMonitorDidChange:
+
+Any idea what is causing this or how to fix it? I've searched with Google and also using the FAQ, plus the GitHub issues, and not found anything. It makes R unusable because any output I produce from any R commands just gets lost amongst the continuous stream of red messages. There's no clue at the top of the console - it just looks like this:
+
+R version 3.4.4 (2018-03-15) -- "Someone to Lean On"
+Copyright (C) 2018 The R Foundation for Statistical Computing
+Platform: x86_64-apple-darwin15.6.0 (64-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+Natural language support but running in an English locale
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+[R.app GUI 1.70 (7507) x86_64-apple-darwin15.6.0]
+
+[History restored from /Users/andrewb/.Rapp.history]
+
+2018-03-18 12:10:08.485 R[26425:1835450] action changeColor:
+2018-03-18 12:10:08.485 R[26425:1835450] action changeColor:
+2018-03-18 12:10:08.512 R[26425:1835450] action changeColor:
+2018-03-18 12:10:08.512 R[26425:1835450] action changeColor:
+2018-03-18 12:10:08.512 R[26425:1835450] action changeColor:
+2018-03-18 12:10:08.512 R[26425:1835450] action changeColor:
+
+Regards,
+
+Andrew.
+
+[[alternative HTML version deleted]]
+
+_______________________________________________
+R-SIG-Mac mailing list
+R-SIG-Mac at r-project.org<mailto:R-SIG-Mac at r-project.org><mailto:R-SIG-Mac at r-project.org>
+https://urldefense.proofpoint.com/v2/url?u=https-3A__stat.ethz.ch_mailman_listinfo_r-2Dsig-2Dmac&d=DwIFAg&c=aUq983L2pue2FqKFoP6PGHMJQyoJ7kl3s3GZ-_haXqY&r=oQ6dxz5_MmND7omQRdV7uWFJSHk8m8M_vn27E5tBpJ8&m=uOR4NyuXGwk_x2ykFDXoD4bwC8Qu2AtOdDh-b0ddDqI&s=Ht-24MMYyCtIL71OkUtjRzf14sAraAr9tpfpI7uZNyg&e=
+
+_______________________________________________
+R-SIG-Mac mailing list
+R-SIG-Mac at r-project.org<mailto:R-SIG-Mac at r-project.org><mailto:R-SIG-Mac at r-project.org>
+https://urldefense.proofpoint.com/v2/url?u=https-3A__stat.ethz.ch_mailman_listinfo_r-2Dsig-2Dmac&d=DwIFAg&c=aUq983L2pue2FqKFoP6PGHMJQyoJ7kl3s3GZ-_haXqY&r=oQ6dxz5_MmND7omQRdV7uWFJSHk8m8M_vn27E5tBpJ8&m=uOR4NyuXGwk_x2ykFDXoD4bwC8Qu2AtOdDh-b0ddDqI&s=Ht-24MMYyCtIL71OkUtjRzf14sAraAr9tpfpI7uZNyg&e=
+
+David Winsemius
+Alameda, CA, USA
+
+'Any technology distinguishable from magic is insufficiently advanced.'   -Gehm's Corollary to Clarke's Third Law
+
+
+
+
+
+
+
+[[alternative HTML version deleted]]
+
+_______________________________________________
+R-SIG-Mac mailing list
+R-SIG-Mac at r-project.org<mailto:R-SIG-Mac at r-project.org>
+https://urldefense.proofpoint.com/v2/url?u=https-3A__stat.ethz.ch_mailman_listinfo_r-2Dsig-2Dmac&d=DwIFaQ&c=aUq983L2pue2FqKFoP6PGHMJQyoJ7kl3s3GZ-_haXqY&r=oQ6dxz5_MmND7omQRdV7uWFJSHk8m8M_vn27E5tBpJ8&m=HM68uSQ2Q1DkJKJAoEod4FDG6rlG-IPpulDA7wztSPk&s=JZhZlJLPNEDvc2dhqX1ORr-Z4zlylqpeuxpDaF3TxxA&e=
+
+
+	[[alternative HTML version deleted]]
+
+
+From bhaller at mac.com  Mon Mar  5 08:34:28 2018
+From: bhaller at mac.com (Ben Haller)
+Date: Mon, 05 Mar 2018 07:34:28 -0000
+Subject: [R-SIG-Mac] R App crashes when opening files,
+ navigating within open file pane
+Message-ID: <EDDB8199-53D8-4615-A641-C11217BADD83@mac.com>
+
+Robert Gulotty previously wrote:
+
+> I am using macOS High Sierra, 10.13.2 (17C205)  with R.App GUI 1.70 (7463) x86_64-apple-darwin15.6.0  R version 3.4.3
+> 
+> R hangs when I try to open a .R script in finder, even if R has been running.  It also hangs every time I use the File Open menu to select a file.  It either crashes when I try to navigate from folder to folder within the open file interface, or upon selecting a file.   This has been the case for several updates of macOS, and through several versions of R and across two computers.  I have uninstalled and reinstalled the R app, R, and the various suggested tools for Mac OSX.
+
+  I am experiencing much the same problem, on macS 10.13.3 (17D102) with R.app GUI 1.70 (7463 El Capitan build), R version 3.4.3.
+
+  R.app hangs when I try to open an existing file through any avenue.  I can open a new document and paste content into it from TextEdit, so that is now what I do every time I want to run or edit an existing R file ? rather inconvenient.
+
+  I am a Mac developer, familiar with Xcode, and am happy to work with somebody on this problem if there is difficulty in reproducing the bug; it happens 100% of the time for me.
+
+  If I do ?sample R 10? in Terminal after the app has hung, I get the following output for the thread that is hung.  This is a very weird backtrace; note the 0x0 in the middle of it, following sigactionSegv.  Maybe R.app is installing a signal handler, and a segfault is happening inside NSTypesetter, and then things go south from there?  I have no idea.  :->
+
+Call graph:
+    8871 Thread_2856867   DispatchQueue_1: com.apple.main-thread  (serial)
+    + 8871 start  (in libdyld.dylib) + 1  [0x7fff5c7c9115]
+    +   8871 main  (in R) + 817  [0x105ee9ba1]
+    +     8871 -[REngine runREPL]  (in R) + 225  [0x105efae31]
+    +       8871 run_REngineRmainloop  (in R) + 287  [0x105f06ddf]
+    +         8871 R_ReplDLLdo1  (in libR.dylib) + 139  [0x1060e4e6b]  main.c:365
+    +           8871 Re_ReadConsole  (in R) + 184  [0x105ef85c8]
+    +             8871 -[RController handleReadConsole:]  (in R) + 186  [0x105eeec6a]
+    +               8871 -[RController doProcessEvents:]  (in R) + 204  [0x105ef4a4c]
+    +                 8871 -[NSApplication(NSEvent) _nextEventMatchingEventMask:untilDate:inMode:dequeue:]  (in AppKit) + 3044  [0x7fff32c2eb4c]
+    +                   8871 _DPSNextEvent  (in AppKit) + 2788  [0x7fff3249921e]
+    +                     8871 AEProcessAppleEvent  (in HIToolbox) + 55  [0x7fff341dd5e0]
+    +                       8871 aeProcessAppleEvent  (in AE) + 383  [0x7fff35f9b565]
+    +                         8871 dispatchEventAndSendReply(AEDesc const*, AEDesc*)  (in AE) + 41  [0x7fff35f9b677]
+    +                           8871 aeDispatchAppleEvent(AEDesc const*, AEDesc*, unsigned int, unsigned char*)  (in AE) + 1788  [0x7fff35f9bdd0]
+    +                             8871 _NSAppleEventManagerGenericHandler  (in Foundation) + 102  [0x7fff36fb0282]
+    +                               8871 -[NSAppleEventManager dispatchRawAppleEvent:withRawReply:handlerRefCon:]  (in Foundation) + 287  [0x7fff36fb0404]
+    +                                 8871 -[NSApplication(NSAppleEventHandling) _handleCoreEvent:withReplyEvent:]  (in AppKit) + 766  [0x7fff3249db95]
+    +                                   8871 -[NSApplication(NSAppleEventHandling) _handleAEOpenDocumentsForURLs:]  (in AppKit) + 235  [0x7fff32697138]
+    +                                     8871 __69-[NSApplication(NSAppleEventHandling) _handleAEOpenDocumentsForURLs:]_block_invoke  (in AppKit) + 891  [0x7fff326976dd]
+    +                                       8871 -[NSApplication(NSAppleEventHandling) _openURLs:withCompletionHandler:]  (in AppKit) + 1026  [0x7fff328bd965]
+    +                                         8871 withWindowOrderingObserverHeuristic  (in AppKit) + 496  [0x7fff328bddab]
+    +                                           8871 __69-[NSApplication(NSAppleEventHandling) _handleAEOpenDocumentsForURLs:]_block_invoke_2  (in AppKit) + 2122  [0x7fff326b3667]
+    +                                             8871 +[_NSWindowTransformAnimation waitForAnimationToCompleteOnWindows:forFullScreen:]  (in AppKit) + 69  [0x7fff326b3922]
+    +                                               8871 CA::Transaction::commit()  (in QuartzCore) + 487  [0x7fff3ffe343d]
+    +                                                 8871 CA::Context::commit_transaction(CA::Transaction*)  (in QuartzCore) + 326  [0x7fff3ffe3894]
+    +                                                   8871 CA::Layer::layout_and_display_if_needed(CA::Transaction*)  (in QuartzCore) + 35  [0x7fff3ffe47f9]
+    +                                                     8871 CA::Layer::display_if_needed(CA::Transaction*)  (in QuartzCore) + 633  [0x7fff3ffe4d3b]
+    +                                                       8871 -[NSTextLayer display]  (in AppKit) + 1591  [0x7fff32fcec67]
+    +                                                         8871 -[NSTextLayer drawInContext:]  (in AppKit) + 235  [0x7fff325ecfb5]
+    +                                                           8871 -[NSTextView(NSTextView_LayerBacking) displayTextLayer:withContext:]  (in AppKit) + 130  [0x7fff3301f13d]
+    +                                                             8871 -[NSFocusStack performWithFocusView:inWindow:usingBlock:]  (in AppKit) + 99  [0x7fff325ed1fe]
+    +                                                               8871 __68-[NSTextView(NSTextView_LayerBacking) displayTextLayer:withContext:]_block_invoke  (in AppKit) + 449  [0x7fff3301f30b]
+    +                                                                 8871 -[RScriptEditorTextView drawRect:]  (in R) + 437  [0x105f3ac15]
+    +                                                                   8871 -[RTextView drawRect:]  (in R) + 608  [0x105f26f70]
+    +                                                                     8871 -[NSTextView drawRect:]  (in AppKit) + 1203  [0x7fff325ed8a4]
+    +                                                                       8871 -[NSLayoutManager glyphRangeForBoundingRect:inTextContainer:]  (in UIFoundation) + 81  [0x7fff5867c59f]
+    +                                                                         8871 -[NSLayoutManager(NSPrivate) _glyphRangeForBoundingRect:inTextContainer:fast:okToFillHoles:]  (in UIFoundation) + 918  [0x7fff5867c93b]
+    +                                                                           8871 -[NSLayoutManager(NSPrivate) _firstPassGlyphRangeForBoundingRect:inTextContainer:okToFillHoles:]  (in UIFoundation) + 1534  [0x7fff5867df5e]
+    +                                                                             8871 _NSFastFillAllLayoutHolesForGlyphRange  (in UIFoundation) + 1851  [0x7fff5867ebda]
+    +                                                                               8871 _resizeTextViewsIfNeeded  (in UIFoundation) + 285  [0x7fff5878e09f]
+    +                                                                                 8871 -[NSLayoutManager(NSPrivate) _resizeTextViewForTextContainer:]  (in UIFoundation) + 938  [0x7fff58679dbc]
+    +                                                                                   8871 -[NSTextView setConstrainedFrameSize:]  (in AppKit) + 635  [0x7fff32550438]
+    +                                                                                     8871 -[NSTextView setFrameSize:]  (in AppKit) + 143  [0x7fff32550ec6]
+    +                                                                                       8871 -[NSTextView(NSPrivate) _setFrameSize:forceScroll:]  (in AppKit) + 1081  [0x7fff325513c7]
+    +                                                                                         8871 -[NSView setFrameSize:]  (in AppKit) + 1413  [0x7fff324bba73]
+    +                                                                                           8871 -[NSView(NSInternal) _updateLayerGeometryFromView]  (in AppKit) + 755  [0x7fff324a307c]
+    +                                                                                             8871 -[NSView setNeedsDisplay:]  (in AppKit) + 79  [0x7fff324775e1]
+    +                                                                                               8871 -[NSTextView setNeedsDisplayInRect:]  (in AppKit) + 58  [0x7fff3256e563]
+    +                                                                                                 8871 -[NSTextView setNeedsDisplayInRect:avoidAdditionalLayout:]  (in AppKit) + 1428  [0x7fff3254f41f]
+    +                                                                                                   8871 -[NSLayoutManager glyphRangeForBoundingRect:inTextContainer:]  (in UIFoundation) + 81  [0x7fff5867c59f]
+    +                                                                                                     8871 -[NSLayoutManager(NSPrivate) _glyphRangeForBoundingRect:inTextContainer:fast:okToFillHoles:]  (in UIFoundation) + 918  [0x7fff5867c93b]
+    +                                                                                                       8871 -[NSLayoutManager(NSPrivate) _firstPassGlyphRangeForBoundingRect:inTextContainer:okToFillHoles:]  (in UIFoundation) + 1534  [0x7fff5867df5e]
+    +                                                                                                         8871 _NSFastFillAllLayoutHolesForGlyphRange  (in UIFoundation) + 1615  [0x7fff5867eaee]
+    +                                                                                                           8871 -[NSLayoutManager(NSPrivate) _fillLayoutHoleForCharacterRange:desiredNumberOfLines:isSoft:]  (in UIFoundation) + 722  [0x7fff58696846]
+    +                                                                                                             8871 -[NSATSTypesetter layoutCharactersInRange:forLayoutManager:maximumNumberOfLineFragments:]  (in UIFoundation) + 580  [0x7fff5869828c]
+    +                                                                                                               8871 -[NSTypesetter layoutCharactersInRange:forLayoutManager:maximumNumberOfLineFragments:]  (in UIFoundation) + 242  [0x7fff5869851a]
+    +                                                                                                                 8871 -[NSTypesetter _layoutGlyphsInLayoutManager:startingAtGlyphIndex:maxNumberOfLineFragments:maxCharacterIndex:nextGlyphIndex:nextCharacterIndex:]  (in UIFoundation) + 2762  [0x7fff5873bc24]
+    +                                                                                                                   8871 -[NSATSTypesetter layoutParagraphAtPoint:]  (in UIFoundation) + 181  [0x7fff58698ce9]
+    +                                                                                                                     8871 -[NSATSTypesetter _layoutLineFragmentStartingWithGlyphAtIndex:characterIndex:atPoint:renderingContext:]  (in UIFoundation) + 7734  [0x7fff586854bc]
+    +                                                                                                                       8871 -[NSTypesetter setLineFragmentRect:forGlyphRange:usedRect:baselineOffset:]  (in UIFoundation) + 276  [0x7fff5869aa67]
+    +                                                                                                                         8871 -[NSLayoutManager(NSPrivate) setLineFragmentRect:forGlyphRange:usedRect:baselineOffset:]  (in UIFoundation) + 115  [0x7fff5869adb3]
+    +                                                                                                                           8871 -[NSLayoutManager setLineFragmentRect:forGlyphRange:usedRect:]  (in UIFoundation) + 394  [0x7fff5869af5d]
+    +                                                                                                                             8871 -[NSLayoutManager(NSPrivate) _updateUsageForTextContainer:addingUsedRect:]  (in UIFoundation) + 611  [0x7fff586709f7]
+    +                                                                                                                               8871 -[NSLayoutManager(NSPrivate) _resizeTextViewForTextContainer:]  (in UIFoundation) + 938  [0x7fff58679dbc]
+    +                                                                                                                                 8871 -[NSTextView setConstrainedFrameSize:]  (in AppKit) + 635  [0x7fff32550438]
+    +                                                                                                                                   8871 -[NSTextView setFrameSize:]  (in AppKit) + 143  [0x7fff32550ec6]
+    +                                                                                                                                     8871 -[NSTextView(NSPrivate) _setFrameSize:forceScroll:]  (in AppKit) + 1081  [0x7fff325513c7]
+    +                                                                                                                                       8871 -[NSView setFrameSize:]  (in AppKit) + 2061  [0x7fff324bbcfb]
+    +                                                                                                                                         8871 -[NSView _postFrameChangeNotification]  (in AppKit) + 83  [0x7fff324c16f8]
+    +                                                                                                                                           8871 -[NSClipView _reflectDocumentViewFrameChange]  (in AppKit) + 692  [0x7fff3255769d]
+    +                                                                                                                                             8871 __45-[NSClipView _reflectDocumentViewFrameChange]_block_invoke  (in AppKit) + 98  [0x7fff32943f3a]
+    +                                                                                                                                               8871 -[NSScrollView reflectScrolledClipView:]  (in AppKit) + 892  [0x7fff324888a0]
+    +                                                                                                                                                 8871 -[NSScrollView _tileWithoutRecursing]  (in AppKit) + 47  [0x7fff3247e8cb]
+    +                                                                                                                                                   8871 -[NSScrollView tile]  (in AppKit) + 712  [0x7fff3247ec3d]
+    +                                                                                                                                                     8871 -[NSScrollView _setContentViewFrame:]  (in AppKit) + 362  [0x7fff32480604]
+    +                                                                                                                                                       8871 -[NSView setFrame:]  (in AppKit) + 371  [0x7fff324d1fae]
+    +                                                                                                                                                         8871 -[NSClipView setFrameSize:]  (in AppKit) + 431  [0x7fff324e0179]
+    +                                                                                                                                                           8871 -[NSView setFrameSize:]  (in AppKit) + 1672  [0x7fff324bbb76]
+    +                                                                                                                                                             8871 -[NSView resizeSubviewsWithOldSize:]  (in AppKit) + 504  [0x7fff324dd345]
+    +                                                                                                                                                               8871 -[NSView resizeWithOldSuperviewSize:]  (in AppKit) + 814  [0x7fff324ddb9a]
+    +                                                                                                                                                                 8871 -[NSView setFrame:]  (in AppKit) + 371  [0x7fff324d1fae]
+    +                                                                                                                                                                   8871 -[NSTextView setFrameSize:]  (in AppKit) + 143  [0x7fff32550ec6]
+    +                                                                                                                                                                     8871 -[NSTextView(NSPrivate) _setFrameSize:forceScroll:]  (in AppKit) + 1278  [0x7fff3255148c]
+    +                                                                                                                                                                       8871 -[NSLayoutManager boundingRectForGlyphRange:inTextContainer:]  (in UIFoundation) + 51  [0x7fff586a2211]
+    +                                                                                                                                                                         8871 -[NSLayoutManager(NSPrivate) _boundingRectForGlyphRange:inTextContainer:fast:fullLineRectsOnly:]  (in UIFoundation) + 125  [0x7fff5869da30]
+    +                                                                                                                                                                           8871 -[NSLayoutManager(NSPrivate) _rectArrayForRange:withinSelectionRange:rangeIsCharRange:singleRectOnly:fullLineRectsOnly:inTextContainer:rectCount:rangeWithinContainer:glyphsDrawOutsideLines:]  (in UIFoundation) + 59  [0x7fff587891bf]
+    +                                                                                                                                                                             8871 -[NSLayoutManager(NSPrivate) _rectArrayForRange:withinSelectionRange:rangeIsCharRange:singleRectOnly:fullLineRectsOnly:inTextContainer:rectCount:rangeWithinContainer:glyphsDrawOutsideLines:rectArray:rectArrayCapacity:]  (in UIFoundation) + 749  [0x7fff58786f1d]
+    +                                                                                                                                                                               8871 _NSFastFillAllLayoutHolesForGlyphRange  (in UIFoundation) + 1615  [0x7fff5867eaee]
+    +                                                                                                                                                                                 8871 -[NSLayoutManager(NSPrivate) _fillLayoutHoleForCharacterRange:desiredNumberOfLines:isSoft:]  (in UIFoundation) + 722  [0x7fff58696846]
+    +                                                                                                                                                                                   8871 -[NSATSTypesetter layoutCharactersInRange:forLayoutManager:maximumNumberOfLineFragments:]  (in UIFoundation) + 295  [0x7fff5869816f]
+    +                                                                                                                                                                                     8871 -[NSATSTypesetter layoutCharactersInRange:forLayoutManager:maximumNumberOfLineFragments:]  (in UIFoundation) + 580  [0x7fff5869828c]
+    +                                                                                                                                                                                       8871 -[NSTypesetter layoutCharactersInRange:forLayoutManager:maximumNumberOfLineFragments:]  (in UIFoundation) + 242  [0x7fff5869851a]
+    +                                                                                                                                                                                         8871 -[NSTypesetter _layoutGlyphsInLayoutManager:startingAtGlyphIndex:maxNumberOfLineFragments:maxCharacterIndex:nextGlyphIndex:nextCharacterIndex:]  (in UIFoundation) + 2599  [0x7fff5873bb81]
+    +                                                                                                                                                                                           8871 -[NSTypesetter _getRemainingNominalParagraphRange:andParagraphSeparatorRange:charactarIndex:layoutManager:string:]  (in UIFoundation) + 1320  [0x7fff58698aab]
+    +                                                                                                                                                                                             8871 0x0
+    +                                                                                                                                                                                               8871 _sigtramp  (in libsystem_platform.dylib) + 26  [0x7fff5ca4af5a]
+    +                                                                                                                                                                                                 8871 sigactionSegv  (in libR.dylib) + 627  [0x1060e70e3]  main.c:612
+    +                                                                                                                                                                                                   8871 Re_ReadConsole  (in R) + 184  [0x105ef85c8]
+    +                                                                                                                                                                                                     8871 -[RController handleReadConsole:]  (in R) + 186  [0x105eeec6a]
+    +                                                                                                                                                                                                       8871 -[RController doProcessEvents:]  (in R) + 204  [0x105ef4a4c]
+    +                                                                                                                                                                                                         8871 -[NSApplication(NSEvent) _nextEventMatchingEventMask:untilDate:inMode:dequeue:]  (in AppKit) + 3044  [0x7fff32c2eb4c]
+    +                                                                                                                                                                                                           8871 _DPSNextEvent  (in AppKit) + 2085  [0x7fff32498f5f]
+    +                                                                                                                                                                                                             8871 _BlockUntilNextEventMatchingListInModeWithFilter  (in HIToolbox) + 64  [0x7fff341cd914]
+    +                                                                                                                                                                                                               8871 ReceiveNextEventCommon  (in HIToolbox) + 613  [0x7fff341cdb96]
+    +                                                                                                                                                                                                                 8871 RunCurrentEventLoopInMode  (in HIToolbox) + 286  [0x7fff341cde26]
+    +                                                                                                                                                                                                                   8871 CFRunLoopRunSpecific  (in CoreFoundation) + 483  [0x7fff34eb5f43]
+    +                                                                                                                                                                                                                     8871 __CFRunLoopRun  (in CoreFoundation) + 2427  [0x7fff34eb6b4b]
+    +                                                                                                                                                                                                                       8871 __CFRunLoopDoTimers  (in CoreFoundation) + 346  [0x7fff34ebf54a]
+    +                                                                                                                                                                                                                         8871 __CFRunLoopDoTimer  (in CoreFoundation) + 1095  [0x7fff34ebfa47]
+    +                                                                                                                                                                                                                           8871 __CFRUNLOOP_IS_CALLING_OUT_TO_A_TIMER_CALLBACK_FUNCTION__  (in CoreFoundation) + 20  [0x7fff34ebfdd4]
+    +                                                                                                                                                                                                                             8871 __NSFireDelayedPerform  (in Foundation) + 409  [0x7fff36fea445]
+    +                                                                                                                                                                                                                               8871 _NSFastFillAllLayoutHolesForGlyphRange  (in UIFoundation) + 1615  [0x7fff5867eaee]
+    +                                                                                                                                                                                                                                 8871 -[NSLayoutManager(NSPrivate) _fillLayoutHoleForCharacterRange:desiredNumberOfLines:isSoft:]  (in UIFoundation) + 722  [0x7fff58696846]
+    +                                                                                                                                                                                                                                   8871 -[NSATSTypesetter layoutCharactersInRange:forLayoutManager:maximumNumberOfLineFragments:]  (in UIFoundation) + 295  [0x7fff5869816f]
+    +                                                                                                                                                                                                                                     8871 -[NSATSTypesetter layoutCharactersInRange:forLayoutManager:maximumNumberOfLineFragments:]  (in UIFoundation) + 580  [0x7fff5869828c]
+    +                                                                                                                                                                                                                                       8871 -[NSTypesetter layoutCharactersInRange:forLayoutManager:maximumNumberOfLineFragments:]  (in UIFoundation) + 242  [0x7fff5869851a]
+    +                                                                                                                                                                                                                                         8871 -[NSTypesetter _layoutGlyphsInLayoutManager:startingAtGlyphIndex:maxNumberOfLineFragments:maxCharacterIndex:nextGlyphIndex:nextCharacterIndex:]  (in UIFoundation) + 2599  [0x7fff5873bb81]
+    +                                                                                                                                                                                                                                           8871 -[NSTypesetter _getRemainingNominalParagraphRange:andParagraphSeparatorRange:charactarIndex:layoutManager:string:]  (in UIFoundation) + 1320  [0x7fff58698aab]
+    +                                                                                                                                                                                                                                             8871 -[RScriptEditorTypeSetter actionForControlCharacterAtIndex:]  (in R) + 47  [0x105f56c2f]
+    +                                                                                                                                                                                                                                               8871 0x0 + 0  [0x0]
+
+Cheers,
+-B.
+
+Benjamin C. Haller
+Messer Lab
+Cornell University
+
+
+From yonabeth77 at gmail.com  Tue Mar 20 03:56:46 2018
+From: yonabeth77 at gmail.com (Yonabeth Nava de Escalante)
+Date: Mon, 19 Mar 2018 19:56:46 -0700
+Subject: [R-SIG-Mac] HELP
+Message-ID: <943E1D03-1612-4EA8-AA7F-311FF39A967F@gmail.com>
+
+I am trying to install the ?rms? package in my Mac OS X Yosemite 10.10.5. When I try to load the library I get this error:
+
+> library(rms)
+Error in loadNamespace(i, c(lib.loc, .libPaths()), versionCheck = vI[[i]]) : 
+  there is no package called ?mvtnorm?
+Error: package or namespace load failed for ?rms?
+
+I tried installing the dependencies with 
+
+install.packages("rms",dependencies = TRUE)
+
+I also tried
+
+install.packages("rms", repos=c("http://rstudio.org/_packages", "http://cran.rstudio.com?))
+
+However, I keep getting the same error. 
+	[[alternative HTML version deleted]]
+
+
+From keith.ohara at nyu.edu  Tue Mar 20 16:35:04 2018
+From: keith.ohara at nyu.edu (Keith O'Hara)
+Date: Tue, 20 Mar 2018 11:35:04 -0400
+Subject: [R-SIG-Mac] HELP
+In-Reply-To: <943E1D03-1612-4EA8-AA7F-311FF39A967F@gmail.com>
+References: <943E1D03-1612-4EA8-AA7F-311FF39A967F@gmail.com>
+Message-ID: <8D11E58F-5682-4605-86BF-DF4EA313D0F9@nyu.edu>
+
+Did you try reinstalling the mvtnorm package?
+
+Keith
+
+> On Mar 19, 2018, at 10:56 PM, Yonabeth Nava de Escalante <yonabeth77 at gmail.com> wrote:
+> 
+> I am trying to install the ?rms? package in my Mac OS X Yosemite 10.10.5. When I try to load the library I get this error:
+> 
+>> library(rms)
+> Error in loadNamespace(i, c(lib.loc, .libPaths()), versionCheck = vI[[i]]) : 
+>  there is no package called ?mvtnorm?
+> Error: package or namespace load failed for ?rms?
+> 
+> I tried installing the dependencies with 
+> 
+> install.packages("rms",dependencies = TRUE)
+> 
+> I also tried
+> 
+> install.packages("rms", repos=c("http://rstudio.org/_packages", "http://cran.rstudio.com?))
+> 
+> However, I keep getting the same error. 
+> 	[[alternative HTML version deleted]]
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+
+
+From dwinsemius at comcast.net  Tue Mar 20 16:44:46 2018
+From: dwinsemius at comcast.net (David Winsemius)
+Date: Tue, 20 Mar 2018 08:44:46 -0700
+Subject: [R-SIG-Mac] HELP
+In-Reply-To: <8D11E58F-5682-4605-86BF-DF4EA313D0F9@nyu.edu>
+References: <943E1D03-1612-4EA8-AA7F-311FF39A967F@gmail.com>
+ <8D11E58F-5682-4605-86BF-DF4EA313D0F9@nyu.edu>
+Message-ID: <E66A6499-D760-47D5-8B40-37527F2B149C@comcast.net>
+
+
+> On Mar 20, 2018, at 8:35 AM, Keith O'Hara <keith.ohara at nyu.edu> wrote:
+> 
+> Did you try reinstalling the mvtnorm package?
+> 
+> Keith
+> 
+>> On Mar 19, 2018, at 10:56 PM, Yonabeth Nava de Escalante <yonabeth77 at gmail.com> wrote:
+>> 
+>> I am trying to install the ?rms? package in my Mac OS X Yosemite 10.10.5. When I try to load the library I get this error:
+>> 
+>>> library(rms)
+>> Error in loadNamespace(i, c(lib.loc, .libPaths()), versionCheck = vI[[i]]) : 
+>> there is no package called ?mvtnorm?
+>> Error: package or namespace load failed for ?rms?
+>> 
+>> I tried installing the dependencies with 
+>> 
+>> install.packages("rms",dependencies = TRUE)
+>> 
+>> I also tried
+>> 
+>> install.packages("rms", repos=c("http://rstudio.org/_packages", "http://cran.rstudio.com?))
+>> 
+>> However, I keep getting the same error. 
+>> 	[[alternative HTML version deleted]]
+
+I can confirm this behavior. I load rms from startup in my .Rprofile file and if mvtrnorm is missing I also get:
+
+Error: package or namespace load failed for ?rms? in loadNamespace(i, c(lib.loc, .libPaths()), versionCheck = vI[[i]]):
+ there is no package called ?mvtnorm?
+
+To me it signals a needt to let the package maintainer know about the issue.
+
+> maintainer("rms")
+[1] "Frank E Harrell Jr <f.harrell at vanderbilt.edu>"
+
+>> 
+>> _______________________________________________
+>> R-SIG-Mac mailing list
+>> R-SIG-Mac at r-project.org
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+
+David Winsemius
+Alameda, CA, USA
+
+'Any technology distinguishable from magic is insufficiently advanced.'   -Gehm's Corollary to Clarke's Third Law
+
+
+From keith.ohara at nyu.edu  Tue Mar 20 17:01:18 2018
+From: keith.ohara at nyu.edu (Keith O'Hara)
+Date: Tue, 20 Mar 2018 12:01:18 -0400
+Subject: [R-SIG-Mac] HELP
+In-Reply-To: <E66A6499-D760-47D5-8B40-37527F2B149C@comcast.net>
+References: <943E1D03-1612-4EA8-AA7F-311FF39A967F@gmail.com>
+ <8D11E58F-5682-4605-86BF-DF4EA313D0F9@nyu.edu>
+ <E66A6499-D760-47D5-8B40-37527F2B149C@comcast.net>
+Message-ID: <C299A82F-D03B-45E5-A9BE-C96506E5793D@nyu.edu>
+
+The dependence seems to come from rms -> multcomp -> mvtnorm. 
+
+Keith
+
+> On Mar 20, 2018, at 11:44 AM, David Winsemius <dwinsemius at comcast.net> wrote:
+> 
+> 
+>> On Mar 20, 2018, at 8:35 AM, Keith O'Hara <keith.ohara at nyu.edu> wrote:
+>> 
+>> Did you try reinstalling the mvtnorm package?
+>> 
+>> Keith
+>> 
+>>> On Mar 19, 2018, at 10:56 PM, Yonabeth Nava de Escalante <yonabeth77 at gmail.com> wrote:
+>>> 
+>>> I am trying to install the ?rms? package in my Mac OS X Yosemite 10.10.5. When I try to load the library I get this error:
+>>> 
+>>>> library(rms)
+>>> Error in loadNamespace(i, c(lib.loc, .libPaths()), versionCheck = vI[[i]]) : 
+>>> there is no package called ?mvtnorm?
+>>> Error: package or namespace load failed for ?rms?
+>>> 
+>>> I tried installing the dependencies with 
+>>> 
+>>> install.packages("rms",dependencies = TRUE)
+>>> 
+>>> I also tried
+>>> 
+>>> install.packages("rms", repos=c("http://rstudio.org/_packages", "http://cran.rstudio.com?))
+>>> 
+>>> However, I keep getting the same error. 
+>>> 	[[alternative HTML version deleted]]
+> 
+> I can confirm this behavior. I load rms from startup in my .Rprofile file and if mvtrnorm is missing I also get:
+> 
+> Error: package or namespace load failed for ?rms? in loadNamespace(i, c(lib.loc, .libPaths()), versionCheck = vI[[i]]):
+> there is no package called ?mvtnorm?
+> 
+> To me it signals a needt to let the package maintainer know about the issue.
+> 
+>> maintainer("rms")
+> [1] "Frank E Harrell Jr <f.harrell at vanderbilt.edu>"
+> 
+>>> 
+>>> _______________________________________________
+>>> R-SIG-Mac mailing list
+>>> R-SIG-Mac at r-project.org
+>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>> 
+>> _______________________________________________
+>> R-SIG-Mac mailing list
+>> R-SIG-Mac at r-project.org
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+> 
+> David Winsemius
+> Alameda, CA, USA
+> 
+> 'Any technology distinguishable from magic is insufficiently advanced.'   -Gehm's Corollary to Clarke's Third Law
+> 
+> 
+> 
+> 
+> 
+
+
+From tim.bates at ed.ac.uk  Tue Mar 20 18:00:29 2018
+From: tim.bates at ed.ac.uk (BATES Timothy)
+Date: Tue, 20 Mar 2018 17:00:29 +0000
+Subject: [R-SIG-Mac] HELP
+In-Reply-To: <C299A82F-D03B-45E5-A9BE-C96506E5793D@nyu.edu>
+References: <943E1D03-1612-4EA8-AA7F-311FF39A967F@gmail.com>
+ <8D11E58F-5682-4605-86BF-DF4EA313D0F9@nyu.edu>
+ <E66A6499-D760-47D5-8B40-37527F2B149C@comcast.net>
+ <C299A82F-D03B-45E5-A9BE-C96506E5793D@nyu.edu>
+Message-ID: <AD6DC6DE-E354-46F1-8C9C-643E703C4A8B@ed.ac.uk>
+
+Just FYI, I've had a lot of students in the last 2-weeks reporting errors like this about other packages with dependencies that have their own dependencies.
+
+The full chain doesn't appear to be being followed.
+
+For some, on Macs I think, they also have the problem of install.packages() trying to install a source version which is newer than the current CRAN binary, and then failing because the required compiler isn't present.
+
+Also, sometimes a package will get listed as being installed one or more times (this happened for "crayon" last week) , then not ending up installed at all.
+
+There was a strange issue with the "stringi" package being missing despite multiple install.packages() calls by students to the top level package that ultimately wanted it.
+
+Most solved by reading the error, manually installing (forcing binary if necessary) the missing package, and repeating until done.
+
+Of course this leads to lots of "it's broken"  and "no... it didn't work" hassles :-)
+
+Best, tim (currently happy the mac TZ warning has gone away in 3.4.4 :-) )
+
+
+> On 20 Mar 2018, at 4:01 pm, Keith O'Hara <keith.ohara at nyu.edu> wrote:
+> 
+> The dependence seems to come from rms -> multcomp -> mvtnorm. 
+> 
+> Keith
+> 
+>> On Mar 20, 2018, at 11:44 AM, David Winsemius <dwinsemius at comcast.net> wrote:
+>> 
+>> 
+>>> On Mar 20, 2018, at 8:35 AM, Keith O'Hara <keith.ohara at nyu.edu> wrote:
+>>> 
+>>> Did you try reinstalling the mvtnorm package?
+>>> 
+>>> Keith
+>>> 
+>>>> On Mar 19, 2018, at 10:56 PM, Yonabeth Nava de Escalante <yonabeth77 at gmail.com> wrote:
+>>>> 
+>>>> I am trying to install the ?rms? package in my Mac OS X Yosemite 10.10.5. When I try to load the library I get this error:
+>>>> 
+>>>>> library(rms)
+>>>> Error in loadNamespace(i, c(lib.loc, .libPaths()), versionCheck = vI[[i]]) : 
+>>>> there is no package called ?mvtnorm?
+>>>> Error: package or namespace load failed for ?rms?
+>>>> 
+>>>> I tried installing the dependencies with 
+>>>> 
+>>>> install.packages("rms",dependencies = TRUE)
+>>>> 
+>>>> I also tried
+>>>> 
+>>>> install.packages("rms", repos=c("http://rstudio.org/_packages", "http://cran.rstudio.com?))
+>>>> 
+>>>> However, I keep getting the same error. 
+>>>> 	[[alternative HTML version deleted]]
+>> 
+>> I can confirm this behavior. I load rms from startup in my .Rprofile file and if mvtrnorm is missing I also get:
+>> 
+>> Error: package or namespace load failed for ?rms? in loadNamespace(i, c(lib.loc, .libPaths()), versionCheck = vI[[i]]):
+>> there is no package called ?mvtnorm?
+>> 
+>> To me it signals a needt to let the package maintainer know about the issue.
+>> 
+>>> maintainer("rms")
+>> [1] "Frank E Harrell Jr <f.harrell at vanderbilt.edu>"
+>> 
+>>>> 
+>>>> _______________________________________________
+>>>> R-SIG-Mac mailing list
+>>>> R-SIG-Mac at r-project.org
+>>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>>> 
+>>> _______________________________________________
+>>> R-SIG-Mac mailing list
+>>> R-SIG-Mac at r-project.org
+>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>> 
+>> David Winsemius
+>> Alameda, CA, USA
+>> 
+>> 'Any technology distinguishable from magic is insufficiently advanced.'   -Gehm's Corollary to Clarke's Third Law
+>> 
+>> 
+>> 
+>> 
+>> 
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+
+
+-- 
+The University of Edinburgh is a charitable body, registered in
+Scotland, with registration number SC005336.
+
+
+From luiss.puerto at gmail.com  Thu Mar 22 14:48:25 2018
+From: luiss.puerto at gmail.com (Luis Puerto)
+Date: Thu, 22 Mar 2018 14:48:25 +0100
+Subject: [R-SIG-Mac] Pin package/s
+Message-ID: <B0A21232-9701-499C-BA3E-2405CA54969F@gmail.com>
+
+Hi! 
+
+I don?t know if you know package manager for macOS Homebrew. With Homebrew there is a way to stop update certain packages: 
+
+brew pin <formula/package>
+
+Does anyone know a way to do a similar thing with R packages? 
+
+In the same way, it would be great to be able to receive a notification ?an email? when a new version of a package reach CRAN or any other repository. 
+
+I would like to have something like this because the Data Table package has a certain makevars necessities when it?s built in a Homebrew R install. It isn?t really problematic since it the package hasn?t built correctly when you load it on R it will display a message. However, I?m thinking that perhaps something like this could be useful also for other packages. 
+
+Thanks! 
+
+
+	[[alternative HTML version deleted]]
+
+
+From fisher at plessthan.com  Mon Mar 26 17:11:12 2018
+From: fisher at plessthan.com (Dennis Fisher)
+Date: Mon, 26 Mar 2018 08:11:12 -0700
+Subject: [R-SIG-Mac] Embedding PDF documents created in R in Word documents
+Message-ID: <6018C98C-FC2F-4F67-9690-9B3E89112F2D@plessthan.com>
+
+R 3.4.3
+OS X 13.3
+
+Colleagues
+
+I have encountered surprising behavior in the following circumstance:
+
+1.  I create a one-page PDF in R.  The command might be:
+	pdf(?/path/to/file?, width=5, height=3.5)
+
+2.  When I open the PDF in Preview, the ?inspector? confirms the intended size.
+
+3.  I embed the PDF into Word for Mac (the newest version).  I accomplish this in one of several ways, all leading to the same outcome:
+	a.  I drag the icon into Word
+	b.  I copy the thumbnail and paste into Word
+	c.  I drag the thumbnail into Word
+
+4.  Previously, after the page was embedded, the size matched the specifications (5 x 3.5, in this instance). Now, the width is one-half of the intended size.
+
+5.  Interestingly, when I drag the thumbnail into Word, the image appears twice
+
+I suspect that the problem is in Word, rather than R, but I am curious as to whether anyone has encountered this and has a solution.
+
+Dennis
+
+Dennis Fisher MD
+P < (The "P Less Than" Company)
+Phone / Fax: 1-866-PLessThan (1-866-753-7784)
+www.PLessThan.com
+
+
+
+
+
+	[[alternative HTML version deleted]]
+
+
+From maechler at stat.math.ethz.ch  Mon Mar 26 17:24:13 2018
+From: maechler at stat.math.ethz.ch (Martin Maechler)
+Date: Mon, 26 Mar 2018 17:24:13 +0200
+Subject: [R-SIG-Mac] Incorrect SHA-1 hash for R-3.4.4.pkg on CRAN
+In-Reply-To: <e2a0949f-b42c-536a-a13e-2267ac552770@decoded.com>
+References: <e2a0949f-b42c-536a-a13e-2267ac552770@decoded.com>
+Message-ID: <23225.4253.300516.377252@stat.math.ethz.ch>
+
+>>>>> Joshua Saxby <........>
+>>>>>     on Mon, 26 Mar 2018 15:18:25 +0100 writes:
+
+    > Dear Sir/Madam,
+    > While downloading the latest version of /R for Mac OS X/, I noticed that
+    > the SHA-1 checksum for the file as advertised on the page at
+    > http://cran.us.r-project.org/bin/macosx/ appears to be incorrect. I am
+    > quite certain that the checksum as displayed on the page is incorrect,
+    > because the MD5 hash on the page matches that which I can reproduce
+    > locally, and the Apple Developer certificates also validate successfully
+    > when pkgutil --check-signature R-3.4.4.pkg is run.
+
+    > To clarify, the SHA-hash (I assume it is SHA-1, no other SHA hash
+    > matches this length) as displayed on your page is:
+    > 566f8c7a85e9343d056c1b143ebf5ca6c101dec7
+
+    > The SHA-1 hash I get when I hash the file locally (on macOS with the
+    > command shasum R-3.4.4.pkg) is: 5fd44c8a6eb2e936614f844d00f29c1fc2f4a0f9
+
+    > I have encountered this scenario across two of the mirror sites, so my
+    > assumption would be that the wrong hash is displayed.
+
+Thank you very much, Joshua!
+
+The master site is (with 'https', not just 'http' !)
+   https://cran.r-project.org/bin/macosx/
+
+and that does show the same hash (of course: the mirrors do not
+recompute the hashes in the *text* of their pages).
+
+So this must be an error somewhere.
+
+I'm CC'ing the  R-SIG-Mac  mailing list,
+where the R-on-Mac experts should be listening.
+
+Can  mac users confirm they do not get the indicated hash but a
+different one?
+
+-------
+
+NOTE: The  Webmasters of   www.r-project.org  cannot really
+      change contents of  cran.r-project.org  and its mirrors.
+
+So we have to refer this to the CRAN maintainers ourselves.
+
+For the webmasters of R-project.org,
+Martin Maechler
+
+ETH Zurich
+
+    > Best Regards,
+    > /J.S./
+
+
+From marc_schwartz at me.com  Mon Mar 26 17:33:47 2018
+From: marc_schwartz at me.com (Marc Schwartz)
+Date: Mon, 26 Mar 2018 11:33:47 -0400
+Subject: [R-SIG-Mac] 
+ Embedding PDF documents created in R in Word documents
+In-Reply-To: <6018C98C-FC2F-4F67-9690-9B3E89112F2D@plessthan.com>
+References: <6018C98C-FC2F-4F67-9690-9B3E89112F2D@plessthan.com>
+Message-ID: <39629957-E4AA-48F9-AA13-2163D9B11E76@me.com>
+
+
+
+> On Mar 26, 2018, at 11:11 AM, Dennis Fisher <fisher at plessthan.com> wrote:
+> 
+> R 3.4.3
+> OS X 13.3
+> 
+> Colleagues
+> 
+> I have encountered surprising behavior in the following circumstance:
+> 
+> 1.  I create a one-page PDF in R.  The command might be:
+> 	pdf(?/path/to/file?, width=5, height=3.5)
+> 
+> 2.  When I open the PDF in Preview, the ?inspector? confirms the intended size.
+> 
+> 3.  I embed the PDF into Word for Mac (the newest version).  I accomplish this in one of several ways, all leading to the same outcome:
+> 	a.  I drag the icon into Word
+> 	b.  I copy the thumbnail and paste into Word
+> 	c.  I drag the thumbnail into Word
+> 
+> 4.  Previously, after the page was embedded, the size matched the specifications (5 x 3.5, in this instance). Now, the width is one-half of the intended size.
+> 
+> 5.  Interestingly, when I drag the thumbnail into Word, the image appears twice
+> 
+> I suspect that the problem is in Word, rather than R, but I am curious as to whether anyone has encountered this and has a solution.
+> 
+> Dennis
+
+
+Hi Dennis,
+
+Try it with the attached PDF, created with:
+
+pdf("test.pdf", width = 5, height = 3.5)
+plot(1:5)
+dev.off()
+
+I am using R 3.4.4 on macOS 10.13.3, with Word 2016.
+
+When I drag the pdf file from my desktop into Word, or the thumbnail from Preview, the size of the embedded object is correct and I get the correct preview image of the plot in Word.
+
+If I copy and paste the thumbnail into Word, it has the correct size, the but preview image in Word appears to be bitmapped, instead of vector, so the quality of the image in Word is not as good. Similar to what one might see embedding an EPS file in Word.
+
+Also, if I "Insert" object from the Word menu, and select the PDF file, I get the correct size and the vector based image.
+
+Regards,
+
+Marc Schwartz
+
+
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: test.pdf
+Type: application/pdf
+Size: 4529 bytes
+Desc: not available
+URL: <https://stat.ethz.ch/pipermail/r-sig-mac/attachments/20180326/9c6ce625/attachment.pdf>
+
+From josh at decoded.com  Mon Mar 26 17:37:07 2018
+From: josh at decoded.com (Joshua Saxby)
+Date: Mon, 26 Mar 2018 16:37:07 +0100
+Subject: [R-SIG-Mac] Incorrect SHA-1 hash for R-3.4.4.pkg on CRAN
+In-Reply-To: <23225.4253.300516.377252@stat.math.ethz.ch>
+References: <e2a0949f-b42c-536a-a13e-2267ac552770@decoded.com>
+ <23225.4253.300516.377252@stat.math.ethz.ch>
+Message-ID: <ee647d27-aa34-2218-437b-e3ad095a8bf9@decoded.com>
+
+You're very welcome Martin!
+
+    /Aha, glad to see your master site is HTTPS, not HTTP. I was under
+    the false impression that the project's main site was only available
+    under the latter (which did seem strange)./
+
+Sorry if you weren't the best person to contact, I couldn't work out who
+was the best to contact from the information on the page.
+
+Best Regards,
+
+/J.S./
+
+------------------------------------------------------------------------
+*My PGP Public Key Identity*
+
+pub   4096R/*DDD75C27* 2016-11-17 [expires: 2018-10-06]
+      Key fingerprint = *F9B1 BDAF 9A2A 7F9A 0712 DEEB 3B24 41F6 DDD7 5C27*
+uid       [ultimate] Joshua Saxby (Decoded Ltd) josh at decoded.com <mailto:josh at decoded.com>
+sub   4096R/8B35ECE4 2016-11-17 [expires: 2018-10-06]
+
+------------------------------------------------------------------------
+On 2018-03-26 16:24, Martin Maechler wrote:
+>>>>>> Joshua Saxby <........>
+>>>>>>     on Mon, 26 Mar 2018 15:18:25 +0100 writes:
+>     > Dear Sir/Madam,
+>     > While downloading the latest version of /R for Mac OS X/, I noticed that
+>     > the SHA-1 checksum for the file as advertised on the page at
+>     > http://cran.us.r-project.org/bin/macosx/ appears to be incorrect. I am
+>     > quite certain that the checksum as displayed on the page is incorrect,
+>     > because the MD5 hash on the page matches that which I can reproduce
+>     > locally, and the Apple Developer certificates also validate successfully
+>     > when pkgutil --check-signature R-3.4.4.pkg is run.
+>
+>     > To clarify, the SHA-hash (I assume it is SHA-1, no other SHA hash
+>     > matches this length) as displayed on your page is:
+>     > 566f8c7a85e9343d056c1b143ebf5ca6c101dec7
+>
+>     > The SHA-1 hash I get when I hash the file locally (on macOS with the
+>     > command shasum R-3.4.4.pkg) is: 5fd44c8a6eb2e936614f844d00f29c1fc2f4a0f9
+>
+>     > I have encountered this scenario across two of the mirror sites, so my
+>     > assumption would be that the wrong hash is displayed.
+>
+> Thank you very much, Joshua!
+>
+> The master site is (with 'https', not just 'http' !)
+>    https://cran.r-project.org/bin/macosx/
+>
+> and that does show the same hash (of course: the mirrors do not
+> recompute the hashes in the *text* of their pages).
+>
+> So this must be an error somewhere.
+>
+> I'm CC'ing the  R-SIG-Mac  mailing list,
+> where the R-on-Mac experts should be listening.
+>
+> Can  mac users confirm they do not get the indicated hash but a
+> different one?
+>
+> -------
+>
+> NOTE: The  Webmasters of   www.r-project.org  cannot really
+>       change contents of  cran.r-project.org  and its mirrors.
+>
+> So we have to refer this to the CRAN maintainers ourselves.
+>
+> For the webmasters of R-project.org,
+> Martin Maechler
+>
+> ETH Zurich
+>
+>     > Best Regards,
+>     > /J.S./
+>
+
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <https://stat.ethz.ch/pipermail/r-sig-mac/attachments/20180326/027dcc0a/attachment-0001.html>
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 833 bytes
+Desc: OpenPGP digital signature
+URL: <https://stat.ethz.ch/pipermail/r-sig-mac/attachments/20180326/027dcc0a/attachment-0001.sig>
+
+From marc_schwartz at me.com  Mon Mar 26 17:53:13 2018
+From: marc_schwartz at me.com (Marc Schwartz)
+Date: Mon, 26 Mar 2018 11:53:13 -0400
+Subject: [R-SIG-Mac] Incorrect SHA-1 hash for R-3.4.4.pkg on CRAN
+In-Reply-To: <23225.4253.300516.377252@stat.math.ethz.ch>
+References: <e2a0949f-b42c-536a-a13e-2267ac552770@decoded.com>
+ <23225.4253.300516.377252@stat.math.ethz.ch>
+Message-ID: <E0866F1A-D2DD-4836-877F-DBE3842B0F66@me.com>
+
+
+
+> On Mar 26, 2018, at 11:24 AM, Martin Maechler <maechler at stat.math.ethz.ch> wrote:
+> 
+>>>>>> Joshua Saxby <........>
+>>>>>>    on Mon, 26 Mar 2018 15:18:25 +0100 writes:
+> 
+>> Dear Sir/Madam,
+>> While downloading the latest version of /R for Mac OS X/, I noticed that
+>> the SHA-1 checksum for the file as advertised on the page at
+>> http://cran.us.r-project.org/bin/macosx/ appears to be incorrect. I am
+>> quite certain that the checksum as displayed on the page is incorrect,
+>> because the MD5 hash on the page matches that which I can reproduce
+>> locally, and the Apple Developer certificates also validate successfully
+>> when pkgutil --check-signature R-3.4.4.pkg is run.
+> 
+>> To clarify, the SHA-hash (I assume it is SHA-1, no other SHA hash
+>> matches this length) as displayed on your page is:
+>> 566f8c7a85e9343d056c1b143ebf5ca6c101dec7
+> 
+>> The SHA-1 hash I get when I hash the file locally (on macOS with the
+>> command shasum R-3.4.4.pkg) is: 5fd44c8a6eb2e936614f844d00f29c1fc2f4a0f9
+> 
+>> I have encountered this scenario across two of the mirror sites, so my
+>> assumption would be that the wrong hash is displayed.
+> 
+> Thank you very much, Joshua!
+> 
+> The master site is (with 'https', not just 'http' !)
+>   https://cran.r-project.org/bin/macosx/
+> 
+> and that does show the same hash (of course: the mirrors do not
+> recompute the hashes in the *text* of their pages).
+> 
+> So this must be an error somewhere.
+> 
+> I'm CC'ing the  R-SIG-Mac  mailing list,
+> where the R-on-Mac experts should be listening.
+> 
+> Can  mac users confirm they do not get the indicated hash but a
+> different one?
+
+
+Here is what I am getting:
+
+md5 R-3.4.4.pkg  
+MD5 (R-3.4.4.pkg) = 741276b7c44e617a9d75d080db953f62
+
+The above matches the value on CRAN.
+
+
+shasum R-3.4.4.pkg
+5fd44c8a6eb2e936614f844d00f29c1fc2f4a0f9  R-3.4.4.pkg
+
+The above, as Joshua noted, does not match the value on CRAN. I also verified the same hash using an online generator.
+
+
+pkgutil --check-signature R-3.4.4.pkg
+Package "R-3.4.4.pkg":
+   Status: signed by a certificate trusted by Mac OS X
+   Certificate Chain:
+    1. Developer ID Installer: Simon Urbanek (VZLD955F6P)
+       SHA1 fingerprint: 7B 6B 81 12 E6 26 8C 16 F8 D4 0F 94 E4 3E 62 69 2E 92 22 81
+       -----------------------------------------------------------------------------
+    2. Developer ID Certification Authority
+       SHA1 fingerprint: 3B 16 6C 3B 7D C4 B7 51 C9 FE 2A FA B9 13 56 41 E3 88 E1 86
+       -----------------------------------------------------------------------------
+    3. Apple Root CA
+       SHA1 fingerprint: 61 1E 5B 66 2C 59 3A 08 FF 58 D1 4A E2 24 52 D1 98 DF 6C 60
+
+
+The above does appear to be correct.
+
+A logical guess at this point, presuming that the CRAN binary has not been compromised, is that the SHA1 hash on CRAN is not correct and may perhaps be for an earlier PKG file version, or perhaps one of the nightly devel versions that Simon generates. I went back to each prior version to 3.4.0 and could not match the value on CRAN, so perhaps it may be for one of the nightly builds.
+
+Regards,
+
+Marc Schwartz
+
+
+> 
+> -------
+> 
+> NOTE: The  Webmasters of   www.r-project.org  cannot really
+>      change contents of  cran.r-project.org  and its mirrors.
+> 
+> So we have to refer this to the CRAN maintainers ourselves.
+> 
+> For the webmasters of R-project.org,
+> Martin Maechler
+> 
+> ETH Zurich
+> 
+>> Best Regards,
+>> /J.S./
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+
+
+	[[alternative HTML version deleted]]
+
+
+From fisher at plessthan.com  Mon Mar 26 18:01:19 2018
+From: fisher at plessthan.com (Dennis Fisher)
+Date: Mon, 26 Mar 2018 09:01:19 -0700
+Subject: [R-SIG-Mac] 
+ Embedding PDF documents created in R in Word documents
+In-Reply-To: <39629957-E4AA-48F9-AA13-2163D9B11E76@me.com>
+References: <6018C98C-FC2F-4F67-9690-9B3E89112F2D@plessthan.com>
+ <39629957-E4AA-48F9-AA13-2163D9B11E76@me.com>
+Message-ID: <F6A40091-5420-42A5-9C32-8743B4148B47@plessthan.com>
+
+Marc
+
+Thanks for trying this.  
+
+Your PDF exhibited the problematic behavior (half-size).  It appears that we are using the same version of the OS.  We are using the same generation of Word (Office Home & Business 2016 for Mac (Work At Home)) although there are probably several versions of Office floating around.  This left the version of R ? but I can confirm the same problematic behavior with R 3.4.4.
+
+Of note, this behavior exists on two different OS X machines but a third computer with OS X 13.2 works correctly.  
+Also, when I use R to create an RTF document that contains JPEG images, the same problem happens.  
+
+I am at a loss ? perhaps there is something weird about my version of Office or some preference that is set incorrectly.
+
+Dennis
+
+Dennis Fisher MD
+P < (The "P Less Than" Company)
+Phone / Fax: 1-866-PLessThan (1-866-753-7784)
+www.PLessThan.com
+
+
+
+
+> On Mar 26, 2018, at 8:33 AM, Marc Schwartz <marc_schwartz at me.com> wrote:
+> 
+> 
+> 
+>> On Mar 26, 2018, at 11:11 AM, Dennis Fisher <fisher at plessthan.com> wrote:
+>> 
+>> R 3.4.3
+>> OS X 13.3
+>> 
+>> Colleagues
+>> 
+>> I have encountered surprising behavior in the following circumstance:
+>> 
+>> 1.  I create a one-page PDF in R.  The command might be:
+>> 	pdf(?/path/to/file?, width=5, height=3.5)
+>> 
+>> 2.  When I open the PDF in Preview, the ?inspector? confirms the intended size.
+>> 
+>> 3.  I embed the PDF into Word for Mac (the newest version).  I accomplish this in one of several ways, all leading to the same outcome:
+>> 	a.  I drag the icon into Word
+>> 	b.  I copy the thumbnail and paste into Word
+>> 	c.  I drag the thumbnail into Word
+>> 
+>> 4.  Previously, after the page was embedded, the size matched the specifications (5 x 3.5, in this instance). Now, the width is one-half of the intended size.
+>> 
+>> 5.  Interestingly, when I drag the thumbnail into Word, the image appears twice
+>> 
+>> I suspect that the problem is in Word, rather than R, but I am curious as to whether anyone has encountered this and has a solution.
+>> 
+>> Dennis
+> 
+> 
+> Hi Dennis,
+> 
+> Try it with the attached PDF, created with:
+> 
+> pdf("test.pdf", width = 5, height = 3.5)
+> plot(1:5)
+> dev.off()
+> 
+> I am using R 3.4.4 on macOS 10.13.3, with Word 2016.
+> 
+> When I drag the pdf file from my desktop into Word, or the thumbnail from Preview, the size of the embedded object is correct and I get the correct preview image of the plot in Word.
+> 
+> If I copy and paste the thumbnail into Word, it has the correct size, the but preview image in Word appears to be bitmapped, instead of vector, so the quality of the image in Word is not as good. Similar to what one might see embedding an EPS file in Word.
+> 
+> Also, if I "Insert" object from the Word menu, and select the PDF file, I get the correct size and the vector based image.
+> 
+> Regards,
+> 
+> Marc Schwartz
+> 
+> 
+> <test.pdf>
+
+
+	[[alternative HTML version deleted]]
+
+
+From marc_schwartz at me.com  Mon Mar 26 19:21:53 2018
+From: marc_schwartz at me.com (Marc Schwartz)
+Date: Mon, 26 Mar 2018 13:21:53 -0400
+Subject: [R-SIG-Mac] 
+ Embedding PDF documents created in R in Word documents
+In-Reply-To: <F6A40091-5420-42A5-9C32-8743B4148B47@plessthan.com>
+References: <6018C98C-FC2F-4F67-9690-9B3E89112F2D@plessthan.com>
+ <39629957-E4AA-48F9-AA13-2163D9B11E76@me.com>
+ <F6A40091-5420-42A5-9C32-8743B4148B47@plessthan.com>
+Message-ID: <F4B3F57B-5F39-4E54-8351-46E46E198847@me.com>
+
+Hi Dennis,
+
+I reviewed the Preference settings in Word and did not see anything that to my eye would be relevant to default embedded object sizes.
+
+You might check to be sure that your Office installation is fully updated. There have been several updates of late. My Word is showing version 16.11.1 (180319) in the About Word dialog.
+
+Also, right click on the embedded PDF in Word and check "Size and Position...". On the "Size" tab, see what the dialog box is showing for "Original size" at the bottom, and be sure that "Scale" is set to 100% for both height and width.
+
+Regards,
+
+Marc
+
+> On Mar 26, 2018, at 12:01 PM, Dennis Fisher <fisher at plessthan.com> wrote:
+> 
+> Marc
+> 
+> Thanks for trying this.  
+> 
+> Your PDF exhibited the problematic behavior (half-size).  It appears that we are using the same version of the OS.  We are using the same generation of Word (Office Home & Business 2016 for Mac (Work At Home)) although there are probably several versions of Office floating around.  This left the version of R ? but I can confirm the same problematic behavior with R 3.4.4.
+> 
+> Of note, this behavior exists on two different OS X machines but a third computer with OS X 13.2 works correctly.  
+> Also, when I use R to create an RTF document that contains JPEG images, the same problem happens.  
+> 
+> I am at a loss ? perhaps there is something weird about my version of Office or some preference that is set incorrectly.
+> 
+> Dennis
+> 
+> Dennis Fisher MD
+> P < (The "P Less Than" Company)
+> Phone / Fax: 1-866-PLessThan (1-866-753-7784)
+> www.PLessThan.com <http://www.plessthan.com/>
+> 
+> 
+> 
+> 
+>> On Mar 26, 2018, at 8:33 AM, Marc Schwartz <marc_schwartz at me.com <mailto:marc_schwartz at me.com>> wrote:
+>> 
+>> 
+>> 
+>>> On Mar 26, 2018, at 11:11 AM, Dennis Fisher <fisher at plessthan.com <mailto:fisher at plessthan.com>> wrote:
+>>> 
+>>> R 3.4.3
+>>> OS X 13.3
+>>> 
+>>> Colleagues
+>>> 
+>>> I have encountered surprising behavior in the following circumstance:
+>>> 
+>>> 1.  I create a one-page PDF in R.  The command might be:
+>>> 	pdf(?/path/to/file?, width=5, height=3.5)
+>>> 
+>>> 2.  When I open the PDF in Preview, the ?inspector? confirms the intended size.
+>>> 
+>>> 3.  I embed the PDF into Word for Mac (the newest version).  I accomplish this in one of several ways, all leading to the same outcome:
+>>> 	a.  I drag the icon into Word
+>>> 	b.  I copy the thumbnail and paste into Word
+>>> 	c.  I drag the thumbnail into Word
+>>> 
+>>> 4.  Previously, after the page was embedded, the size matched the specifications (5 x 3.5, in this instance). Now, the width is one-half of the intended size.
+>>> 
+>>> 5.  Interestingly, when I drag the thumbnail into Word, the image appears twice
+>>> 
+>>> I suspect that the problem is in Word, rather than R, but I am curious as to whether anyone has encountered this and has a solution.
+>>> 
+>>> Dennis
+>> 
+>> 
+>> Hi Dennis,
+>> 
+>> Try it with the attached PDF, created with:
+>> 
+>> pdf("test.pdf", width = 5, height = 3.5)
+>> plot(1:5)
+>> dev.off()
+>> 
+>> I am using R 3.4.4 on macOS 10.13.3, with Word 2016.
+>> 
+>> When I drag the pdf file from my desktop into Word, or the thumbnail from Preview, the size of the embedded object is correct and I get the correct preview image of the plot in Word.
+>> 
+>> If I copy and paste the thumbnail into Word, it has the correct size, the but preview image in Word appears to be bitmapped, instead of vector, so the quality of the image in Word is not as good. Similar to what one might see embedding an EPS file in Word.
+>> 
+>> Also, if I "Insert" object from the Word menu, and select the PDF file, I get the correct size and the vector based image.
+>> 
+>> Regards,
+>> 
+>> Marc Schwartz
+>> 
+>> 
+>> <test.pdf>
+> 
+
+
+	[[alternative HTML version deleted]]
+
+
+From fisher at plessthan.com  Mon Mar 26 21:06:41 2018
+From: fisher at plessthan.com (Dennis Fisher)
+Date: Mon, 26 Mar 2018 12:06:41 -0700
+Subject: [R-SIG-Mac] 
+ Embedding PDF documents created in R in Word documents
+In-Reply-To: <F4B3F57B-5F39-4E54-8351-46E46E198847@me.com>
+References: <6018C98C-FC2F-4F67-9690-9B3E89112F2D@plessthan.com>
+ <39629957-E4AA-48F9-AA13-2163D9B11E76@me.com>
+ <F6A40091-5420-42A5-9C32-8743B4148B47@plessthan.com>
+ <F4B3F57B-5F39-4E54-8351-46E46E198847@me.com>
+Message-ID: <9593D838-EFED-4613-96E9-FC112E53D3B6@plessthan.com>
+
+Marc
+
+Office is fully updated (see version as yours)
+Original size is 1/2 of the intended size.
+When the drag the file to TextEdit, the size is as intended!
+So, the mystery continues.
+
+Dennis
+
+Dennis Fisher MD
+P < (The "P Less Than" Company)
+Phone / Fax: 1-866-PLessThan (1-866-753-7784)
+www.PLessThan.com
+
+
+
+
+> On Mar 26, 2018, at 10:21 AM, Marc Schwartz <marc_schwartz at me.com> wrote:
+> 
+> Hi Dennis,
+> 
+> I reviewed the Preference settings in Word and did not see anything that to my eye would be relevant to default embedded object sizes.
+> 
+> You might check to be sure that your Office installation is fully updated. There have been several updates of late. My Word is showing version 16.11.1 (180319) in the About Word dialog.
+> 
+> Also, right click on the embedded PDF in Word and check "Size and Position...". On the "Size" tab, see what the dialog box is showing for "Original size" at the bottom, and be sure that "Scale" is set to 100% for both height and width.
+> 
+> Regards,
+> 
+> Marc
+> 
+>> On Mar 26, 2018, at 12:01 PM, Dennis Fisher <fisher at plessthan.com <mailto:fisher at plessthan.com>> wrote:
+>> 
+>> Marc
+>> 
+>> Thanks for trying this.  
+>> 
+>> Your PDF exhibited the problematic behavior (half-size).  It appears that we are using the same version of the OS.  We are using the same generation of Word (Office Home & Business 2016 for Mac (Work At Home)) although there are probably several versions of Office floating around.  This left the version of R ? but I can confirm the same problematic behavior with R 3.4.4.
+>> 
+>> Of note, this behavior exists on two different OS X machines but a third computer with OS X 13.2 works correctly.  
+>> Also, when I use R to create an RTF document that contains JPEG images, the same problem happens.  
+>> 
+>> I am at a loss ? perhaps there is something weird about my version of Office or some preference that is set incorrectly.
+>> 
+>> Dennis
+>> 
+>> Dennis Fisher MD
+>> P < (The "P Less Than" Company)
+>> Phone / Fax: 1-866-PLessThan (1-866-753-7784)
+>> www.PLessThan.com <http://www.plessthan.com/>
+>> 
+>> 
+>> 
+>> 
+>>> On Mar 26, 2018, at 8:33 AM, Marc Schwartz <marc_schwartz at me.com <mailto:marc_schwartz at me.com>> wrote:
+>>> 
+>>> 
+>>> 
+>>>> On Mar 26, 2018, at 11:11 AM, Dennis Fisher <fisher at plessthan.com <mailto:fisher at plessthan.com>> wrote:
+>>>> 
+>>>> R 3.4.3
+>>>> OS X 13.3
+>>>> 
+>>>> Colleagues
+>>>> 
+>>>> I have encountered surprising behavior in the following circumstance:
+>>>> 
+>>>> 1.  I create a one-page PDF in R.  The command might be:
+>>>> 	pdf(?/path/to/file?, width=5, height=3.5)
+>>>> 
+>>>> 2.  When I open the PDF in Preview, the ?inspector? confirms the intended size.
+>>>> 
+>>>> 3.  I embed the PDF into Word for Mac (the newest version).  I accomplish this in one of several ways, all leading to the same outcome:
+>>>> 	a.  I drag the icon into Word
+>>>> 	b.  I copy the thumbnail and paste into Word
+>>>> 	c.  I drag the thumbnail into Word
+>>>> 
+>>>> 4.  Previously, after the page was embedded, the size matched the specifications (5 x 3.5, in this instance). Now, the width is one-half of the intended size.
+>>>> 
+>>>> 5.  Interestingly, when I drag the thumbnail into Word, the image appears twice
+>>>> 
+>>>> I suspect that the problem is in Word, rather than R, but I am curious as to whether anyone has encountered this and has a solution.
+>>>> 
+>>>> Dennis
+>>> 
+>>> 
+>>> Hi Dennis,
+>>> 
+>>> Try it with the attached PDF, created with:
+>>> 
+>>> pdf("test.pdf", width = 5, height = 3.5)
+>>> plot(1:5)
+>>> dev.off()
+>>> 
+>>> I am using R 3.4.4 on macOS 10.13.3, with Word 2016.
+>>> 
+>>> When I drag the pdf file from my desktop into Word, or the thumbnail from Preview, the size of the embedded object is correct and I get the correct preview image of the plot in Word.
+>>> 
+>>> If I copy and paste the thumbnail into Word, it has the correct size, the but preview image in Word appears to be bitmapped, instead of vector, so the quality of the image in Word is not as good. Similar to what one might see embedding an EPS file in Word.
+>>> 
+>>> Also, if I "Insert" object from the Word menu, and select the PDF file, I get the correct size and the vector based image.
+>>> 
+>>> Regards,
+>>> 
+>>> Marc Schwartz
+>>> 
+>>> 
+>>> <test.pdf>
+>> 
+> 
+
+
+	[[alternative HTML version deleted]]
+
+
+From marc_schwartz at me.com  Mon Mar 26 22:49:13 2018
+From: marc_schwartz at me.com (Marc Schwartz)
+Date: Mon, 26 Mar 2018 16:49:13 -0400
+Subject: [R-SIG-Mac] 
+ Embedding PDF documents created in R in Word documents
+In-Reply-To: <9593D838-EFED-4613-96E9-FC112E53D3B6@plessthan.com>
+References: <6018C98C-FC2F-4F67-9690-9B3E89112F2D@plessthan.com>
+ <39629957-E4AA-48F9-AA13-2163D9B11E76@me.com>
+ <F6A40091-5420-42A5-9C32-8743B4148B47@plessthan.com>
+ <F4B3F57B-5F39-4E54-8351-46E46E198847@me.com>
+ <9593D838-EFED-4613-96E9-FC112E53D3B6@plessthan.com>
+Message-ID: <9CF3C9B7-BCF1-43E9-8C73-1D54366E6F5C@me.com>
+
+Hi Dennis, 
+
+Very strange.
+
+Perhaps you might consider completely removing all Office components and doing a fully clean install? 
+
+If the PDF that I sent exhibited the same behavior as one you create locally, that would tend to suggest that the problem is not your R installation.
+
+More info here:
+
+  https://support.office.com/en-us/article/uninstall-office-2016-for-mac-eefa1199-5b58-43af-8a3d-b73dc1a8cae3 <https://support.office.com/en-us/article/uninstall-office-2016-for-mac-eefa1199-5b58-43af-8a3d-b73dc1a8cae3>
+
+
+Regards,
+
+Marc
+
+> On Mar 26, 2018, at 3:06 PM, Dennis Fisher <fisher at plessthan.com> wrote:
+> 
+> Marc
+> 
+> Office is fully updated (see version as yours)
+> Original size is 1/2 of the intended size.
+> When the drag the file to TextEdit, the size is as intended!
+> So, the mystery continues.
+> 
+> Dennis
+> 
+> Dennis Fisher MD
+> P < (The "P Less Than" Company)
+> Phone / Fax: 1-866-PLessThan (1-866-753-7784)
+> www.PLessThan.com <http://www.plessthan.com/>
+> 
+> 
+> 
+> 
+>> On Mar 26, 2018, at 10:21 AM, Marc Schwartz <marc_schwartz at me.com <mailto:marc_schwartz at me.com>> wrote:
+>> 
+>> Hi Dennis,
+>> 
+>> I reviewed the Preference settings in Word and did not see anything that to my eye would be relevant to default embedded object sizes.
+>> 
+>> You might check to be sure that your Office installation is fully updated. There have been several updates of late. My Word is showing version 16.11.1 (180319) in the About Word dialog.
+>> 
+>> Also, right click on the embedded PDF in Word and check "Size and Position...". On the "Size" tab, see what the dialog box is showing for "Original size" at the bottom, and be sure that "Scale" is set to 100% for both height and width.
+>> 
+>> Regards,
+>> 
+>> Marc
+>> 
+>>> On Mar 26, 2018, at 12:01 PM, Dennis Fisher <fisher at plessthan.com <mailto:fisher at plessthan.com>> wrote:
+>>> 
+>>> Marc
+>>> 
+>>> Thanks for trying this.  
+>>> 
+>>> Your PDF exhibited the problematic behavior (half-size).  It appears that we are using the same version of the OS.  We are using the same generation of Word (Office Home & Business 2016 for Mac (Work At Home)) although there are probably several versions of Office floating around.  This left the version of R ? but I can confirm the same problematic behavior with R 3.4.4.
+>>> 
+>>> Of note, this behavior exists on two different OS X machines but a third computer with OS X 13.2 works correctly.  
+>>> Also, when I use R to create an RTF document that contains JPEG images, the same problem happens.  
+>>> 
+>>> I am at a loss ? perhaps there is something weird about my version of Office or some preference that is set incorrectly.
+>>> 
+>>> Dennis
+>>> 
+>>> Dennis Fisher MD
+>>> P < (The "P Less Than" Company)
+>>> Phone / Fax: 1-866-PLessThan (1-866-753-7784)
+>>> www.PLessThan.com <http://www.plessthan.com/>
+>>> 
+>>> 
+>>> 
+>>> 
+>>>> On Mar 26, 2018, at 8:33 AM, Marc Schwartz <marc_schwartz at me.com <mailto:marc_schwartz at me.com>> wrote:
+>>>> 
+>>>> 
+>>>> 
+>>>>> On Mar 26, 2018, at 11:11 AM, Dennis Fisher <fisher at plessthan.com <mailto:fisher at plessthan.com>> wrote:
+>>>>> 
+>>>>> R 3.4.3
+>>>>> OS X 13.3
+>>>>> 
+>>>>> Colleagues
+>>>>> 
+>>>>> I have encountered surprising behavior in the following circumstance:
+>>>>> 
+>>>>> 1.  I create a one-page PDF in R.  The command might be:
+>>>>> 	pdf(?/path/to/file?, width=5, height=3.5)
+>>>>> 
+>>>>> 2.  When I open the PDF in Preview, the ?inspector? confirms the intended size.
+>>>>> 
+>>>>> 3.  I embed the PDF into Word for Mac (the newest version).  I accomplish this in one of several ways, all leading to the same outcome:
+>>>>> 	a.  I drag the icon into Word
+>>>>> 	b.  I copy the thumbnail and paste into Word
+>>>>> 	c.  I drag the thumbnail into Word
+>>>>> 
+>>>>> 4.  Previously, after the page was embedded, the size matched the specifications (5 x 3.5, in this instance). Now, the width is one-half of the intended size.
+>>>>> 
+>>>>> 5.  Interestingly, when I drag the thumbnail into Word, the image appears twice
+>>>>> 
+>>>>> I suspect that the problem is in Word, rather than R, but I am curious as to whether anyone has encountered this and has a solution.
+>>>>> 
+>>>>> Dennis
+>>>> 
+>>>> 
+>>>> Hi Dennis,
+>>>> 
+>>>> Try it with the attached PDF, created with:
+>>>> 
+>>>> pdf("test.pdf", width = 5, height = 3.5)
+>>>> plot(1:5)
+>>>> dev.off()
+>>>> 
+>>>> I am using R 3.4.4 on macOS 10.13.3, with Word 2016.
+>>>> 
+>>>> When I drag the pdf file from my desktop into Word, or the thumbnail from Preview, the size of the embedded object is correct and I get the correct preview image of the plot in Word.
+>>>> 
+>>>> If I copy and paste the thumbnail into Word, it has the correct size, the but preview image in Word appears to be bitmapped, instead of vector, so the quality of the image in Word is not as good. Similar to what one might see embedding an EPS file in Word.
+>>>> 
+>>>> Also, if I "Insert" object from the Word menu, and select the PDF file, I get the correct size and the vector based image.
+>>>> 
+>>>> Regards,
+>>>> 
+>>>> Marc Schwartz
+>>>> 
+>>>> 
+>>>> <test.pdf>
+>>> 
+>> 
+> 
+
+
+	[[alternative HTML version deleted]]
+
+
+From colin at colinsmith.org  Tue Mar 27 04:38:07 2018
+From: colin at colinsmith.org (Colin A. Smith)
+Date: Mon, 26 Mar 2018 22:38:07 -0400
+Subject: [R-SIG-Mac] 
+ Embedding PDF documents created in R in Word documents
+In-Reply-To: <9CF3C9B7-BCF1-43E9-8C73-1D54366E6F5C@me.com>
+References: <6018C98C-FC2F-4F67-9690-9B3E89112F2D@plessthan.com>
+ <39629957-E4AA-48F9-AA13-2163D9B11E76@me.com>
+ <F6A40091-5420-42A5-9C32-8743B4148B47@plessthan.com>
+ <F4B3F57B-5F39-4E54-8351-46E46E198847@me.com>
+ <9593D838-EFED-4613-96E9-FC112E53D3B6@plessthan.com>
+ <9CF3C9B7-BCF1-43E9-8C73-1D54366E6F5C@me.com>
+Message-ID: <2FBC4218-272E-4BAB-A155-6F1C5324A97D@colinsmith.org>
+
+Hello,
+
+I?m seeing the exact same behavior on my version of Word (16.11.1 - 180319). It only happened in the last month or two, so I was suspecting it had something to do with this recent change:
+
+https://arstechnica.com/gadgets/2018/01/office-for-mac-finally-has-real-time-collaboration-in-16-9-0-update/ <https://arstechnica.com/gadgets/2018/01/office-for-mac-finally-has-real-time-collaboration-in-16-9-0-update/>
+
+It seems like that could be pretty a pretty major under the hood change to me. I thought it could have something to do retina/non-retina 2X scaling.
+
+Cheers,
+
+Colin
+
+> On Mar 26, 2018, at 16:49, Marc Schwartz <marc_schwartz at me.com> wrote:
+> 
+> Hi Dennis, 
+> 
+> Very strange.
+> 
+> Perhaps you might consider completely removing all Office components and doing a fully clean install? 
+> 
+> If the PDF that I sent exhibited the same behavior as one you create locally, that would tend to suggest that the problem is not your R installation.
+> 
+> More info here:
+> 
+>  https://support.office.com/en-us/article/uninstall-office-2016-for-mac-eefa1199-5b58-43af-8a3d-b73dc1a8cae3 <https://support.office.com/en-us/article/uninstall-office-2016-for-mac-eefa1199-5b58-43af-8a3d-b73dc1a8cae3>
+> 
+> 
+> Regards,
+> 
+> Marc
+> 
+>> On Mar 26, 2018, at 3:06 PM, Dennis Fisher <fisher at plessthan.com> wrote:
+>> 
+>> Marc
+>> 
+>> Office is fully updated (see version as yours)
+>> Original size is 1/2 of the intended size.
+>> When the drag the file to TextEdit, the size is as intended!
+>> So, the mystery continues.
+>> 
+>> Dennis
+>> 
+>> Dennis Fisher MD
+>> P < (The "P Less Than" Company)
+>> Phone / Fax: 1-866-PLessThan (1-866-753-7784)
+>> www.PLessThan.com <http://www.plessthan.com/>
+>> 
+>> 
+>> 
+>> 
+>>> On Mar 26, 2018, at 10:21 AM, Marc Schwartz <marc_schwartz at me.com <mailto:marc_schwartz at me.com>> wrote:
+>>> 
+>>> Hi Dennis,
+>>> 
+>>> I reviewed the Preference settings in Word and did not see anything that to my eye would be relevant to default embedded object sizes.
+>>> 
+>>> You might check to be sure that your Office installation is fully updated. There have been several updates of late. My Word is showing version 16.11.1 (180319) in the About Word dialog.
+>>> 
+>>> Also, right click on the embedded PDF in Word and check "Size and Position...". On the "Size" tab, see what the dialog box is showing for "Original size" at the bottom, and be sure that "Scale" is set to 100% for both height and width.
+>>> 
+>>> Regards,
+>>> 
+>>> Marc
+>>> 
+>>>> On Mar 26, 2018, at 12:01 PM, Dennis Fisher <fisher at plessthan.com <mailto:fisher at plessthan.com>> wrote:
+>>>> 
+>>>> Marc
+>>>> 
+>>>> Thanks for trying this.  
+>>>> 
+>>>> Your PDF exhibited the problematic behavior (half-size).  It appears that we are using the same version of the OS.  We are using the same generation of Word (Office Home & Business 2016 for Mac (Work At Home)) although there are probably several versions of Office floating around.  This left the version of R ? but I can confirm the same problematic behavior with R 3.4.4.
+>>>> 
+>>>> Of note, this behavior exists on two different OS X machines but a third computer with OS X 13.2 works correctly.  
+>>>> Also, when I use R to create an RTF document that contains JPEG images, the same problem happens.  
+>>>> 
+>>>> I am at a loss ? perhaps there is something weird about my version of Office or some preference that is set incorrectly.
+>>>> 
+>>>> Dennis
+>>>> 
+>>>> Dennis Fisher MD
+>>>> P < (The "P Less Than" Company)
+>>>> Phone / Fax: 1-866-PLessThan (1-866-753-7784)
+>>>> www.PLessThan.com <http://www.plessthan.com/>
+>>>> 
+>>>> 
+>>>> 
+>>>> 
+>>>>> On Mar 26, 2018, at 8:33 AM, Marc Schwartz <marc_schwartz at me.com <mailto:marc_schwartz at me.com>> wrote:
+>>>>> 
+>>>>> 
+>>>>> 
+>>>>>> On Mar 26, 2018, at 11:11 AM, Dennis Fisher <fisher at plessthan.com <mailto:fisher at plessthan.com>> wrote:
+>>>>>> 
+>>>>>> R 3.4.3
+>>>>>> OS X 13.3
+>>>>>> 
+>>>>>> Colleagues
+>>>>>> 
+>>>>>> I have encountered surprising behavior in the following circumstance:
+>>>>>> 
+>>>>>> 1.  I create a one-page PDF in R.  The command might be:
+>>>>>> 	pdf(?/path/to/file?, width=5, height=3.5)
+>>>>>> 
+>>>>>> 2.  When I open the PDF in Preview, the ?inspector? confirms the intended size.
+>>>>>> 
+>>>>>> 3.  I embed the PDF into Word for Mac (the newest version).  I accomplish this in one of several ways, all leading to the same outcome:
+>>>>>> 	a.  I drag the icon into Word
+>>>>>> 	b.  I copy the thumbnail and paste into Word
+>>>>>> 	c.  I drag the thumbnail into Word
+>>>>>> 
+>>>>>> 4.  Previously, after the page was embedded, the size matched the specifications (5 x 3.5, in this instance). Now, the width is one-half of the intended size.
+>>>>>> 
+>>>>>> 5.  Interestingly, when I drag the thumbnail into Word, the image appears twice
+>>>>>> 
+>>>>>> I suspect that the problem is in Word, rather than R, but I am curious as to whether anyone has encountered this and has a solution.
+>>>>>> 
+>>>>>> Dennis
+>>>>> 
+>>>>> 
+>>>>> Hi Dennis,
+>>>>> 
+>>>>> Try it with the attached PDF, created with:
+>>>>> 
+>>>>> pdf("test.pdf", width = 5, height = 3.5)
+>>>>> plot(1:5)
+>>>>> dev.off()
+>>>>> 
+>>>>> I am using R 3.4.4 on macOS 10.13.3, with Word 2016.
+>>>>> 
+>>>>> When I drag the pdf file from my desktop into Word, or the thumbnail from Preview, the size of the embedded object is correct and I get the correct preview image of the plot in Word.
+>>>>> 
+>>>>> If I copy and paste the thumbnail into Word, it has the correct size, the but preview image in Word appears to be bitmapped, instead of vector, so the quality of the image in Word is not as good. Similar to what one might see embedding an EPS file in Word.
+>>>>> 
+>>>>> Also, if I "Insert" object from the Word menu, and select the PDF file, I get the correct size and the vector based image.
+>>>>> 
+>>>>> Regards,
+>>>>> 
+>>>>> Marc Schwartz
+>>>>> 
+>>>>> 
+>>>>> <test.pdf>
+>>>> 
+>>> 
+>> 
+> 
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+
+
+	[[alternative HTML version deleted]]
+
+
+From marc_schwartz at me.com  Tue Mar 27 17:25:04 2018
+From: marc_schwartz at me.com (Marc Schwartz)
+Date: Tue, 27 Mar 2018 11:25:04 -0400
+Subject: [R-SIG-Mac] 
+ Embedding PDF documents created in R in Word documents
+In-Reply-To: <2FBC4218-272E-4BAB-A155-6F1C5324A97D@colinsmith.org>
+References: <6018C98C-FC2F-4F67-9690-9B3E89112F2D@plessthan.com>
+ <39629957-E4AA-48F9-AA13-2163D9B11E76@me.com>
+ <F6A40091-5420-42A5-9C32-8743B4148B47@plessthan.com>
+ <F4B3F57B-5F39-4E54-8351-46E46E198847@me.com>
+ <9593D838-EFED-4613-96E9-FC112E53D3B6@plessthan.com>
+ <9CF3C9B7-BCF1-43E9-8C73-1D54366E6F5C@me.com>
+ <2FBC4218-272E-4BAB-A155-6F1C5324A97D@colinsmith.org>
+Message-ID: <F9B19813-4863-44F3-BED7-D9E51E42ADBC@me.com>
+
+Interesting.
+
+Given that I am not [yet] experiencing this behavior, which has a retina display (mid 2014 15-inch MBP), it makes me wonder if there was some level of corruption in the upgrade to Office via the Autoupdate tool from MS. Unless both of you have much more recent hardware by chance...
+
+Dennis, have you tried to do an uninstall of Office and a clean re-install?
+
+Regards,
+
+Marc
+
+
+> On Mar 26, 2018, at 10:38 PM, Colin A. Smith <colin at colinsmith.org> wrote:
+> 
+> Hello,
+> 
+> I?m seeing the exact same behavior on my version of Word (16.11.1 - 180319). It only happened in the last month or two, so I was suspecting it had something to do with this recent change:
+> 
+> https://arstechnica.com/gadgets/2018/01/office-for-mac-finally-has-real-time-collaboration-in-16-9-0-update/ <https://arstechnica.com/gadgets/2018/01/office-for-mac-finally-has-real-time-collaboration-in-16-9-0-update/>
+> 
+> It seems like that could be pretty a pretty major under the hood change to me. I thought it could have something to do retina/non-retina 2X scaling.
+> 
+> Cheers,
+> 
+> Colin
+> 
+>> On Mar 26, 2018, at 16:49, Marc Schwartz <marc_schwartz at me.com> wrote:
+>> 
+>> Hi Dennis, 
+>> 
+>> Very strange.
+>> 
+>> Perhaps you might consider completely removing all Office components and doing a fully clean install? 
+>> 
+>> If the PDF that I sent exhibited the same behavior as one you create locally, that would tend to suggest that the problem is not your R installation.
+>> 
+>> More info here:
+>> 
+>> https://support.office.com/en-us/article/uninstall-office-2016-for-mac-eefa1199-5b58-43af-8a3d-b73dc1a8cae3 <https://support.office.com/en-us/article/uninstall-office-2016-for-mac-eefa1199-5b58-43af-8a3d-b73dc1a8cae3>
+>> 
+>> 
+>> Regards,
+>> 
+>> Marc
+>> 
+>>> On Mar 26, 2018, at 3:06 PM, Dennis Fisher <fisher at plessthan.com> wrote:
+>>> 
+>>> Marc
+>>> 
+>>> Office is fully updated (see version as yours)
+>>> Original size is 1/2 of the intended size.
+>>> When the drag the file to TextEdit, the size is as intended!
+>>> So, the mystery continues.
+>>> 
+>>> Dennis
+>>> 
+>>> Dennis Fisher MD
+>>> P < (The "P Less Than" Company)
+>>> Phone / Fax: 1-866-PLessThan (1-866-753-7784)
+>>> www.PLessThan.com <http://www.plessthan.com/>
+>>> 
+>>> 
+>>> 
+>>> 
+>>>> On Mar 26, 2018, at 10:21 AM, Marc Schwartz <marc_schwartz at me.com <mailto:marc_schwartz at me.com>> wrote:
+>>>> 
+>>>> Hi Dennis,
+>>>> 
+>>>> I reviewed the Preference settings in Word and did not see anything that to my eye would be relevant to default embedded object sizes.
+>>>> 
+>>>> You might check to be sure that your Office installation is fully updated. There have been several updates of late. My Word is showing version 16.11.1 (180319) in the About Word dialog.
+>>>> 
+>>>> Also, right click on the embedded PDF in Word and check "Size and Position...". On the "Size" tab, see what the dialog box is showing for "Original size" at the bottom, and be sure that "Scale" is set to 100% for both height and width.
+>>>> 
+>>>> Regards,
+>>>> 
+>>>> Marc
+>>>> 
+>>>>> On Mar 26, 2018, at 12:01 PM, Dennis Fisher <fisher at plessthan.com <mailto:fisher at plessthan.com>> wrote:
+>>>>> 
+>>>>> Marc
+>>>>> 
+>>>>> Thanks for trying this.  
+>>>>> 
+>>>>> Your PDF exhibited the problematic behavior (half-size).  It appears that we are using the same version of the OS.  We are using the same generation of Word (Office Home & Business 2016 for Mac (Work At Home)) although there are probably several versions of Office floating around.  This left the version of R ? but I can confirm the same problematic behavior with R 3.4.4.
+>>>>> 
+>>>>> Of note, this behavior exists on two different OS X machines but a third computer with OS X 13.2 works correctly.  
+>>>>> Also, when I use R to create an RTF document that contains JPEG images, the same problem happens.  
+>>>>> 
+>>>>> I am at a loss ? perhaps there is something weird about my version of Office or some preference that is set incorrectly.
+>>>>> 
+>>>>> Dennis
+>>>>> 
+>>>>> Dennis Fisher MD
+>>>>> P < (The "P Less Than" Company)
+>>>>> Phone / Fax: 1-866-PLessThan (1-866-753-7784)
+>>>>> www.PLessThan.com <http://www.plessthan.com/>
+>>>>> 
+>>>>> 
+>>>>> 
+>>>>> 
+>>>>>> On Mar 26, 2018, at 8:33 AM, Marc Schwartz <marc_schwartz at me.com <mailto:marc_schwartz at me.com>> wrote:
+>>>>>> 
+>>>>>> 
+>>>>>> 
+>>>>>>> On Mar 26, 2018, at 11:11 AM, Dennis Fisher <fisher at plessthan.com <mailto:fisher at plessthan.com>> wrote:
+>>>>>>> 
+>>>>>>> R 3.4.3
+>>>>>>> OS X 13.3
+>>>>>>> 
+>>>>>>> Colleagues
+>>>>>>> 
+>>>>>>> I have encountered surprising behavior in the following circumstance:
+>>>>>>> 
+>>>>>>> 1.  I create a one-page PDF in R.  The command might be:
+>>>>>>> 	pdf(?/path/to/file?, width=5, height=3.5)
+>>>>>>> 
+>>>>>>> 2.  When I open the PDF in Preview, the ?inspector? confirms the intended size.
+>>>>>>> 
+>>>>>>> 3.  I embed the PDF into Word for Mac (the newest version).  I accomplish this in one of several ways, all leading to the same outcome:
+>>>>>>> 	a.  I drag the icon into Word
+>>>>>>> 	b.  I copy the thumbnail and paste into Word
+>>>>>>> 	c.  I drag the thumbnail into Word
+>>>>>>> 
+>>>>>>> 4.  Previously, after the page was embedded, the size matched the specifications (5 x 3.5, in this instance). Now, the width is one-half of the intended size.
+>>>>>>> 
+>>>>>>> 5.  Interestingly, when I drag the thumbnail into Word, the image appears twice
+>>>>>>> 
+>>>>>>> I suspect that the problem is in Word, rather than R, but I am curious as to whether anyone has encountered this and has a solution.
+>>>>>>> 
+>>>>>>> Dennis
+>>>>>> 
+>>>>>> 
+>>>>>> Hi Dennis,
+>>>>>> 
+>>>>>> Try it with the attached PDF, created with:
+>>>>>> 
+>>>>>> pdf("test.pdf", width = 5, height = 3.5)
+>>>>>> plot(1:5)
+>>>>>> dev.off()
+>>>>>> 
+>>>>>> I am using R 3.4.4 on macOS 10.13.3, with Word 2016.
+>>>>>> 
+>>>>>> When I drag the pdf file from my desktop into Word, or the thumbnail from Preview, the size of the embedded object is correct and I get the correct preview image of the plot in Word.
+>>>>>> 
+>>>>>> If I copy and paste the thumbnail into Word, it has the correct size, the but preview image in Word appears to be bitmapped, instead of vector, so the quality of the image in Word is not as good. Similar to what one might see embedding an EPS file in Word.
+>>>>>> 
+>>>>>> Also, if I "Insert" object from the Word menu, and select the PDF file, I get the correct size and the vector based image.
+>>>>>> 
+>>>>>> Regards,
+>>>>>> 
+>>>>>> Marc Schwartz
+>>>>>> 
+>>>>>> 
+>>>>>> <test.pdf>
+>>>>> 
+>>>> 
+
+
+From fisher at plessthan.com  Tue Mar 27 19:43:45 2018
+From: fisher at plessthan.com (Dennis Fisher)
+Date: Tue, 27 Mar 2018 19:43:45 +0200
+Subject: [R-SIG-Mac] 
+ Embedding PDF documents created in R in Word documents
+In-Reply-To: <F9B19813-4863-44F3-BED7-D9E51E42ADBC@me.com>
+References: <6018C98C-FC2F-4F67-9690-9B3E89112F2D@plessthan.com>
+ <39629957-E4AA-48F9-AA13-2163D9B11E76@me.com>
+ <F6A40091-5420-42A5-9C32-8743B4148B47@plessthan.com>
+ <F4B3F57B-5F39-4E54-8351-46E46E198847@me.com>
+ <9593D838-EFED-4613-96E9-FC112E53D3B6@plessthan.com>
+ <9CF3C9B7-BCF1-43E9-8C73-1D54366E6F5C@me.com>
+ <2FBC4218-272E-4BAB-A155-6F1C5324A97D@colinsmith.org>
+ <F9B19813-4863-44F3-BED7-D9E51E42ADBC@me.com>
+Message-ID: <73FA309F-5B1F-4D77-B912-573E3B63923A@plessthan.com>
+
+Mark
+
+The two computers that exhibit this are both from 2017.  The one that works correctly is a bit older. 
+Now that it is reasonably clear that R is doing the right thing, the question is how to fix this in Office.
+
+I just tried one more thing ? I have an RTF document with embedded JPEGs that was created on one of the problem computers.  I just opened the document on a fourth computer (purchased in 2013) running El Capitan.   In Word 2016, half-size; in Word 2008, full size.  So, Word appears to be the culprit, although not consistently.
+
+Dennis
+ 
+Dennis Fisher MD
+P < (The "P Less Than" Company)
+Phone / Fax: 1-866-PLessThan (1-866-753-7784)
+www.PLessThan.com <http://www.plessthan.com/>
+
+
+
+
+> On Mar 27, 2018, at 5:25 PM, Marc Schwartz <marc_schwartz at me.com> wrote:
+> 
+> Interesting.
+> 
+> Given that I am not [yet] experiencing this behavior, which has a retina display (mid 2014 15-inch MBP), it makes me wonder if there was some level of corruption in the upgrade to Office via the Autoupdate tool from MS. Unless both of you have much more recent hardware by chance...
+> 
+> Dennis, have you tried to do an uninstall of Office and a clean re-install?
+> 
+> Regards,
+> 
+> Marc
+> 
+> 
+>> On Mar 26, 2018, at 10:38 PM, Colin A. Smith <colin at colinsmith.org> wrote:
+>> 
+>> Hello,
+>> 
+>> I?m seeing the exact same behavior on my version of Word (16.11.1 - 180319). It only happened in the last month or two, so I was suspecting it had something to do with this recent change:
+>> 
+>> https://arstechnica.com/gadgets/2018/01/office-for-mac-finally-has-real-time-collaboration-in-16-9-0-update/ <https://arstechnica.com/gadgets/2018/01/office-for-mac-finally-has-real-time-collaboration-in-16-9-0-update/>
+>> 
+>> It seems like that could be pretty a pretty major under the hood change to me. I thought it could have something to do retina/non-retina 2X scaling.
+>> 
+>> Cheers,
+>> 
+>> Colin
+>> 
+>>> On Mar 26, 2018, at 16:49, Marc Schwartz <marc_schwartz at me.com> wrote:
+>>> 
+>>> Hi Dennis, 
+>>> 
+>>> Very strange.
+>>> 
+>>> Perhaps you might consider completely removing all Office components and doing a fully clean install? 
+>>> 
+>>> If the PDF that I sent exhibited the same behavior as one you create locally, that would tend to suggest that the problem is not your R installation.
+>>> 
+>>> More info here:
+>>> 
+>>> https://support.office.com/en-us/article/uninstall-office-2016-for-mac-eefa1199-5b58-43af-8a3d-b73dc1a8cae3 <https://support.office.com/en-us/article/uninstall-office-2016-for-mac-eefa1199-5b58-43af-8a3d-b73dc1a8cae3>
+>>> 
+>>> 
+>>> Regards,
+>>> 
+>>> Marc
+>>> 
+>>>> On Mar 26, 2018, at 3:06 PM, Dennis Fisher <fisher at plessthan.com> wrote:
+>>>> 
+>>>> Marc
+>>>> 
+>>>> Office is fully updated (see version as yours)
+>>>> Original size is 1/2 of the intended size.
+>>>> When the drag the file to TextEdit, the size is as intended!
+>>>> So, the mystery continues.
+>>>> 
+>>>> Dennis
+>>>> 
+>>>> Dennis Fisher MD
+>>>> P < (The "P Less Than" Company)
+>>>> Phone / Fax: 1-866-PLessThan (1-866-753-7784)
+>>>> www.PLessThan.com <http://www.plessthan.com/>
+>>>> 
+>>>> 
+>>>> 
+>>>> 
+>>>>> On Mar 26, 2018, at 10:21 AM, Marc Schwartz <marc_schwartz at me.com <mailto:marc_schwartz at me.com>> wrote:
+>>>>> 
+>>>>> Hi Dennis,
+>>>>> 
+>>>>> I reviewed the Preference settings in Word and did not see anything that to my eye would be relevant to default embedded object sizes.
+>>>>> 
+>>>>> You might check to be sure that your Office installation is fully updated. There have been several updates of late. My Word is showing version 16.11.1 (180319) in the About Word dialog.
+>>>>> 
+>>>>> Also, right click on the embedded PDF in Word and check "Size and Position...". On the "Size" tab, see what the dialog box is showing for "Original size" at the bottom, and be sure that "Scale" is set to 100% for both height and width.
+>>>>> 
+>>>>> Regards,
+>>>>> 
+>>>>> Marc
+>>>>> 
+>>>>>> On Mar 26, 2018, at 12:01 PM, Dennis Fisher <fisher at plessthan.com <mailto:fisher at plessthan.com>> wrote:
+>>>>>> 
+>>>>>> Marc
+>>>>>> 
+>>>>>> Thanks for trying this.  
+>>>>>> 
+>>>>>> Your PDF exhibited the problematic behavior (half-size).  It appears that we are using the same version of the OS.  We are using the same generation of Word (Office Home & Business 2016 for Mac (Work At Home)) although there are probably several versions of Office floating around.  This left the version of R ? but I can confirm the same problematic behavior with R 3.4.4.
+>>>>>> 
+>>>>>> Of note, this behavior exists on two different OS X machines but a third computer with OS X 13.2 works correctly.  
+>>>>>> Also, when I use R to create an RTF document that contains JPEG images, the same problem happens.  
+>>>>>> 
+>>>>>> I am at a loss ? perhaps there is something weird about my version of Office or some preference that is set incorrectly.
+>>>>>> 
+>>>>>> Dennis
+>>>>>> 
+>>>>>> Dennis Fisher MD
+>>>>>> P < (The "P Less Than" Company)
+>>>>>> Phone / Fax: 1-866-PLessThan (1-866-753-7784)
+>>>>>> www.PLessThan.com <http://www.plessthan.com/>
+>>>>>> 
+>>>>>> 
+>>>>>> 
+>>>>>> 
+>>>>>>> On Mar 26, 2018, at 8:33 AM, Marc Schwartz <marc_schwartz at me.com <mailto:marc_schwartz at me.com>> wrote:
+>>>>>>> 
+>>>>>>> 
+>>>>>>> 
+>>>>>>>> On Mar 26, 2018, at 11:11 AM, Dennis Fisher <fisher at plessthan.com <mailto:fisher at plessthan.com>> wrote:
+>>>>>>>> 
+>>>>>>>> R 3.4.3
+>>>>>>>> OS X 13.3
+>>>>>>>> 
+>>>>>>>> Colleagues
+>>>>>>>> 
+>>>>>>>> I have encountered surprising behavior in the following circumstance:
+>>>>>>>> 
+>>>>>>>> 1.  I create a one-page PDF in R.  The command might be:
+>>>>>>>> 	pdf(?/path/to/file?, width=5, height=3.5)
+>>>>>>>> 
+>>>>>>>> 2.  When I open the PDF in Preview, the ?inspector? confirms the intended size.
+>>>>>>>> 
+>>>>>>>> 3.  I embed the PDF into Word for Mac (the newest version).  I accomplish this in one of several ways, all leading to the same outcome:
+>>>>>>>> 	a.  I drag the icon into Word
+>>>>>>>> 	b.  I copy the thumbnail and paste into Word
+>>>>>>>> 	c.  I drag the thumbnail into Word
+>>>>>>>> 
+>>>>>>>> 4.  Previously, after the page was embedded, the size matched the specifications (5 x 3.5, in this instance). Now, the width is one-half of the intended size.
+>>>>>>>> 
+>>>>>>>> 5.  Interestingly, when I drag the thumbnail into Word, the image appears twice
+>>>>>>>> 
+>>>>>>>> I suspect that the problem is in Word, rather than R, but I am curious as to whether anyone has encountered this and has a solution.
+>>>>>>>> 
+>>>>>>>> Dennis
+>>>>>>> 
+>>>>>>> 
+>>>>>>> Hi Dennis,
+>>>>>>> 
+>>>>>>> Try it with the attached PDF, created with:
+>>>>>>> 
+>>>>>>> pdf("test.pdf", width = 5, height = 3.5)
+>>>>>>> plot(1:5)
+>>>>>>> dev.off()
+>>>>>>> 
+>>>>>>> I am using R 3.4.4 on macOS 10.13.3, with Word 2016.
+>>>>>>> 
+>>>>>>> When I drag the pdf file from my desktop into Word, or the thumbnail from Preview, the size of the embedded object is correct and I get the correct preview image of the plot in Word.
+>>>>>>> 
+>>>>>>> If I copy and paste the thumbnail into Word, it has the correct size, the but preview image in Word appears to be bitmapped, instead of vector, so the quality of the image in Word is not as good. Similar to what one might see embedding an EPS file in Word.
+>>>>>>> 
+>>>>>>> Also, if I "Insert" object from the Word menu, and select the PDF file, I get the correct size and the vector based image.
+>>>>>>> 
+>>>>>>> Regards,
+>>>>>>> 
+>>>>>>> Marc Schwartz
+>>>>>>> 
+>>>>>>> 
+>>>>>>> <test.pdf>
+>>>>>> 
+>>>>> 
+> 
+
+
+	[[alternative HTML version deleted]]
+
+
+From marc_schwartz at me.com  Tue Mar 27 19:56:38 2018
+From: marc_schwartz at me.com (Marc Schwartz)
+Date: Tue, 27 Mar 2018 13:56:38 -0400
+Subject: [R-SIG-Mac] 
+ Embedding PDF documents created in R in Word documents
+In-Reply-To: <73FA309F-5B1F-4D77-B912-573E3B63923A@plessthan.com>
+References: <6018C98C-FC2F-4F67-9690-9B3E89112F2D@plessthan.com>
+ <39629957-E4AA-48F9-AA13-2163D9B11E76@me.com>
+ <F6A40091-5420-42A5-9C32-8743B4148B47@plessthan.com>
+ <F4B3F57B-5F39-4E54-8351-46E46E198847@me.com>
+ <9593D838-EFED-4613-96E9-FC112E53D3B6@plessthan.com>
+ <9CF3C9B7-BCF1-43E9-8C73-1D54366E6F5C@me.com>
+ <2FBC4218-272E-4BAB-A155-6F1C5324A97D@colinsmith.org>
+ <F9B19813-4863-44F3-BED7-D9E51E42ADBC@me.com>
+ <73FA309F-5B1F-4D77-B912-573E3B63923A@plessthan.com>
+Message-ID: <63A60D08-5037-44F2-B97D-8942FFEB79FF@me.com>
+
+Hi Dennis,
+
+Sounds like it is time to shift the communications to MS support. Perhaps providing them with application/OS version details and copies of the relevant files will enable some debugging on their end.
+
+Still not sure why I am not experiencing the behavior...
+
+Regards,
+
+Marc
+
+
+> On Mar 27, 2018, at 1:43 PM, Dennis Fisher <fisher at plessthan.com> wrote:
+> 
+> Mark
+> 
+> The two computers that exhibit this are both from 2017.  The one that works correctly is a bit older. 
+> Now that it is reasonably clear that R is doing the right thing, the question is how to fix this in Office.
+> 
+> I just tried one more thing ? I have an RTF document with embedded JPEGs that was created on one of the problem computers.  I just opened the document on a fourth computer (purchased in 2013) running El Capitan.   In Word 2016, half-size; in Word 2008, full size.  So, Word appears to be the culprit, although not consistently.
+> 
+> Dennis
+>  
+> Dennis Fisher MD
+> P < (The "P Less Than" Company)
+> Phone / Fax: 1-866-PLessThan (1-866-753-7784)
+> www.PLessThan.com <http://www.plessthan.com/>
+> 
+> 
+> 
+> 
+>> On Mar 27, 2018, at 5:25 PM, Marc Schwartz <marc_schwartz at me.com <mailto:marc_schwartz at me.com>> wrote:
+>> 
+>> Interesting.
+>> 
+>> Given that I am not [yet] experiencing this behavior, which has a retina display (mid 2014 15-inch MBP), it makes me wonder if there was some level of corruption in the upgrade to Office via the Autoupdate tool from MS. Unless both of you have much more recent hardware by chance...
+>> 
+>> Dennis, have you tried to do an uninstall of Office and a clean re-install?
+>> 
+>> Regards,
+>> 
+>> Marc
+>> 
+>> 
+>>> On Mar 26, 2018, at 10:38 PM, Colin A. Smith <colin at colinsmith.org <mailto:colin at colinsmith.org>> wrote:
+>>> 
+>>> Hello,
+>>> 
+>>> I?m seeing the exact same behavior on my version of Word (16.11.1 - 180319). It only happened in the last month or two, so I was suspecting it had something to do with this recent change:
+>>> 
+>>> https://arstechnica.com/gadgets/2018/01/office-for-mac-finally-has-real-time-collaboration-in-16-9-0-update/ <https://arstechnica.com/gadgets/2018/01/office-for-mac-finally-has-real-time-collaboration-in-16-9-0-update/> <https://arstechnica.com/gadgets/2018/01/office-for-mac-finally-has-real-time-collaboration-in-16-9-0-update/ <https://arstechnica.com/gadgets/2018/01/office-for-mac-finally-has-real-time-collaboration-in-16-9-0-update/>>
+>>> 
+>>> It seems like that could be pretty a pretty major under the hood change to me. I thought it could have something to do retina/non-retina 2X scaling.
+>>> 
+>>> Cheers,
+>>> 
+>>> Colin
+>>> 
+>>>> On Mar 26, 2018, at 16:49, Marc Schwartz <marc_schwartz at me.com <mailto:marc_schwartz at me.com>> wrote:
+>>>> 
+>>>> Hi Dennis, 
+>>>> 
+>>>> Very strange.
+>>>> 
+>>>> Perhaps you might consider completely removing all Office components and doing a fully clean install? 
+>>>> 
+>>>> If the PDF that I sent exhibited the same behavior as one you create locally, that would tend to suggest that the problem is not your R installation.
+>>>> 
+>>>> More info here:
+>>>> 
+>>>> https://support.office.com/en-us/article/uninstall-office-2016-for-mac-eefa1199-5b58-43af-8a3d-b73dc1a8cae3 <https://support.office.com/en-us/article/uninstall-office-2016-for-mac-eefa1199-5b58-43af-8a3d-b73dc1a8cae3> <https://support.office.com/en-us/article/uninstall-office-2016-for-mac-eefa1199-5b58-43af-8a3d-b73dc1a8cae3 <https://support.office.com/en-us/article/uninstall-office-2016-for-mac-eefa1199-5b58-43af-8a3d-b73dc1a8cae3>>
+>>>> 
+>>>> 
+>>>> Regards,
+>>>> 
+>>>> Marc
+>>>> 
+>>>>> On Mar 26, 2018, at 3:06 PM, Dennis Fisher <fisher at plessthan.com <mailto:fisher at plessthan.com>> wrote:
+>>>>> 
+>>>>> Marc
+>>>>> 
+>>>>> Office is fully updated (see version as yours)
+>>>>> Original size is 1/2 of the intended size.
+>>>>> When the drag the file to TextEdit, the size is as intended!
+>>>>> So, the mystery continues.
+>>>>> 
+>>>>> Dennis
+>>>>> 
+>>>>> Dennis Fisher MD
+>>>>> P < (The "P Less Than" Company)
+>>>>> Phone / Fax: 1-866-PLessThan (1-866-753-7784)
+>>>>> www.PLessThan.com <http://www.plessthan.com/> <http://www.plessthan.com/ <http://www.plessthan.com/>>
+>>>>> 
+>>>>> 
+>>>>> 
+>>>>> 
+>>>>>> On Mar 26, 2018, at 10:21 AM, Marc Schwartz <marc_schwartz at me.com <mailto:marc_schwartz at me.com> <mailto:marc_schwartz at me.com <mailto:marc_schwartz at me.com>>> wrote:
+>>>>>> 
+>>>>>> Hi Dennis,
+>>>>>> 
+>>>>>> I reviewed the Preference settings in Word and did not see anything that to my eye would be relevant to default embedded object sizes.
+>>>>>> 
+>>>>>> You might check to be sure that your Office installation is fully updated. There have been several updates of late. My Word is showing version 16.11.1 (180319) in the About Word dialog.
+>>>>>> 
+>>>>>> Also, right click on the embedded PDF in Word and check "Size and Position...". On the "Size" tab, see what the dialog box is showing for "Original size" at the bottom, and be sure that "Scale" is set to 100% for both height and width.
+>>>>>> 
+>>>>>> Regards,
+>>>>>> 
+>>>>>> Marc
+>>>>>> 
+>>>>>>> On Mar 26, 2018, at 12:01 PM, Dennis Fisher <fisher at plessthan.com <mailto:fisher at plessthan.com> <mailto:fisher at plessthan.com <mailto:fisher at plessthan.com>>> wrote:
+>>>>>>> 
+>>>>>>> Marc
+>>>>>>> 
+>>>>>>> Thanks for trying this.  
+>>>>>>> 
+>>>>>>> Your PDF exhibited the problematic behavior (half-size).  It appears that we are using the same version of the OS.  We are using the same generation of Word (Office Home & Business 2016 for Mac (Work At Home)) although there are probably several versions of Office floating around.  This left the version of R ? but I can confirm the same problematic behavior with R 3.4.4.
+>>>>>>> 
+>>>>>>> Of note, this behavior exists on two different OS X machines but a third computer with OS X 13.2 works correctly.  
+>>>>>>> Also, when I use R to create an RTF document that contains JPEG images, the same problem happens.  
+>>>>>>> 
+>>>>>>> I am at a loss ? perhaps there is something weird about my version of Office or some preference that is set incorrectly.
+>>>>>>> 
+>>>>>>> Dennis
+>>>>>>> 
+>>>>>>> Dennis Fisher MD
+>>>>>>> P < (The "P Less Than" Company)
+>>>>>>> Phone / Fax: 1-866-PLessThan (1-866-753-7784)
+>>>>>>> www.PLessThan.com <http://www.plessthan.com/> <http://www.plessthan.com/ <http://www.plessthan.com/>>
+>>>>>>> 
+>>>>>>> 
+>>>>>>> 
+>>>>>>> 
+>>>>>>>> On Mar 26, 2018, at 8:33 AM, Marc Schwartz <marc_schwartz at me.com <mailto:marc_schwartz at me.com> <mailto:marc_schwartz at me.com <mailto:marc_schwartz at me.com>>> wrote:
+>>>>>>>> 
+>>>>>>>> 
+>>>>>>>> 
+>>>>>>>>> On Mar 26, 2018, at 11:11 AM, Dennis Fisher <fisher at plessthan.com <mailto:fisher at plessthan.com> <mailto:fisher at plessthan.com <mailto:fisher at plessthan.com>>> wrote:
+>>>>>>>>> 
+>>>>>>>>> R 3.4.3
+>>>>>>>>> OS X 13.3
+>>>>>>>>> 
+>>>>>>>>> Colleagues
+>>>>>>>>> 
+>>>>>>>>> I have encountered surprising behavior in the following circumstance:
+>>>>>>>>> 
+>>>>>>>>> 1.  I create a one-page PDF in R.  The command might be:
+>>>>>>>>> 	pdf(?/path/to/file?, width=5, height=3.5)
+>>>>>>>>> 
+>>>>>>>>> 2.  When I open the PDF in Preview, the ?inspector? confirms the intended size.
+>>>>>>>>> 
+>>>>>>>>> 3.  I embed the PDF into Word for Mac (the newest version).  I accomplish this in one of several ways, all leading to the same outcome:
+>>>>>>>>> 	a.  I drag the icon into Word
+>>>>>>>>> 	b.  I copy the thumbnail and paste into Word
+>>>>>>>>> 	c.  I drag the thumbnail into Word
+>>>>>>>>> 
+>>>>>>>>> 4.  Previously, after the page was embedded, the size matched the specifications (5 x 3.5, in this instance). Now, the width is one-half of the intended size.
+>>>>>>>>> 
+>>>>>>>>> 5.  Interestingly, when I drag the thumbnail into Word, the image appears twice
+>>>>>>>>> 
+>>>>>>>>> I suspect that the problem is in Word, rather than R, but I am curious as to whether anyone has encountered this and has a solution.
+>>>>>>>>> 
+>>>>>>>>> Dennis
+>>>>>>>> 
+>>>>>>>> 
+>>>>>>>> Hi Dennis,
+>>>>>>>> 
+>>>>>>>> Try it with the attached PDF, created with:
+>>>>>>>> 
+>>>>>>>> pdf("test.pdf", width = 5, height = 3.5)
+>>>>>>>> plot(1:5)
+>>>>>>>> dev.off()
+>>>>>>>> 
+>>>>>>>> I am using R 3.4.4 on macOS 10.13.3, with Word 2016.
+>>>>>>>> 
+>>>>>>>> When I drag the pdf file from my desktop into Word, or the thumbnail from Preview, the size of the embedded object is correct and I get the correct preview image of the plot in Word.
+>>>>>>>> 
+>>>>>>>> If I copy and paste the thumbnail into Word, it has the correct size, the but preview image in Word appears to be bitmapped, instead of vector, so the quality of the image in Word is not as good. Similar to what one might see embedding an EPS file in Word.
+>>>>>>>> 
+>>>>>>>> Also, if I "Insert" object from the Word menu, and select the PDF file, I get the correct size and the vector based image.
+>>>>>>>> 
+>>>>>>>> Regards,
+>>>>>>>> 
+>>>>>>>> Marc Schwartz
+>>>>>>>> 
+>>>>>>>> 
+>>>>>>>> <test.pdf>
+>>>>>>> 
+>>>>>> 
+>> 
+> 
+
+
+	[[alternative HTML version deleted]]
+
+
+From luiss.puerto at gmail.com  Tue Mar 27 21:25:33 2018
+From: luiss.puerto at gmail.com (Luis Puerto)
+Date: Tue, 27 Mar 2018 22:25:33 +0300
+Subject: [R-SIG-Mac] =?utf-8?q?R_and_Java_10_=E2=9E=9C_rJava_not_able_to_?=
+ =?utf-8?q?build?=
+Message-ID: <5528AE93-6DF5-4DD8-8D73-8A95BEFF6830@gmail.com>
+
+Hi! 
+
+I?m on macOS 10.13.3 and just installed the new Java 10 using Homebrew Cask. I also have installed R with Homebrew. Everything seems to work fine, however I just get different outputs if I run sudo R CMD javareconf or R CMD javareconf. With sudo I get pointed to Java 9 and without sudo I get pointed to Java 10. I really don?t know why. 
+
+Without sudo:
+
+$ R CMD javareconf                                                                        
+Java interpreter : /Library/Java/JavaVirtualMachines/jdk-10.jdk/Contents/Home/bin/java
+Java version     : 10
+Java home path   : /Library/Java/JavaVirtualMachines/jdk-10.jdk/Contents/Home
+Java compiler    : /Library/Java/JavaVirtualMachines/jdk-10.jdk/Contents/Home/bin/javac
+Java headers gen.: /usr/bin/javah
+Java archive tool: /Library/Java/JavaVirtualMachines/jdk-10.jdk/Contents/Home/bin/jar
+Non-system Java on macOS
+
+trying to compile and link a JNI program
+detected JNI cpp flags    : -I$(JAVA_HOME)/include -I$(JAVA_HOME)/include/darwin
+detected JNI linker flags : -L$(JAVA_HOME)/lib/server -ljvm
+/usr/local/opt/llvm/bin/clang  -I/usr/local/Cellar/r/3.4.4/lib/R/include -DNDEBUG -I/Library/Java/JavaVirtualMachines/jdk-10.jdk/Contents/Home/include -I/Library/Java/JavaVirtualMachines/jdk-10.jdk/Contents/Home/include/darwin  -I/usr/local/opt/gettext/include -I/usr/local/opt/llvm/include   -fPIC  -g -O3 -Wall -pedantic -std=gnu99 -mtune=native -pipe -c conftest.c -o conftest.o
+/usr/local/opt/llvm/bin/clang++ -dynamiclib -Wl,-headerpad_max_install_names -undefined dynamic_lookup -single_module -multiply_defined suppress -L/usr/local/opt/gettext/lib -L/usr/local/opt/llvm/lib -Wl,-rpath,/usr/local/opt/llvm/lib -L/usr/local/Cellar/r/3.4.4/lib/R/lib -L/usr/local/opt/gettext/lib -L/usr/local/opt/llvm/lib -Wl,-rpath,/usr/local/opt/llvm/lib -o conftest.so conftest.o -L/Library/Java/JavaVirtualMachines/jdk-10.jdk/Contents/Home/lib/server -ljvm -L/usr/local/Cellar/r/3.4.4/lib/R/lib -lR -lintl -Wl,-framework -Wl,CoreFoundation
+
+
+JAVA_HOME        : /Library/Java/JavaVirtualMachines/jdk-10.jdk/Contents/Home
+Java library path: $(JAVA_HOME)/lib/server
+JNI cpp flags    : -I$(JAVA_HOME)/include -I$(JAVA_HOME)/include/darwin
+JNI linker flags : -L$(JAVA_HOME)/lib/server -ljvm
+Updating Java configuration in /usr/local/Cellar/r/3.4.4/lib/R
+override rw-r--r--  root/admin for /usr/local/Cellar/r/3.4.4/lib/R/etc/Makeconf? (y/n [n]) y
+override rw-r--r--  root/admin for /usr/local/Cellar/r/3.4.4/lib/R/etc/ldpaths? (y/n [n]) y
+Done.
+With sudo:
+
+$ sudo R CMD javareconf                                                                   
+Java interpreter : /Library/Java/JavaVirtualMachines/jdk-9.0.4.jdk/Contents/Home/bin/java
+Java version     : 9.0.4
+Java home path   : /Library/Java/JavaVirtualMachines/jdk-9.0.4.jdk/Contents/Home
+Java compiler    : /Library/Java/JavaVirtualMachines/jdk-9.0.4.jdk/Contents/Home/bin/javac
+Java headers gen.: /Library/Java/JavaVirtualMachines/jdk-9.0.4.jdk/Contents/Home/bin/javah
+Java archive tool: /Library/Java/JavaVirtualMachines/jdk-9.0.4.jdk/Contents/Home/bin/jar
+Non-system Java on macOS
+
+trying to compile and link a JNI program
+detected JNI cpp flags    : -I$(JAVA_HOME)/include -I$(JAVA_HOME)/include/darwin
+detected JNI linker flags : -L$(JAVA_HOME)/lib/server -ljvm
+/usr/local/opt/llvm/bin/clang  -I/usr/local/Cellar/r/3.4.4/lib/R/include -DNDEBUG -I/Library/Java/JavaVirtualMachines/jdk-9.0.4.jdk/Contents/Home/include -I/Library/Java/JavaVirtualMachines/jdk-9.0.4.jdk/Contents/Home/include/darwin  -I/usr/local/opt/gettext/include -I/usr/local/opt/llvm/include   -fPIC  -g -O3 -Wall -pedantic -std=gnu99 -mtune=native -pipe -c conftest.c -o conftest.o
+/usr/local/opt/llvm/bin/clang++ -dynamiclib -Wl,-headerpad_max_install_names -undefined dynamic_lookup -single_module -multiply_defined suppress -L/usr/local/opt/gettext/lib -L/usr/local/opt/llvm/lib -Wl,-rpath,/usr/local/opt/llvm/lib -L/usr/local/Cellar/r/3.4.4/lib/R/lib -L/usr/local/opt/gettext/lib -L/usr/local/opt/llvm/lib -Wl,-rpath,/usr/local/opt/llvm/lib -o conftest.so conftest.o -L/Library/Java/JavaVirtualMachines/jdk-9.0.4.jdk/Contents/Home/lib/server -ljvm -L/usr/local/Cellar/r/3.4.4/lib/R/lib -lR -lintl -Wl,-framework -Wl,CoreFoundation
+
+
+JAVA_HOME        : /Library/Java/JavaVirtualMachines/jdk-9.0.4.jdk/Contents/Home
+Java library path: $(JAVA_HOME)/lib/server
+JNI cpp flags    : -I$(JAVA_HOME)/include -I$(JAVA_HOME)/include/darwin
+JNI linker flags : -L$(JAVA_HOME)/lib/server -ljvm
+Updating Java configuration in /usr/local/Cellar/r/3.4.4/lib/R
+Done.
+The result of be pointed to Java 10 is rJava package not be able to build. 
+
+warning: [options] bootstrap class path not set in conjunction with -source 6
+warning: [options] source value 6 is obsolete and will be removed in a future release
+warning: [options] target value 1.6 is obsolete and will be removed in a future release
+warning: [options] To suppress warnings about obsolete options, use -Xlint:-options.
+Note: Some input files use or override a deprecated API.
+Note: Recompile with -Xlint:deprecation for details.
+Note: Some input files use unchecked or unsafe operations.
+Note: Recompile with -Xlint:unchecked for details.
+4 warnings
+/usr/bin/javah -d . -classpath . org.rosuda.JRI.Rengine
+Unable to locate an executable at "/Library/Java/JavaVirtualMachines/jdk-10.jdk/Contents/Home/bin/javah" (-1)
+make[2]: *** [org_rosuda_JRI_Rengine.h] Error 2
+make[1]: *** [src/JRI.jar] Error 2
+make: *** [jri] Error 2
+ERROR: compilation failed for package ?rJava?
+* removing ?/Users/lpuerto/Library/R/3.x/library/rJava?
+* restoring previous ?/Users/lpuerto/Library/R/3.x/library/rJava?
+
+The downloaded source packages are in
+    ?/private/var/folders/wf/41gjf2mx7m7fmvfd8dr22_5h0000gn/T/RtmpT2kJMY/downloaded_packages?
+Warning message:
+In install.packages("rJava", repos = "cloud.r-project.org") :
+  installation of package ?rJava? had non-zero exit status
+I've checked and there isn't a javah on /Library/Java/JavaVirtualMachines/jdk-10.jdk/Contents/Home/bin/javah as in Java 9. Which make me think that either R CMD javareconf isn?t working properly with Java 10 or rJava is not yet compatible with Java 10. 
+
+Does anyone know what is going on? 
+
+Thanks! 
+
+PS/ I?ve opened an issue <https://github.com/s-u/rJava/issues/137> in rJava?s github and a question in stackoverflow <https://stackoverflow.com/questions/49519007/sudo-r-cmd-javareconf-and-r-cmd-javareconf-produce-different-output-with-java-10>. 
+
+
+Best Regards
+Luis Puerto
+http://luisspuerto.net
+
+
+	[[alternative HTML version deleted]]
+
+
+From jdnewmil at dcn.davis.ca.us  Wed Mar 28 03:39:10 2018
+From: jdnewmil at dcn.davis.ca.us (Jeff Newmiller)
+Date: Tue, 27 Mar 2018 18:39:10 -0700
+Subject: [R-SIG-Mac] 
+ =?utf-8?q?=5BR=5D_R_and_Java_10_=E2=9E=9C_rJava_not_?=
+ =?utf-8?q?able_to_build?=
+In-Reply-To: <5528AE93-6DF5-4DD8-8D73-8A95BEFF6830@gmail.com>
+References: <5528AE93-6DF5-4DD8-8D73-8A95BEFF6830@gmail.com>
+Message-ID: <A07DA58D-3C3A-452E-B0FA-2DB2ED737DC5@dcn.davis.ca.us>
+
+I am not a Mac user, but I do use Linux and I would recommend not running R with sudo unless you are an admin ninja. That defensive practice would render the answer to your question moot.
+
+It is possible that your problem may have started with inappropriate use of sudo in configuring java, but configuring Java is not on-topic here.
+-- 
+Sent from my phone. Please excuse my brevity.
+
+On March 27, 2018 12:25:33 PM PDT, Luis Puerto <luiss.puerto at gmail.com> wrote:
+>Hi! 
+>
+>I?m on macOS 10.13.3 and just installed the new Java 10 using Homebrew
+>Cask. I also have installed R with Homebrew. Everything seems to work
+>fine, however I just get different outputs if I run sudo R CMD
+>javareconf or R CMD javareconf. With sudo I get pointed to Java 9 and
+>without sudo I get pointed to Java 10. I really don?t know why. 
+>
+>Without sudo:
+>
+>$ R CMD javareconf                                                     
+>                  
+>Java interpreter :
+>/Library/Java/JavaVirtualMachines/jdk-10.jdk/Contents/Home/bin/java
+>Java version     : 10
+>Java home path   :
+>/Library/Java/JavaVirtualMachines/jdk-10.jdk/Contents/Home
+>Java compiler    :
+>/Library/Java/JavaVirtualMachines/jdk-10.jdk/Contents/Home/bin/javac
+>Java headers gen.: /usr/bin/javah
+>Java archive tool:
+>/Library/Java/JavaVirtualMachines/jdk-10.jdk/Contents/Home/bin/jar
+>Non-system Java on macOS
+>
+>trying to compile and link a JNI program
+>detected JNI cpp flags    : -I$(JAVA_HOME)/include
+>-I$(JAVA_HOME)/include/darwin
+>detected JNI linker flags : -L$(JAVA_HOME)/lib/server -ljvm
+>/usr/local/opt/llvm/bin/clang 
+>-I/usr/local/Cellar/r/3.4.4/lib/R/include -DNDEBUG
+>-I/Library/Java/JavaVirtualMachines/jdk-10.jdk/Contents/Home/include
+>-I/Library/Java/JavaVirtualMachines/jdk-10.jdk/Contents/Home/include/darwin
+>-I/usr/local/opt/gettext/include -I/usr/local/opt/llvm/include   -fPIC 
+>-g -O3 -Wall -pedantic -std=gnu99 -mtune=native -pipe -c conftest.c -o
+>conftest.o
+>/usr/local/opt/llvm/bin/clang++ -dynamiclib
+>-Wl,-headerpad_max_install_names -undefined dynamic_lookup
+>-single_module -multiply_defined suppress -L/usr/local/opt/gettext/lib
+>-L/usr/local/opt/llvm/lib -Wl,-rpath,/usr/local/opt/llvm/lib
+>-L/usr/local/Cellar/r/3.4.4/lib/R/lib -L/usr/local/opt/gettext/lib
+>-L/usr/local/opt/llvm/lib -Wl,-rpath,/usr/local/opt/llvm/lib -o
+>conftest.so conftest.o
+>-L/Library/Java/JavaVirtualMachines/jdk-10.jdk/Contents/Home/lib/server
+>-ljvm -L/usr/local/Cellar/r/3.4.4/lib/R/lib -lR -lintl -Wl,-framework
+>-Wl,CoreFoundation
+>
+>
+>JAVA_HOME        :
+>/Library/Java/JavaVirtualMachines/jdk-10.jdk/Contents/Home
+>Java library path: $(JAVA_HOME)/lib/server
+>JNI cpp flags    : -I$(JAVA_HOME)/include -I$(JAVA_HOME)/include/darwin
+>JNI linker flags : -L$(JAVA_HOME)/lib/server -ljvm
+>Updating Java configuration in /usr/local/Cellar/r/3.4.4/lib/R
+>override rw-r--r--  root/admin for
+>/usr/local/Cellar/r/3.4.4/lib/R/etc/Makeconf? (y/n [n]) y
+>override rw-r--r--  root/admin for
+>/usr/local/Cellar/r/3.4.4/lib/R/etc/ldpaths? (y/n [n]) y
+>Done.
+>With sudo:
+>
+>$ sudo R CMD javareconf                                                
+>                  
+>Java interpreter :
+>/Library/Java/JavaVirtualMachines/jdk-9.0.4.jdk/Contents/Home/bin/java
+>Java version     : 9.0.4
+>Java home path   :
+>/Library/Java/JavaVirtualMachines/jdk-9.0.4.jdk/Contents/Home
+>Java compiler    :
+>/Library/Java/JavaVirtualMachines/jdk-9.0.4.jdk/Contents/Home/bin/javac
+>Java headers gen.:
+>/Library/Java/JavaVirtualMachines/jdk-9.0.4.jdk/Contents/Home/bin/javah
+>Java archive tool:
+>/Library/Java/JavaVirtualMachines/jdk-9.0.4.jdk/Contents/Home/bin/jar
+>Non-system Java on macOS
+>
+>trying to compile and link a JNI program
+>detected JNI cpp flags    : -I$(JAVA_HOME)/include
+>-I$(JAVA_HOME)/include/darwin
+>detected JNI linker flags : -L$(JAVA_HOME)/lib/server -ljvm
+>/usr/local/opt/llvm/bin/clang 
+>-I/usr/local/Cellar/r/3.4.4/lib/R/include -DNDEBUG
+>-I/Library/Java/JavaVirtualMachines/jdk-9.0.4.jdk/Contents/Home/include
+>-I/Library/Java/JavaVirtualMachines/jdk-9.0.4.jdk/Contents/Home/include/darwin
+>-I/usr/local/opt/gettext/include -I/usr/local/opt/llvm/include   -fPIC 
+>-g -O3 -Wall -pedantic -std=gnu99 -mtune=native -pipe -c conftest.c -o
+>conftest.o
+>/usr/local/opt/llvm/bin/clang++ -dynamiclib
+>-Wl,-headerpad_max_install_names -undefined dynamic_lookup
+>-single_module -multiply_defined suppress -L/usr/local/opt/gettext/lib
+>-L/usr/local/opt/llvm/lib -Wl,-rpath,/usr/local/opt/llvm/lib
+>-L/usr/local/Cellar/r/3.4.4/lib/R/lib -L/usr/local/opt/gettext/lib
+>-L/usr/local/opt/llvm/lib -Wl,-rpath,/usr/local/opt/llvm/lib -o
+>conftest.so conftest.o
+>-L/Library/Java/JavaVirtualMachines/jdk-9.0.4.jdk/Contents/Home/lib/server
+>-ljvm -L/usr/local/Cellar/r/3.4.4/lib/R/lib -lR -lintl -Wl,-framework
+>-Wl,CoreFoundation
+>
+>
+>JAVA_HOME        :
+>/Library/Java/JavaVirtualMachines/jdk-9.0.4.jdk/Contents/Home
+>Java library path: $(JAVA_HOME)/lib/server
+>JNI cpp flags    : -I$(JAVA_HOME)/include -I$(JAVA_HOME)/include/darwin
+>JNI linker flags : -L$(JAVA_HOME)/lib/server -ljvm
+>Updating Java configuration in /usr/local/Cellar/r/3.4.4/lib/R
+>Done.
+>The result of be pointed to Java 10 is rJava package not be able to
+>build. 
+>
+>warning: [options] bootstrap class path not set in conjunction with
+>-source 6
+>warning: [options] source value 6 is obsolete and will be removed in a
+>future release
+>warning: [options] target value 1.6 is obsolete and will be removed in
+>a future release
+>warning: [options] To suppress warnings about obsolete options, use
+>-Xlint:-options.
+>Note: Some input files use or override a deprecated API.
+>Note: Recompile with -Xlint:deprecation for details.
+>Note: Some input files use unchecked or unsafe operations.
+>Note: Recompile with -Xlint:unchecked for details.
+>4 warnings
+>/usr/bin/javah -d . -classpath . org.rosuda.JRI.Rengine
+>Unable to locate an executable at
+>"/Library/Java/JavaVirtualMachines/jdk-10.jdk/Contents/Home/bin/javah"
+>(-1)
+>make[2]: *** [org_rosuda_JRI_Rengine.h] Error 2
+>make[1]: *** [src/JRI.jar] Error 2
+>make: *** [jri] Error 2
+>ERROR: compilation failed for package ?rJava?
+>* removing ?/Users/lpuerto/Library/R/3.x/library/rJava?
+>* restoring previous ?/Users/lpuerto/Library/R/3.x/library/rJava?
+>
+>The downloaded source packages are in
+>?/private/var/folders/wf/41gjf2mx7m7fmvfd8dr22_5h0000gn/T/RtmpT2kJMY/downloaded_packages?
+>Warning message:
+>In install.packages("rJava", repos = "cloud.r-project.org") :
+>  installation of package ?rJava? had non-zero exit status
+>I've checked and there isn't a javah on
+>/Library/Java/JavaVirtualMachines/jdk-10.jdk/Contents/Home/bin/javah as
+>in Java 9. Which make me think that either R CMD javareconf isn?t
+>working properly with Java 10 or rJava is not yet compatible with Java
+>10. 
+>
+>Does anyone know what is going on? 
+>
+>Thanks! 
+>
+>PS/ I?ve opened an issue <https://github.com/s-u/rJava/issues/137> in
+>rJava?s github and a question in stackoverflow
+><https://stackoverflow.com/questions/49519007/sudo-r-cmd-javareconf-and-r-cmd-javareconf-produce-different-output-with-java-10>.
+>
+>
+>
+>Best Regards
+>Luis Puerto
+>http://luisspuerto.net
+>
+>
+>	[[alternative HTML version deleted]]
+>
+>______________________________________________
+>R-help at r-project.org mailing list -- To UNSUBSCRIBE and more, see
+>https://stat.ethz.ch/mailman/listinfo/r-help
+>PLEASE do read the posting guide
+>http://www.R-project.org/posting-guide.html
+>and provide commented, minimal, self-contained, reproducible code.
+
+
+From ripley at stats.ox.ac.uk  Wed Mar 28 13:10:22 2018
+From: ripley at stats.ox.ac.uk (Prof Brian Ripley)
+Date: Wed, 28 Mar 2018 12:10:22 +0100
+Subject: [R-SIG-Mac] 
+ =?utf-8?q?R_and_Java_10_=E2=9E=9C_rJava_not_able_to_?=
+ =?utf-8?q?build?=
+In-Reply-To: <5528AE93-6DF5-4DD8-8D73-8A95BEFF6830@gmail.com>
+References: <5528AE93-6DF5-4DD8-8D73-8A95BEFF6830@gmail.com>
+Message-ID: <4ce6ba07-7947-708c-3f02-e5f213a62775@stats.ox.ac.uk>
+
+On 27/03/2018 20:25, Luis Puerto wrote:
+...
+> rJava is not yet compatible with Java 10
+
+Is the correct answer.  How to work around this is in the current 
+manual, specifically R-admin for R 3.5.0 alpha or R-devel.
+
+Java 10 has been out for 8 days, and the rJava maintainer was made aware 
+of the issues early this month, several other package maintainers only 
+today.  The advice is to stick to an LTS release of Java (currently 8) 
+unless you know what you are doing.
+
+And don't post to multiple lists!
+
+-- 
+Brian D. Ripley,                  ripley at stats.ox.ac.uk
+Emeritus Professor of Applied Statistics, University of Oxford
+
+
+From luiss.puerto at gmail.com  Wed Mar 28 16:27:16 2018
+From: luiss.puerto at gmail.com (Luis Puerto)
+Date: Wed, 28 Mar 2018 17:27:16 +0300
+Subject: [R-SIG-Mac] 
+ =?utf-8?q?R_and_Java_10_=E2=9E=9C_rJava_not_able_to_?=
+ =?utf-8?q?build?=
+In-Reply-To: <4ce6ba07-7947-708c-3f02-e5f213a62775@stats.ox.ac.uk>
+References: <5528AE93-6DF5-4DD8-8D73-8A95BEFF6830@gmail.com>
+ <4ce6ba07-7947-708c-3f02-e5f213a62775@stats.ox.ac.uk>
+Message-ID: <FB87339B-275B-40CA-BEF2-299976E12312@gmail.com>
+
+Hi Jeff, 
+
+Sorry if I?ve done something wrong posting to more that one list. Perhaps I should have written just different emails for each list so people from one list don?t reply to the other lists. Apologies for that. 
+
+On another note, thanks for your reply. Let?s hope that we soon can have only one version of Java. 
+
+
+Best Regards
+Luis Puerto
+http://luisspuerto.net
+
+> On 28 Mar 2018, at 14:10, Prof Brian Ripley <ripley at stats.ox.ac.uk> wrote:
+> 
+> On 27/03/2018 20:25, Luis Puerto wrote:
+> ...
+>> rJava is not yet compatible with Java 10
+> 
+> Is the correct answer.  How to work around this is in the current manual, specifically R-admin for R 3.5.0 alpha or R-devel.
+> 
+> Java 10 has been out for 8 days, and the rJava maintainer was made aware of the issues early this month, several other package maintainers only today.  The advice is to stick to an LTS release of Java (currently 8) unless you know what you are doing.
+> 
+> And don't post to multiple lists!
+> 
+> -- 
+> Brian D. Ripley,                  ripley at stats.ox.ac.uk
+> Emeritus Professor of Applied Statistics, University of Oxford
+
+
+	[[alternative HTML version deleted]]
+
+
+From istazahn at gmail.com  Wed Mar 28 15:55:46 2018
+From: istazahn at gmail.com (Ista Zahn)
+Date: Wed, 28 Mar 2018 09:55:46 -0400
+Subject: [R-SIG-Mac] 
+ =?utf-8?q?=5BR=5D_R_and_Java_10_=E2=9E=9C_rJava_not_?=
+ =?utf-8?q?able_to_build?=
+In-Reply-To: <A07DA58D-3C3A-452E-B0FA-2DB2ED737DC5@dcn.davis.ca.us>
+References: <5528AE93-6DF5-4DD8-8D73-8A95BEFF6830@gmail.com>
+ <A07DA58D-3C3A-452E-B0FA-2DB2ED737DC5@dcn.davis.ca.us>
+Message-ID: <CA+vqiLFWbaeMCHoXwDS_=X3kNZ05Kk2XCEEjyavTMZ+-2ONEBw@mail.gmail.com>
+
+On Tue, Mar 27, 2018 at 9:39 PM, Jeff Newmiller
+<jdnewmil at dcn.davis.ca.us> wrote:
+> I am not a Mac user, but I do use Linux and I would recommend not running R with sudo unless you are an admin ninja. That defensive practice would render the answer to your question moot.
+
+I don't think this is reasonable advice, given that both R CMD
+javareconf and the rJava package makefile explicitly instruct you to
+run R CMD javareconf as root.
+
+
+>
+> It is possible that your problem may have started with inappropriate use of sudo in configuring java, but configuring Java is not on-topic here.
+
+I also disagree with this. You don't have to answer if you don't want
+to, but the question is about getting the rJava package to work with
+Java JDK 10, and I for one consider that to be on-topic here.
+
+
+Best,
+Ista
+
+> --
+> Sent from my phone. Please excuse my brevity.
+>
+> On March 27, 2018 12:25:33 PM PDT, Luis Puerto <luiss.puerto at gmail.com> wrote:
+>>Hi!
+>>
+>>I?m on macOS 10.13.3 and just installed the new Java 10 using Homebrew
+>>Cask. I also have installed R with Homebrew. Everything seems to work
+>>fine, however I just get different outputs if I run sudo R CMD
+>>javareconf or R CMD javareconf. With sudo I get pointed to Java 9 and
+>>without sudo I get pointed to Java 10. I really don?t know why.
+>>
+>>Without sudo:
+>>
+>>$ R CMD javareconf
+>>
+>>Java interpreter :
+>>/Library/Java/JavaVirtualMachines/jdk-10.jdk/Contents/Home/bin/java
+>>Java version     : 10
+>>Java home path   :
+>>/Library/Java/JavaVirtualMachines/jdk-10.jdk/Contents/Home
+>>Java compiler    :
+>>/Library/Java/JavaVirtualMachines/jdk-10.jdk/Contents/Home/bin/javac
+>>Java headers gen.: /usr/bin/javah
+>>Java archive tool:
+>>/Library/Java/JavaVirtualMachines/jdk-10.jdk/Contents/Home/bin/jar
+>>Non-system Java on macOS
+>>
+>>trying to compile and link a JNI program
+>>detected JNI cpp flags    : -I$(JAVA_HOME)/include
+>>-I$(JAVA_HOME)/include/darwin
+>>detected JNI linker flags : -L$(JAVA_HOME)/lib/server -ljvm
+>>/usr/local/opt/llvm/bin/clang
+>>-I/usr/local/Cellar/r/3.4.4/lib/R/include -DNDEBUG
+>>-I/Library/Java/JavaVirtualMachines/jdk-10.jdk/Contents/Home/include
+>>-I/Library/Java/JavaVirtualMachines/jdk-10.jdk/Contents/Home/include/darwin
+>>-I/usr/local/opt/gettext/include -I/usr/local/opt/llvm/include   -fPIC
+>>-g -O3 -Wall -pedantic -std=gnu99 -mtune=native -pipe -c conftest.c -o
+>>conftest.o
+>>/usr/local/opt/llvm/bin/clang++ -dynamiclib
+>>-Wl,-headerpad_max_install_names -undefined dynamic_lookup
+>>-single_module -multiply_defined suppress -L/usr/local/opt/gettext/lib
+>>-L/usr/local/opt/llvm/lib -Wl,-rpath,/usr/local/opt/llvm/lib
+>>-L/usr/local/Cellar/r/3.4.4/lib/R/lib -L/usr/local/opt/gettext/lib
+>>-L/usr/local/opt/llvm/lib -Wl,-rpath,/usr/local/opt/llvm/lib -o
+>>conftest.so conftest.o
+>>-L/Library/Java/JavaVirtualMachines/jdk-10.jdk/Contents/Home/lib/server
+>>-ljvm -L/usr/local/Cellar/r/3.4.4/lib/R/lib -lR -lintl -Wl,-framework
+>>-Wl,CoreFoundation
+>>
+>>
+>>JAVA_HOME        :
+>>/Library/Java/JavaVirtualMachines/jdk-10.jdk/Contents/Home
+>>Java library path: $(JAVA_HOME)/lib/server
+>>JNI cpp flags    : -I$(JAVA_HOME)/include -I$(JAVA_HOME)/include/darwin
+>>JNI linker flags : -L$(JAVA_HOME)/lib/server -ljvm
+>>Updating Java configuration in /usr/local/Cellar/r/3.4.4/lib/R
+>>override rw-r--r--  root/admin for
+>>/usr/local/Cellar/r/3.4.4/lib/R/etc/Makeconf? (y/n [n]) y
+>>override rw-r--r--  root/admin for
+>>/usr/local/Cellar/r/3.4.4/lib/R/etc/ldpaths? (y/n [n]) y
+>>Done.
+>>With sudo:
+>>
+>>$ sudo R CMD javareconf
+>>
+>>Java interpreter :
+>>/Library/Java/JavaVirtualMachines/jdk-9.0.4.jdk/Contents/Home/bin/java
+>>Java version     : 9.0.4
+>>Java home path   :
+>>/Library/Java/JavaVirtualMachines/jdk-9.0.4.jdk/Contents/Home
+>>Java compiler    :
+>>/Library/Java/JavaVirtualMachines/jdk-9.0.4.jdk/Contents/Home/bin/javac
+>>Java headers gen.:
+>>/Library/Java/JavaVirtualMachines/jdk-9.0.4.jdk/Contents/Home/bin/javah
+>>Java archive tool:
+>>/Library/Java/JavaVirtualMachines/jdk-9.0.4.jdk/Contents/Home/bin/jar
+>>Non-system Java on macOS
+>>
+>>trying to compile and link a JNI program
+>>detected JNI cpp flags    : -I$(JAVA_HOME)/include
+>>-I$(JAVA_HOME)/include/darwin
+>>detected JNI linker flags : -L$(JAVA_HOME)/lib/server -ljvm
+>>/usr/local/opt/llvm/bin/clang
+>>-I/usr/local/Cellar/r/3.4.4/lib/R/include -DNDEBUG
+>>-I/Library/Java/JavaVirtualMachines/jdk-9.0.4.jdk/Contents/Home/include
+>>-I/Library/Java/JavaVirtualMachines/jdk-9.0.4.jdk/Contents/Home/include/darwin
+>>-I/usr/local/opt/gettext/include -I/usr/local/opt/llvm/include   -fPIC
+>>-g -O3 -Wall -pedantic -std=gnu99 -mtune=native -pipe -c conftest.c -o
+>>conftest.o
+>>/usr/local/opt/llvm/bin/clang++ -dynamiclib
+>>-Wl,-headerpad_max_install_names -undefined dynamic_lookup
+>>-single_module -multiply_defined suppress -L/usr/local/opt/gettext/lib
+>>-L/usr/local/opt/llvm/lib -Wl,-rpath,/usr/local/opt/llvm/lib
+>>-L/usr/local/Cellar/r/3.4.4/lib/R/lib -L/usr/local/opt/gettext/lib
+>>-L/usr/local/opt/llvm/lib -Wl,-rpath,/usr/local/opt/llvm/lib -o
+>>conftest.so conftest.o
+>>-L/Library/Java/JavaVirtualMachines/jdk-9.0.4.jdk/Contents/Home/lib/server
+>>-ljvm -L/usr/local/Cellar/r/3.4.4/lib/R/lib -lR -lintl -Wl,-framework
+>>-Wl,CoreFoundation
+>>
+>>
+>>JAVA_HOME        :
+>>/Library/Java/JavaVirtualMachines/jdk-9.0.4.jdk/Contents/Home
+>>Java library path: $(JAVA_HOME)/lib/server
+>>JNI cpp flags    : -I$(JAVA_HOME)/include -I$(JAVA_HOME)/include/darwin
+>>JNI linker flags : -L$(JAVA_HOME)/lib/server -ljvm
+>>Updating Java configuration in /usr/local/Cellar/r/3.4.4/lib/R
+>>Done.
+>>The result of be pointed to Java 10 is rJava package not be able to
+>>build.
+>>
+>>warning: [options] bootstrap class path not set in conjunction with
+>>-source 6
+>>warning: [options] source value 6 is obsolete and will be removed in a
+>>future release
+>>warning: [options] target value 1.6 is obsolete and will be removed in
+>>a future release
+>>warning: [options] To suppress warnings about obsolete options, use
+>>-Xlint:-options.
+>>Note: Some input files use or override a deprecated API.
+>>Note: Recompile with -Xlint:deprecation for details.
+>>Note: Some input files use unchecked or unsafe operations.
+>>Note: Recompile with -Xlint:unchecked for details.
+>>4 warnings
+>>/usr/bin/javah -d . -classpath . org.rosuda.JRI.Rengine
+>>Unable to locate an executable at
+>>"/Library/Java/JavaVirtualMachines/jdk-10.jdk/Contents/Home/bin/javah"
+>>(-1)
+>>make[2]: *** [org_rosuda_JRI_Rengine.h] Error 2
+>>make[1]: *** [src/JRI.jar] Error 2
+>>make: *** [jri] Error 2
+>>ERROR: compilation failed for package ?rJava?
+>>* removing ?/Users/lpuerto/Library/R/3.x/library/rJava?
+>>* restoring previous ?/Users/lpuerto/Library/R/3.x/library/rJava?
+>>
+>>The downloaded source packages are in
+>>?/private/var/folders/wf/41gjf2mx7m7fmvfd8dr22_5h0000gn/T/RtmpT2kJMY/downloaded_packages?
+>>Warning message:
+>>In install.packages("rJava", repos = "cloud.r-project.org") :
+>>  installation of package ?rJava? had non-zero exit status
+>>I've checked and there isn't a javah on
+>>/Library/Java/JavaVirtualMachines/jdk-10.jdk/Contents/Home/bin/javah as
+>>in Java 9. Which make me think that either R CMD javareconf isn?t
+>>working properly with Java 10 or rJava is not yet compatible with Java
+>>10.
+>>
+>>Does anyone know what is going on?
+>>
+>>Thanks!
+>>
+>>PS/ I?ve opened an issue <https://github.com/s-u/rJava/issues/137> in
+>>rJava?s github and a question in stackoverflow
+>><https://stackoverflow.com/questions/49519007/sudo-r-cmd-javareconf-and-r-cmd-javareconf-produce-different-output-with-java-10>.
+>>
+>>
+>>
+>>Best Regards
+>>Luis Puerto
+>>http://luisspuerto.net
+>>
+>>
+>>       [[alternative HTML version deleted]]
+>>
+>>______________________________________________
+>>R-help at r-project.org mailing list -- To UNSUBSCRIBE and more, see
+>>https://stat.ethz.ch/mailman/listinfo/r-help
+>>PLEASE do read the posting guide
+>>http://www.R-project.org/posting-guide.html
+>>and provide commented, minimal, self-contained, reproducible code.
+>
+> ______________________________________________
+> R-help at r-project.org mailing list -- To UNSUBSCRIBE and more, see
+> https://stat.ethz.ch/mailman/listinfo/r-help
+> PLEASE do read the posting guide http://www.R-project.org/posting-guide.html
+> and provide commented, minimal, self-contained, reproducible code.
+
+

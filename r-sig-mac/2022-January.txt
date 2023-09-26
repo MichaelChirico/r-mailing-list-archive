@@ -1,0 +1,1693 @@
+From pbouch@| @end|ng |rom gm@||@com  Mon Jan 10 11:22:36 2022
+From: pbouch@| @end|ng |rom gm@||@com (Petr Bouchal)
+Date: Mon, 10 Jan 2022 11:22:36 +0100
+Subject: [R-SIG-Mac] Libre SSL bug on MacOS Monterey => error in
+ download.file()
+Message-ID: <9A0E0F70-8DCF-4D03-884E-D4B088B15C04@gmail.com>
+
+Dear all,
+
+In brief: on Monterey, R cannot reach certain web domains due to a bug in Libre SSL - and perhaps not relying on system curl/openssl in R would be a systematic solution to this and s?milar issues.
+
+Specifically: on MacOS Monterey 12.1 using R 4.1.2, download.file() and other functions that rely on system-provided curl/openssl/Libre SSL (including in the curl package) have been failing on specific domains. 
+
+So running 
+
+download.file(?https://www.czso.cz/?, tempfile()) 
+
+returns: 
+
+status was ?SSL connect error?
+
+the underlying error being
+ 
+error:06FFF089:digital envelope routines:CRYPTO_internal:bad key length.
+
+This is caused by the Libre SSL bundled in MacOS Monterey and also affects several other domains, most notably https://libzip.org.
+
+It is clearly an OS bug but infortunately also a situation where it affects R users because of how R relates to system libraries and is very difficult to work around.
+
+It has manifested on CRAN (causing a package archival) and Github outside of R, so is not caused by a specific machine. It can be replicated on both M1 and Intel and also occurs when using curl in the system command line. 
+
+The czso.cz domain is the Czech Statistical Office, which makes it quite important for a number of users, also of a package I maintain (czso) which relies on accessing this domain. I have reported this to the server admin but since the problem is in the OS, I do not expect them to be able to help. I am not an expert in web security so cannot tell if there is anything in the certificates which could be causing this. In browsers, no such issue occurs and the server is configured correctly as per ssllabs.com testing. I have also reported to Apple but it is unclear whether they will fix this given the rare nature of the issue.
+
+It is difficult to work around even on individual machines as replacing the system curl/openssl requires steps beyond what a most users are comfortable with (or should be doing to begin with). Using HTTP instead of HTTPS does not work, nor does using curl ?insecure and equivalents.
+
+This brings back the question of whether R on MacOS should include its own openssl instead of relying on the system-provided library. This has been discussed on the r-devel list: https://stat.ethz.ch/pipermail/r-devel/2020-June/079657.html.
+
+Apple also recommends against relying on shared openssl, if I understand this correctly: https://developer.apple.com/forums/thread/89051. Given Apple?s approach to openssl/Libre SSL in MacOS (the bundled Libre SSL version is 3 years old), such hard-to-handle issues are likely to reappear over time. (I don?t have in-depth knowledge of how R is compiled, so apologies for any inaccuracies; hopefully it is clear what I mean.)
+
+I?d be grateful for any thoughts on how this might be handled in the specific case and perhaps generally.
+
+Kind regards
+Petr Bouchal
+
+
+From jeroenoom@ @end|ng |rom gm@||@com  Tue Jan 11 01:04:25 2022
+From: jeroenoom@ @end|ng |rom gm@||@com (Jeroen Ooms)
+Date: Tue, 11 Jan 2022 01:04:25 +0100
+Subject: [R-SIG-Mac] Libre SSL bug on MacOS Monterey => error in
+ download.file()
+In-Reply-To: <9A0E0F70-8DCF-4D03-884E-D4B088B15C04@gmail.com>
+References: <9A0E0F70-8DCF-4D03-884E-D4B088B15C04@gmail.com>
+Message-ID: <CABFfbXuZbcvaoS9cjcTO-NaRVcbtCOqhF2Cq9W2nv-X5AucVXA@mail.gmail.com>
+
+On Mon, Jan 10, 2022 at 11:22 AM Petr Bouchal <pbouchal at gmail.com> wrote:
+>
+> Dear all,
+>
+> In brief: on Monterey, R cannot reach certain web domains due to a bug in Libre SSL - and perhaps not relying on system curl/openssl in R would be a systematic solution to this and s?milar issues.
+>
+> Specifically: on MacOS Monterey 12.1 using R 4.1.2, download.file() and other functions that rely on system-provided curl/openssl/Libre SSL (including in the curl package) have been failing on specific domains.
+>
+> So running
+>
+> download.file(?https://www.czso.cz/?, tempfile())
+>
+> returns:
+>
+> status was ?SSL connect error?
+>
+> the underlying error being
+>
+> error:06FFF089:digital envelope routines:CRYPTO_internal:bad key length.
+
+I have to investigate this further (it looks like a buggy TLS server
+actually), but as a workaround you can set an environment variable
+CURL_SSL_BACKEND=SecureTransport when starting R, see for details:
+https://curl.se/libcurl/c/libcurl-env.html
+
+The version of libcurl that is included with the past few versions of
+MacOS is actually built with support for 2 TLS back-ends: LibreSSL and
+native apple TLS (aka SecureTransport). You can override the default
+using the environment variable above, but you have to set it before
+libcurl gets initiated, hence before making any http connections in
+the R session, e.g. in your .Renviron.
+
+You can see which version is active by looking at
+curl::curl_version()$ssl_version, the version in parenthesis is  Try
+running:
+
+   CURL_SSL_BACKEND=openssl R -e "curl::curl_version()$ssl_version"
+   CURL_SSL_BACKEND=SecureTransport R -e "curl::curl_version()$ssl_version"
+
+The same version of libcurl is also used by base-R in download.file().
+I've also explained this a bit (mostly for windows) in this vignette:
+https://cran.r-project.org/web/packages/curl/vignettes/windows.html
+
+
+From @|mon@urb@nek @end|ng |rom R-project@org  Tue Jan 11 22:12:26 2022
+From: @|mon@urb@nek @end|ng |rom R-project@org (Simon Urbanek)
+Date: Wed, 12 Jan 2022 10:12:26 +1300
+Subject: [R-SIG-Mac] Libre SSL bug on MacOS Monterey => error in
+ download.file()
+In-Reply-To: <9A0E0F70-8DCF-4D03-884E-D4B088B15C04@gmail.com>
+References: <9A0E0F70-8DCF-4D03-884E-D4B088B15C04@gmail.com>
+Message-ID: <93256947-3E25-437C-9C31-5EF80A305E3F@R-project.org>
+
+Pet?e,
+
+thanks, for the detailed analysis. It is rather curious that the issue appears only on _newer_ systems - we are more used to issues due to older CA chains and similar. It looks like an Apple bug on specific systems, so hopefully it will be fixed eventually. In general I was trying to avoid having to supply our own SSL library since that opens a whole can of worms - on one hand due the dependency issues (which libraries get compiled against what) and on the other hand we become responsible for security updates.
+
+Thanks to Jeroen for the work-around (CURL_SSL_BACKEND=SecureTransport), using the native API is certainly preferred, there have been several issues with both OpenSSL and LibreSSL before. It seems that Apple has been flip-flopping with libcurl a lot - on El Capitan it was shipped with SecureTransport, on High-Sierra with LibreSSL, on Catalina and higher with both, but Libre the default.
+
+I am somewhat less apprehensive to use static libcurl for R than SSL libraries as the fallout is a bit smaller. As a trial I have added static curl[2] which is close to the Apple build minus MultiSSL to big-sur nightly builds of R[3] and as expected that solves the problem. It may not be entirely unproblematic for package space, because packages often forget to prepend  --static when using static builds of libraries, and so do other dependencies that may use curl, but I'll see what comes out of it.
+
+Cheers,
+?imon
+
+[1] - https://github.com/R-macos/recipes
+[2] - https://github.com/R-macos/recipes/blob/add-ons/recipes/curl
+[3] - https://mac.r-project.org/
+
+
+
+> On 10/01/2022, at 11:22 PM, Petr Bouchal <pbouchal at gmail.com> wrote:
+> 
+> Dear all,
+> 
+> In brief: on Monterey, R cannot reach certain web domains due to a bug in Libre SSL - and perhaps not relying on system curl/openssl in R would be a systematic solution to this and s?milar issues.
+> 
+> Specifically: on MacOS Monterey 12.1 using R 4.1.2, download.file() and other functions that rely on system-provided curl/openssl/Libre SSL (including in the curl package) have been failing on specific domains. 
+> 
+> So running 
+> 
+> download.file(?https://www.czso.cz/?, tempfile()) 
+> 
+> returns: 
+> 
+> status was ?SSL connect error?
+> 
+> the underlying error being
+> 
+> error:06FFF089:digital envelope routines:CRYPTO_internal:bad key length.
+> 
+> This is caused by the Libre SSL bundled in MacOS Monterey and also affects several other domains, most notably https://libzip.org.
+> 
+> It is clearly an OS bug but infortunately also a situation where it affects R users because of how R relates to system libraries and is very difficult to work around.
+> 
+> It has manifested on CRAN (causing a package archival) and Github outside of R, so is not caused by a specific machine. It can be replicated on both M1 and Intel and also occurs when using curl in the system command line. 
+> 
+> The czso.cz domain is the Czech Statistical Office, which makes it quite important for a number of users, also of a package I maintain (czso) which relies on accessing this domain. I have reported this to the server admin but since the problem is in the OS, I do not expect them to be able to help. I am not an expert in web security so cannot tell if there is anything in the certificates which could be causing this. In browsers, no such issue occurs and the server is configured correctly as per ssllabs.com testing. I have also reported to Apple but it is unclear whether they will fix this given the rare nature of the issue.
+> 
+> It is difficult to work around even on individual machines as replacing the system curl/openssl requires steps beyond what a most users are comfortable with (or should be doing to begin with). Using HTTP instead of HTTPS does not work, nor does using curl ?insecure and equivalents.
+> 
+> This brings back the question of whether R on MacOS should include its own openssl instead of relying on the system-provided library. This has been discussed on the r-devel list: https://stat.ethz.ch/pipermail/r-devel/2020-June/079657.html.
+> 
+> Apple also recommends against relying on shared openssl, if I understand this correctly: https://developer.apple.com/forums/thread/89051. Given Apple?s approach to openssl/Libre SSL in MacOS (the bundled Libre SSL version is 3 years old), such hard-to-handle issues are likely to reappear over time. (I don?t have in-depth knowledge of how R is compiled, so apologies for any inaccuracies; hopefully it is clear what I mean.)
+> 
+> I?d be grateful for any thoughts on how this might be handled in the specific case and perhaps generally.
+> 
+> Kind regards
+> Petr Bouchal
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+> 
+
+
+From pbouch@| @end|ng |rom gm@||@com  Tue Jan 11 23:15:50 2022
+From: pbouch@| @end|ng |rom gm@||@com (Petr Bouchal)
+Date: Tue, 11 Jan 2022 23:15:50 +0100
+Subject: [R-SIG-Mac] Libre SSL bug on MacOS Monterey => error in
+ download.file()
+In-Reply-To: <CABFfbXuZbcvaoS9cjcTO-NaRVcbtCOqhF2Cq9W2nv-X5AucVXA@mail.gmail.com>
+References: <9A0E0F70-8DCF-4D03-884E-D4B088B15C04@gmail.com>
+ <CABFfbXuZbcvaoS9cjcTO-NaRVcbtCOqhF2Cq9W2nv-X5AucVXA@mail.gmail.com>
+Message-ID: <783ED1A3-06D1-4552-B6D3-0454BBAE7E79@gmail.com>
+
+Many thanks Jeroen - that is very helpful, I was not aware of the capability in curl to switch SSL backends. (The backend also shows up in the curl package onLoad message, which is helpful).
+
+Kind regards
+Petr
+
+> On 11. 1. 2022, at 1:04, Jeroen Ooms <jeroenooms at gmail.com> wrote:
+> 
+> On Mon, Jan 10, 2022 at 11:22 AM Petr Bouchal <pbouchal at gmail.com> wrote:
+>> 
+>> Dear all,
+>> 
+>> In brief: on Monterey, R cannot reach certain web domains due to a bug in Libre SSL - and perhaps not relying on system curl/openssl in R would be a systematic solution to this and s?milar issues.
+>> 
+>> Specifically: on MacOS Monterey 12.1 using R 4.1.2, download.file() and other functions that rely on system-provided curl/openssl/Libre SSL (including in the curl package) have been failing on specific domains.
+>> 
+>> So running
+>> 
+>> download.file(?https://www.czso.cz/?, tempfile())
+>> 
+>> returns:
+>> 
+>> status was ?SSL connect error?
+>> 
+>> the underlying error being
+>> 
+>> error:06FFF089:digital envelope routines:CRYPTO_internal:bad key length.
+> 
+> I have to investigate this further (it looks like a buggy TLS server
+> actually), but as a workaround you can set an environment variable
+> CURL_SSL_BACKEND=SecureTransport when starting R, see for details:
+> https://curl.se/libcurl/c/libcurl-env.html
+> 
+> The version of libcurl that is included with the past few versions of
+> MacOS is actually built with support for 2 TLS back-ends: LibreSSL and
+> native apple TLS (aka SecureTransport). You can override the default
+> using the environment variable above, but you have to set it before
+> libcurl gets initiated, hence before making any http connections in
+> the R session, e.g. in your .Renviron.
+> 
+> You can see which version is active by looking at
+> curl::curl_version()$ssl_version, the version in parenthesis is  Try
+> running:
+> 
+>   CURL_SSL_BACKEND=openssl R -e "curl::curl_version()$ssl_version"
+>   CURL_SSL_BACKEND=SecureTransport R -e "curl::curl_version()$ssl_version"
+> 
+> The same version of libcurl is also used by base-R in download.file().
+> I've also explained this a bit (mostly for windows) in this vignette:
+> https://cran.r-project.org/web/packages/curl/vignettes/windows.html
+
+
+From pbouch@| @end|ng |rom gm@||@com  Tue Jan 11 23:43:27 2022
+From: pbouch@| @end|ng |rom gm@||@com (Petr Bouchal)
+Date: Tue, 11 Jan 2022 23:43:27 +0100
+Subject: [R-SIG-Mac] Libre SSL bug on MacOS Monterey => error in
+ download.file()
+In-Reply-To: <93256947-3E25-437C-9C31-5EF80A305E3F@R-project.org>
+References: <9A0E0F70-8DCF-4D03-884E-D4B088B15C04@gmail.com>
+ <93256947-3E25-437C-9C31-5EF80A305E3F@R-project.org>
+Message-ID: <2FF6C02D-C0D1-45BD-A4FC-49838690EDCD@gmail.com>
+
+?imone,
+
+Thanks for this. I understand your concern about being responsible for the SSL side and can just about imagine the technical complexity of getting it done. Many thanks also for the trial build, I very much appreciate you doing this - once I can get it tested on an M1 machine, I will report back but it?s encouraging to hear that it is feasible and solves the issue.
+
+As for Apple?s approach to SSL, my understanding from the bits of information I have been able to find is that they provide very little guarantee/stability/documentation around this, as also attested by the flip flopping you mentioned.
+
+Thanks again.
+
+Kind regards
+Petr
+
+> On 11. 1. 2022, at 22:12, Simon Urbanek <simon.urbanek at R-project.org> wrote:
+> 
+> Pet?e,
+> 
+> thanks, for the detailed analysis. It is rather curious that the issue appears only on _newer_ systems - we are more used to issues due to older CA chains and similar. It looks like an Apple bug on specific systems, so hopefully it will be fixed eventually. In general I was trying to avoid having to supply our own SSL library since that opens a whole can of worms - on one hand due the dependency issues (which libraries get compiled against what) and on the other hand we become responsible for security updates.
+> 
+> Thanks to Jeroen for the work-around (CURL_SSL_BACKEND=SecureTransport), using the native API is certainly preferred, there have been several issues with both OpenSSL and LibreSSL before. It seems that Apple has been flip-flopping with libcurl a lot - on El Capitan it was shipped with SecureTransport, on High-Sierra with LibreSSL, on Catalina and higher with both, but Libre the default.
+> 
+> I am somewhat less apprehensive to use static libcurl for R than SSL libraries as the fallout is a bit smaller. As a trial I have added static curl[2] which is close to the Apple build minus MultiSSL to big-sur nightly builds of R[3] and as expected that solves the problem. It may not be entirely unproblematic for package space, because packages often forget to prepend  --static when using static builds of libraries, and so do other dependencies that may use curl, but I'll see what comes out of it.
+> 
+> Cheers,
+> ?imon
+> 
+> [1] - https://github.com/R-macos/recipes
+> [2] - https://github.com/R-macos/recipes/blob/add-ons/recipes/curl
+> [3] - https://mac.r-project.org/
+> 
+> 
+> 
+>> On 10/01/2022, at 11:22 PM, Petr Bouchal <pbouchal at gmail.com> wrote:
+>> 
+>> Dear all,
+>> 
+>> In brief: on Monterey, R cannot reach certain web domains due to a bug in Libre SSL - and perhaps not relying on system curl/openssl in R would be a systematic solution to this and s?milar issues.
+>> 
+>> Specifically: on MacOS Monterey 12.1 using R 4.1.2, download.file() and other functions that rely on system-provided curl/openssl/Libre SSL (including in the curl package) have been failing on specific domains. 
+>> 
+>> So running 
+>> 
+>> download.file(?https://www.czso.cz/?, tempfile()) 
+>> 
+>> returns: 
+>> 
+>> status was ?SSL connect error?
+>> 
+>> the underlying error being
+>> 
+>> error:06FFF089:digital envelope routines:CRYPTO_internal:bad key length.
+>> 
+>> This is caused by the Libre SSL bundled in MacOS Monterey and also affects several other domains, most notably https://libzip.org.
+>> 
+>> It is clearly an OS bug but infortunately also a situation where it affects R users because of how R relates to system libraries and is very difficult to work around.
+>> 
+>> It has manifested on CRAN (causing a package archival) and Github outside of R, so is not caused by a specific machine. It can be replicated on both M1 and Intel and also occurs when using curl in the system command line. 
+>> 
+>> The czso.cz domain is the Czech Statistical Office, which makes it quite important for a number of users, also of a package I maintain (czso) which relies on accessing this domain. I have reported this to the server admin but since the problem is in the OS, I do not expect them to be able to help. I am not an expert in web security so cannot tell if there is anything in the certificates which could be causing this. In browsers, no such issue occurs and the server is configured correctly as per ssllabs.com testing. I have also reported to Apple but it is unclear whether they will fix this given the rare nature of the issue.
+>> 
+>> It is difficult to work around even on individual machines as replacing the system curl/openssl requires steps beyond what a most users are comfortable with (or should be doing to begin with). Using HTTP instead of HTTPS does not work, nor does using curl ?insecure and equivalents.
+>> 
+>> This brings back the question of whether R on MacOS should include its own openssl instead of relying on the system-provided library. This has been discussed on the r-devel list: https://stat.ethz.ch/pipermail/r-devel/2020-June/079657.html.
+>> 
+>> Apple also recommends against relying on shared openssl, if I understand this correctly: https://developer.apple.com/forums/thread/89051. Given Apple?s approach to openssl/Libre SSL in MacOS (the bundled Libre SSL version is 3 years old), such hard-to-handle issues are likely to reappear over time. (I don?t have in-depth knowledge of how R is compiled, so apologies for any inaccuracies; hopefully it is clear what I mean.)
+>> 
+>> I?d be grateful for any thoughts on how this might be handled in the specific case and perhaps generally.
+>> 
+>> Kind regards
+>> Petr Bouchal
+>> 
+>> _______________________________________________
+>> R-SIG-Mac mailing list
+>> R-SIG-Mac at r-project.org
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>> 
+> 
+
+
+From jeroenoom@ @end|ng |rom gm@||@com  Wed Jan 12 12:47:09 2022
+From: jeroenoom@ @end|ng |rom gm@||@com (Jeroen Ooms)
+Date: Wed, 12 Jan 2022 12:47:09 +0100
+Subject: [R-SIG-Mac] Libre SSL bug on MacOS Monterey => error in
+ download.file()
+In-Reply-To: <93256947-3E25-437C-9C31-5EF80A305E3F@R-project.org>
+References: <9A0E0F70-8DCF-4D03-884E-D4B088B15C04@gmail.com>
+ <93256947-3E25-437C-9C31-5EF80A305E3F@R-project.org>
+Message-ID: <CABFfbXs3z8oTLrRYzEgmEvJOhZttCJo9AoWqmAi5DR2LEP8apg@mail.gmail.com>
+
+On Tue, Jan 11, 2022 at 10:12 PM Simon Urbanek
+<simon.urbanek at r-project.org> wrote:
+>
+> Pet?e,
+>
+> thanks, for the detailed analysis. It is rather curious that the issue appears only on _newer_ systems - we are more used to issues due to older CA chains and similar. It looks like an Apple bug on specific systems, so hopefully it will be fixed eventually. In general I was trying to avoid having to supply our own SSL library since that opens a whole can of worms - on one hand due the dependency issues (which libraries get compiled against what) and on the other hand we become responsible for security updates.
+>
+> Thanks to Jeroen for the work-around (CURL_SSL_BACKEND=SecureTransport), using the native API is certainly preferred, there have been several issues with both OpenSSL and LibreSSL before. It seems that Apple has been flip-flopping with libcurl a lot - on El Capitan it was shipped with SecureTransport, on High-Sierra with LibreSSL, on Catalina and higher with both, but Libre the default.
+>
+> I am somewhat less apprehensive to use static libcurl for R than SSL libraries as the fallout is a bit smaller. As a trial I have added static curl[2] which is close to the Apple build minus MultiSSL to big-sur nightly builds of R[3] and as expected that solves the problem. It may not be entirely unproblematic for package space, because packages often forget to prepend  --static when using static builds of libraries, and so do other dependencies that may use curl, but I'll see what comes out of it.
+
+I would much recommend to stick with the apple version of libcurl;
+perhaps override the default ssl-backend if you like. There is some
+example code to do this in the curl package that you could adapt for
+base r: https://github.com/jeroen/curl/blob/master/src/ssl.c
+
+The benefit of dynamically linking to apple's libcurl is that we
+automatically get a version of libcurl+deps+certs that is tuned and
+maintained for that version of macos, including future ones. If you
+ship a version of base-R with a static libcurl now, that version of R
+may not work anymore a few years from now or on a future version of
+macos, when things have moved on (for example, when servers start to
+require TLS1.3).
+
+
+From @|mon@urb@nek @end|ng |rom R-project@org  Wed Jan 12 22:04:53 2022
+From: @|mon@urb@nek @end|ng |rom R-project@org (Simon Urbanek)
+Date: Thu, 13 Jan 2022 10:04:53 +1300
+Subject: [R-SIG-Mac] Libre SSL bug on MacOS Monterey => error in
+ download.file()
+In-Reply-To: <CABFfbXs3z8oTLrRYzEgmEvJOhZttCJo9AoWqmAi5DR2LEP8apg@mail.gmail.com>
+References: <9A0E0F70-8DCF-4D03-884E-D4B088B15C04@gmail.com>
+ <93256947-3E25-437C-9C31-5EF80A305E3F@R-project.org>
+ <CABFfbXs3z8oTLrRYzEgmEvJOhZttCJo9AoWqmAi5DR2LEP8apg@mail.gmail.com>
+Message-ID: <914B5B16-5213-4EA6-8AC6-BAED8E0F9671@R-project.org>
+
+
+> On Jan 13, 2022, at 12:47 AM, Jeroen Ooms <jeroenooms at gmail.com> wrote:
+> 
+> On Tue, Jan 11, 2022 at 10:12 PM Simon Urbanek
+> <simon.urbanek at r-project.org> wrote:
+>> 
+>> Pet?e,
+>> 
+>> thanks, for the detailed analysis. It is rather curious that the issue appears only on _newer_ systems - we are more used to issues due to older CA chains and similar. It looks like an Apple bug on specific systems, so hopefully it will be fixed eventually. In general I was trying to avoid having to supply our own SSL library since that opens a whole can of worms - on one hand due the dependency issues (which libraries get compiled against what) and on the other hand we become responsible for security updates.
+>> 
+>> Thanks to Jeroen for the work-around (CURL_SSL_BACKEND=SecureTransport), using the native API is certainly preferred, there have been several issues with both OpenSSL and LibreSSL before. It seems that Apple has been flip-flopping with libcurl a lot - on El Capitan it was shipped with SecureTransport, on High-Sierra with LibreSSL, on Catalina and higher with both, but Libre the default.
+>> 
+>> I am somewhat less apprehensive to use static libcurl for R than SSL libraries as the fallout is a bit smaller. As a trial I have added static curl[2] which is close to the Apple build minus MultiSSL to big-sur nightly builds of R[3] and as expected that solves the problem. It may not be entirely unproblematic for package space, because packages often forget to prepend  --static when using static builds of libraries, and so do other dependencies that may use curl, but I'll see what comes out of it.
+> 
+> I would much recommend to stick with the apple version of libcurl; perhaps override the default ssl-backend if you like. There is some example code to do this in the curl package that you could adapt for base r: https://github.com/jeroen/curl/blob/master/src/ssl.c
+> 
+> The benefit of dynamically linking to apple's libcurl is that we automatically get a version of libcurl+deps+certs that is tuned and maintained for that version of macos, including future ones. If you ship a version of base-R with a static libcurl now, that version of R may not work anymore a few years from now or on a future version of macos, when things have moved on (for example, when servers start to require TLS1.3).
+> 
+
+
+Yes, but if you are using an old version of R on a new system, you have a lot of other worries - you can't expect new technologies to work with old software. CURL itself has fewer evolution issues than SSL libraries. As I said, I am a big proponent of re-using system libraries as much as possible, but, for example, High Sierra doesn't ship with ST back-end support, so using a static version that does is better there as Apple doesn't not maintain the curl CAs but it does the system ones so it's arguably better. The current issue is quite curious since breaking on the latest system is quite unusual, just preferring ST works only because it is the latest system that breaks and it has the ST option.
+
+As Brian pointed out static curl has its own issues since its pkg-config flags are broken - that's why I have not activated the add-on recipes by default, I have seen those issues before.
+
+For R itself there are thee options:
+
+a) add CURL_SSL_BACKEND=${CURL_SSL_BACKEND-'SecureTransport'} to $R_HOME/etc/Renviron of the distribution
+
+b) add something like your https://github.com/r-devel/r-svn/pull/75/commits/79b22b461e527e8a46de84c145e8e5fb59e75d14 to R
+
+c) build against static libcurl
+
+
+The big advantage of the first one is that it applies to all processes, so even command line curl will then work and so will all packages.
+
+The drawback of the second one is that it only applies the R itself. The third one could be done both for R and packages, but causes headaches resp. requires slight patching of libcurl.pc. The advantage is that it can bring more recent curl to all older systems.
+
+I don't have a strong opinion. I am not thrilled with option b) because that is a hack just to react to something which is never a good idea from maintenance point of view (we would require all curl-based code to use it). So I think a) and c) are more palatable with a) having the benefit of handling non-R cases. A slight benefit of c) is that some dependencies require more recent curl version than provided by older systems, so that would cover it at the cost of maintaining the curl binaries. Finally, the real benefit of c) is that if Apple screws things up even more we don't care - we may not be at that point yet, though.
+
+Cheers,
+Simon
+
+
+From jeroenoom@ @end|ng |rom gm@||@com  Wed Jan 12 23:11:52 2022
+From: jeroenoom@ @end|ng |rom gm@||@com (Jeroen Ooms)
+Date: Wed, 12 Jan 2022 23:11:52 +0100
+Subject: [R-SIG-Mac] Libre SSL bug on MacOS Monterey => error in
+ download.file()
+In-Reply-To: <914B5B16-5213-4EA6-8AC6-BAED8E0F9671@R-project.org>
+References: <9A0E0F70-8DCF-4D03-884E-D4B088B15C04@gmail.com>
+ <93256947-3E25-437C-9C31-5EF80A305E3F@R-project.org>
+ <CABFfbXs3z8oTLrRYzEgmEvJOhZttCJo9AoWqmAi5DR2LEP8apg@mail.gmail.com>
+ <914B5B16-5213-4EA6-8AC6-BAED8E0F9671@R-project.org>
+Message-ID: <CABFfbXs+LczQzYAZ2e6-xYr7zNsr-1oyrpPM05MJ9no3VavcWw@mail.gmail.com>
+
+On Wed, Jan 12, 2022 at 10:05 PM Simon Urbanek
+<simon.urbanek at r-project.org> wrote:
+> Yes, but if you are using an old version of R on a new system, you have a lot of other worries - you can't expect new technologies to work with old software. CURL itself has fewer evolution issues than SSL libraries. As I said, I am a big proponent of re-using system libraries as much as possible, but, for example, High Sierra doesn't ship with ST back-end support, so using a static version that does is better there as Apple doesn't not maintain the curl CAs but it does the system ones so it's arguably better. The current issue is quite curious since breaking on the latest system is quite unusual, just preferring ST works only because it is the latest system that breaks and it has the ST option.
+>
+> As Brian pointed out static curl has its own issues since its pkg-config flags are broken - that's why I have not activated the add-on recipes by default, I have seen those issues before.
+>
+> For R itself there are thee options:
+>
+> a) add CURL_SSL_BACKEND=${CURL_SSL_BACKEND-'SecureTransport'} to $R_HOME/etc/Renviron of the distribution
+>
+> b) add something like your https://github.com/r-devel/r-svn/pull/75/commits/79b22b461e527e8a46de84c145e8e5fb59e75d14 to R
+>
+> c) build against static libcurl
+>
+>
+> The big advantage of the first one is that it applies to all processes, so even command line curl will then work and so will all packages.
+>
+> The drawback of the second one is that it only applies the R itself. The third one could be done both for R and packages, but causes headaches resp. requires slight patching of libcurl.pc. The advantage is that it can bring more recent curl to all older systems.
+>
+> I don't have a strong opinion. I am not thrilled with option b) because that is a hack just to react to something which is never a good idea from maintenance point of view (we would require all curl-based code to use it). So I think a) and c) are more palatable with a) having the benefit of handling non-R cases. A slight benefit of c) is that some dependencies require more recent curl version than provided by older systems, so that would cover it at the cost of maintaining the curl binaries. Finally, the real benefit of c) is that if Apple screws things up even more we don't care - we may not be at that point yet, though.
+
+I don't think apple screwed up per se; they probably tested several
+configurations and picked this one to be the safest default. TLS is a
+complex protocol with many versions and implementations; if some weird
+server uses some non-standard cipher or unusual response, it may just
+depend on the TLS library if it can handle that. I'm sure you'll be
+able to find counter examples where libre/openssl works and
+SecureTransport does not. For example, a case that we often encounter
+on Windows are corporate networks which require connecting via
+authenticated proxy servers or using a TLS client cert, which only
+works on certain back-ends, see the table in:
+https://cran.r-project.org/web/packages/curl/vignettes/windows.html
+
+So I much favor of option A. This introduces the least complexity, and
+keeps the ability for users to undo our change and switch back to
+CURL_SSL_BACKEND=openssl in their .Renviron. Also it is a big benefit
+in practice that curl in R behaves the same as command line curl on
+that same machine, in order to narrow down if a connection problem is
+a bug in our R code, or if it also exists outside of R.
+
+
+From k@@perd@n|e|h@n@en @end|ng |rom gm@||@com  Thu Jan 13 02:56:21 2022
+From: k@@perd@n|e|h@n@en @end|ng |rom gm@||@com (Kasper Daniel Hansen)
+Date: Wed, 12 Jan 2022 20:56:21 -0500
+Subject: [R-SIG-Mac] Libre SSL bug on MacOS Monterey => error in
+ download.file()
+In-Reply-To: <CABFfbXs+LczQzYAZ2e6-xYr7zNsr-1oyrpPM05MJ9no3VavcWw@mail.gmail.com>
+References: <9A0E0F70-8DCF-4D03-884E-D4B088B15C04@gmail.com>
+ <93256947-3E25-437C-9C31-5EF80A305E3F@R-project.org>
+ <CABFfbXs3z8oTLrRYzEgmEvJOhZttCJo9AoWqmAi5DR2LEP8apg@mail.gmail.com>
+ <914B5B16-5213-4EA6-8AC6-BAED8E0F9671@R-project.org>
+ <CABFfbXs+LczQzYAZ2e6-xYr7zNsr-1oyrpPM05MJ9no3VavcWw@mail.gmail.com>
+Message-ID: <CAC2h7uubwuzQnYNYJH2UwRBYtTfJsEFtZTu6Acv=eRoC=w4PvQ@mail.gmail.com>
+
+I am not an expert, but it seems to me that switching the backend is a
+runtime setting. Couldn't we detect which version of OS X we're running and
+then select the backend conditionally on that test?
+
+Best,
+Kasper
+
+On Wed, Jan 12, 2022 at 5:12 PM Jeroen Ooms <jeroenooms at gmail.com> wrote:
+
+> On Wed, Jan 12, 2022 at 10:05 PM Simon Urbanek
+> <simon.urbanek at r-project.org> wrote:
+> > Yes, but if you are using an old version of R on a new system, you have
+> a lot of other worries - you can't expect new technologies to work with old
+> software. CURL itself has fewer evolution issues than SSL libraries. As I
+> said, I am a big proponent of re-using system libraries as much as
+> possible, but, for example, High Sierra doesn't ship with ST back-end
+> support, so using a static version that does is better there as Apple
+> doesn't not maintain the curl CAs but it does the system ones so it's
+> arguably better. The current issue is quite curious since breaking on the
+> latest system is quite unusual, just preferring ST works only because it is
+> the latest system that breaks and it has the ST option.
+> >
+> > As Brian pointed out static curl has its own issues since its pkg-config
+> flags are broken - that's why I have not activated the add-on recipes by
+> default, I have seen those issues before.
+> >
+> > For R itself there are thee options:
+> >
+> > a) add CURL_SSL_BACKEND=${CURL_SSL_BACKEND-'SecureTransport'} to
+> $R_HOME/etc/Renviron of the distribution
+> >
+> > b) add something like your
+> https://github.com/r-devel/r-svn/pull/75/commits/79b22b461e527e8a46de84c145e8e5fb59e75d14
+> to R
+> >
+> > c) build against static libcurl
+> >
+> >
+> > The big advantage of the first one is that it applies to all processes,
+> so even command line curl will then work and so will all packages.
+> >
+> > The drawback of the second one is that it only applies the R itself. The
+> third one could be done both for R and packages, but causes headaches resp.
+> requires slight patching of libcurl.pc. The advantage is that it can bring
+> more recent curl to all older systems.
+> >
+> > I don't have a strong opinion. I am not thrilled with option b) because
+> that is a hack just to react to something which is never a good idea from
+> maintenance point of view (we would require all curl-based code to use it).
+> So I think a) and c) are more palatable with a) having the benefit of
+> handling non-R cases. A slight benefit of c) is that some dependencies
+> require more recent curl version than provided by older systems, so that
+> would cover it at the cost of maintaining the curl binaries. Finally, the
+> real benefit of c) is that if Apple screws things up even more we don't
+> care - we may not be at that point yet, though.
+>
+> I don't think apple screwed up per se; they probably tested several
+> configurations and picked this one to be the safest default. TLS is a
+> complex protocol with many versions and implementations; if some weird
+> server uses some non-standard cipher or unusual response, it may just
+> depend on the TLS library if it can handle that. I'm sure you'll be
+> able to find counter examples where libre/openssl works and
+> SecureTransport does not. For example, a case that we often encounter
+> on Windows are corporate networks which require connecting via
+> authenticated proxy servers or using a TLS client cert, which only
+> works on certain back-ends, see the table in:
+> https://cran.r-project.org/web/packages/curl/vignettes/windows.html
+>
+> So I much favor of option A. This introduces the least complexity, and
+> keeps the ability for users to undo our change and switch back to
+> CURL_SSL_BACKEND=openssl in their .Renviron. Also it is a big benefit
+> in practice that curl in R behaves the same as command line curl on
+> that same machine, in order to narrow down if a connection problem is
+> a bug in our R code, or if it also exists outside of R.
+>
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>
+
+
+-- 
+Best,
+Kasper
+
+	[[alternative HTML version deleted]]
+
+
+From @|mon@urb@nek @end|ng |rom r-project@org  Fri Jan 14 08:34:11 2022
+From: @|mon@urb@nek @end|ng |rom r-project@org (Simon Urbanek)
+Date: Fri, 14 Jan 2022 20:34:11 +1300
+Subject: [R-SIG-Mac] Mac Builder offline
+Message-ID: <07EBE91B-22B1-4317-B6FE-4522ABA02B2A@r-project.org>
+
+The hardware connecting the Mac Builder network has died so the service is currently offline. Due to complicated reasons the service likely cannot be restored before Monday. I apologize for any inconvenience this may cause.
+
+Cheers,
+Simon
+
+
+From m@x|m|||@n@d@rohde @end|ng |rom V@nderb||t@Edu  Thu Jan 13 19:32:12 2022
+From: m@x|m|||@n@d@rohde @end|ng |rom V@nderb||t@Edu (Rohde, Maximilian D)
+Date: Thu, 13 Jan 2022 18:32:12 +0000
+Subject: [R-SIG-Mac] Error identifying system version in sessionInfo()
+Message-ID: <etPan.61e0702c.3b3b233b.121f@vanderbilt.edu>
+
+Hello,
+
+I have encountered a bug that I have documented here: https://stackoverflow.com/questions/70690684/wrong-session-info-in-when-knitting-in-r-markdown?noredirect=1#comment124971021_70690684
+
+In brief, the issue is that running the `sessionInfo()` function in a terminal session of R gives the wrong operating system for my computer. I am running Monterey 12.1, but it returns Big Sur 10.16. However, running the same command in the RStudio console gives the correct operating system.
+
+I have narrowed down the problem to this command giving different output depending on if it is run in RStudio or in the terminal: `readLines("/System/Library/CoreServices/SystemVersion.plist?)`
+
+Any help is appreciated, thank you!
+
+Best,
+Max
+
+	[[alternative HTML version deleted]]
+
+
+From r|p|ey @end|ng |rom @t@t@@ox@@c@uk  Sat Jan 15 08:51:44 2022
+From: r|p|ey @end|ng |rom @t@t@@ox@@c@uk (Prof Brian Ripley)
+Date: Sat, 15 Jan 2022 07:51:44 +0000
+Subject: [R-SIG-Mac] Error identifying system version in sessionInfo()
+In-Reply-To: <etPan.61e0702c.3b3b233b.121f@vanderbilt.edu>
+References: <etPan.61e0702c.3b3b233b.121f@vanderbilt.edu>
+Message-ID: <b5eb092b-9ab0-2693-0962-07b447867773@stats.ox.ac.uk>
+
+On 13/01/2022 18:32, Rohde, Maximilian D wrote:
+> Hello,
+> 
+> I have encountered a bug that I have documented here: https://stackoverflow.com/questions/70690684/wrong-session-info-in-when-knitting-in-r-markdown?noredirect=1#comment124971021_70690684
+> 
+> In brief, the issue is that running the `sessionInfo()` function in a terminal session of R gives the wrong operating system for my computer. I am running Monterey 12.1, but it returns Big Sur 10.16. However, running the same command in the RStudio console gives the correct operating system.
+> 
+> I have narrowed down the problem to this command giving different output depending on if it is run in RStudio or in the terminal: `readLines("/System/Library/CoreServices/SystemVersion.plist?)`
+> 
+> Any help is appreciated, thank you!
+
+This is documented!  ?sessionInfo says
+
+      Where R was compiled under macOS 10.x (as the CRAN Intel
+      distributions have been) but running under ?Big Sur? or later,
+      macOS reports itself as ?10.16? (which R recognizes as ?Big
+      Sur/Monterey?) and not ?11.x? or ?12.x?.
+
+This is a bug in macOS, not in R.
+
+
+
+> 
+> Best,
+> Max
+> 
+> 	[[alternative HTML version deleted]]
+
+Please follow the posting guide, do your own homework and not send HTML.
+
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+
+
+-- 
+Brian D. Ripley,                  ripley at stats.ox.ac.uk
+Emeritus Professor of Applied Statistics, University of Oxford
+
+
+From @|mon@urb@nek @end|ng |rom R-project@org  Sun Jan 16 22:34:18 2022
+From: @|mon@urb@nek @end|ng |rom R-project@org (Simon Urbanek)
+Date: Mon, 17 Jan 2022 10:34:18 +1300
+Subject: [R-SIG-Mac] Mac Builder offline
+In-Reply-To: <07EBE91B-22B1-4317-B6FE-4522ABA02B2A@r-project.org>
+References: <07EBE91B-22B1-4317-B6FE-4522ABA02B2A@r-project.org>
+Message-ID: <0D38B4E2-8DFA-4575-9D77-A4FEDBEACDD7@R-project.org>
+
+The network equipment has been replaced and the service is back online. Let me know if you encounter any issues.
+
+Cheers,
+Simon
+
+
+> On Jan 14, 2022, at 8:34 PM, Simon Urbanek <simon.urbanek at R-project.org> wrote:
+> 
+> The hardware connecting the Mac Builder network has died so the service is currently offline. Due to complicated reasons the service likely cannot be restored before Monday. I apologize for any inconvenience this may cause.
+> 
+> Cheers,
+> Simon
+
+
+From @@@yougoe @end|ng |rom |c|oud@com  Sun Jan 23 00:33:27 2022
+From: @@@yougoe @end|ng |rom |c|oud@com (YearNorth)
+Date: Sat, 22 Jan 2022 18:33:27 -0500
+Subject: [R-SIG-Mac] R 4.1.2 (arm build) will output for nothing when
+ --interactive flag is passed
+Message-ID: <ED345B50-96C8-4967-A20E-0655D067E15C@icloud.com>
+
+Dear developer:
+
+On R 4.1.2 (arm build) in macOS 12.0.1, if call R from shell, when ?interactive flag is passed, it will output nothing.
+
+To reproduce it:
+
+```
+echo "base::cat('Hello\\\\n')\\n" | R --no-save --interactive > test.txt
+
+``
+
+doesn?t yield the derised output
+
+```
+R version 4.1.2 (2021-11-01) -- "Bird Hippie?
+Copyright (C) 2021 The R Foundation for Statistical Computing
+Platform: aarch64-apple-darwin20 (64-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+  Natural language support but running in an English locale
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R
+
+```
+
+The desired output should have a line `> base::cat('Hello\\n')\n` in test.txt
+
+This may be the critical problem for why `vscDebugger` (a R debugger for VSCode) does not work for arm build R.
+
+See the discussion on github 
+https://github.com/ManuelHentschel/VSCode-R-Debugger/issues/155#issuecomment-1014946738 <https://github.com/ManuelHentschel/VSCode-R-Debugger/issues/155#issuecomment-1014946738>
+https://github.com/ManuelHentschel/VSCode-R-Debugger/issues/155#issuecomment-1017250405 <https://github.com/ManuelHentschel/VSCode-R-Debugger/issues/155#issuecomment-1017250405>
+
+Thanks for your time reading and processing my email!
+
+Best,
+North
+Year
+	[[alternative HTML version deleted]]
+
+
+From @|mon@urb@nek @end|ng |rom R-project@org  Sun Jan 23 22:12:26 2022
+From: @|mon@urb@nek @end|ng |rom R-project@org (Simon Urbanek)
+Date: Mon, 24 Jan 2022 10:12:26 +1300
+Subject: [R-SIG-Mac] R 4.1.2 (arm build) will output for nothing when
+ --interactive flag is passed
+In-Reply-To: <ED345B50-96C8-4967-A20E-0655D067E15C@icloud.com>
+References: <ED345B50-96C8-4967-A20E-0655D067E15C@icloud.com>
+Message-ID: <B98536CA-0AAE-495D-9672-5F75DF452456@R-project.org>
+
+Year,
+
+that code doesn't output anything on stdout, because it is an error so it does show up on stderr:
+
+$ echo "base::cat('Hello\\\\n')\\n" | R --silent --no-save --interactive 
+> base::cat('Hello\\n')\n
+Error: unexpected '\\' in "base::cat('Hello\\n')\"
+
+What you probably meant was 
+
+$ echo 'cat("Hello\n")' | R --silent --no-save --interactive 
+> cat("Hello\n")
+Hello
+> 
+
+which works as expected.
+
+Cheers,
+Simon
+
+
+
+
+> On Jan 23, 2022, at 12:33 PM, YearNorth via R-SIG-Mac <r-sig-mac at r-project.org> wrote:
+> 
+> Dear developer:
+> 
+> On R 4.1.2 (arm build) in macOS 12.0.1, if call R from shell, when ?interactive flag is passed, it will output nothing.
+> 
+> To reproduce it:
+> 
+> ```
+> echo "base::cat('Hello\\\\n')\\n" | R --no-save --interactive > test.txt
+> 
+> ``
+> 
+> doesn?t yield the derised output
+> 
+> ```
+> R version 4.1.2 (2021-11-01) -- "Bird Hippie?
+> Copyright (C) 2021 The R Foundation for Statistical Computing
+> Platform: aarch64-apple-darwin20 (64-bit)
+> 
+> R is free software and comes with ABSOLUTELY NO WARRANTY.
+> You are welcome to redistribute it under certain conditions.
+> Type 'license()' or 'licence()' for distribution details.
+> 
+>  Natural language support but running in an English locale
+> 
+> R is a collaborative project with many contributors.
+> Type 'contributors()' for more information and
+> 'citation()' on how to cite R or R packages in publications.
+> 
+> Type 'demo()' for some demos, 'help()' for on-line help, or
+> 'help.start()' for an HTML browser interface to help.
+> Type 'q()' to quit R
+> 
+> ```
+> 
+> The desired output should have a line `> base::cat('Hello\\n')\n` in test.txt
+> 
+> This may be the critical problem for why `vscDebugger` (a R debugger for VSCode) does not work for arm build R.
+> 
+> See the discussion on github 
+> https://github.com/ManuelHentschel/VSCode-R-Debugger/issues/155#issuecomment-1014946738 <https://github.com/ManuelHentschel/VSCode-R-Debugger/issues/155#issuecomment-1014946738>
+> https://github.com/ManuelHentschel/VSCode-R-Debugger/issues/155#issuecomment-1017250405 <https://github.com/ManuelHentschel/VSCode-R-Debugger/issues/155#issuecomment-1017250405>
+> 
+> Thanks for your time reading and processing my email!
+> 
+> Best,
+> North
+> Year
+> 	[[alternative HTML version deleted]]
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+> 
+
+
+From p@u|@keyde| @end|ng |rom po@teo@de  Sun Jan 23 23:08:04 2022
+From: p@u|@keyde| @end|ng |rom po@teo@de (Paul Keydel)
+Date: Sun, 23 Jan 2022 22:08:04 +0000
+Subject: [R-SIG-Mac] R 4.1.2 (arm build) will output for nothing when
+ --interactive flag is passed
+In-Reply-To: <B98536CA-0AAE-495D-9672-5F75DF452456@R-project.org>
+References: <ED345B50-96C8-4967-A20E-0655D067E15C@icloud.com>
+ <B98536CA-0AAE-495D-9672-5F75DF452456@R-project.org>
+Message-ID: <348A578A-759A-4311-8F09-5029761A52A4@posteo.de>
+
+Dear all!
+
+Thanks for reporting the issue. I observed the same problem, but I messaged not quickly enough...
+In fact, it seems that the ARM build of R (4.1.2) cannot pick up the data piped in when the ?interactive flag is set. For reproducing I would suggest to use a simple ?print(2.718)? instead of the string below.
+
+So, here is what I got, just copied from the terminal (macOS 12.1)
+
+Pauls-Air:~ paul$ echo "print(2.718)" | R --quiet --no-save
+> print(2.718)
+[1] 2.718
+> 
+Pauls-Air:~ paul$ echo "print(2.718)" | R --quiet --no-save --interactive
+
+Pauls-Air:~ paul$
+
+The first one gives the expected output, but when I force R to be in interactive mode, R somehow ignores the input from stdin. And we don?t know why :-)
+
+Thanks for your time and help!
+
+Best,
+Paul
+
+
+> On 23. Jan 2022, at 22:12, Simon Urbanek <simon.urbanek at R-project.org> wrote:
+> 
+> Year,
+> 
+> that code doesn't output anything on stdout, because it is an error so it does show up on stderr:
+> 
+> $ echo "base::cat('Hello\\\\n')\\n" | R --silent --no-save --interactive 
+>> base::cat('Hello\\n')\n
+> Error: unexpected '\\' in "base::cat('Hello\\n')\"
+> 
+> What you probably meant was 
+> 
+> $ echo 'cat("Hello\n")' | R --silent --no-save --interactive 
+>> cat("Hello\n")
+> Hello
+>> 
+> 
+> which works as expected.
+> 
+> Cheers,
+> Simon
+> 
+> 
+> 
+> 
+>> On Jan 23, 2022, at 12:33 PM, YearNorth via R-SIG-Mac <r-sig-mac at r-project.org> wrote:
+>> 
+>> Dear developer:
+>> 
+>> On R 4.1.2 (arm build) in macOS 12.0.1, if call R from shell, when ?interactive flag is passed, it will output nothing.
+>> 
+>> To reproduce it:
+>> 
+>> ```
+>> echo "base::cat('Hello\\\\n')\\n" | R --no-save --interactive > test.txt
+>> 
+>> ``
+>> 
+>> doesn?t yield the derised output
+>> 
+>> ```
+>> R version 4.1.2 (2021-11-01) -- "Bird Hippie?
+>> Copyright (C) 2021 The R Foundation for Statistical Computing
+>> Platform: aarch64-apple-darwin20 (64-bit)
+>> 
+>> R is free software and comes with ABSOLUTELY NO WARRANTY.
+>> You are welcome to redistribute it under certain conditions.
+>> Type 'license()' or 'licence()' for distribution details.
+>> 
+>> Natural language support but running in an English locale
+>> 
+>> R is a collaborative project with many contributors.
+>> Type 'contributors()' for more information and
+>> 'citation()' on how to cite R or R packages in publications.
+>> 
+>> Type 'demo()' for some demos, 'help()' for on-line help, or
+>> 'help.start()' for an HTML browser interface to help.
+>> Type 'q()' to quit R
+>> 
+>> ```
+>> 
+>> The desired output should have a line `> base::cat('Hello\\n')\n` in test.txt
+>> 
+>> This may be the critical problem for why `vscDebugger` (a R debugger for VSCode) does not work for arm build R.
+>> 
+>> See the discussion on github 
+>> https://github.com/ManuelHentschel/VSCode-R-Debugger/issues/155#issuecomment-1014946738 <https://github.com/ManuelHentschel/VSCode-R-Debugger/issues/155#issuecomment-1014946738>
+>> https://github.com/ManuelHentschel/VSCode-R-Debugger/issues/155#issuecomment-1017250405 <https://github.com/ManuelHentschel/VSCode-R-Debugger/issues/155#issuecomment-1017250405>
+>> 
+>> Thanks for your time reading and processing my email!
+>> 
+>> Best,
+>> North
+>> Year
+>> 	[[alternative HTML version deleted]]
+>> 
+>> _______________________________________________
+>> R-SIG-Mac mailing list
+>> R-SIG-Mac at r-project.org
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>> 
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+
+
+	[[alternative HTML version deleted]]
+
+
+From @|mon@urb@nek @end|ng |rom R-project@org  Mon Jan 24 02:35:34 2022
+From: @|mon@urb@nek @end|ng |rom R-project@org (Simon Urbanek)
+Date: Mon, 24 Jan 2022 14:35:34 +1300
+Subject: [R-SIG-Mac] R 4.1.2 (arm build) will output for nothing when
+ --interactive flag is passed
+In-Reply-To: <348A578A-759A-4311-8F09-5029761A52A4@posteo.de>
+References: <ED345B50-96C8-4967-A20E-0655D067E15C@icloud.com>
+ <B98536CA-0AAE-495D-9672-5F75DF452456@R-project.org>
+ <348A578A-759A-4311-8F09-5029761A52A4@posteo.de>
+Message-ID: <353FD86E-16F4-4AA5-82B0-B62A2E75E5EA@R-project.org>
+
+Paul,
+
+thanks, you example is getting closer to the real issue which is that stdin is not treated as input if libedit is used and --interactive is specified:
+
+R 4.1.2 arm64 binary:
+$ echo x | R --quiet --no-save --interactive
+
+
+Current (4.1.2 patched or devel - https://mac.R-project.org) R arm64 binary:
+$ echo x | R --quiet --no-save --interactive
+> x
+Error: object 'x' not found
+> 
+
+
+The main difference is that the binaries are now using libreadline instead of Apple's libedit (see extSoftVersion()["readline"] ). So the short answer is update your R if that matters to you. I have not looked into the cause in libedit, so I don't know if that is a libedit bug or something we do.
+
+Cheers,
+Simon
+
+
+
+> On Jan 24, 2022, at 11:08 AM, Paul Keydel <paul.keydel at posteo.de> wrote:
+> 
+> Dear all!
+> 
+> Thanks for reporting the issue. I observed the same problem, but I messaged not quickly enough...
+> In fact, it seems that the ARM build of R (4.1.2) cannot pick up the data piped in when the ?interactive flag is set. For reproducing I would suggest to use a simple ?print(2.718)? instead of the string below.
+> 
+> So, here is what I got, just copied from the terminal (macOS 12.1)
+> 
+> Pauls-Air:~ paul$ echo "print(2.718)" | R --quiet --no-save
+>> print(2.718)
+> [1] 2.718
+>> 
+> Pauls-Air:~ paul$ echo "print(2.718)" | R --quiet --no-save --interactive
+> 
+> Pauls-Air:~ paul$
+> 
+> The first one gives the expected output, but when I force R to be in interactive mode, R somehow ignores the input from stdin. And we don?t know why :-)
+> 
+> Thanks for your time and help!
+> 
+> Best,
+> Paul
+> 
+> 
+>> On 23. Jan 2022, at 22:12, Simon Urbanek <simon.urbanek at R-project.org> wrote:
+>> 
+>> Year,
+>> 
+>> that code doesn't output anything on stdout, because it is an error so it does show up on stderr:
+>> 
+>> $ echo "base::cat('Hello\\\\n')\\n" | R --silent --no-save --interactive 
+>>> base::cat('Hello\\n')\n
+>> Error: unexpected '\\' in "base::cat('Hello\\n')\"
+>> 
+>> What you probably meant was 
+>> 
+>> $ echo 'cat("Hello\n")' | R --silent --no-save --interactive 
+>>> cat("Hello\n")
+>> Hello
+>>> 
+>> 
+>> which works as expected.
+>> 
+>> Cheers,
+>> Simon
+>> 
+>> 
+>> 
+>> 
+>>> On Jan 23, 2022, at 12:33 PM, YearNorth via R-SIG-Mac <r-sig-mac at r-project.org> wrote:
+>>> 
+>>> Dear developer:
+>>> 
+>>> On R 4.1.2 (arm build) in macOS 12.0.1, if call R from shell, when ?interactive flag is passed, it will output nothing.
+>>> 
+>>> To reproduce it:
+>>> 
+>>> ```
+>>> echo "base::cat('Hello\\\\n')\\n" | R --no-save --interactive > test.txt
+>>> 
+>>> ``
+>>> 
+>>> doesn?t yield the derised output
+>>> 
+>>> ```
+>>> R version 4.1.2 (2021-11-01) -- "Bird Hippie?
+>>> Copyright (C) 2021 The R Foundation for Statistical Computing
+>>> Platform: aarch64-apple-darwin20 (64-bit)
+>>> 
+>>> R is free software and comes with ABSOLUTELY NO WARRANTY.
+>>> You are welcome to redistribute it under certain conditions.
+>>> Type 'license()' or 'licence()' for distribution details.
+>>> 
+>>> Natural language support but running in an English locale
+>>> 
+>>> R is a collaborative project with many contributors.
+>>> Type 'contributors()' for more information and
+>>> 'citation()' on how to cite R or R packages in publications.
+>>> 
+>>> Type 'demo()' for some demos, 'help()' for on-line help, or
+>>> 'help.start()' for an HTML browser interface to help.
+>>> Type 'q()' to quit R
+>>> 
+>>> ```
+>>> 
+>>> The desired output should have a line `> base::cat('Hello\\n')\n` in test.txt
+>>> 
+>>> This may be the critical problem for why `vscDebugger` (a R debugger for VSCode) does not work for arm build R.
+>>> 
+>>> See the discussion on github 
+>>> https://github.com/ManuelHentschel/VSCode-R-Debugger/issues/155#issuecomment-1014946738 <https://github.com/ManuelHentschel/VSCode-R-Debugger/issues/155#issuecomment-1014946738>
+>>> https://github.com/ManuelHentschel/VSCode-R-Debugger/issues/155#issuecomment-1017250405 <https://github.com/ManuelHentschel/VSCode-R-Debugger/issues/155#issuecomment-1017250405>
+>>> 
+>>> Thanks for your time reading and processing my email!
+>>> 
+>>> Best,
+>>> North
+>>> Year
+>>> 	[[alternative HTML version deleted]]
+>>> 
+>>> _______________________________________________
+>>> R-SIG-Mac mailing list
+>>> R-SIG-Mac at r-project.org
+>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>>> 
+>> 
+>> _______________________________________________
+>> R-SIG-Mac mailing list
+>> R-SIG-Mac at r-project.org
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+> 
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+> 
+
+
+From p@u|@keyde| @end|ng |rom po@teo@de  Mon Jan 24 11:18:53 2022
+From: p@u|@keyde| @end|ng |rom po@teo@de (Paul Keydel)
+Date: Mon, 24 Jan 2022 10:18:53 +0000
+Subject: [R-SIG-Mac] R 4.1.2 (arm build) will output for nothing when
+ --interactive flag is passed
+In-Reply-To: <353FD86E-16F4-4AA5-82B0-B62A2E75E5EA@R-project.org>
+References: <ED345B50-96C8-4967-A20E-0655D067E15C@icloud.com>
+ <B98536CA-0AAE-495D-9672-5F75DF452456@R-project.org>
+ <348A578A-759A-4311-8F09-5029761A52A4@posteo.de>
+ <353FD86E-16F4-4AA5-82B0-B62A2E75E5EA@R-project.org>
+Message-ID: <64089502-589A-4C9B-8621-C5FBABE7996B@posteo.de>
+
+Hey Simon!
+
+Great! Thank you very much for the explanation!
+
+I installed the 4.1.2 patched and this version solved the issue, i.e. R treats stdin correctly.
+
+Cheers,
+Paul
+
+> On 24. Jan 2022, at 02:35, Simon Urbanek <simon.urbanek at R-project.org> wrote:
+> 
+> Paul,
+> 
+> thanks, you example is getting closer to the real issue which is that stdin is not treated as input if libedit is used and --interactive is specified:
+> 
+> R 4.1.2 arm64 binary:
+> $ echo x | R --quiet --no-save --interactive
+> 
+> 
+> Current (4.1.2 patched or devel - https://mac.R-project.org) R arm64 binary:
+> $ echo x | R --quiet --no-save --interactive
+>> x
+> Error: object 'x' not found
+>> 
+> 
+> 
+> The main difference is that the binaries are now using libreadline instead of Apple's libedit (see extSoftVersion()["readline"] ). So the short answer is update your R if that matters to you. I have not looked into the cause in libedit, so I don't know if that is a libedit bug or something we do.
+> 
+> Cheers,
+> Simon
+> 
+> 
+> 
+>> On Jan 24, 2022, at 11:08 AM, Paul Keydel <paul.keydel at posteo.de> wrote:
+>> 
+>> Dear all!
+>> 
+>> Thanks for reporting the issue. I observed the same problem, but I messaged not quickly enough...
+>> In fact, it seems that the ARM build of R (4.1.2) cannot pick up the data piped in when the ?interactive flag is set. For reproducing I would suggest to use a simple ?print(2.718)? instead of the string below.
+>> 
+>> So, here is what I got, just copied from the terminal (macOS 12.1)
+>> 
+>> Pauls-Air:~ paul$ echo "print(2.718)" | R --quiet --no-save
+>>> print(2.718)
+>> [1] 2.718
+>>> 
+>> Pauls-Air:~ paul$ echo "print(2.718)" | R --quiet --no-save --interactive
+>> 
+>> Pauls-Air:~ paul$
+>> 
+>> The first one gives the expected output, but when I force R to be in interactive mode, R somehow ignores the input from stdin. And we don?t know why :-)
+>> 
+>> Thanks for your time and help!
+>> 
+>> Best,
+>> Paul
+>> 
+>> 
+>>> On 23. Jan 2022, at 22:12, Simon Urbanek <simon.urbanek at R-project.org> wrote:
+>>> 
+>>> Year,
+>>> 
+>>> that code doesn't output anything on stdout, because it is an error so it does show up on stderr:
+>>> 
+>>> $ echo "base::cat('Hello\\\\n')\\n" | R --silent --no-save --interactive 
+>>>> base::cat('Hello\\n')\n
+>>> Error: unexpected '\\' in "base::cat('Hello\\n')\"
+>>> 
+>>> What you probably meant was 
+>>> 
+>>> $ echo 'cat("Hello\n")' | R --silent --no-save --interactive 
+>>>> cat("Hello\n")
+>>> Hello
+>>>> 
+>>> 
+>>> which works as expected.
+>>> 
+>>> Cheers,
+>>> Simon
+>>> 
+>>> 
+>>> 
+>>> 
+>>>> On Jan 23, 2022, at 12:33 PM, YearNorth via R-SIG-Mac <r-sig-mac at r-project.org> wrote:
+>>>> 
+>>>> Dear developer:
+>>>> 
+>>>> On R 4.1.2 (arm build) in macOS 12.0.1, if call R from shell, when ?interactive flag is passed, it will output nothing.
+>>>> 
+>>>> To reproduce it:
+>>>> 
+>>>> ```
+>>>> echo "base::cat('Hello\\\\n')\\n" | R --no-save --interactive > test.txt
+>>>> 
+>>>> ``
+>>>> 
+>>>> doesn?t yield the derised output
+>>>> 
+>>>> ```
+>>>> R version 4.1.2 (2021-11-01) -- "Bird Hippie?
+>>>> Copyright (C) 2021 The R Foundation for Statistical Computing
+>>>> Platform: aarch64-apple-darwin20 (64-bit)
+>>>> 
+>>>> R is free software and comes with ABSOLUTELY NO WARRANTY.
+>>>> You are welcome to redistribute it under certain conditions.
+>>>> Type 'license()' or 'licence()' for distribution details.
+>>>> 
+>>>> Natural language support but running in an English locale
+>>>> 
+>>>> R is a collaborative project with many contributors.
+>>>> Type 'contributors()' for more information and
+>>>> 'citation()' on how to cite R or R packages in publications.
+>>>> 
+>>>> Type 'demo()' for some demos, 'help()' for on-line help, or
+>>>> 'help.start()' for an HTML browser interface to help.
+>>>> Type 'q()' to quit R
+>>>> 
+>>>> ```
+>>>> 
+>>>> The desired output should have a line `> base::cat('Hello\\n')\n` in test.txt
+>>>> 
+>>>> This may be the critical problem for why `vscDebugger` (a R debugger for VSCode) does not work for arm build R.
+>>>> 
+>>>> See the discussion on github 
+>>>> https://github.com/ManuelHentschel/VSCode-R-Debugger/issues/155#issuecomment-1014946738 <https://github.com/ManuelHentschel/VSCode-R-Debugger/issues/155#issuecomment-1014946738>
+>>>> https://github.com/ManuelHentschel/VSCode-R-Debugger/issues/155#issuecomment-1017250405 <https://github.com/ManuelHentschel/VSCode-R-Debugger/issues/155#issuecomment-1017250405>
+>>>> 
+>>>> Thanks for your time reading and processing my email!
+>>>> 
+>>>> Best,
+>>>> North
+>>>> Year
+>>>> 	[[alternative HTML version deleted]]
+>>>> 
+>>>> _______________________________________________
+>>>> R-SIG-Mac mailing list
+>>>> R-SIG-Mac at r-project.org
+>>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>>>> 
+>>> 
+>>> _______________________________________________
+>>> R-SIG-Mac mailing list
+>>> R-SIG-Mac at r-project.org
+>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>> 
+>> 
+>> 	[[alternative HTML version deleted]]
+>> 
+>> _______________________________________________
+>> R-SIG-Mac mailing list
+>> R-SIG-Mac at r-project.org
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>> 
+> 
+
+
+	[[alternative HTML version deleted]]
+
+
+From ph||||p@j@rrett1 @end|ng |rom gm@||@com  Wed Jan 26 05:43:07 2022
+From: ph||||p@j@rrett1 @end|ng |rom gm@||@com (Jarrett Phillips)
+Date: Tue, 25 Jan 2022 23:43:07 -0500
+Subject: [R-SIG-Mac] Trouble compiling packages in R
+Message-ID: <CAMVrHdBvbE8nVvWLAYLLnJOh-+Q=50TXti57oJrkAWNH8GhuHg@mail.gmail.com>
+
+Hi All,
+I am new to the list and am running RStudio Version 1.4.1717 on macOS Big
+Sur 11.4 and have R 4.1.1 installed.
+
+I just re-installed Xcode as well as Command Line Tools via instructions at
+https://thecoatlessprofessor.com/programming/cpp/r-compiler-tools-for-rcpp-on-macos/
+
+I am attempting to build my package using devtools::build I have verified
+that both Rcpp and RcppArmadillo are working properly.
+
+However, when I build, I get the following error message
+
+ Error: package or namespace load failed for ?HACSim? in dyn.load(file,
+DLLpath = DLLpath, ...):
+    unable to load shared object
+'/private/var/folders/wv/4_z4h7ns57g7qvd600qgd__w0000gn/T/RtmpGe2Cqt/Rinst118e1e9f13a0/00LOCK-HACSim/00new/HACSim/libs/HACSim.so':
+
+ dlopen(/private/var/folders/wv/4_z4h7ns57g7qvd600qgd__w0000gn/T/RtmpGe2Cqt/Rinst118e1e9f13a0/00LOCK-HACSim/00new/HACSim/libs/HACSim.so,
+6): Symbol not found: ___addtf3
+     Referenced from: /usr/local/lib/libquadmath.0.dylib
+     Expected in: /usr/local/lib/libgcc_s_x86_64.1.dylib
+    in /usr/local/lib/libquadmath.0.dylib
+   Error: loading failed
+   Execution halted
+   ERROR: loading failed
+?  removing
+?/private/var/folders/wv/4_z4h7ns57g7qvd600qgd__w0000gn/T/RtmpGe2Cqt/Rinst118e1e9f13a0/HACSim?
+         -----------------------------------
+   ERROR: package installation failed
+Error in (function (command = NULL, args = character(), error_on_status =
+TRUE,  :
+  System command 'R' failed, exit status: 1, stdout + stderr (last 10
+lines):
+E>
+dlopen(/private/var/folders/wv/4_z4h7ns57g7qvd600qgd__w0000gn/T/RtmpGe2Cqt/Rinst118e1e9f13a0/00LOCK-HACSim/00new/HACSim/libs/HACSim.so,
+6): Symbol not found: ___addtf3
+E>   Referenced from: /usr/local/lib/libquadmath.0.dylib
+E>   Expected in: /usr/local/lib/libgcc_s_x86_64.1.dylib
+E>  in /usr/local/lib/libquadmath.0.dylib
+E> Error: loading failed
+E> Execution halted
+E> ERROR: loading failed
+E> * removing
+?/private/var/folders/wv/4_z4h7ns57g7qvd600qgd__w0000gn/T/RtmpGe2Cqt/Rinst118e1e9f13a0/HACSim?
+E>       -----------------------------------
+E> ERROR: package installation failed
+Type .Last.error.trace to see where the error occurred
+
+Here is the traceback:
+
+Stack trace:
+
+ 1. devtools:::build("HACSim_OO")
+ 2. pkgbuild::build(path = pkg, dest_path = path, binary = binary,  ...
+ 3. withr::with_temp_libpaths(rcmd_build_tools(options$cmd, c(options$path,
+ ...
+ 4. base:::force(code)
+ 5. pkgbuild:::rcmd_build_tools(options$cmd, c(options$path, options$args),
+ ...
+ 6. pkgbuild:::with_build_tools(callr::rcmd_safe(..., env = env,  ...
+ 7. callr::rcmd_safe(..., env = env, spinner = FALSE, show = FALSE,  ...
+ 8. callr:::run_r(options)
+ 9. base:::with(options, with_envvar(env, do.call(processx::run,  ...
+ 10. base:::with.default(options, with_envvar(env, do.call(processx::run,
+ ...
+ 11. base:::eval(substitute(expr), data, enclos = parent.frame())
+ 12. base:::eval(substitute(expr), data, enclos = parent.frame())
+ 13. callr:::with_envvar(env, do.call(processx::run, c(list(bin, args =
+real_c ...
+ 14. base:::force(code)
+ 15. base:::do.call(processx::run, c(list(bin, args = real_cmdargs,  ...
+ 16. (function (command = NULL, args = character(), error_on_status = TRUE,
+ ...
+ 17. throw(new_process_error(res, call = sys.call(), echo = echo,  ...
+
+ x System command 'R' failed, exit status: 1, stdout + stderr (last 10
+lines):
+E>
+dlopen(/private/var/folders/wv/4_z4h7ns57g7qvd600qgd__w0000gn/T/RtmpGe2Cqt/Rinst118e1e9f13a0/00LOCK-HACSim/00new/HACSim/libs/HACSim.so,
+6): Symbol not found: ___addtf3
+E>   Referenced from: /usr/local/lib/libquadmath.0.dylib
+E>   Expected in: /usr/local/lib/libgcc_s_x86_64.1.dylib
+E>  in /usr/local/lib/libquadmath.0.dylib
+E> Error: loading failed
+E> Execution halted
+E> ERROR: loading failed
+E> * removing
+?/private/var/folders/wv/4_z4h7ns57g7qvd600qgd__w0000gn/T/RtmpGe2Cqt/Rinst118e1e9f13a0/HACSim?
+E>       -----------------------------------
+E> ERROR: package installation failed
+
+
+Any ideas?
+
+Any assistance is warmly welcomed and greatly appreciated.
+
+Cheers,
+
+Jarrett
+
+	[[alternative HTML version deleted]]
+
+
+From @|mon@urb@nek @end|ng |rom R-project@org  Wed Jan 26 06:46:45 2022
+From: @|mon@urb@nek @end|ng |rom R-project@org (Simon Urbanek)
+Date: Wed, 26 Jan 2022 18:46:45 +1300
+Subject: [R-SIG-Mac] Trouble compiling packages in R
+In-Reply-To: <CAMVrHdBvbE8nVvWLAYLLnJOh-+Q=50TXti57oJrkAWNH8GhuHg@mail.gmail.com>
+References: <CAMVrHdBvbE8nVvWLAYLLnJOh-+Q=50TXti57oJrkAWNH8GhuHg@mail.gmail.com>
+Message-ID: <6DDF5246-3E13-4019-8E08-8298B443C738@R-project.org>
+
+Jarrett,
+
+you seem to have some ancient compilers in /usr/local. In order to avoid issue, I would strongly recommend removing the content of /usr/local (or putting it aside - see below). You don't need any extra tools on Big Sur, only standard Apple Xcode or CLT are needed (see R documentation).
+
+Also please note that your github repository (https://github.com/jphill01/HACSim.R) has binary files checked in which is a bad idea, so you may want to fix that problem first.
+
+Cheers,
+Simon
+
+
+to remove all files from /usr/local:
+sudo rm -rf /usr/local/*
+
+to put them aside:
+sudo -i
+cd /usr/local
+mkdir .bak
+mv * .bak/
+
+to restore  if needed:
+sudo -i
+cd /usr/local
+mv .bak/* .
+rmdir .bak
+
+
+
+
+
+> On Jan 26, 2022, at 5:43 PM, Jarrett Phillips <phillipsjarrett1 at gmail.com> wrote:
+> 
+> Hi All,
+> I am new to the list and am running RStudio Version 1.4.1717 on macOS Big
+> Sur 11.4 and have R 4.1.1 installed.
+> 
+> I just re-installed Xcode as well as Command Line Tools via instructions at
+> https://thecoatlessprofessor.com/programming/cpp/r-compiler-tools-for-rcpp-on-macos/
+> 
+> I am attempting to build my package using devtools::build I have verified
+> that both Rcpp and RcppArmadillo are working properly.
+> 
+> However, when I build, I get the following error message
+> 
+> Error: package or namespace load failed for ?HACSim? in dyn.load(file,
+> DLLpath = DLLpath, ...):
+>    unable to load shared object
+> '/private/var/folders/wv/4_z4h7ns57g7qvd600qgd__w0000gn/T/RtmpGe2Cqt/Rinst118e1e9f13a0/00LOCK-HACSim/00new/HACSim/libs/HACSim.so':
+> 
+> dlopen(/private/var/folders/wv/4_z4h7ns57g7qvd600qgd__w0000gn/T/RtmpGe2Cqt/Rinst118e1e9f13a0/00LOCK-HACSim/00new/HACSim/libs/HACSim.so,
+> 6): Symbol not found: ___addtf3
+>     Referenced from: /usr/local/lib/libquadmath.0.dylib
+>     Expected in: /usr/local/lib/libgcc_s_x86_64.1.dylib
+>    in /usr/local/lib/libquadmath.0.dylib
+>   Error: loading failed
+>   Execution halted
+>   ERROR: loading failed
+> ?  removing
+> ?/private/var/folders/wv/4_z4h7ns57g7qvd600qgd__w0000gn/T/RtmpGe2Cqt/Rinst118e1e9f13a0/HACSim?
+>         -----------------------------------
+>   ERROR: package installation failed
+> Error in (function (command = NULL, args = character(), error_on_status =
+> TRUE,  :
+>  System command 'R' failed, exit status: 1, stdout + stderr (last 10
+> lines):
+> E>
+> dlopen(/private/var/folders/wv/4_z4h7ns57g7qvd600qgd__w0000gn/T/RtmpGe2Cqt/Rinst118e1e9f13a0/00LOCK-HACSim/00new/HACSim/libs/HACSim.so,
+> 6): Symbol not found: ___addtf3
+> E>   Referenced from: /usr/local/lib/libquadmath.0.dylib
+> E>   Expected in: /usr/local/lib/libgcc_s_x86_64.1.dylib
+> E>  in /usr/local/lib/libquadmath.0.dylib
+> E> Error: loading failed
+> E> Execution halted
+> E> ERROR: loading failed
+> E> * removing
+> ?/private/var/folders/wv/4_z4h7ns57g7qvd600qgd__w0000gn/T/RtmpGe2Cqt/Rinst118e1e9f13a0/HACSim?
+> E>       -----------------------------------
+> E> ERROR: package installation failed
+> Type .Last.error.trace to see where the error occurred
+> 
+> Here is the traceback:
+> 
+> Stack trace:
+> 
+> 1. devtools:::build("HACSim_OO")
+> 2. pkgbuild::build(path = pkg, dest_path = path, binary = binary,  ...
+> 3. withr::with_temp_libpaths(rcmd_build_tools(options$cmd, c(options$path,
+> ...
+> 4. base:::force(code)
+> 5. pkgbuild:::rcmd_build_tools(options$cmd, c(options$path, options$args),
+> ...
+> 6. pkgbuild:::with_build_tools(callr::rcmd_safe(..., env = env,  ...
+> 7. callr::rcmd_safe(..., env = env, spinner = FALSE, show = FALSE,  ...
+> 8. callr:::run_r(options)
+> 9. base:::with(options, with_envvar(env, do.call(processx::run,  ...
+> 10. base:::with.default(options, with_envvar(env, do.call(processx::run,
+> ...
+> 11. base:::eval(substitute(expr), data, enclos = parent.frame())
+> 12. base:::eval(substitute(expr), data, enclos = parent.frame())
+> 13. callr:::with_envvar(env, do.call(processx::run, c(list(bin, args =
+> real_c ...
+> 14. base:::force(code)
+> 15. base:::do.call(processx::run, c(list(bin, args = real_cmdargs,  ...
+> 16. (function (command = NULL, args = character(), error_on_status = TRUE,
+> ...
+> 17. throw(new_process_error(res, call = sys.call(), echo = echo,  ...
+> 
+> x System command 'R' failed, exit status: 1, stdout + stderr (last 10
+> lines):
+> E>
+> dlopen(/private/var/folders/wv/4_z4h7ns57g7qvd600qgd__w0000gn/T/RtmpGe2Cqt/Rinst118e1e9f13a0/00LOCK-HACSim/00new/HACSim/libs/HACSim.so,
+> 6): Symbol not found: ___addtf3
+> E>   Referenced from: /usr/local/lib/libquadmath.0.dylib
+> E>   Expected in: /usr/local/lib/libgcc_s_x86_64.1.dylib
+> E>  in /usr/local/lib/libquadmath.0.dylib
+> E> Error: loading failed
+> E> Execution halted
+> E> ERROR: loading failed
+> E> * removing
+> ?/private/var/folders/wv/4_z4h7ns57g7qvd600qgd__w0000gn/T/RtmpGe2Cqt/Rinst118e1e9f13a0/HACSim?
+> E>       -----------------------------------
+> E> ERROR: package installation failed
+> 
+> 
+> Any ideas?
+> 
+> Any assistance is warmly welcomed and greatly appreciated.
+> 
+> Cheers,
+> 
+> Jarrett
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+> 
+
+
+From r|p|ey @end|ng |rom @t@t@@ox@@c@uk  Wed Jan 26 18:01:13 2022
+From: r|p|ey @end|ng |rom @t@t@@ox@@c@uk (Prof Brian Ripley)
+Date: Wed, 26 Jan 2022 17:01:13 +0000
+Subject: [R-SIG-Mac] Trouble compiling packages in R
+In-Reply-To: <6DDF5246-3E13-4019-8E08-8298B443C738@R-project.org>
+References: <CAMVrHdBvbE8nVvWLAYLLnJOh-+Q=50TXti57oJrkAWNH8GhuHg@mail.gmail.com>
+ <6DDF5246-3E13-4019-8E08-8298B443C738@R-project.org>
+Message-ID: <4a02b41d-da09-a99e-2ecb-e18f174ec554@stats.ox.ac.uk>
+
+On 26/01/2022 05:46, Simon Urbanek wrote:
+> Jarrett,
+> 
+> you seem to have some ancient compilers in /usr/local. In order to avoid issue, I would strongly recommend removing the content of /usr/local (or putting it aside - see below). You don't need any extra tools on Big Sur, only standard Apple Xcode or CLT are needed (see R documentation).
+
+Unless you need to compile Fortran code ... on x86_64 the manuals 
+recommend installing gfortran in /usr/local/gfortran and using a 
+complete path.
+
+For some packages you need other tools such as pkg-config, and the 
+Tcl/Tk support code is installed under /usr/local (as are some 
+symlinks).  So I would nuance Simon's suggestion by adding that you 
+should re-install R (preferably 4.1.2) once /usr/local/* has been moved 
+aside.
+
+> 
+> Also please note that your github repository (https://github.com/jphill01/HACSim.R) has binary files checked in which is a bad idea, so you may want to fix that problem first.
+> 
+> Cheers,
+> Simon
+> 
+> 
+> to remove all files from /usr/local:
+> sudo rm -rf /usr/local/*
+> 
+> to put them aside:
+> sudo -i
+> cd /usr/local
+> mkdir .bak
+> mv * .bak/
+> 
+> to restore  if needed:
+> sudo -i
+> cd /usr/local
+> mv .bak/* .
+> rmdir .bak
+> 
+> 
+> 
+> 
+> 
+>> On Jan 26, 2022, at 5:43 PM, Jarrett Phillips <phillipsjarrett1 at gmail.com> wrote:
+>>
+>> Hi All,
+>> I am new to the list and am running RStudio Version 1.4.1717 on macOS Big
+>> Sur 11.4 and have R 4.1.1 installed.
+>>
+>> I just re-installed Xcode as well as Command Line Tools via instructions at
+>> https://thecoatlessprofessor.com/programming/cpp/r-compiler-tools-for-rcpp-on-macos/
+>>
+>> I am attempting to build my package using devtools::build I have verified
+>> that both Rcpp and RcppArmadillo are working properly.
+>>
+>> However, when I build, I get the following error message
+>>
+>> Error: package or namespace load failed for ?HACSim? in dyn.load(file,
+>> DLLpath = DLLpath, ...):
+>>     unable to load shared object
+>> '/private/var/folders/wv/4_z4h7ns57g7qvd600qgd__w0000gn/T/RtmpGe2Cqt/Rinst118e1e9f13a0/00LOCK-HACSim/00new/HACSim/libs/HACSim.so':
+>>
+>> dlopen(/private/var/folders/wv/4_z4h7ns57g7qvd600qgd__w0000gn/T/RtmpGe2Cqt/Rinst118e1e9f13a0/00LOCK-HACSim/00new/HACSim/libs/HACSim.so,
+>> 6): Symbol not found: ___addtf3
+>>      Referenced from: /usr/local/lib/libquadmath.0.dylib
+>>      Expected in: /usr/local/lib/libgcc_s_x86_64.1.dylib
+>>     in /usr/local/lib/libquadmath.0.dylib
+>>    Error: loading failed
+>>    Execution halted
+>>    ERROR: loading failed
+>> ?  removing
+>> ?/private/var/folders/wv/4_z4h7ns57g7qvd600qgd__w0000gn/T/RtmpGe2Cqt/Rinst118e1e9f13a0/HACSim?
+>>          -----------------------------------
+>>    ERROR: package installation failed
+>> Error in (function (command = NULL, args = character(), error_on_status =
+>> TRUE,  :
+>>   System command 'R' failed, exit status: 1, stdout + stderr (last 10
+>> lines):
+>> E>
+>> dlopen(/private/var/folders/wv/4_z4h7ns57g7qvd600qgd__w0000gn/T/RtmpGe2Cqt/Rinst118e1e9f13a0/00LOCK-HACSim/00new/HACSim/libs/HACSim.so,
+>> 6): Symbol not found: ___addtf3
+>> E>   Referenced from: /usr/local/lib/libquadmath.0.dylib
+>> E>   Expected in: /usr/local/lib/libgcc_s_x86_64.1.dylib
+>> E>  in /usr/local/lib/libquadmath.0.dylib
+>> E> Error: loading failed
+>> E> Execution halted
+>> E> ERROR: loading failed
+>> E> * removing
+>> ?/private/var/folders/wv/4_z4h7ns57g7qvd600qgd__w0000gn/T/RtmpGe2Cqt/Rinst118e1e9f13a0/HACSim?
+>> E>       -----------------------------------
+>> E> ERROR: package installation failed
+>> Type .Last.error.trace to see where the error occurred
+>>
+>> Here is the traceback:
+>>
+>> Stack trace:
+>>
+>> 1. devtools:::build("HACSim_OO")
+>> 2. pkgbuild::build(path = pkg, dest_path = path, binary = binary,  ...
+>> 3. withr::with_temp_libpaths(rcmd_build_tools(options$cmd, c(options$path,
+>> ...
+>> 4. base:::force(code)
+>> 5. pkgbuild:::rcmd_build_tools(options$cmd, c(options$path, options$args),
+>> ...
+>> 6. pkgbuild:::with_build_tools(callr::rcmd_safe(..., env = env,  ...
+>> 7. callr::rcmd_safe(..., env = env, spinner = FALSE, show = FALSE,  ...
+>> 8. callr:::run_r(options)
+>> 9. base:::with(options, with_envvar(env, do.call(processx::run,  ...
+>> 10. base:::with.default(options, with_envvar(env, do.call(processx::run,
+>> ...
+>> 11. base:::eval(substitute(expr), data, enclos = parent.frame())
+>> 12. base:::eval(substitute(expr), data, enclos = parent.frame())
+>> 13. callr:::with_envvar(env, do.call(processx::run, c(list(bin, args =
+>> real_c ...
+>> 14. base:::force(code)
+>> 15. base:::do.call(processx::run, c(list(bin, args = real_cmdargs,  ...
+>> 16. (function (command = NULL, args = character(), error_on_status = TRUE,
+>> ...
+>> 17. throw(new_process_error(res, call = sys.call(), echo = echo,  ...
+>>
+>> x System command 'R' failed, exit status: 1, stdout + stderr (last 10
+>> lines):
+>> E>
+>> dlopen(/private/var/folders/wv/4_z4h7ns57g7qvd600qgd__w0000gn/T/RtmpGe2Cqt/Rinst118e1e9f13a0/00LOCK-HACSim/00new/HACSim/libs/HACSim.so,
+>> 6): Symbol not found: ___addtf3
+>> E>   Referenced from: /usr/local/lib/libquadmath.0.dylib
+>> E>   Expected in: /usr/local/lib/libgcc_s_x86_64.1.dylib
+>> E>  in /usr/local/lib/libquadmath.0.dylib
+>> E> Error: loading failed
+>> E> Execution halted
+>> E> ERROR: loading failed
+>> E> * removing
+>> ?/private/var/folders/wv/4_z4h7ns57g7qvd600qgd__w0000gn/T/RtmpGe2Cqt/Rinst118e1e9f13a0/HACSim?
+>> E>       -----------------------------------
+>> E> ERROR: package installation failed
+>>
+>>
+>> Any ideas?
+>>
+>> Any assistance is warmly welcomed and greatly appreciated.
+>>
+>> Cheers,
+>>
+>> Jarrett
+>>
+>> 	[[alternative HTML version deleted]]
+>>
+>> _______________________________________________
+>> R-SIG-Mac mailing list
+>> R-SIG-Mac at r-project.org
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>>
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+
+
+-- 
+Brian D. Ripley,                  ripley at stats.ox.ac.uk
+Emeritus Professor of Applied Statistics, University of Oxford
+
+
