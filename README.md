@@ -22,3 +22,6 @@ Infinite gratitude to the maintainers of R, CRAN, and these mailing lists.
 
 > This list is to get help about package development in R. The goal of the list is to provide a forum for learning about the package development process. We hope to build a community of R package developers who can help each other solve problems, and reduce some of the burden on the CRAN maintainers. If you are having problems developing a package or passing R CMD check, this is the place to ask!
 
+## `r-sig-mac` archives: Special interest group (SIC) on Mac + R
+
+> This list might be used also for bug reports or feature requests on the R application for OS X.
