@@ -1,0 +1,3235 @@
+From tom@@@k@||ber@ @end|ng |rom gm@||@com  Wed Nov  1 12:57:26 2023
+From: tom@@@k@||ber@ @end|ng |rom gm@||@com (Tomas Kalibera)
+Date: Wed, 1 Nov 2023 12:57:26 +0100
+Subject: [Rd] configure output with flexiblas [was Re: About FlexiBLAS in
+ the R-admin docs]
+In-Reply-To: <CALEXWq0BFQ62UbJt9yNmG6EWSgEJkyoQ2wT3XV7T2XxNERySEw@mail.gmail.com>
+References: <mailman.53774.3.1695895202.51578.r-devel@r-project.org>
+ <E698DC79-C258-4A95-A8C6-933A512CA108@gmail.com>
+ <5bcf6c56-bcfb-4f8b-8ba0-91375a5a540e@gmail.com>
+ <CALEXWq0BFQ62UbJt9yNmG6EWSgEJkyoQ2wT3XV7T2XxNERySEw@mail.gmail.com>
+Message-ID: <9cab2be0-618f-4f78-a353-9563670c795f@gmail.com>
+
+
+On 10/31/23 10:45, I?aki Ucar wrote:
+> On Tue, 24 Oct 2023 at 12:53, Tomas Kalibera <tomas.kalibera at gmail.com> wrote:
+>> The output of session info is based on that flexiblas is used and on
+>> what flexiblas tells R is the backend it uses. R does not attempt to
+>> check that optimized LAPACK functions from the backend really end up
+>> called via flexiblas, and I don't think it could be realistically checked.
+>>
+>> But I've checked one case manually in Fedora 38 using Linux perf tool.
+>> The following code:
+>>
+>> S <- toeplitz((10:1)/10)
+>> repeat { R <- rWishart(10, 20, S) }
+>>
+>> uses dpotrf from LAPACK, which is optimized in OpenBLAS and ATLAS and
+>> the corresponding optimized implementations really appeared on the
+>> sampling profile for me from the backend libraries.
+>>
+>> The comment from R Admin has been removed now and if anyone runs into
+>> the problem (that an optimized LAPACK function is not called from a
+>> backend that provides it), it would be best to report it with sufficient
+>> detail to flexiblas.
+> Thanks, Tomas. Yes, if an expected redirection to an optimized
+> function does not happen, that would be a bug in FlexiBLAS and should
+> be reported upstream.
+>
+> Related to this, a small detail... I noticed that the R configure
+> script reports "BLAS(FlexiBlas)" correctly as an external library, but
+> then "LAPACK(generic)". This should be FlexiBLAS too instead of
+> "generic". It doesn't make any difference, since the LAPACK symbols in
+> FlexiBLAS are called anyway, but it's misleading.
+
+This depends on how you configure R. On Fedora 38,
+
+../trunk/configure --with-blas=flexiblas --with-lapack
+
+reports "BLAS(FlexiBlas), LAPACK(in blas)" and from my reading of 
+R-admin, this is the recommended way of configuring with flexiblas.
+
+Configuring via (is this what you had in mind?):
+
+../trunk/configure --with-blas=flexiblas --with-lapack=flexiblas
+
+reports "BLAS(FlexiBlas), LAPACK(generic)". The build would actually do 
+"-lflexiblas -lflexiblas", the former for LAPACK (from --with-lapack 
+value) and the latter for BLAS (from --with-blas value). The "generic" 
+here means not from BLAS, but from an extra standalone library. Compare 
+with the first (recommended) use when the build would only link 
+"-lflexiblas" once.
+
+Best,
+Tomas
+
+>
+> Best,
+
+
+From |uc@r @end|ng |rom |edor@project@org  Wed Nov  1 13:29:50 2023
+From: |uc@r @end|ng |rom |edor@project@org (=?UTF-8?Q?I=C3=B1aki_Ucar?=)
+Date: Wed, 1 Nov 2023 13:29:50 +0100
+Subject: [Rd] 
+ configure output with flexiblas [was Re: About FlexiBLAS in
+ the R-admin docs]
+In-Reply-To: <9cab2be0-618f-4f78-a353-9563670c795f@gmail.com>
+References: <mailman.53774.3.1695895202.51578.r-devel@r-project.org>
+ <E698DC79-C258-4A95-A8C6-933A512CA108@gmail.com>
+ <5bcf6c56-bcfb-4f8b-8ba0-91375a5a540e@gmail.com>
+ <CALEXWq0BFQ62UbJt9yNmG6EWSgEJkyoQ2wT3XV7T2XxNERySEw@mail.gmail.com>
+ <9cab2be0-618f-4f78-a353-9563670c795f@gmail.com>
+Message-ID: <CALEXWq0fy-CGgDeraUhVh4gO3z1+BaZcmO9ioaXsj0D=a-CZ8g@mail.gmail.com>
+
+On Wed, 1 Nov 2023 at 12:57, Tomas Kalibera <tomas.kalibera at gmail.com> wrote:
+>
+>
+> On 10/31/23 10:45, I?aki Ucar wrote:
+> > On Tue, 24 Oct 2023 at 12:53, Tomas Kalibera <tomas.kalibera at gmail.com> wrote:
+> >> The output of session info is based on that flexiblas is used and on
+> >> what flexiblas tells R is the backend it uses. R does not attempt to
+> >> check that optimized LAPACK functions from the backend really end up
+> >> called via flexiblas, and I don't think it could be realistically checked.
+> >>
+> >> But I've checked one case manually in Fedora 38 using Linux perf tool.
+> >> The following code:
+> >>
+> >> S <- toeplitz((10:1)/10)
+> >> repeat { R <- rWishart(10, 20, S) }
+> >>
+> >> uses dpotrf from LAPACK, which is optimized in OpenBLAS and ATLAS and
+> >> the corresponding optimized implementations really appeared on the
+> >> sampling profile for me from the backend libraries.
+> >>
+> >> The comment from R Admin has been removed now and if anyone runs into
+> >> the problem (that an optimized LAPACK function is not called from a
+> >> backend that provides it), it would be best to report it with sufficient
+> >> detail to flexiblas.
+> > Thanks, Tomas. Yes, if an expected redirection to an optimized
+> > function does not happen, that would be a bug in FlexiBLAS and should
+> > be reported upstream.
+> >
+> > Related to this, a small detail... I noticed that the R configure
+> > script reports "BLAS(FlexiBlas)" correctly as an external library, but
+> > then "LAPACK(generic)". This should be FlexiBLAS too instead of
+> > "generic". It doesn't make any difference, since the LAPACK symbols in
+> > FlexiBLAS are called anyway, but it's misleading.
+>
+> This depends on how you configure R. On Fedora 38,
+>
+> ../trunk/configure --with-blas=flexiblas --with-lapack
+>
+> reports "BLAS(FlexiBlas), LAPACK(in blas)" and from my reading of
+> R-admin, this is the recommended way of configuring with flexiblas.
+>
+> Configuring via (is this what you had in mind?):
+>
+> ../trunk/configure --with-blas=flexiblas --with-lapack=flexiblas
+>
+> reports "BLAS(FlexiBlas), LAPACK(generic)". The build would actually do
+> "-lflexiblas -lflexiblas", the former for LAPACK (from --with-lapack
+> value) and the latter for BLAS (from --with-blas value). The "generic"
+> here means not from BLAS, but from an extra standalone library. Compare
+> with the first (recommended) use when the build would only link
+> "-lflexiblas" once.
+
+I see. I didn't understand that part then. I thought that a library
+should be specified.
+
+-- 
+I?aki ?car
+
+
+From henr|k@bengt@@on @end|ng |rom gm@||@com  Wed Nov  1 17:49:29 2023
+From: henr|k@bengt@@on @end|ng |rom gm@||@com (Henrik Bengtsson)
+Date: Wed, 1 Nov 2023 09:49:29 -0700
+Subject: [Rd] dim<-() changed in R-devel;
+ no longer removing "dimnames" when doing dim(x) <- dim(x)
+In-Reply-To: <25919.35617.446508.577753@stat.math.ethz.ch>
+References: <CAFDcVCTZTjS6ojk=7SordyK517NcKD8KoCK6RgLoYgcoZ13DnQ@mail.gmail.com>
+ <25919.35617.446508.577753@stat.math.ethz.ch>
+Message-ID: <CAFDcVCQp2sADajgfa1yAhvcha_mGEN7tvkKkh+dm-tacmr4g_A@mail.gmail.com>
+
+> I assume it did, or you would not have noticed ?
+
+I noticed it because I got a notice from CRAN about 'matrixStats'
+starting to fail on R-devel.  It was a non-critical failure, because
+it was due to how the package tests compare the results to the
+corresponding base-R implementation. Basically, for legacy reasons
+there was a `dim(res) <- dim` statement and anything following assumed
+the "dimnames" would be done. I've since rewritten the tests to not
+make such assumptions, which resulted in code that is easier to
+follow. So, there were good outcomes from this change too :)
+
+The discussion on whether certain R expressions (e.g. dim(x) <-
+dim(x)) should be no-op is interesting, but it's much bigger, and I
+can see how it becomes a quite complicated discussion.
+
+Thanks,
+
+Henrik
+
+
+On Mon, Oct 30, 2023 at 3:53?AM Martin Maechler
+<maechler at stat.math.ethz.ch> wrote:
+>
+>
+> >>>>> Henrik Bengtsson
+> >>>>>     on Sun, 29 Oct 2023 10:42:19 -0700 writes:
+>
+>     > Hello,
+>
+>     > the fix of PR18612
+>     > (https://bugs.r-project.org/show_bug.cgi?id=18612) in
+>     > r85380
+>     > (https://github.com/wch/r-source/commit/2653cc6203fce4c48874111c75bbccac3ac4e803)
+>     > caused a change in `dim<-()`.  Specifically, in the past,
+>     > any `dim<-()` assignment would _always_ remove "dimnames"
+>     > and "names" attributes per help("dim"):
+>
+>
+>     >     The replacement method changes the "dim" attribute
+>     > (provided the new value is compatible) and removes any
+>     > "dimnames" and "names" attributes.
+>
+>     > In the new version, assigning the same "dim" as before
+>     > will no longer remove "dimnames".  I'm reporting here to
+>     > check whether this change was intended, or if it was an
+>     > unintended side effect of the bug fix.
+>
+>     > For example, in R Under development (unstable) (2023-10-21
+>     > r85379), we would get:
+>
+>     >> x <- array(1:2, dim=c(1,2), dimnames=list("A",
+>     >> c("a","b"))) str(dimnames(x))
+>     > List of 2 $ : chr "A" $ : chr [1:2] "a" "b"
+>
+>     >> dim(x) <- dim(x) ## Removes "dimnames" no matter what
+>     >> str(dimnames(x))
+>     >  NULL
+>
+>
+>     > whereas in R Under development (unstable) (2023-10-21
+>     > r85380) and beyond, we now get:
+>
+>     >> x <- array(1:2, dim=c(1,2), dimnames=list("A",
+>     >> c("a","b"))) str(dimnames(x))
+>     > List of 2 $ : chr "A" $ : chr [1:2] "a" "b"
+>
+>     >> dim(x) <- dim(x) ## No longer removes "dimnames"
+>     >> str(dimnames(x))
+>     > List of 2 $ : chr "A" $ : chr [1:2] "a" "b"
+>
+>     >> dim(x) <- rev(dim(x)) ## Still removes "dimnames"
+>     >> str(dimnames(x))
+>     >  NULL
+>
+>     > /Henrik
+>
+> Thank you, Henrik.
+>
+> This is "funny" (in an unusal sense):
+> indeed, the change was *in*advertent, by me (svn rev 85380).
+>
+> I had experimentally {i.e., only in my own private version of R-devel!}
+> modified the behavior of `dim<-` somewhat
+> such it does *not* unnecessarily drop dimnames,
+> e.g., in your   `dim(x) <- dim(x)` case above,
+> one could really argue that it's a "true loss" if x loses
+> dimnames "unnecessarily" ...
+>
+> OTOH, I knew in the mean time that  `dim<-` has always been
+> documented to drop dimnames in all cases,  and even more
+> importantly, I got a strong recommendation to *not* go further
+> with this idea -- not only for back compatibility reasons, but
+> also for internal logical consistency.
+>
+> Most probably, we will just revert this inadvertent change,
+> but before that ... since it has been out in the wild anyway,
+> we could quickly consider if it *did* break code.
+>
+> I assume it did, or you would not have noticed ?
+>
+> Martin
+
+
+From tom@@@k@||ber@ @end|ng |rom gm@||@com  Wed Nov  1 19:47:23 2023
+From: tom@@@k@||ber@ @end|ng |rom gm@||@com (Tomas Kalibera)
+Date: Wed, 1 Nov 2023 19:47:23 +0100
+Subject: [Rd] 
+ configure output with flexiblas [was Re: About FlexiBLAS in
+ the R-admin docs]
+In-Reply-To: <CALEXWq0fy-CGgDeraUhVh4gO3z1+BaZcmO9ioaXsj0D=a-CZ8g@mail.gmail.com>
+References: <mailman.53774.3.1695895202.51578.r-devel@r-project.org>
+ <E698DC79-C258-4A95-A8C6-933A512CA108@gmail.com>
+ <5bcf6c56-bcfb-4f8b-8ba0-91375a5a540e@gmail.com>
+ <CALEXWq0BFQ62UbJt9yNmG6EWSgEJkyoQ2wT3XV7T2XxNERySEw@mail.gmail.com>
+ <9cab2be0-618f-4f78-a353-9563670c795f@gmail.com>
+ <CALEXWq0fy-CGgDeraUhVh4gO3z1+BaZcmO9ioaXsj0D=a-CZ8g@mail.gmail.com>
+Message-ID: <22cf8a28-7c7e-4396-83e1-5e1d22cd4a44@gmail.com>
+
+
+On 11/1/23 13:29, I?aki Ucar wrote:
+> On Wed, 1 Nov 2023 at 12:57, Tomas Kalibera <tomas.kalibera at gmail.com> wrote:
+>>
+>> On 10/31/23 10:45, I?aki Ucar wrote:
+>>> On Tue, 24 Oct 2023 at 12:53, Tomas Kalibera <tomas.kalibera at gmail.com> wrote:
+>>>> The output of session info is based on that flexiblas is used and on
+>>>> what flexiblas tells R is the backend it uses. R does not attempt to
+>>>> check that optimized LAPACK functions from the backend really end up
+>>>> called via flexiblas, and I don't think it could be realistically checked.
+>>>>
+>>>> But I've checked one case manually in Fedora 38 using Linux perf tool.
+>>>> The following code:
+>>>>
+>>>> S <- toeplitz((10:1)/10)
+>>>> repeat { R <- rWishart(10, 20, S) }
+>>>>
+>>>> uses dpotrf from LAPACK, which is optimized in OpenBLAS and ATLAS and
+>>>> the corresponding optimized implementations really appeared on the
+>>>> sampling profile for me from the backend libraries.
+>>>>
+>>>> The comment from R Admin has been removed now and if anyone runs into
+>>>> the problem (that an optimized LAPACK function is not called from a
+>>>> backend that provides it), it would be best to report it with sufficient
+>>>> detail to flexiblas.
+>>> Thanks, Tomas. Yes, if an expected redirection to an optimized
+>>> function does not happen, that would be a bug in FlexiBLAS and should
+>>> be reported upstream.
+>>>
+>>> Related to this, a small detail... I noticed that the R configure
+>>> script reports "BLAS(FlexiBlas)" correctly as an external library, but
+>>> then "LAPACK(generic)". This should be FlexiBLAS too instead of
+>>> "generic". It doesn't make any difference, since the LAPACK symbols in
+>>> FlexiBLAS are called anyway, but it's misleading.
+>> This depends on how you configure R. On Fedora 38,
+>>
+>> ../trunk/configure --with-blas=flexiblas --with-lapack
+>>
+>> reports "BLAS(FlexiBlas), LAPACK(in blas)" and from my reading of
+>> R-admin, this is the recommended way of configuring with flexiblas.
+>>
+>> Configuring via (is this what you had in mind?):
+>>
+>> ../trunk/configure --with-blas=flexiblas --with-lapack=flexiblas
+>>
+>> reports "BLAS(FlexiBlas), LAPACK(generic)". The build would actually do
+>> "-lflexiblas -lflexiblas", the former for LAPACK (from --with-lapack
+>> value) and the latter for BLAS (from --with-blas value). The "generic"
+>> here means not from BLAS, but from an extra standalone library. Compare
+>> with the first (recommended) use when the build would only link
+>> "-lflexiblas" once.
+> I see. I didn't understand that part then. I thought that a library
+> should be specified.
+
+I read this from R-Admin re --with-lapack:
+
+"In practice its main uses are without a value,
+
+- with an `enhanced' BLAS such as ATLAS, FlexiBLAS, MKL or OpenBLAS which
+contains a full LAPACK (to avoid possible conflicts), or
+
+- on Debian/Ubuntu systems to select the system liblapack which can
+be switched by the `alternatives' mechanism.
+"
+
+I've updated configure in R-devel to detect when the same library is 
+specified explicitly for blas and lapack, so that now even that is 
+handled and reported as LAPACK in Blas libs.
+
+Best
+Tomas
+
+>
+
+
+From kry|ov@r00t @end|ng |rom gm@||@com  Fri Nov  3 15:54:08 2023
+From: kry|ov@r00t @end|ng |rom gm@||@com (Ivan Krylov)
+Date: Fri, 3 Nov 2023 17:54:08 +0300
+Subject: [Rd] svd() of a 30000 by 30000 matrix segfaults: 32-bit length
+ overflow in LAPACK?
+Message-ID: <20231103175408.38a07b4a@arachnoid>
+
+Dear Dr. Robert M Flight, dear R-developers,
+
+By an accident, I've noticed this problem reported on Mastodon [1].
+
+On a computer with ?32G of RAM, running the following code (which may
+take 5 CPU-hours and allocate 27G of RAM!) results in a segfault:
+
+n_val <- 30000
+tmp_matrix <- matrix(rnorm((n_val ^ 2) / 2), nrow = n_val, ncol = n_val)
+svd_res <- svd(tmp_matrix)
+
+Tim Taylor says [2] that this doesn't fail for a 20000 by 20000 matrix,
+which suggests a 32-bit integer overflow: 30000*30000*8 is 7.2e9, which
+is more than 4.3e9, which is more than 2^32, while 20000*20000*8 is
+3.2e9, slightly below the threshold.
+
+Here's the backtrace from the crash:
+
+#0  0x00007ffff462ac71 in dlasd3 (nl=468, nr=467, sqre=1, k=921, d=..., q=..., ldq=921, dsigma=..., u=...,
+    ldu=30000, u2=..., ldu2=936, vt=..., ldvt=30000, vt2=..., ldvt2=937, idxc=..., ctot=..., z=..., info=0)
+    at ../../../../src/modules/lapack/dlapack.f:82312
+#1  0x00007ffff464578b in dlasd1 (nl=468, nr=467, sqre=1, d=..., alpha=-0.58048560936028271,
+    beta=-0.40955467846435345, u=..., ldu=30000, vt=..., ldvt=30000, idxq=..., iwork=..., work=..., info=0)
+    at ../../../../src/modules/lapack/dlapack.f:81271
+#2  0x00007ffff4681bf2 in dlasd0 (n=29964, sqre=0, d=..., e=..., u=..., ldu=30000, vt=..., ldvt=30000, smlsiz=25,
+    iwork=..., work=..., info=0) at ../../../../src/modules/lapack/dlapack.f:80956
+#3  0x00007ffff468fd5e in dbdsdc (uplo=..., compq=..., n=30000, d=..., e=..., u=..., ldu=30000, vt=...,
+    ldvt=30000, q=..., iq=..., work=..., iwork=..., info=0, _uplo=1, _compq=1)
+    at ../../../../src/modules/lapack/dlapack.f:1525
+#4  0x00007ffff46c1f81 in dgesdd (jobz=..., m=30000, n=30000, a=..., lda=30000, s=..., u=..., ldu=30000, vt=...,
+    ldvt=30000, work=..., lwork=2010000, iwork=..., info=0, _jobz=1)
+    at ../../../../src/modules/lapack/dlapack.f:23312
+#5  0x00007ffff4c5550f in La_svd (jobu=<optimized out>, x=<optimized out>, s=0x555557b88670, u=0x7ffbc379f010,
+    vt=0x7ffa1652a010) at ../../../../src/include/Rinlinedfuns.h:120
+
+The place of the crash and the state of the registers suggests some
+kind of buffer overrun:
+
+(gdb) frame 0
+#0  0x00007ffff462ac71 in dlasd3 (nl=468, nr=467, sqre=1, k=921, d=..., q=..., ldq=921, dsigma=..., u=...,
+    ldu=30000, u2=..., ldu2=936, vt=..., ldvt=30000, vt2=..., ldvt2=937, idxc=..., ctot=..., z=..., info=0)
+    at ../../../../src/modules/lapack/dlapack.f:82312
+82312               Q( J, I ) = U( JC, I ) / TEMP
+(gdb) disas
+...
+   0x00007ffff462ac60 <+1824>:  movslq -0x4(%r10,%rdx,4),%rsi
+   0x00007ffff462ac65 <+1829>:  add    %r12,%rsi
+   0x00007ffff462ac68 <+1832>:  movsd  (%rcx,%rsi,8),%xmm1
+   0x00007ffff462ac6d <+1837>:  divsd  %xmm0,%xmm1
+=> 0x00007ffff462ac71 <+1841>:  movsd  %xmm1,(%rbx,%rdx,8)
+...
+(gdb) info reg
+rbx            0x7ffff45c38d8      140737293072600
+rcx            0x7ffbc379f040      140719293067328
+rdx            0xe5                229
+rsi            0x517d2c            5340460
+
+0x7ffff45c38d8 looks precariously close to the end of the valid
+userspace address range for processes typically running on my computer.
+I was also able to reproduce this with OpenBLAS (0.3.5, LAPACK 3.8.0).
+
+We seem to be overflowing the WORK array. The DGESDD documentation says
+that for JOBZ = 'S', WORK must be of length >= 4*mn*mn + 7*mn, where
+mn = min(M, N). For M = N = 30000, this comes out to 3600210000, while
+the actual length of the WORK array is only 2010000 (as returned from a
+previous call to DGESDD with LWORK = -1).
+
+I think this is caused by an overflow in the value of the BDSPAC
+variable. At the point where MINWRK is assigned (MAX(MINWRK,MAXWRK) to
+become LWORK later), the following can be observed:
+
+22721                           MINWRK = 3*N + MAX( M, BDSPAC )
+0x7ffff7e9a2e0 <dgesdd_+7632>   cmp    %ecx,%esi
+(gdb) p M
+$48 = 30000
+(gdb) p BDSPAC
+$49 = <optimized out>
+(gdb) p $ecx
+$50 = -1594847296
+(gdb) p $esi
+$51 = 30000
+
+The debugger insists that the BDSPAC variable is optimised out for most
+of the duration of its existence, but it can be proven that it
+overflows:
+
+22613                  BDSPAC = 3*N*N + 4*N
+(gdb) ptype BDSPAC
+type = integer(kind=4)
+(gdb) p BDSPAC
+$60 = <optimized out>
+(gdb) p (int32_t)(3*M*M + 4*M)
+$61 = -1594847296
+
+Is there anything R can do at this point, given the required length of
+LWORK being impossible to represent using a signed 32-bit integer?
+
+-- 
+Best regards,
+Ivan
+
+[1] https://mastodon.social/@rmflight/111341279750995911
+
+[2] https://mastodon.social/@_TimTaylor at fosstodon.org/111341425112070441
+
+
+From hp@ge@@on@g|thub @end|ng |rom gm@||@com  Fri Nov  3 23:10:40 2023
+From: hp@ge@@on@g|thub @end|ng |rom gm@||@com (=?UTF-8?B?SGVydsOpIFBhZ8Oocw==?=)
+Date: Fri, 3 Nov 2023 15:10:40 -0700
+Subject: [Rd] 'R CMD INSTALL' keeps going on despite serious errors,
+ and returns exit code 0
+Message-ID: <81945eb7-df8f-446d-b7e7-8f2b591807b4@gmail.com>
+
+Hi list,
+
+Here is an example:
+
+ ??? hpages at XPS15:~$ R CMD INSTALL CoreGx
+ ??? * installing to library ?/home/hpages/R/R-4.4.r85388/site-library?
+ ??? * installing *source* package ?CoreGx? ...
+ ??? ** using staged installation
+ ??? ** R
+ ??? ** data
+ ??? *** moving datasets to lazyload DB
+ ??? ** inst
+ ??? ** byte-compile and prepare package for lazy loading
+ ??? Error : in method for ?updateObject? with signature 
+?object="CoreSet"?:? arguments (?verbose?) after ?...? in the generic 
+must appear in the method, in the same place at the end of the argument list
+ ??? Error: unable to load R code in package ?CoreGx?
+ ??? ** help
+ ??? *** installing help indices
+ ??? ** building package indices
+ ??? ** installing vignettes
+ ??? ** testing if installed package can be loaded from temporary location
+ ??? Error : in method for ?updateObject? with signature 
+?object="CoreSet"?:? arguments (?verbose?) after ?...? in the generic 
+must appear in the method, in the same place at the end of the argument list
+ ??? Error: package or namespace load failed for ?CoreGx?:
+ ?unable to load R code in package ?CoreGx?
+ ??? Error: loading failed
+ ??? ** testing if installed package can be loaded from final location
+ ??? Error : in method for ?updateObject? with signature 
+?object="CoreSet"?:? arguments (?verbose?) after ?...? in the generic 
+must appear in the method, in the same place at the end of the argument list
+ ??? Error: package or namespace load failed for ?CoreGx?:
+ ?unable to load R code in package ?CoreGx?
+ ??? Error: loading failed
+ ??? Error : in method for ?updateObject? with signature 
+?object="CoreSet"?:? arguments (?verbose?) after ?...? in the generic 
+must appear in the method, in the same place at the end of the argument list
+ ??? Error: unable to load R code in package ?CoreGx?
+ ??? ** testing if installed package keeps a record of temporary 
+installation path
+ ??? * DONE (CoreGx)
+
+Many serious errors were ignored. Plus the command returned exit code 0:
+
+ ??? hpages at XPS15:~$ echo $?
+ ??? 0
+
+This is with R 4.4, that BioC 3.19 will be based on and that we only 
+started to use recently for our daily builds.
+
+Strangely, we only see this on Linux. On Windows and Mac, we get the 
+usual hard error, as expected. See:
+
+- 
+https://bioconductor.org/checkResults/3.19/bioc-LATEST/CoreGx/nebbiolo1-install.html
+
+- 
+https://bioconductor.org/checkResults/3.19/bioc-LATEST/CoreGx/palomino3-install.html
+
+- 
+https://bioconductor.org/checkResults/3.19/bioc-LATEST/CoreGx/merida1-install.html
+
+To reproduce:
+
+ ??? library(remotes)
+ ??? install_git("https://git.bioconductor.org/packages/CoreGx")
+
+Thanks,
+
+H.
+
+ > sessionInfo()
+R Under development (unstable) (2023-10-22 r85388)
+Platform: x86_64-pc-linux-gnu
+Running under: Ubuntu 23.10
+
+Matrix products: default
+BLAS:?? /home/hpages/R/R-4.4.r85388/lib/libRblas.so
+LAPACK: /usr/lib/x86_64-linux-gnu/lapack/liblapack.so.3.11.0
+
+locale:
+ ?[1] LC_CTYPE=en_US.UTF-8?????? LC_NUMERIC=C
+ ?[3] LC_TIME=en_US.UTF-8??????? LC_COLLATE=en_US.UTF-8
+ ?[5] LC_MONETARY=en_US.UTF-8??? LC_MESSAGES=en_US.UTF-8
+ ?[7] LC_PAPER=en_US.UTF-8?????? LC_NAME=C
+ ?[9] LC_ADDRESS=C?????????????? LC_TELEPHONE=C
+[11] LC_MEASUREMENT=en_US.UTF-8 LC_IDENTIFICATION=C
+
+time zone: America/Los_Angeles
+tzcode source: system (glibc)
+
+attached base packages:
+[1] stats???? graphics? grDevices utils???? datasets? methods base
+
+other attached packages:
+[1] remotes_2.4.2.1
+
+loaded via a namespace (and not attached):
+ ?[1] processx_3.8.2??? compiler_4.4.0??? R6_2.5.1 rprojroot_2.0.3
+ ?[5] cli_3.6.1???????? prettyunits_1.2.0 tools_4.4.0 crayon_1.5.2
+ ?[9] desc_1.4.2??????? callr_3.7.3?????? pkgbuild_1.4.2 ps_1.7.5
+
+-- 
+Herv? Pag?s
+
+Bioconductor Core Team
+hpages.on.github at gmail.com
+
+	[[alternative HTML version deleted]]
+
+
+From hp@ge@@on@g|thub @end|ng |rom gm@||@com  Fri Nov  3 23:37:01 2023
+From: hp@ge@@on@g|thub @end|ng |rom gm@||@com (=?UTF-8?B?SGVydsOpIFBhZ8Oocw==?=)
+Date: Fri, 3 Nov 2023 15:37:01 -0700
+Subject: [Rd] 'R CMD INSTALL' keeps going on despite serious errors,
+ and returns exit code 0
+In-Reply-To: <81945eb7-df8f-446d-b7e7-8f2b591807b4@gmail.com>
+References: <81945eb7-df8f-446d-b7e7-8f2b591807b4@gmail.com>
+Message-ID: <0b8bc01b-5f1d-4b21-9c19-09121e35e7c5@gmail.com>
+
+Forgot to mention that the package actually got installed, but is 
+unloadable (not surprisingly):
+
+ ??? > "CoreGx" %in% rownames(installed.packages())
+ ??? [1] TRUE
+
+ ??? > suppressWarnings(suppressMessages(library(CoreGx)))
+ ??? Error : in method for ?updateObject? with signature 
+?object="CoreSet"?:? arguments (?verbose?) after ?...? in the generic 
+must appear in the method, in the same place at the end of the argument list
+ ??? Error: package or namespace load failed for ?CoreGx?:
+ ? ?? unable to load R code in package ?CoreGx?
+
+Best,
+
+H.
+
+On 11/3/23 15:10, Herv? Pag?s wrote:
+>
+> Hi list,
+>
+> Here is an example:
+>
+> ??? hpages at XPS15:~$ R CMD INSTALL CoreGx
+> ??? * installing to library ?/home/hpages/R/R-4.4.r85388/site-library?
+> ??? * installing *source* package ?CoreGx? ...
+> ??? ** using staged installation
+> ??? ** R
+> ??? ** data
+> ??? *** moving datasets to lazyload DB
+> ??? ** inst
+> ??? ** byte-compile and prepare package for lazy loading
+> ??? Error : in method for ?updateObject? with signature 
+> ?object="CoreSet"?:? arguments (?verbose?) after ?...? in the generic 
+> must appear in the method, in the same place at the end of the 
+> argument list
+> ??? Error: unable to load R code in package ?CoreGx?
+> ??? ** help
+> ??? *** installing help indices
+> ??? ** building package indices
+> ??? ** installing vignettes
+> ??? ** testing if installed package can be loaded from temporary location
+> ??? Error : in method for ?updateObject? with signature 
+> ?object="CoreSet"?:? arguments (?verbose?) after ?...? in the generic 
+> must appear in the method, in the same place at the end of the 
+> argument list
+> ??? Error: package or namespace load failed for ?CoreGx?:
+> ?unable to load R code in package ?CoreGx?
+> ??? Error: loading failed
+> ??? ** testing if installed package can be loaded from final location
+> ??? Error : in method for ?updateObject? with signature 
+> ?object="CoreSet"?:? arguments (?verbose?) after ?...? in the generic 
+> must appear in the method, in the same place at the end of the 
+> argument list
+> ??? Error: package or namespace load failed for ?CoreGx?:
+> ?unable to load R code in package ?CoreGx?
+> ??? Error: loading failed
+> ??? Error : in method for ?updateObject? with signature 
+> ?object="CoreSet"?:? arguments (?verbose?) after ?...? in the generic 
+> must appear in the method, in the same place at the end of the 
+> argument list
+> ??? Error: unable to load R code in package ?CoreGx?
+> ??? ** testing if installed package keeps a record of temporary 
+> installation path
+> ??? * DONE (CoreGx)
+>
+> Many serious errors were ignored. Plus the command returned exit code 0:
+>
+> ??? hpages at XPS15:~$ echo $?
+> ??? 0
+>
+> This is with R 4.4, that BioC 3.19 will be based on and that we only 
+> started to use recently for our daily builds.
+>
+> Strangely, we only see this on Linux. On Windows and Mac, we get the 
+> usual hard error, as expected. See:
+>
+> - 
+> https://bioconductor.org/checkResults/3.19/bioc-LATEST/CoreGx/nebbiolo1-install.html
+>
+> - 
+> https://bioconductor.org/checkResults/3.19/bioc-LATEST/CoreGx/palomino3-install.html
+>
+> - 
+> https://bioconductor.org/checkResults/3.19/bioc-LATEST/CoreGx/merida1-install.html
+>
+> To reproduce:
+>
+> ??? library(remotes)
+> ??? install_git("https://git.bioconductor.org/packages/CoreGx")
+>
+> Thanks,
+>
+> H.
+>
+> > sessionInfo()
+> R Under development (unstable) (2023-10-22 r85388)
+> Platform: x86_64-pc-linux-gnu
+> Running under: Ubuntu 23.10
+>
+> Matrix products: default
+> BLAS:?? /home/hpages/R/R-4.4.r85388/lib/libRblas.so
+> LAPACK: /usr/lib/x86_64-linux-gnu/lapack/liblapack.so.3.11.0
+>
+> locale:
+> ?[1] LC_CTYPE=en_US.UTF-8?????? LC_NUMERIC=C
+> ?[3] LC_TIME=en_US.UTF-8??????? LC_COLLATE=en_US.UTF-8
+> ?[5] LC_MONETARY=en_US.UTF-8??? LC_MESSAGES=en_US.UTF-8
+> ?[7] LC_PAPER=en_US.UTF-8?????? LC_NAME=C
+> ?[9] LC_ADDRESS=C?????????????? LC_TELEPHONE=C
+> [11] LC_MEASUREMENT=en_US.UTF-8 LC_IDENTIFICATION=C
+>
+> time zone: America/Los_Angeles
+> tzcode source: system (glibc)
+>
+> attached base packages:
+> [1] stats???? graphics? grDevices utils???? datasets? methods base
+>
+> other attached packages:
+> [1] remotes_2.4.2.1
+>
+> loaded via a namespace (and not attached):
+> ?[1] processx_3.8.2??? compiler_4.4.0??? R6_2.5.1 rprojroot_2.0.3
+> ?[5] cli_3.6.1???????? prettyunits_1.2.0 tools_4.4.0 crayon_1.5.2
+> ?[9] desc_1.4.2??????? callr_3.7.3?????? pkgbuild_1.4.2 ps_1.7.5
+>
+> -- 
+> Herv? Pag?s
+>
+> Bioconductor Core Team
+> hpages.on.github at gmail.com
+
+-- 
+Herv? Pag?s
+
+Bioconductor Core Team
+hpages.on.github at gmail.com
+
+	[[alternative HTML version deleted]]
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Sat Nov  4 14:52:04 2023
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Sat, 4 Nov 2023 14:52:04 +0100
+Subject: [Rd] 'R CMD INSTALL' keeps going on despite serious errors,
+ and returns exit code 0
+In-Reply-To: <81945eb7-df8f-446d-b7e7-8f2b591807b4@gmail.com>
+References: <81945eb7-df8f-446d-b7e7-8f2b591807b4@gmail.com>
+Message-ID: <25926.19588.486282.861678@stat.math.ethz.ch>
+
+>>>>> Herv? Pag?s 
+>>>>>     on Fri, 3 Nov 2023 15:10:40 -0700 writes:
+
+    > Hi list,
+
+    > Here is an example:
+
+    >  ??? hpages at XPS15:~$ R CMD INSTALL CoreGx ??? * installing
+
+
+    > ??? hpages at XPS15:~$ R CMD INSTALL CoreGx
+    > ??? * installing to library ?/home/hpages/R/R-4.4.r85388/site-library?
+                                                        ^^^^^^^
+
+Yes, this was bad behavior was the case for a short time (too
+long, my fault !!) in R-devel. 
+
+But that,  svn rev 85388 , was *long* ago (close to 2 weeks):
+Current R-devel is 85471
+(The bug was "only" in 382--388, fixed in 389 -- you were really unlucky!)
+
+Still, I'm sorry that you were accidentally affected, too.
+Martin
+
+
+    > ??? * installing *source* package ?CoreGx? ...
+    > ??? ** using staged installation
+    > ??? ** R
+    > ??? ** data
+    > ??? *** moving datasets to lazyload DB
+    > ??? ** inst
+    > ??? ** byte-compile and prepare package for lazy loading
+    > ??? Error : in method for ?updateObject? with signature 
+    > ?object="CoreSet"?:? arguments (?verbose?) after ?...? in the generic 
+    > must appear in the method, in the same place at the end of the argument list
+    > ??? Error: unable to load R code in package ?CoreGx?
+    > ??? ** help
+    > ??? *** installing help indices
+    > ??? ** building package indices
+    > ??? ** installing vignettes
+    > ??? ** testing if installed package can be loaded from temporary location
+    > ??? Error : in method for ?updateObject? with signature 
+    > ?object="CoreSet"?:? arguments (?verbose?) after ?...? in the generic 
+    > must appear in the method, in the same place at the end of the argument list
+    > ??? Error: package or namespace load failed for ?CoreGx?:
+    > ?unable to load R code in package ?CoreGx?
+    > ??? Error: loading failed
+    > ??? ** testing if installed package can be loaded from final location
+    > ??? Error : in method for ?updateObject? with signature 
+    > ?object="CoreSet"?:? arguments (?verbose?) after ?...? in the generic 
+    > must appear in the method, in the same place at the end of the argument list
+    > ??? Error: package or namespace load failed for ?CoreGx?:
+    > ?unable to load R code in package ?CoreGx?
+    > ??? Error: loading failed
+    > ??? Error : in method for ?updateObject? with signature 
+    > ?object="CoreSet"?:? arguments (?verbose?) after ?...? in the generic 
+    > must appear in the method, in the same place at the end of the argument list
+    > ??? Error: unable to load R code in package ?CoreGx?
+    > ??? ** testing if installed package keeps a record of temporary 
+    > installation path
+    > ??? * DONE (CoreGx)
+
+    > Many serious errors were ignored. Plus the command returned exit code 0:
+
+    > ??? hpages at XPS15:~$ echo $?
+    > ??? 0
+
+    > This is with R 4.4, that BioC 3.19 will be based on and that we only 
+    > started to use recently for our daily builds.
+
+    > Strangely, we only see this on Linux. On Windows and Mac, we get the 
+    > usual hard error, as expected. See:
+
+    > - 
+    > https://bioconductor.org/checkResults/3.19/bioc-LATEST/CoreGx/nebbiolo1-install.html
+
+    > - 
+    > https://bioconductor.org/checkResults/3.19/bioc-LATEST/CoreGx/palomino3-install.html
+
+    > - 
+    > https://bioconductor.org/checkResults/3.19/bioc-LATEST/CoreGx/merida1-install.html
+
+    > To reproduce:
+
+    > ??? library(remotes)
+    > ??? install_git("https://git.bioconductor.org/packages/CoreGx")
+
+    > Thanks,
+
+    > H.
+
+    >> sessionInfo()
+    > R Under development (unstable) (2023-10-22 r85388)
+    > Platform: x86_64-pc-linux-gnu
+    > Running under: Ubuntu 23.10
+
+    > Matrix products: default
+    > BLAS:?? /home/hpages/R/R-4.4.r85388/lib/libRblas.so
+    > LAPACK: /usr/lib/x86_64-linux-gnu/lapack/liblapack.so.3.11.0
+
+    > locale:
+    > ?[1] LC_CTYPE=en_US.UTF-8?????? LC_NUMERIC=C
+    > ?[3] LC_TIME=en_US.UTF-8??????? LC_COLLATE=en_US.UTF-8
+    > ?[5] LC_MONETARY=en_US.UTF-8??? LC_MESSAGES=en_US.UTF-8
+    > ?[7] LC_PAPER=en_US.UTF-8?????? LC_NAME=C
+    > ?[9] LC_ADDRESS=C?????????????? LC_TELEPHONE=C
+    > [11] LC_MEASUREMENT=en_US.UTF-8 LC_IDENTIFICATION=C
+
+    > time zone: America/Los_Angeles
+    > tzcode source: system (glibc)
+
+    > attached base packages:
+    > [1] stats???? graphics? grDevices utils???? datasets? methods base
+
+    > other attached packages:
+    > [1] remotes_2.4.2.1
+
+    > loaded via a namespace (and not attached):
+    > ?[1] processx_3.8.2??? compiler_4.4.0??? R6_2.5.1 rprojroot_2.0.3
+    > ?[5] cli_3.6.1???????? prettyunits_1.2.0 tools_4.4.0 crayon_1.5.2
+    > ?[9] desc_1.4.2??????? callr_3.7.3?????? pkgbuild_1.4.2 ps_1.7.5
+
+    > -- 
+    > Herv? Pag?s
+
+    > Bioconductor Core Team
+    > hpages.on.github at gmail.com
+
+    > [[alternative HTML version deleted]]
+
+    > ______________________________________________
+    > R-devel at r-project.org mailing list
+    > https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From hp@ge@@on@g|thub @end|ng |rom gm@||@com  Sat Nov  4 18:11:24 2023
+From: hp@ge@@on@g|thub @end|ng |rom gm@||@com (=?UTF-8?B?SGVydsOpIFBhZ8Oocw==?=)
+Date: Sat, 4 Nov 2023 10:11:24 -0700
+Subject: [Rd] 'R CMD INSTALL' keeps going on despite serious errors,
+ and returns exit code 0
+In-Reply-To: <25926.19588.486282.861678@stat.math.ethz.ch>
+References: <81945eb7-df8f-446d-b7e7-8f2b591807b4@gmail.com>
+ <25926.19588.486282.861678@stat.math.ethz.ch>
+Message-ID: <86ad51b1-6736-4e02-a25e-18041eaafdc1@gmail.com>
+
+I see. We'll update soon. Thanks Martin.
+
+On 11/4/23 06:52, Martin Maechler wrote:
+>>>>>> Herv? Pag?s
+>>>>>>      on Fri, 3 Nov 2023 15:10:40 -0700 writes:
+>      > Hi list,
+>
+>      > Here is an example:
+>
+>      >  ??? hpages at XPS15:~$ R CMD INSTALL CoreGx ??? * installing
+>
+>
+>      > ??? hpages at XPS15:~$ R CMD INSTALL CoreGx
+>      > ??? * installing to library ?/home/hpages/R/R-4.4.r85388/site-library?
+>                                                          ^^^^^^^
+>
+> Yes, this was bad behavior was the case for a short time (too
+> long, my fault !!) in R-devel.
+>
+> But that,  svn rev 85388 , was *long* ago (close to 2 weeks):
+> Current R-devel is 85471
+> (The bug was "only" in 382--388, fixed in 389 -- you were really unlucky!)
+>
+> Still, I'm sorry that you were accidentally affected, too.
+> Martin
+>
+>
+>      > ??? * installing *source* package ?CoreGx? ...
+>      > ??? ** using staged installation
+>      > ??? ** R
+>      > ??? ** data
+>      > ??? *** moving datasets to lazyload DB
+>      > ??? ** inst
+>      > ??? ** byte-compile and prepare package for lazy loading
+>      > ??? Error : in method for ?updateObject? with signature
+>      > ?object="CoreSet"?:? arguments (?verbose?) after ?...? in the generic
+>      > must appear in the method, in the same place at the end of the argument list
+>      > ??? Error: unable to load R code in package ?CoreGx?
+>      > ??? ** help
+>      > ??? *** installing help indices
+>      > ??? ** building package indices
+>      > ??? ** installing vignettes
+>      > ??? ** testing if installed package can be loaded from temporary location
+>      > ??? Error : in method for ?updateObject? with signature
+>      > ?object="CoreSet"?:? arguments (?verbose?) after ?...? in the generic
+>      > must appear in the method, in the same place at the end of the argument list
+>      > ??? Error: package or namespace load failed for ?CoreGx?:
+>      > ?unable to load R code in package ?CoreGx?
+>      > ??? Error: loading failed
+>      > ??? ** testing if installed package can be loaded from final location
+>      > ??? Error : in method for ?updateObject? with signature
+>      > ?object="CoreSet"?:? arguments (?verbose?) after ?...? in the generic
+>      > must appear in the method, in the same place at the end of the argument list
+>      > ??? Error: package or namespace load failed for ?CoreGx?:
+>      > ?unable to load R code in package ?CoreGx?
+>      > ??? Error: loading failed
+>      > ??? Error : in method for ?updateObject? with signature
+>      > ?object="CoreSet"?:? arguments (?verbose?) after ?...? in the generic
+>      > must appear in the method, in the same place at the end of the argument list
+>      > ??? Error: unable to load R code in package ?CoreGx?
+>      > ??? ** testing if installed package keeps a record of temporary
+>      > installation path
+>      > ??? * DONE (CoreGx)
+>
+>      > Many serious errors were ignored. Plus the command returned exit code 0:
+>
+>      > ??? hpages at XPS15:~$ echo $?
+>      > ??? 0
+>
+>      > This is with R 4.4, that BioC 3.19 will be based on and that we only
+>      > started to use recently for our daily builds.
+>
+>      > Strangely, we only see this on Linux. On Windows and Mac, we get the
+>      > usual hard error, as expected. See:
+>
+>      > -
+>      >https://bioconductor.org/checkResults/3.19/bioc-LATEST/CoreGx/nebbiolo1-install.html
+>
+>      > -
+>      >https://bioconductor.org/checkResults/3.19/bioc-LATEST/CoreGx/palomino3-install.html
+>
+>      > -
+>      >https://bioconductor.org/checkResults/3.19/bioc-LATEST/CoreGx/merida1-install.html
+>
+>      > To reproduce:
+>
+>      > ??? library(remotes)
+>      > ??? install_git("https://git.bioconductor.org/packages/CoreGx")
+>
+>      > Thanks,
+>
+>      > H.
+>
+>      >> sessionInfo()
+>      > R Under development (unstable) (2023-10-22 r85388)
+>      > Platform: x86_64-pc-linux-gnu
+>      > Running under: Ubuntu 23.10
+>
+>      > Matrix products: default
+>      > BLAS:?? /home/hpages/R/R-4.4.r85388/lib/libRblas.so
+>      > LAPACK: /usr/lib/x86_64-linux-gnu/lapack/liblapack.so.3.11.0
+>
+>      > locale:
+>      > ?[1] LC_CTYPE=en_US.UTF-8?????? LC_NUMERIC=C
+>      > ?[3] LC_TIME=en_US.UTF-8??????? LC_COLLATE=en_US.UTF-8
+>      > ?[5] LC_MONETARY=en_US.UTF-8??? LC_MESSAGES=en_US.UTF-8
+>      > ?[7] LC_PAPER=en_US.UTF-8?????? LC_NAME=C
+>      > ?[9] LC_ADDRESS=C?????????????? LC_TELEPHONE=C
+>      > [11] LC_MEASUREMENT=en_US.UTF-8 LC_IDENTIFICATION=C
+>
+>      > time zone: America/Los_Angeles
+>      > tzcode source: system (glibc)
+>
+>      > attached base packages:
+>      > [1] stats???? graphics? grDevices utils???? datasets? methods base
+>
+>      > other attached packages:
+>      > [1] remotes_2.4.2.1
+>
+>      > loaded via a namespace (and not attached):
+>      > ?[1] processx_3.8.2??? compiler_4.4.0??? R6_2.5.1 rprojroot_2.0.3
+>      > ?[5] cli_3.6.1???????? prettyunits_1.2.0 tools_4.4.0 crayon_1.5.2
+>      > ?[9] desc_1.4.2??????? callr_3.7.3?????? pkgbuild_1.4.2 ps_1.7.5
+>
+>      > --
+>      > Herv? Pag?s
+>
+>      > Bioconductor Core Team
+>      >hpages.on.github at gmail.com
+>
+>      > [[alternative HTML version deleted]]
+>
+>      > ______________________________________________
+>      >R-devel at r-project.org  mailing list
+>      >https://stat.ethz.ch/mailman/listinfo/r-devel
+
+-- 
+Herv? Pag?s
+
+Bioconductor Core Team
+hpages.on.github at gmail.com
+
+	[[alternative HTML version deleted]]
+
+
+From m|ch@e|ch|r|co4 @end|ng |rom gm@||@com  Sun Nov  5 18:41:42 2023
+From: m|ch@e|ch|r|co4 @end|ng |rom gm@||@com (Michael Chirico)
+Date: Sun, 5 Nov 2023 09:41:42 -0800
+Subject: [Rd] c(NA, 0+1i) not the same as c(as.complex(NA), 0+1i)?
+Message-ID: <CAPRVBcx4OxpWDH_cyunMfZ=eLhQCD3V62ka1yQV4y5jCoEXL6A@mail.gmail.com>
+
+This is another follow-up to the thread from September "Recent changes to
+as.complex(NA_real_)".
+
+A test in data.table was broken by the changes for NA coercion to complex;
+the breakage essentially comes from
+
+c(NA, 0+1i)
+# vs
+c(as.complex(NA), 0+1i)
+
+The former is the output we tested against; the latter is essentially (via
+coerceVector() in C) what's generated by our data.table::shift()
+
+However, these are now (r85472) different:
+
+Im(c(NA, 0+1i))
+# [1] NA  1
+Im(c(as.complex(NA), 0+1i))
+# [1] 0 1
+
+The former matches the behavior of directly using NA_complex_:
+
+Im(c(NA_complex_, 0+1i))
+# [1] NA  1
+
+On R4.3.2, they both match the NA_complex_ behavior:
+Im(c(NA, 0+1i))
+# [1] NA  1
+Im(c(as.complex(NA), 0+1i))
+# [1] NA 1
+
+Is this intended behavior, does something need to be updated for c() as
+well?
+
+Certainly it's messing with my understanding of how c() behaves, e.g. in ?c
+
+> All arguments are coerced to a common type which is the type of the
+returned value
+
+	[[alternative HTML version deleted]]
+
+
+From pd@|gd @end|ng |rom gm@||@com  Mon Nov  6 11:59:51 2023
+From: pd@|gd @end|ng |rom gm@||@com (peter dalgaard)
+Date: Mon, 6 Nov 2023 11:59:51 +0100
+Subject: [Rd] c(NA, 0+1i) not the same as c(as.complex(NA), 0+1i)?
+In-Reply-To: <CAPRVBcx4OxpWDH_cyunMfZ=eLhQCD3V62ka1yQV4y5jCoEXL6A@mail.gmail.com>
+References: <CAPRVBcx4OxpWDH_cyunMfZ=eLhQCD3V62ka1yQV4y5jCoEXL6A@mail.gmail.com>
+Message-ID: <9BE84B0E-A8D3-44E5-96BC-692B57B78A73@gmail.com>
+
+Hmm, it is not actually at odds with help(c), it is just that the autocoercion works different that it used to, so that
+
+as.complex(NA) == as.complex(NA_real) == NA_real_+0i)
+
+which now differs from
+
+NA_complex 
+
+although both print as NA.
+
+I haven't been quite alert when this change was discussed, but it does look a bit unfortunate that usage patterns like c(NA, 0+1i) does not give complex NA for the 1st component, effectively changing the interpretation from "I don't know what this is" to "I don't know what this is but I'm sure it is on the real line".
+
+Also, notice that things like 
+
+> Im(scan(text= "NA 0+1i", what=complex()))
+Read 2 items
+[1] NA  1
+
+and
+
+> Im(as.complex(c(NA,"0+1i")))
+[1] NA  1
+
+but Martin probably thought more deeply about this?
+
+-pd
+
+> On 5 Nov 2023, at 18:41 , Michael Chirico <michaelchirico4 at gmail.com> wrote:
+> 
+> This is another follow-up to the thread from September "Recent changes to
+> as.complex(NA_real_)".
+> 
+> A test in data.table was broken by the changes for NA coercion to complex;
+> the breakage essentially comes from
+> 
+> c(NA, 0+1i)
+> # vs
+> c(as.complex(NA), 0+1i)
+> 
+> The former is the output we tested against; the latter is essentially (via
+> coerceVector() in C) what's generated by our data.table::shift()
+> 
+> However, these are now (r85472) different:
+> 
+> Im(c(NA, 0+1i))
+> # [1] NA  1
+> Im(c(as.complex(NA), 0+1i))
+> # [1] 0 1
+> 
+> The former matches the behavior of directly using NA_complex_:
+> 
+> Im(c(NA_complex_, 0+1i))
+> # [1] NA  1
+> 
+> On R4.3.2, they both match the NA_complex_ behavior:
+> Im(c(NA, 0+1i))
+> # [1] NA  1
+> Im(c(as.complex(NA), 0+1i))
+> # [1] NA 1
+> 
+> Is this intended behavior, does something need to be updated for c() as
+> well?
+> 
+> Certainly it's messing with my understanding of how c() behaves, e.g. in ?c
+> 
+>> All arguments are coerced to a common type which is the type of the
+> returned value
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+-- 
+Peter Dalgaard, Professor,
+Center for Statistics, Copenhagen Business School
+Solbjerg Plads 3, 2000 Frederiksberg, Denmark
+Phone: (+45)38153501
+Office: A 4.23
+Email: pd.mes at cbs.dk  Priv: PDalgd at gmail.com
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Mon Nov  6 12:08:22 2023
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Mon, 6 Nov 2023 12:08:22 +0100
+Subject: [Rd] c(NA, 0+1i) not the same as c(as.complex(NA), 0+1i)?
+In-Reply-To: <CAPRVBcx4OxpWDH_cyunMfZ=eLhQCD3V62ka1yQV4y5jCoEXL6A@mail.gmail.com>
+References: <CAPRVBcx4OxpWDH_cyunMfZ=eLhQCD3V62ka1yQV4y5jCoEXL6A@mail.gmail.com>
+Message-ID: <25928.51494.41600.713713@stat.math.ethz.ch>
+
+>>>>> Michael Chirico 
+>>>>>     on Sun, 5 Nov 2023 09:41:42 -0800 writes:
+
+    > This is another follow-up to the thread from September
+    > "Recent changes to as.complex(NA_real_)".
+
+    > A test in data.table was broken by the changes for NA
+    > coercion to complex; the breakage essentially comes from
+
+    > c(NA, 0+1i)
+    > # vs
+    > c(as.complex(NA), 0+1i)
+
+    > The former is the output we tested against; the latter is essentially (via
+    > coerceVector() in C) what's generated by our data.table::shift()
+
+    > However, these are now (r85472) different:
+
+    > Im(c(NA, 0+1i))
+    > # [1] NA  1
+    > Im(c(as.complex(NA), 0+1i))
+    > # [1] 0 1
+
+
+    > The former matches the behavior of directly using NA_complex_:
+
+    > Im(c(NA_complex_, 0+1i))
+    > # [1] NA  1
+
+    > On R4.3.2, they both match the NA_complex_ behavior:
+    > Im(c(NA, 0+1i))
+    > # [1] NA  1
+    > Im(c(as.complex(NA), 0+1i))
+    > # [1] NA 1
+
+    > Is this intended behavior, does something need to be updated for c() as
+    > well?
+
+    > Certainly it's messing with my understanding of how c() behaves, e.g. in ?c
+
+    >> All arguments are coerced to a common type which is the type of the
+    > returned value
+
+I think you have confused yourself, and everything behaves as expected:
+
+As we now have (in R-devel, since {r85233 | maechler | 2023-09-29 })
+
+  ? ?as.complex(x)? now returns ?complex(real=x, imaginary=0)?
+    for _all_ numerical and logical ?x?, notably also for ?NA?
+    or ?NA_integer_?.
+
+==> as.complex(NA) is indeed  complex(real = NA, imaginary = 0)
+
+And now, in your
+
+   c(as.complex(NA), 0+1i)
+
+you are calling c() on two complex numbers, i.e., there is *no* coercion
+(and c(.) is rather "trivial"),  and the same is true for
+
+   c(NA_complex_, 0+1i)
+
+
+However, in 85233, I had only modified & added examples to  ?as.complex, 
+and now have added more (corresponding to the above NEWS entry);
+-> svn rev 85475
+
+.............
+
+The underlying "dilemma" that nobody can help us with is that
+"almost infinitely" many different complex numbers z fulfill
+ is.na(z) |--> TRUE
+and only one of them is  NA_complex_  and that may be unintuitive.
+
+OTOH, we already have for the doubles that there are at least two
+different x fulfulling is.na(x), namely  NaN and NA
+and from C's point of view there are even considerably more
+different NaN's .. but now I'm definitely digressing.
+ 
+Martin
+
+
+From m|kkm@rt @end|ng |rom protonm@||@com  Mon Nov  6 20:54:24 2023
+From: m|kkm@rt @end|ng |rom protonm@||@com (mikkmart)
+Date: Mon, 06 Nov 2023 19:54:24 +0000
+Subject: [Rd] New syntax for positional-only function parameters?
+Message-ID: <w-ucjjtNdxQhl8Zu_e2FPoUCgc_P2TH5EXER3li56cz76Zt6YjohZrns85_ZaNLITdRwiSkqPGN7tPmheYu-N4kZNX0MhRtgE64ysN8C6Zc=@protonmail.com>
+
+Dear List,
+
+I'm writing to gauge interest in new syntax for positional-only
+function parameters to be added to R.
+
+The pattern of functions accepting other functions as inputs and
+passing additional ... arguments to them is prevalent throughout
+the R ecosystem. Currently, however, all such functions must one
+way or another tackle the problem of inadvertently passing arguments
+meant to go to ... as arguments to the function itself instead.
+
+The typical workaround is to use somehow obfuscated names for the
+parameters in the main function in order to make such collisions
+unlikely. For example lapply() and friends with signatures like:
+
+    function (X, FUN, ...)
+
+In practice this pattern avoids many collisions, but it cannot
+guarantee that they won't happen. It would seem to me preferrable
+to avoid the root cause of the issue altogether by having the
+language feature of declaring function parameters as positional-only.
+
+Python's PEP 570 discusses the same issue in the context of Python [1].
+
+Concretely, borrowing syntax from Python, the proposal would be
+to have something along the lines of:
+
+    g <- function(x, f, /, ...) match.call()
+    g(1, f, x = 2) == quote(g(1, f, x = 2))
+
+Rather than the current situation of:
+
+    g <- function(x, f, ...) match.call()
+    g(1, f, x = 2) == quote(g(x = 2, f = 1, f))
+
+Given the prevalence of the issue, is this something that you would
+see as worth pursuing for R?
+
+Best regards,
+
+Mikko
+
+[1]: https://peps.python.org/pep-0570/
+
+
+From m@tt@n@b @end|ng |rom m@b@t@t@@|n|o  Tue Nov  7 01:21:04 2023
+From: m@tt@n@b @end|ng |rom m@b@t@t@@|n|o (Mattan S. Ben-Shachar)
+Date: Tue, 7 Nov 2023 02:21:04 +0200
+Subject: [Rd] Inconsistency in paired t.test() interface?
+Message-ID: <CAEVroTNaQ+nTcccJJSkc+5qfJx9sOFxtwP9vZ=kaQ53yjUXTQA@mail.gmail.com>
+
+Hi all,
+
+In the next release of R (4.4) the option to obtain a paired t.test with
+the formula interface for "long" data has been removed:
+
+t.test(x ~ group, paired = TRUE) # now results in an error.
+
+Exploring how one might obtain a paired t.test, there seems to be some
+inconsistency between the formula and default interfaces as well as within
+the formula interface.
+
+```
+extra.1 <- c(0.7, -1.6, -0.2, -1.2, -0.1, 3.4, 3.7, 0.8, 0, 2)
+extra.2 <- c(1.9, 0.8, 1.1, 0.1, -0.1, 4.4, 5.5, 1.6, 4.6, 3.4)
+group <- rep(letters[1:2], each = 5)
+
+
+t.test(Pair(extra.1, extra.2) ~ 1) # Paired t.test
+
+t.test(Pair(extra.1, extra.2)) # NOT a paired t.test - this is actually a
+one sample t-test
+
+t.test(c(extra.1, extra.2))  # it is actually the same as combining the
+vectors
+
+# likewise, these two are the same:
+t.test(Pair(extra.1, extra.2), Pair(extra.1, extra.2))
+t.test(c(extra.1, extra.2), c(extra.1, extra.2))
+
+
+t.test(Pair(extra.1, extra.2) ~ group) # This gives a two-sample test? (I
+would expect it to fail)
+
+t.test(c(extra.1, extra.2) ~ c(group, group))  # is once again the same as
+combining the vectors:
+```
+
+The docs do say:
+> If lhs is of class "Pair" and rhs is 1, a paired test is done.
+But I would have expected a Pair object to behave similarly outside a
+formula as well,
+that is - I would have expected a `Pair` object to result in a paired
+t-test (and not accept a `y` argument, or ignore it),
+and for a formula `Pair(x, y) ~ group` to throw an error.
+
+(This behavior is also found in wilcox.test())
+
+
+My mental model expects the default and formula methods to be consitant, so
+that these and only these would work:
+- One sample:
+  - `x` is a vector, `y` is `NULL`
+  - `x ~ 1` formula
+- Paired sample
+  - `x,y` are numeric vectors + `paired = TRUE`
+  - `x` is a `Pair` object (`y` is ignored)
+  - `Pair(x,y) ~ 1` formula
+- Two Samples
+  - `x,y` are nueric vectors (`paired = FALSE`)
+  - `x ~ group` formula
+
+Any pointers on where my mental model is going wrong?
+
+
+
+Thanks,
+Mattan
+
+	[[alternative HTML version deleted]]
+
+
+From m|ch@e|ch|r|co4 @end|ng |rom gm@||@com  Tue Nov  7 08:18:40 2023
+From: m|ch@e|ch|r|co4 @end|ng |rom gm@||@com (Michael Chirico)
+Date: Mon, 6 Nov 2023 23:18:40 -0800
+Subject: [Rd] c(NA, 0+1i) not the same as c(as.complex(NA), 0+1i)?
+In-Reply-To: <25928.51494.41600.713713@stat.math.ethz.ch>
+References: <CAPRVBcx4OxpWDH_cyunMfZ=eLhQCD3V62ka1yQV4y5jCoEXL6A@mail.gmail.com>
+ <25928.51494.41600.713713@stat.math.ethz.ch>
+Message-ID: <CAPRVBczX++e6Ghpo5c+5gvuvALoGjNdGn50DKXjixgw+=cBqHA@mail.gmail.com>
+
+Thanks Martin. My hang-up was not on what the outcome of as.complex(NA)
+should be, but rather, how I should read code like c(x, y) generally. Till
+now, I have thought of it like 'c(x, y)' is c(as(x, typeof(y)), y)` when
+"type(y) > type(x)". Basically in my mind, "coercion" in R <->
+as.<newtype>(.) (or coerceVector() in C).
+
+So I tracked down the source (which admittedly has been this way for much
+longer than the present discussion) to see what exactly c() is doing in
+this case:
+
+https://github.com/r-devel/r-svn/blob/71e7480b07767f3b7d5c45a4247959aa4d83d910/src/main/bind.c#L418-L425
+
+And indeed! It's not "coercion" in the sense I just described... there's a
+branch for the 'x == NA_LOGICAL' case to _convert_ to NA_complex_.
+
+On Mon, Nov 6, 2023 at 3:08?AM Martin Maechler <maechler at stat.math.ethz.ch>
+wrote:
+
+> >>>>> Michael Chirico
+> >>>>>     on Sun, 5 Nov 2023 09:41:42 -0800 writes:
+>
+>     > This is another follow-up to the thread from September
+>     > "Recent changes to as.complex(NA_real_)".
+>
+>     > A test in data.table was broken by the changes for NA
+>     > coercion to complex; the breakage essentially comes from
+>
+>     > c(NA, 0+1i)
+>     > # vs
+>     > c(as.complex(NA), 0+1i)
+>
+>     > The former is the output we tested against; the latter is
+> essentially (via
+>     > coerceVector() in C) what's generated by our data.table::shift()
+>
+>     > However, these are now (r85472) different:
+>
+>     > Im(c(NA, 0+1i))
+>     > # [1] NA  1
+>     > Im(c(as.complex(NA), 0+1i))
+>     > # [1] 0 1
+>
+>
+>     > The former matches the behavior of directly using NA_complex_:
+>
+>     > Im(c(NA_complex_, 0+1i))
+>     > # [1] NA  1
+>
+>     > On R4.3.2, they both match the NA_complex_ behavior:
+>     > Im(c(NA, 0+1i))
+>     > # [1] NA  1
+>     > Im(c(as.complex(NA), 0+1i))
+>     > # [1] NA 1
+>
+>     > Is this intended behavior, does something need to be updated for c()
+> as
+>     > well?
+>
+>     > Certainly it's messing with my understanding of how c() behaves,
+> e.g. in ?c
+>
+>     >> All arguments are coerced to a common type which is the type of the
+>     > returned value
+>
+> I think you have confused yourself, and everything behaves as expected:
+>
+> As we now have (in R-devel, since {r85233 | maechler | 2023-09-29 })
+>
+>   ? ?as.complex(x)? now returns ?complex(real=x, imaginary=0)?
+>     for _all_ numerical and logical ?x?, notably also for ?NA?
+>     or ?NA_integer_?.
+>
+> ==> as.complex(NA) is indeed  complex(real = NA, imaginary = 0)
+>
+> And now, in your
+>
+>    c(as.complex(NA), 0+1i)
+>
+> you are calling c() on two complex numbers, i.e., there is *no* coercion
+> (and c(.) is rather "trivial"),  and the same is true for
+>
+>    c(NA_complex_, 0+1i)
+>
+>
+> However, in 85233, I had only modified & added examples to  ?as.complex,
+> and now have added more (corresponding to the above NEWS entry);
+> -> svn rev 85475
+>
+> .............
+>
+> The underlying "dilemma" that nobody can help us with is that
+> "almost infinitely" many different complex numbers z fulfill
+>  is.na(z) |--> TRUE
+> and only one of them is  NA_complex_  and that may be unintuitive.
+>
+> OTOH, we already have for the doubles that there are at least two
+> different x fulfulling is.na(x), namely  NaN and NA
+> and from C's point of view there are even considerably more
+> different NaN's .. but now I'm definitely digressing.
+>
+> Martin
+>
+
+	[[alternative HTML version deleted]]
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Tue Nov  7 09:26:15 2023
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Tue, 7 Nov 2023 09:26:15 +0100
+Subject: [Rd] c(NA, 0+1i) not the same as c(as.complex(NA), 0+1i)?
+In-Reply-To: <9BE84B0E-A8D3-44E5-96BC-692B57B78A73@gmail.com>
+References: <CAPRVBcx4OxpWDH_cyunMfZ=eLhQCD3V62ka1yQV4y5jCoEXL6A@mail.gmail.com>
+ <9BE84B0E-A8D3-44E5-96BC-692B57B78A73@gmail.com>
+Message-ID: <25929.62631.316066.852606@stat.math.ethz.ch>
+
+>>>>> peter dalgaard 
+>>>>>     on Mon, 6 Nov 2023 11:59:51 +0100 writes:
+
+    > Hmm, it is not actually at odds with help(c), it is just that the autocoercion works different that it used to, so that
+    > as.complex(NA) == as.complex(NA_real) == NA_real_+0i)
+
+    > which now differs from
+
+    > NA_complex 
+
+    > although both print as NA.
+
+    > I haven't been quite alert when this change was discussed,
+
+The discussion was here, at first
+1) started by Davis Vaughan on  14 Apr 2023
+   "[Rd] Possible inconsistency between `as.complex(NA_real_)` and the docs", 
+   https://stat.ethz.ch/pipermail/r-devel/2023-April/082545.html
+   to which I replied, and then committed (r84322), with msg  'as.complex(NA_real_) |=> NA_complex_'
+
+2) A couple of months later,  21 Sep 2023,
+   an R-devel thread started by Mikael Jagan  "[Rd] Recent changes to as.complex(NA_real_)",
+   https://stat.ethz.ch/pipermail/r-devel/2023-September/082864.html
+
+   a discussion that took several iterations and lead to the
+   reversal of the April change and rather have integer and
+   logical *also* behave as real/double had before (and in all released R versions).
+   This lead to the much more recent change (r85233) with msg
+       'as.complex(NA_{real,integer,logical}) now keeps imaginary part zero'
+
+
+
+
+    > but it does look a bit unfortunate that usage patterns like c(NA, 0+1i) does not give complex NA for the 1st component, effectively changing the interpretation from "I don't know what this is" to "I don't know what this is but I'm sure it is on the real line".
+
+    > Also, notice that things like 
+
+    >> Im(scan(text= "NA 0+1i", what=complex()))
+    > Read 2 items
+    > [1] NA  1
+
+    > and
+
+    >> Im(as.complex(c(NA,"0+1i")))
+    > [1] NA  1
+
+    > but Martin probably thought more deeply about this?
+
+    > -pd
+
+
+Yes,  I have been aware that   NA_character_  has now been the
+only atomic type that would still  coerce to NA_complex_
+{there is no NA_raw_ for good reasons}.
+
+More context:  In R version from 3.3? (definitely 3.5.x) to 4.3.x  we have had
+
+   > pz <- function(z) noquote(paste0("(", Re(z), ",", Im(z), ")"))
+   > pz(as.complex(NA_character_))
+   [1] (NA,NA)
+   > pz(as.complex(NA)) # NA is logical
+   [1] (NA,NA)
+   > pz(as.complex(NA_integer_))
+   [1] (NA,NA)
+   > pz(as.complex(NA_real_))
+   [1] (NA,0)
+   > 
+
+So the double/real  behaviour has been the exception.
+
+Currently in R-devel, integer and logical behave like double:
+
+   > pz <- function(z) noquote(paste0("(", Re(z), ",", Im(z), ")"))
+   > pz(as.complex(NA_character_))
+   [1] (NA,NA)
+   > pz(as.complex(NA)) # NA is logical
+   [1] (NA,0)
+   > pz(as.complex(NA_integer_))
+   [1] (NA,0)
+   > pz(as.complex(NA_real_))
+   [1] (NA,0)
+   > 
+
+which makes much more sense, as this (integer & logical, treated
+as numbers behave the same as double)  is a prinicple in R
+almost everywhere.
+
+We could well look into also changing the
+as.complex(NA_character_)
+
+Martin
+
+    >> On 5 Nov 2023, at 18:41 , Michael Chirico <michaelchirico4 at gmail.com> wrote:
+    >> 
+    >> This is another follow-up to the thread from September "Recent changes to
+    >> as.complex(NA_real_)".
+    >> 
+    >> A test in data.table was broken by the changes for NA coercion to complex;
+    >> the breakage essentially comes from
+    >> 
+    >> c(NA, 0+1i)
+    >> # vs
+    >> c(as.complex(NA), 0+1i)
+    >> 
+    >> The former is the output we tested against; the latter is essentially (via
+    >> coerceVector() in C) what's generated by our data.table::shift()
+    >> 
+    >> However, these are now (r85472) different:
+    >> 
+    >> Im(c(NA, 0+1i))
+    >> # [1] NA  1
+    >> Im(c(as.complex(NA), 0+1i))
+    >> # [1] 0 1
+    >> 
+    >> The former matches the behavior of directly using NA_complex_:
+    >> 
+    >> Im(c(NA_complex_, 0+1i))
+    >> # [1] NA  1
+    >> 
+    >> On R4.3.2, they both match the NA_complex_ behavior:
+    >> Im(c(NA, 0+1i))
+    >> # [1] NA  1
+    >> Im(c(as.complex(NA), 0+1i))
+    >> # [1] NA 1
+    >> 
+    >> Is this intended behavior, does something need to be updated for c() as
+    >> well?
+    >> 
+    >> Certainly it's messing with my understanding of how c() behaves, e.g. in ?c
+    >> 
+    >>> All arguments are coerced to a common type which is the type of the
+    >> returned value
+    >> 
+    >> [[alternative HTML version deleted]]
+    >> 
+    >> ______________________________________________
+    >> R-devel at r-project.org mailing list
+    >> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+    > -- 
+    > Peter Dalgaard, Professor,
+    > Center for Statistics, Copenhagen Business School
+    > Solbjerg Plads 3, 2000 Frederiksberg, Denmark
+    > Phone: (+45)38153501
+    > Office: A 4.23
+    > Email: pd.mes at cbs.dk  Priv: PDalgd at gmail.com
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Tue Nov  7 09:27:23 2023
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Tue, 7 Nov 2023 09:27:23 +0100
+Subject: [Rd] c(NA, 0+1i) not the same as c(as.complex(NA), 0+1i)?
+In-Reply-To: <CAPRVBczX++e6Ghpo5c+5gvuvALoGjNdGn50DKXjixgw+=cBqHA@mail.gmail.com>
+References: <CAPRVBcx4OxpWDH_cyunMfZ=eLhQCD3V62ka1yQV4y5jCoEXL6A@mail.gmail.com>
+ <25928.51494.41600.713713@stat.math.ethz.ch>
+ <CAPRVBczX++e6Ghpo5c+5gvuvALoGjNdGn50DKXjixgw+=cBqHA@mail.gmail.com>
+Message-ID: <25929.62699.893711.527056@stat.math.ethz.ch>
+
+>>>>> Michael Chirico 
+>>>>>     on Mon, 6 Nov 2023 23:18:40 -0800 writes:
+
+    > Thanks Martin. My hang-up was not on what the outcome of as.complex(NA)
+    > should be, but rather, how I should read code like c(x, y) generally. Till
+    > now, I have thought of it like 'c(x, y)' is c(as(x, typeof(y)), y)` when
+    > "type(y) > type(x)". Basically in my mind, "coercion" in R <->
+    > as.<newtype>(.) (or coerceVector() in C).
+
+    > So I tracked down the source (which admittedly has been this way for much
+    > longer than the present discussion) to see what exactly c() is doing in
+    > this case:
+
+    > https://github.com/r-devel/r-svn/blob/71e7480b07767f3b7d5c45a4247959aa4d83d910/src/main/bind.c#L418-L425
+
+    > And indeed! It's not "coercion" in the sense I just described... there's a
+    > branch for the 'x == NA_LOGICAL' case to _convert_ to NA_complex_.
+
+Yes; "of course" ... still, I did not answer your main question,
+as you did ask +/-  if  c() should not get an adjustment to the
+new  as.complex(<numeric-alike>)  |-->  (Re = NA, Im = 0)
+behavior.
+
+And that is still a valid open question. ... contrary to what I
+wrote yesterday; sorry for that "answering a different
+question".
+
+Martin
+
+
+    > On Mon, Nov 6, 2023 at 3:08?AM Martin Maechler <maechler at stat.math.ethz.ch>
+    > wrote:
+
+    >> >>>>> Michael Chirico
+    >> >>>>>     on Sun, 5 Nov 2023 09:41:42 -0800 writes:
+    >> 
+    >> > This is another follow-up to the thread from September
+    >> > "Recent changes to as.complex(NA_real_)".
+    >> 
+    >> > A test in data.table was broken by the changes for NA
+    >> > coercion to complex; the breakage essentially comes from
+    >> 
+    >> > c(NA, 0+1i)
+    >> > # vs
+    >> > c(as.complex(NA), 0+1i)
+    >> 
+    >> > The former is the output we tested against; the latter is
+    >> essentially (via
+    >> > coerceVector() in C) what's generated by our data.table::shift()
+    >> 
+    >> > However, these are now (r85472) different:
+    >> 
+    >> > Im(c(NA, 0+1i))
+    >> > # [1] NA  1
+    >> > Im(c(as.complex(NA), 0+1i))
+    >> > # [1] 0 1
+    >> 
+    >> 
+    >> > The former matches the behavior of directly using NA_complex_:
+    >> 
+    >> > Im(c(NA_complex_, 0+1i))
+    >> > # [1] NA  1
+    >> 
+    >> > On R4.3.2, they both match the NA_complex_ behavior:
+    >> > Im(c(NA, 0+1i))
+    >> > # [1] NA  1
+    >> > Im(c(as.complex(NA), 0+1i))
+    >> > # [1] NA 1
+    >> 
+    >> > Is this intended behavior, does something need to be updated for c()
+    >> as
+    >> > well?
+    >> 
+    >> > Certainly it's messing with my understanding of how c() behaves,
+    >> e.g. in ?c
+    >> 
+    >> >> All arguments are coerced to a common type which is the type of the
+    >> > returned value
+    >> 
+    >> I think you have confused yourself, and everything behaves as expected:
+    >> 
+    >> As we now have (in R-devel, since {r85233 | maechler | 2023-09-29 })
+    >> 
+    >> ? ?as.complex(x)? now returns ?complex(real=x, imaginary=0)?
+    >> for _all_ numerical and logical ?x?, notably also for ?NA?
+    >> or ?NA_integer_?.
+    >> 
+    >> ==> as.complex(NA) is indeed  complex(real = NA, imaginary = 0)
+    >> 
+    >> And now, in your
+    >> 
+    >> c(as.complex(NA), 0+1i)
+    >> 
+    >> you are calling c() on two complex numbers, i.e., there is *no* coercion
+    >> (and c(.) is rather "trivial"),  and the same is true for
+    >> 
+    >> c(NA_complex_, 0+1i)
+    >> 
+    >> 
+    >> However, in 85233, I had only modified & added examples to  ?as.complex,
+    >> and now have added more (corresponding to the above NEWS entry);
+    -> svn rev 85475
+    >> 
+    >> .............
+    >> 
+    >> The underlying "dilemma" that nobody can help us with is that
+    >> "almost infinitely" many different complex numbers z fulfill
+    >> is.na(z) |--> TRUE
+    >> and only one of them is  NA_complex_  and that may be unintuitive.
+    >> 
+    >> OTOH, we already have for the doubles that there are at least two
+    >> different x fulfulling is.na(x), namely  NaN and NA
+    >> and from C's point of view there are even considerably more
+    >> different NaN's .. but now I'm definitely digressing.
+    >> 
+    >> Martin
+    >> 
+
+    > [[alternative HTML version deleted]]
+
+
+From m@rt|n@becker @end|ng |rom mx@un|-@@@r|@nd@de  Tue Nov  7 17:13:05 2023
+From: m@rt|n@becker @end|ng |rom mx@un|-@@@r|@nd@de (Martin Becker)
+Date: Tue, 7 Nov 2023 17:13:05 +0100
+Subject: [Rd] False positives in check for lost braces (in tools::checkRd())
+Message-ID: <8513a24e-e435-4781-aca2-452097961468@mx.uni-saarland.de>
+
+Dear developers,
+
+while preparing to submit a package to CRAN, I noticed that a check for 
+lost braces in Rd files (which is enabled in the current r-devel when 
+checking with the '--as-cran' option) seems to return false positives.
+
+More specifically, a 'Lost braces' NOTE is issued (at least sometimes) 
+when using the \insertRef{...}{...} command from the Rdpack package.
+
+Since the corresponding changes in r-devel seem to be quite recent 
+(apparently as of r85196), I hope this sketchy report is sufficient to 
+track down the problem. If not, I will try to create a reproducible example.
+
+Best regards and many thanks,
+Martin
+
+
+-- 
+apl. Prof. Dr. Martin Becker, Akad. Oberrat
+Lehrstab Statistik
+Quantitative Methoden
+Fakult?t f?r Empirische Humanwissenschaften und Wirtschaftswissenschaft
+Universit?t des Saarlandes
+Campus C3 1, Raum 2.17
+66123 Saarbr?cken
+Deutschland
+
+
+From kry|ov@r00t @end|ng |rom gm@||@com  Tue Nov  7 23:00:37 2023
+From: kry|ov@r00t @end|ng |rom gm@||@com (Ivan Krylov)
+Date: Wed, 8 Nov 2023 01:00:37 +0300
+Subject: [Rd] 
+ False positives in check for lost braces (in tools::checkRd())
+In-Reply-To: <8513a24e-e435-4781-aca2-452097961468@mx.uni-saarland.de>
+References: <8513a24e-e435-4781-aca2-452097961468@mx.uni-saarland.de>
+Message-ID: <20231108010037.6ef3e3c3@Tarkus>
+
+On Tue, 7 Nov 2023 17:13:05 +0100
+Martin Becker <martin.becker at mx.uni-saarland.de> wrote:
+
+> More specifically, a 'Lost braces' NOTE is issued (at least
+> sometimes) when using the \insertRef{...}{...} command from the
+> Rdpack package.
+
+Does anything change if you use the development version of Rdpack (not
+currently on CRAN)? Apparently, the latest commit performs some changes
+to fix the "lost braces" note:
+https://github.com/GeoBosh/Rdpack/commit/569ee0515fce00eac98ef45e642b805cb473ce1c
+
+-- 
+Best regards,
+Ivan
+
+
+From @eb@meyer @end|ng |rom |@u@de  Tue Nov  7 23:59:29 2023
+From: @eb@meyer @end|ng |rom |@u@de (Sebastian Meyer)
+Date: Tue, 7 Nov 2023 23:59:29 +0100
+Subject: [Rd] 
+ False positives in check for lost braces (in tools::checkRd())
+In-Reply-To: <8513a24e-e435-4781-aca2-452097961468@mx.uni-saarland.de>
+References: <8513a24e-e435-4781-aca2-452097961468@mx.uni-saarland.de>
+Message-ID: <8304b64d-9048-456a-8ecb-ec207a9bf273@fau.de>
+
+This is a known issue already reported to the Rdpack maintainer. In some 
+cases, the Rd code generated by Rdpack's macros contains unnecessary 
+braces that trigger the check note because they match the pattern 
+"text{text}" that detects common mistakes like "code{x}" (missing an 
+escape for the macro name).
+
+Rdpack's fork of tools::deparseLatex() is being updated to drop the 
+braces that cause the note. I have modified the check code to ignore 
+these cases for now (r85491).
+
+Best regards,
+
+	Sebastian Meyer
+
+
+Am 07.11.23 um 17:13 schrieb Martin Becker:
+> Dear developers,
+> 
+> while preparing to submit a package to CRAN, I noticed that a check for
+> lost braces in Rd files (which is enabled in the current r-devel when
+> checking with the '--as-cran' option) seems to return false positives.
+> 
+> More specifically, a 'Lost braces' NOTE is issued (at least sometimes)
+> when using the \insertRef{...}{...} command from the Rdpack package.
+> 
+> Since the corresponding changes in r-devel seem to be quite recent
+> (apparently as of r85196), I hope this sketchy report is sufficient to
+> track down the problem. If not, I will try to create a reproducible example.
+> 
+> Best regards and many thanks,
+> Martin
+> 
+>
+
+
+From m@rt|n@becker @end|ng |rom mx@un|-@@@r|@nd@de  Wed Nov  8 00:03:10 2023
+From: m@rt|n@becker @end|ng |rom mx@un|-@@@r|@nd@de (Martin Becker)
+Date: Wed, 8 Nov 2023 00:03:10 +0100
+Subject: [Rd] 
+ False positives in check for lost braces (in tools::checkRd())
+In-Reply-To: <20231108010037.6ef3e3c3@Tarkus>
+References: <8513a24e-e435-4781-aca2-452097961468@mx.uni-saarland.de>
+ <20231108010037.6ef3e3c3@Tarkus>
+Message-ID: <9f868a92-5f0c-45d4-ae3b-fe0def0fdf20@mx.uni-saarland.de>
+
+Am 07.11.23 um 23:00 schrieb Ivan Krylov:
+> On Tue, 7 Nov 2023 17:13:05 +0100
+> Martin Becker <martin.becker at mx.uni-saarland.de> wrote:
+> 
+>> More specifically, a 'Lost braces' NOTE is issued (at least
+>> sometimes) when using the \insertRef{...}{...} command from the
+>> Rdpack package.
+> 
+> Does anything change if you use the development version of Rdpack (not
+> currently on CRAN)? Apparently, the latest commit performs some changes
+> to fix the "lost braces" note:
+> https://github.com/GeoBosh/Rdpack/commit/569ee0515fce00eac98ef45e642b805cb473ce1c
+> 
+
+Thank you very much for the hint, using the development version of 
+Rdpack to check the package actually fixes the problem!
+
+Best regards,
+Martin
+
+
+-- 
+apl. Prof. Dr. Martin Becker, Akad. Oberrat
+Lehrstab Statistik
+Quantitative Methoden
+Fakult?t f?r Empirische Humanwissenschaften und Wirtschaftswissenschaft
+Universit?t des Saarlandes
+Campus C3 1, Raum 2.17
+66123 Saarbr?cken
+Deutschland
+
+
+From m@rt|n@becker @end|ng |rom mx@un|-@@@r|@nd@de  Wed Nov  8 00:11:09 2023
+From: m@rt|n@becker @end|ng |rom mx@un|-@@@r|@nd@de (Martin Becker)
+Date: Wed, 8 Nov 2023 00:11:09 +0100
+Subject: [Rd] 
+ False positives in check for lost braces (in tools::checkRd())
+In-Reply-To: <8304b64d-9048-456a-8ecb-ec207a9bf273@fau.de>
+References: <8513a24e-e435-4781-aca2-452097961468@mx.uni-saarland.de>
+ <8304b64d-9048-456a-8ecb-ec207a9bf273@fau.de>
+Message-ID: <f6d2d318-2ffc-4f1d-aeee-f7407485c03e@mx.uni-saarland.de>
+
+Am 07.11.23 um 23:59 schrieb Sebastian Meyer:
+> This is a known issue already reported to the Rdpack maintainer. In some 
+> cases, the Rd code generated by Rdpack's macros contains unnecessary 
+> braces that trigger the check note because they match the pattern 
+> "text{text}" that detects common mistakes like "code{x}" (missing an 
+> escape for the macro name).
+> 
+> Rdpack's fork of tools::deparseLatex() is being updated to drop the 
+> braces that cause the note. I have modified the check code to ignore 
+> these cases for now (r85491).
+> 
+> Best regards,
+> 
+>  ????Sebastian Meyer
+> 
+> 
+
+Thank you very much, so I don't have to wait for the release of the new 
+version of Rdpack on CRAN before submitting.
+
+Best regards,
+Martin
+
+
+-- 
+apl. Prof. Dr. Martin Becker, Akad. Oberrat
+Lehrstab Statistik
+Quantitative Methoden
+Fakult?t f?r Empirische Humanwissenschaften und Wirtschaftswissenschaft
+Universit?t des Saarlandes
+Campus C3 1, Raum 2.17
+66123 Saarbr?cken
+Deutschland
+
+
+From j@g@nmn2 @end|ng |rom gm@||@com  Wed Nov  8 17:13:18 2023
+From: j@g@nmn2 @end|ng |rom gm@||@com (Mikael Jagan)
+Date: Wed, 8 Nov 2023 11:13:18 -0500
+Subject: [Rd] c(NA, 0+1i) not the same as c(as.complex(NA), 0+1i)?
+In-Reply-To: <mailman.53872.7.1699354802.63488.r-devel@r-project.org>
+References: <mailman.53872.7.1699354802.63488.r-devel@r-project.org>
+Message-ID: <9a9a13d5-c0dd-4f6e-a379-be0c934fb31c@gmail.com>
+
+So, to summarize, the open questions are:
+
+     (1) Should as.complex(NA_character_) give complex(r=NA_real_, i=0)
+         instead of NA_complex_?
+
+     (2) Should the first argument in c(NA, x) and c(NA_integer_, x),
+         where typeof(x) == "complex", be promoted to complex(r=NA_real_, i=0)
+         instead of NA_complex_?
+
+My opinions:
+
+     (1) No.  The imaginary part of the result of parsing the strings "<b>i",
+         "<a>+<b>i", and "<a>-<b>i" can be nonzero.
+         Consider, e.g., Im(eval(str2lang("0+1i"))) and Im(as.complex("0+1i")).
+         If NA_character_ means "a string with unknown content", then we should
+         not assume that the string is parsed as a real number.
+
+     (2) Yes.  I'd very much like to preserve the identity of c(Im(NA), Im(x))
+         and Im(c(NA, x)) for atomic (excluding raw, character) vectors 'x'.
+
+And while typing this response I noticed the following in current R-devel and
+current R-patched:
+
+     > 0+1i
+     [1] 0+1i
+     > 1i
+     [1] 0+1i
+     > as.complex("0+1i")
+     [1] 0+1i
+     > as.complex("1i")
+     [1] NA
+     Warning message:
+     NAs introduced by coercion
+
+That warning seems wrong to me ...
+
+Mikael
+
+On 2023-11-07 6:00 am, r-devel-request at r-project.org wrote:
+>>>>>> Michael Chirico
+>>>>>>      on Mon, 6 Nov 2023 23:18:40 -0800 writes:
+>      > Thanks Martin. My hang-up was not on what the outcome of as.complex(NA)
+>      > should be, but rather, how I should read code like c(x, y) generally. Till
+>      > now, I have thought of it like 'c(x, y)' is c(as(x, typeof(y)), y)` when
+>      > "type(y) > type(x)". Basically in my mind, "coercion" in R <->
+>      > as.<newtype>(.) (or coerceVector() in C).
+> 
+>      > So I tracked down the source (which admittedly has been this way for much
+>      > longer than the present discussion) to see what exactly c() is doing in
+>      > this case:
+> 
+>      >https://github.com/r-devel/r-svn/blob/71e7480b07767f3b7d5c45a4247959aa4d83d910/src/main/bind.c#L418-L425
+> 
+>      > And indeed! It's not "coercion" in the sense I just described... there's a
+>      > branch for the 'x == NA_LOGICAL' case to_convert_  to NA_complex_.
+> 
+> Yes; "of course" ... still, I did not answer your main question,
+> as you did ask +/-  if  c() should not get an adjustment to the
+> new  as.complex(<numeric-alike>)  |-->  (Re = NA, Im = 0)
+> behavior.
+> 
+> And that is still a valid open question. ... contrary to what I
+> wrote yesterday; sorry for that "answering a different
+> question".
+> 
+> Martin
+> 
+> 
+>      > On Mon, Nov 6, 2023 at 3:08?AM Martin Maechler<maechler at stat.math.ethz.ch>
+>      > wrote:
+> 
+>      >> >>>>> Michael Chirico
+>      >> >>>>>     on Sun, 5 Nov 2023 09:41:42 -0800 writes:
+>      >>
+>      >> > This is another follow-up to the thread from September
+>      >> > "Recent changes to as.complex(NA_real_)".
+>      >>
+>      >> > A test in data.table was broken by the changes for NA
+>      >> > coercion to complex; the breakage essentially comes from
+>      >>
+>      >> > c(NA, 0+1i)
+>      >> > # vs
+>      >> > c(as.complex(NA), 0+1i)
+>      >>
+>      >> > The former is the output we tested against; the latter is
+>      >> essentially (via
+>      >> > coerceVector() in C) what's generated by our data.table::shift()
+>      >>
+>      >> > However, these are now (r85472) different:
+>      >>
+>      >> > Im(c(NA, 0+1i))
+>      >> > # [1] NA  1
+>      >> > Im(c(as.complex(NA), 0+1i))
+>      >> > # [1] 0 1
+>      >>
+>      >>
+>      >> > The former matches the behavior of directly using NA_complex_:
+>      >>
+>      >> > Im(c(NA_complex_, 0+1i))
+>      >> > # [1] NA  1
+>      >>
+>      >> > On R4.3.2, they both match the NA_complex_ behavior:
+>      >> > Im(c(NA, 0+1i))
+>      >> > # [1] NA  1
+>      >> > Im(c(as.complex(NA), 0+1i))
+>      >> > # [1] NA 1
+>      >>
+>      >> > Is this intended behavior, does something need to be updated for c()
+>      >> as
+>      >> > well?
+>      >>
+>      >> > Certainly it's messing with my understanding of how c() behaves,
+>      >> e.g. in ?c
+>      >>
+>      >> >> All arguments are coerced to a common type which is the type of the
+>      >> > returned value
+>      >>
+>      >> I think you have confused yourself, and everything behaves as expected:
+>      >>
+>      >> As we now have (in R-devel, since {r85233 | maechler | 2023-09-29 })
+>      >>
+>      >> ? ?as.complex(x)? now returns ?complex(real=x, imaginary=0)?
+>      >> for_all_  numerical and logical ?x?, notably also for ?NA?
+>      >> or ?NA_integer_?.
+>      >>
+>      >> ==> as.complex(NA) is indeed  complex(real = NA, imaginary = 0)
+>      >>
+>      >> And now, in your
+>      >>
+>      >> c(as.complex(NA), 0+1i)
+>      >>
+>      >> you are calling c() on two complex numbers, i.e., there is*no*  coercion
+>      >> (and c(.) is rather "trivial"),  and the same is true for
+>      >>
+>      >> c(NA_complex_, 0+1i)
+>      >>
+>      >>
+>      >> However, in 85233, I had only modified & added examples to  ?as.complex,
+>      >> and now have added more (corresponding to the above NEWS entry);
+>      -> svn rev 85475
+>      >>
+>      >> .............
+>      >>
+>      >> The underlying "dilemma" that nobody can help us with is that
+>      >> "almost infinitely" many different complex numbers z fulfill
+>      >> is.na(z) |--> TRUE
+>      >> and only one of them is  NA_complex_  and that may be unintuitive.
+>      >>
+>      >> OTOH, we already have for the doubles that there are at least two
+>      >> different x fulfulling is.na(x), namely  NaN and NA
+>      >> and from C's point of view there are even considerably more
+>      >> different NaN's .. but now I'm definitely digressing.
+>      >>
+>      >> Martin
+>      >>
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Thu Nov  9 09:13:01 2023
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Thu, 9 Nov 2023 09:13:01 +0100
+Subject: [Rd] c(NA, 0+1i) not the same as c(as.complex(NA), 0+1i)?
+In-Reply-To: <9a9a13d5-c0dd-4f6e-a379-be0c934fb31c@gmail.com>
+References: <mailman.53872.7.1699354802.63488.r-devel@r-project.org>
+ <9a9a13d5-c0dd-4f6e-a379-be0c934fb31c@gmail.com>
+Message-ID: <25932.38029.55724.624739@stat.math.ethz.ch>
+
+>>>>> Mikael Jagan 
+>>>>>     on Wed, 8 Nov 2023 11:13:18 -0500 writes:
+
+    > So, to summarize, the open questions are:
+    > (1) Should as.complex(NA_character_) give complex(r=NA_real_, i=0)
+    > instead of NA_complex_?
+
+    > (2) Should the first argument in c(NA, x) and c(NA_integer_, x),
+    > where typeof(x) == "complex", be promoted to complex(r=NA_real_, i=0)
+    > instead of NA_complex_?
+
+    > My opinions:
+
+    > (1) No.  The imaginary part of the result of parsing the strings "<b>i",
+    > "<a>+<b>i", and "<a>-<b>i" can be nonzero.
+    > Consider, e.g., Im(eval(str2lang("0+1i"))) and Im(as.complex("0+1i")).
+    > If NA_character_ means "a string with unknown content", then we should
+    > not assume that the string is parsed as a real number.
+
+    > (2) Yes.  I'd very much like to preserve the identity of c(Im(NA), Im(x))
+    > and Im(c(NA, x)) for atomic (excluding raw, character) vectors 'x'.
+
+    > And while typing this response I noticed the following in current R-devel and
+    > current R-patched:
+
+    >> 0+1i
+    > [1] 0+1i
+    >> 1i
+    > [1] 0+1i
+    >> as.complex("0+1i")
+    > [1] 0+1i
+    >> as.complex("1i")
+    > [1] NA
+    > Warning message:
+    > NAs introduced by coercion
+
+    > That warning seems wrong to me ...
+
+Well, actually, as we now have had the parser  accept
+1i or 7i, 3.14i etc
+I think  that it's not the *warning* that is wrong,
+but rather the *result* :
+
+Why should   as.complex("1i")  be different  from  one of these?
+
+> 1i
+[1] 0+1i
+> str2lang("1i")
+[1] 0+1i
+> scan(textConnection("1i"), complex())
+Read 1 item
+[1] 0+1i
+> 
+
+
+    > Mikael
+
+    > On 2023-11-07 6:00 am, r-devel-request at r-project.org wrote:
+    >>>>>>> Michael Chirico
+    >>>>>>> on Mon, 6 Nov 2023 23:18:40 -0800 writes:
+    >> > Thanks Martin. My hang-up was not on what the outcome of as.complex(NA)
+    >> > should be, but rather, how I should read code like c(x, y) generally. Till
+    >> > now, I have thought of it like 'c(x, y)' is c(as(x, typeof(y)), y)` when
+    >> > "type(y) > type(x)". Basically in my mind, "coercion" in R <->
+    >> > as.<newtype>(.) (or coerceVector() in C).
+    >> 
+    >> > So I tracked down the source (which admittedly has been this way for much
+    >> > longer than the present discussion) to see what exactly c() is doing in
+    >> > this case:
+    >> 
+    >> >https://github.com/r-devel/r-svn/blob/71e7480b07767f3b7d5c45a4247959aa4d83d910/src/main/bind.c#L418-L425
+    >> 
+    >> > And indeed! It's not "coercion" in the sense I just described... there's a
+    >> > branch for the 'x == NA_LOGICAL' case to_convert_  to NA_complex_.
+    >> 
+    >> Yes; "of course" ... still, I did not answer your main question,
+    >> as you did ask +/-  if  c() should not get an adjustment to the
+    >> new  as.complex(<numeric-alike>)  |-->  (Re = NA, Im = 0)
+    >> behavior.
+    >> 
+    >> And that is still a valid open question. ... contrary to what I
+    >> wrote yesterday; sorry for that "answering a different
+    >> question".
+    >> 
+    >> Martin
+    >> 
+    >> 
+    >> > On Mon, Nov 6, 2023 at 3:08?AM Martin Maechler<maechler at stat.math.ethz.ch>
+    >> > wrote:
+    >> 
+    >> >> >>>>> Michael Chirico
+    >> >> >>>>>     on Sun, 5 Nov 2023 09:41:42 -0800 writes:
+    >> >>
+    >> >> > This is another follow-up to the thread from September
+    >> >> > "Recent changes to as.complex(NA_real_)".
+    >> >>
+    >> >> > A test in data.table was broken by the changes for NA
+    >> >> > coercion to complex; the breakage essentially comes from
+    >> >>
+    >> >> > c(NA, 0+1i)
+    >> >> > # vs
+    >> >> > c(as.complex(NA), 0+1i)
+    >> >>
+    >> >> > The former is the output we tested against; the latter is
+    >> >> essentially (via
+    >> >> > coerceVector() in C) what's generated by our data.table::shift()
+    >> >>
+    >> >> > However, these are now (r85472) different:
+    >> >>
+    >> >> > Im(c(NA, 0+1i))
+    >> >> > # [1] NA  1
+    >> >> > Im(c(as.complex(NA), 0+1i))
+    >> >> > # [1] 0 1
+    >> >>
+    >> >>
+    >> >> > The former matches the behavior of directly using NA_complex_:
+    >> >>
+    >> >> > Im(c(NA_complex_, 0+1i))
+    >> >> > # [1] NA  1
+    >> >>
+    >> >> > On R4.3.2, they both match the NA_complex_ behavior:
+    >> >> > Im(c(NA, 0+1i))
+    >> >> > # [1] NA  1
+    >> >> > Im(c(as.complex(NA), 0+1i))
+    >> >> > # [1] NA 1
+    >> >>
+    >> >> > Is this intended behavior, does something need to be updated for c()
+    >> >> as
+    >> >> > well?
+    >> >>
+    >> >> > Certainly it's messing with my understanding of how c() behaves,
+    >> >> e.g. in ?c
+    >> >>
+    >> >> >> All arguments are coerced to a common type which is the type of the
+    >> >> > returned value
+    >> >>
+    >> >> I think you have confused yourself, and everything behaves as expected:
+    >> >>
+    >> >> As we now have (in R-devel, since {r85233 | maechler | 2023-09-29 })
+    >> >>
+    >> >> ? ?as.complex(x)? now returns ?complex(real=x, imaginary=0)?
+    >> >> for_all_  numerical and logical ?x?, notably also for ?NA?
+    >> >> or ?NA_integer_?.
+    >> >>
+    >> >> ==> as.complex(NA) is indeed  complex(real = NA, imaginary = 0)
+    >> >>
+    >> >> And now, in your
+    >> >>
+    >> >> c(as.complex(NA), 0+1i)
+    >> >>
+    >> >> you are calling c() on two complex numbers, i.e., there is*no*  coercion
+    >> >> (and c(.) is rather "trivial"),  and the same is true for
+    >> >>
+    >> >> c(NA_complex_, 0+1i)
+    >> >>
+    >> >>
+    >> >> However, in 85233, I had only modified & added examples to  ?as.complex,
+    >> >> and now have added more (corresponding to the above NEWS entry);
+    -> svn rev 85475
+    >> >>
+    >> >> .............
+    >> >>
+    >> >> The underlying "dilemma" that nobody can help us with is that
+    >> >> "almost infinitely" many different complex numbers z fulfill
+    >> >> is.na(z) |--> TRUE
+    >> >> and only one of them is  NA_complex_  and that may be unintuitive.
+    >> >>
+    >> >> OTOH, we already have for the doubles that there are at least two
+    >> >> different x fulfulling is.na(x), namely  NaN and NA
+    >> >> and from C's point of view there are even considerably more
+    >> >> different NaN's .. but now I'm definitely digressing.
+    >> >>
+    >> >> Martin
+    >> >>
+
+
+From AHL27 @end|ng |rom p|tt@edu  Thu Nov  9 15:31:24 2023
+From: AHL27 @end|ng |rom p|tt@edu (Lakshman, Aidan H)
+Date: Thu, 9 Nov 2023 14:31:24 +0000
+Subject: [Rd] New syntax for positional-only function parameters?
+In-Reply-To: <w-ucjjtNdxQhl8Zu_e2FPoUCgc_P2TH5EXER3li56cz76Zt6YjohZrns85_ZaNLITdRwiSkqPGN7tPmheYu-N4kZNX0MhRtgE64ysN8C6Zc=@protonmail.com>
+References: <w-ucjjtNdxQhl8Zu_e2FPoUCgc_P2TH5EXER3li56cz76Zt6YjohZrns85_ZaNLITdRwiSkqPGN7tPmheYu-N4kZNX0MhRtgE64ysN8C6Zc=@protonmail.com>
+Message-ID: <BL0PR04MB47066A61584D85C8557A8AD8D9AFA@BL0PR04MB4706.namprd04.prod.outlook.com>
+
+Hi Mikko,
+
+> Given the prevalence of the issue, is this something that you would see as worth pursuing for R?
+
+Could you give a little more detail on this, potentially with an example of the collisions you?re referring to (and maybe an example that throws an error and/or does something unexpected)? I can?t think of a time I?ve had an issue that would have been solved/helped with positional-only parameters, though it could just be a use-case outside of my normal work. Typically, the default scoping rules are sufficient to resolve these in a way that feels (to me at least) pretty intuitive.
+
+> The typical workaround is to use somehow obfuscated names for the parameters in the main function in order to make such collisions unlikely?In practice this pattern avoids many collisions, but it cannot guarantee that they won't happen.
+
+This is a fair point and the PEP you linked is a great writeup, but it?s worth mentioning that the development paradigms of Python and R aren?t exactly the same. My gut feeling is that this change would take a significant amount of work to solve a somewhat edge case. Anything involving changes to the argument parser has a nontrivial chance of inadvertently affecting other pieces of R, and with R?s focus on stability and backwards-compatibility they typically try to avoid big changes to the core core functionality. I am not R-core, but I?d be doubtful that it would be a high priority project for the core members for those reasons. Again, if there were examples of packages/code that would be simplified by this then that could change things, although I doubt that any changes would be made to functions like the `*apply` family due to backwards-compatibility issues.
+
+That said, it?s an interesting idea. If you have an implementation that adds this capability, I?d be interested in taking a look. From a quick look at the internals, I?m expecting you?d need to make a few changes to `src/main/builtin.c` and possibly `src/main/eval.c`. I?m far from an expert on this, so I?d also be interested in anyone else?s input.
+
+-Aidan
+
+-----------------------
+Aidan Lakshman (he/him)<https://www.ahl27.com/>
+Doctoral Fellow, Wright Lab<https://www.wrightlabscience.com/>
+University of Pittsburgh School of Medicine
+Department of Biomedical Informatics
+ahl27 at pitt.edu
+(724) 612-9940
+
+
+From: R-devel <r-devel-bounces at r-project.org> on behalf of mikkmart via R-devel <r-devel at r-project.org>
+Date: Monday, November 6, 2023 at 17:41
+To: r-devel at r-project.org <r-devel at r-project.org>
+Subject: [Rd] New syntax for positional-only function parameters?
+Dear List,
+
+I'm writing to gauge interest in new syntax for positional-only
+function parameters to be added to R.
+
+The pattern of functions accepting other functions as inputs and
+passing additional ... arguments to them is prevalent throughout
+the R ecosystem. Currently, however, all such functions must one
+way or another tackle the problem of inadvertently passing arguments
+meant to go to ... as arguments to the function itself instead.
+
+The typical workaround is to use somehow obfuscated names for the
+parameters in the main function in order to make such collisions
+unlikely. For example lapply() and friends with signatures like:
+
+    function (X, FUN, ...)
+
+In practice this pattern avoids many collisions, but it cannot
+guarantee that they won't happen. It would seem to me preferrable
+to avoid the root cause of the issue altogether by having the
+language feature of declaring function parameters as positional-only.
+
+Python's PEP 570 discusses the same issue in the context of Python [1].
+
+Concretely, borrowing syntax from Python, the proposal would be
+to have something along the lines of:
+
+    g <- function(x, f, /, ...) match.call()
+    g(1, f, x = 2) == quote(g(1, f, x = 2))
+
+Rather than the current situation of:
+
+    g <- function(x, f, ...) match.call()
+    g(1, f, x = 2) == quote(g(x = 2, f = 1, f))
+
+Given the prevalence of the issue, is this something that you would
+see as worth pursuing for R?
+
+Best regards,
+
+Mikko
+
+[1]: https://nam12.safelinks.protection.outlook.com/?url=https%3A%2F%2Fpeps.python.org%2Fpep-0570%2F&data=05%7C01%7Cahl27%40pitt.edu%7C14977c4a084b4005d90508dbdf197ca3%7C9ef9f489e0a04eeb87cc3a526112fd0d%7C1%7C0%7C638349072804739356%7CUnknown%7CTWFpbGZsb3d8eyJWIjoiMC4wLjAwMDAiLCJQIjoiV2luMzIiLCJBTiI6Ik1haWwiLCJXVCI6Mn0%3D%7C3000%7C%7C%7C&sdata=0RtGGMmsrx9YTC23ZHD2qLRUXvb%2Fd9JqBWvn1VYaul8%3D&reserved=0<https://peps.python.org/pep-0570/>
+
+______________________________________________
+R-devel at r-project.org mailing list
+https://nam12.safelinks.protection.outlook.com/?url=https%3A%2F%2Fstat.ethz.ch%2Fmailman%2Flistinfo%2Fr-devel&data=05%7C01%7Cahl27%40pitt.edu%7C14977c4a084b4005d90508dbdf197ca3%7C9ef9f489e0a04eeb87cc3a526112fd0d%7C1%7C0%7C638349072804739356%7CUnknown%7CTWFpbGZsb3d8eyJWIjoiMC4wLjAwMDAiLCJQIjoiV2luMzIiLCJBTiI6Ik1haWwiLCJXVCI6Mn0%3D%7C3000%7C%7C%7C&sdata=18L686XGln2pUwUIjIFvaqyn8BgoC2uS%2Fw2ZMkTBUCc%3D&reserved=0<https://stat.ethz.ch/mailman/listinfo/r-devel>
+
+	[[alternative HTML version deleted]]
+
+
+From j@g@nmn2 @end|ng |rom gm@||@com  Thu Nov  9 16:51:43 2023
+From: j@g@nmn2 @end|ng |rom gm@||@com (Mikael Jagan)
+Date: Thu, 9 Nov 2023 10:51:43 -0500
+Subject: [Rd] c(NA, 0+1i) not the same as c(as.complex(NA), 0+1i)?
+In-Reply-To: <25932.38029.55724.624739@stat.math.ethz.ch>
+References: <mailman.53872.7.1699354802.63488.r-devel@r-project.org>
+ <9a9a13d5-c0dd-4f6e-a379-be0c934fb31c@gmail.com>
+ <25932.38029.55724.624739@stat.math.ethz.ch>
+Message-ID: <cf6874e6-6219-4fd5-b378-b88ea554734f@gmail.com>
+
+
+
+On 2023-11-09 3:13 am, Martin Maechler wrote:
+>>>>>> Mikael Jagan
+>>>>>>      on Wed, 8 Nov 2023 11:13:18 -0500 writes:
+> 
+>      > So, to summarize, the open questions are:
+>      > (1) Should as.complex(NA_character_) give complex(r=NA_real_, i=0)
+>      > instead of NA_complex_?
+> 
+>      > (2) Should the first argument in c(NA, x) and c(NA_integer_, x),
+>      > where typeof(x) == "complex", be promoted to complex(r=NA_real_, i=0)
+>      > instead of NA_complex_?
+> 
+>      > My opinions:
+> 
+>      > (1) No.  The imaginary part of the result of parsing the strings "<b>i",
+>      > "<a>+<b>i", and "<a>-<b>i" can be nonzero.
+>      > Consider, e.g., Im(eval(str2lang("0+1i"))) and Im(as.complex("0+1i")).
+>      > If NA_character_ means "a string with unknown content", then we should
+>      > not assume that the string is parsed as a real number.
+> 
+>      > (2) Yes.  I'd very much like to preserve the identity of c(Im(NA), Im(x))
+>      > and Im(c(NA, x)) for atomic (excluding raw, character) vectors 'x'.
+> 
+>      > And while typing this response I noticed the following in current R-devel and
+>      > current R-patched:
+> 
+>      >> 0+1i
+>      > [1] 0+1i
+>      >> 1i
+>      > [1] 0+1i
+>      >> as.complex("0+1i")
+>      > [1] 0+1i
+>      >> as.complex("1i")
+>      > [1] NA
+>      > Warning message:
+>      > NAs introduced by coercion
+> 
+>      > That warning seems wrong to me ...
+> 
+> Well, actually, as we now have had the parser  accept
+> 1i or 7i, 3.14i etc
+> I think  that it's not the *warning* that is wrong,
+> but rather the *result* :
+> 
+
+Indeed.  I realized immediately that I had mistyped, and hoped that readers
+would understand what I meant.  Yes, as.complex("1i") ought to give 1i and
+_not_ NA.
+
+Mikael
+
+> Why should   as.complex("1i")  be different  from  one of these?
+> 
+>> 1i
+> [1] 0+1i
+>> str2lang("1i")
+> [1] 0+1i
+>> scan(textConnection("1i"), complex())
+> Read 1 item
+> [1] 0+1i
+>>
+> 
+> 
+>      > Mikael
+> 
+>      > On 2023-11-07 6:00 am, r-devel-request at r-project.org wrote:
+>      >>>>>>> Michael Chirico
+>      >>>>>>> on Mon, 6 Nov 2023 23:18:40 -0800 writes:
+>      >> > Thanks Martin. My hang-up was not on what the outcome of as.complex(NA)
+>      >> > should be, but rather, how I should read code like c(x, y) generally. Till
+>      >> > now, I have thought of it like 'c(x, y)' is c(as(x, typeof(y)), y)` when
+>      >> > "type(y) > type(x)". Basically in my mind, "coercion" in R <->
+>      >> > as.<newtype>(.) (or coerceVector() in C).
+>      >>
+>      >> > So I tracked down the source (which admittedly has been this way for much
+>      >> > longer than the present discussion) to see what exactly c() is doing in
+>      >> > this case:
+>      >>
+>      >> >https://github.com/r-devel/r-svn/blob/71e7480b07767f3b7d5c45a4247959aa4d83d910/src/main/bind.c#L418-L425
+>      >>
+>      >> > And indeed! It's not "coercion" in the sense I just described... there's a
+>      >> > branch for the 'x == NA_LOGICAL' case to_convert_  to NA_complex_.
+>      >>
+>      >> Yes; "of course" ... still, I did not answer your main question,
+>      >> as you did ask +/-  if  c() should not get an adjustment to the
+>      >> new  as.complex(<numeric-alike>)  |-->  (Re = NA, Im = 0)
+>      >> behavior.
+>      >>
+>      >> And that is still a valid open question. ... contrary to what I
+>      >> wrote yesterday; sorry for that "answering a different
+>      >> question".
+>      >>
+>      >> Martin
+>      >>
+>      >>
+>      >> > On Mon, Nov 6, 2023 at 3:08?AM Martin Maechler<maechler at stat.math.ethz.ch>
+>      >> > wrote:
+>      >>
+>      >> >> >>>>> Michael Chirico
+>      >> >> >>>>>     on Sun, 5 Nov 2023 09:41:42 -0800 writes:
+>      >> >>
+>      >> >> > This is another follow-up to the thread from September
+>      >> >> > "Recent changes to as.complex(NA_real_)".
+>      >> >>
+>      >> >> > A test in data.table was broken by the changes for NA
+>      >> >> > coercion to complex; the breakage essentially comes from
+>      >> >>
+>      >> >> > c(NA, 0+1i)
+>      >> >> > # vs
+>      >> >> > c(as.complex(NA), 0+1i)
+>      >> >>
+>      >> >> > The former is the output we tested against; the latter is
+>      >> >> essentially (via
+>      >> >> > coerceVector() in C) what's generated by our data.table::shift()
+>      >> >>
+>      >> >> > However, these are now (r85472) different:
+>      >> >>
+>      >> >> > Im(c(NA, 0+1i))
+>      >> >> > # [1] NA  1
+>      >> >> > Im(c(as.complex(NA), 0+1i))
+>      >> >> > # [1] 0 1
+>      >> >>
+>      >> >>
+>      >> >> > The former matches the behavior of directly using NA_complex_:
+>      >> >>
+>      >> >> > Im(c(NA_complex_, 0+1i))
+>      >> >> > # [1] NA  1
+>      >> >>
+>      >> >> > On R4.3.2, they both match the NA_complex_ behavior:
+>      >> >> > Im(c(NA, 0+1i))
+>      >> >> > # [1] NA  1
+>      >> >> > Im(c(as.complex(NA), 0+1i))
+>      >> >> > # [1] NA 1
+>      >> >>
+>      >> >> > Is this intended behavior, does something need to be updated for c()
+>      >> >> as
+>      >> >> > well?
+>      >> >>
+>      >> >> > Certainly it's messing with my understanding of how c() behaves,
+>      >> >> e.g. in ?c
+>      >> >>
+>      >> >> >> All arguments are coerced to a common type which is the type of the
+>      >> >> > returned value
+>      >> >>
+>      >> >> I think you have confused yourself, and everything behaves as expected:
+>      >> >>
+>      >> >> As we now have (in R-devel, since {r85233 | maechler | 2023-09-29 })
+>      >> >>
+>      >> >> ? ?as.complex(x)? now returns ?complex(real=x, imaginary=0)?
+>      >> >> for_all_  numerical and logical ?x?, notably also for ?NA?
+>      >> >> or ?NA_integer_?.
+>      >> >>
+>      >> >> ==> as.complex(NA) is indeed  complex(real = NA, imaginary = 0)
+>      >> >>
+>      >> >> And now, in your
+>      >> >>
+>      >> >> c(as.complex(NA), 0+1i)
+>      >> >>
+>      >> >> you are calling c() on two complex numbers, i.e., there is*no*  coercion
+>      >> >> (and c(.) is rather "trivial"),  and the same is true for
+>      >> >>
+>      >> >> c(NA_complex_, 0+1i)
+>      >> >>
+>      >> >>
+>      >> >> However, in 85233, I had only modified & added examples to  ?as.complex,
+>      >> >> and now have added more (corresponding to the above NEWS entry);
+>      -> svn rev 85475
+>      >> >>
+>      >> >> .............
+>      >> >>
+>      >> >> The underlying "dilemma" that nobody can help us with is that
+>      >> >> "almost infinitely" many different complex numbers z fulfill
+>      >> >> is.na(z) |--> TRUE
+>      >> >> and only one of them is  NA_complex_  and that may be unintuitive.
+>      >> >>
+>      >> >> OTOH, we already have for the doubles that there are at least two
+>      >> >> different x fulfulling is.na(x), namely  NaN and NA
+>      >> >> and from C's point of view there are even considerably more
+>      >> >> different NaN's .. but now I'm definitely digressing.
+>      >> >>
+>      >> >> Martin
+>      >> >>
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Fri Nov 10 14:19:49 2023
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Fri, 10 Nov 2023 14:19:49 +0100
+Subject: [Rd] 
+ [R] Why Rprofile.site is not built with manual installation of
+ R devel in linux?
+In-Reply-To: <205A4E17-50C5-45F0-8D91-F400C1B89E6E@dcn.davis.ca.us>
+References: <AM6PR02MB44230F37BC7E7A139581925F94AFA@AM6PR02MB4423.eurprd02.prod.outlook.com>
+ <205A4E17-50C5-45F0-8D91-F400C1B89E6E@dcn.davis.ca.us>
+Message-ID: <25934.11765.552272.1395@stat.math.ethz.ch>
+
+>>>>> Jeff Newmiller via R-help 
+>>>>>     on Thu, 09 Nov 2023 12:08:07 -0800 writes:
+
+    > No clue. Tip: R-devel is the mailing list for anything
+    > related to development versions of R. Off-topic here.
+
+Yes.  Alternatively, as he uses Debian, there's the
+R-SIG-Debian  mailing list, too.
+
+--> I'm CC'ing  both R-devel and R-SIG-Debian instead of R-help.
+
+    > On November 9, 2023 2:59:44 AM PST, "Iago Gin? V?zquez" <iago.gine at sjd.es> wrote:
+    >> Hi all,
+    >> 
+    >> I downloaded R-devel as explicited in https://developer.r-project.org/SVNtips.html
+    >> Then, I tried to install it through instructions in https://cran.r-project.org/doc/manuals/r-devel/R-admin.html#Installation
+    >> (taking into account also https://stat.ethz.ch/pipermail/r-devel/2016-May/072777.html)
+    >> So:
+    >> export REPOS=https://svn.r-project.org/R
+    >> export RTOP=~ #adjust as necessary
+    >> cd $RTOP
+    >> svn co $REPOS/trunk r-devel/R
+    >> cd r-devel/R
+    >> tools/rsync-recommended
+    >> mkdir ../build-R
+    >> cd ../build-R
+    >> ../R/configure --prefix=/where/you/want/R/to/go
+    >> make
+    >> make check
+
+all fine till here.
+
+I never do the following two (they are not necessary, if you
+keep your  .../r-devel/build-R/  directory and  symlink the
+.../r-devel/build-R/bin/R  to some  <in_our_PATH>/R-devel
+{which is what I do all the time; by that I can easily symlink
+to more than one of different R-devel-<foo> versions etc}
+
+Still I cannot believe that these are the problem.
+
+    >> make install
+    >> make install-tests
+
+    >> cd tests
+    >> ## followed by one of
+    >> ../bin/R CMD make check
+    >> ../bin/R CMD make check-devel
+
+I've never used    ../bin/R CMD make check
+instead of simply  make check
+(which you already did earlier),
+and ditto replacing 'check' with 'check-devel'.
+
+But even if I do that now, I don't get your error,
+*and*  I have not made use of an  Rprofile.site  for a very long time
+(and do *not* have any inside (my variant of your) build-R/
+
+
+    >> And here I get the following error
+    >> checking package 'base'
+    >> Error in file(filename, "r", encoding = encoding) :
+    >> cannot open the connection
+    >> Calls: source -> file
+    >> In addition: Warning message:
+    >> In file(filename, "r", encoding = encoding) :
+    >> cannot open file '.../etc/Rprofile.site': No such file or directory
+    >> Execution halted
+
+You must have forgotten to tell us a bit more about your setup.
+I never get the above error,
+and I do *not* have an  Rprofile.site  either in my  <build-R>/etc/
+
+Have you by chance set an R_LIBS_SITE or similar environment
+variable ?
+Does
+	env | grep '^R_'
+
+give a hint?
+
+    >> where the dots ... specify the path to the build-R folder where R-devel was built. And I check the etc folder and indeed there is no the Rprofile.site
+    >> -rw-r--r-- 1 iago iago  209 Nov  9 08:27 javaconf
+    >> -rw-r--r-- 1 iago iago  770 Nov  9 08:35 ldpaths
+    >> -rw-r--r-- 1 iago iago 6672 Nov  9 08:35 Makeconf
+    >> -rw-r--r-- 1 iago iago 3336 Nov  9 08:27 Makefile
+    >> -rw-r--r-- 1 iago iago 1853 Nov  9 08:27 Renviron
+    >> -rw-r--r-- 1 iago iago 1173 Nov  9 08:32 repositories
+
+
+    >> I note that make install installed R in the path I specified in  ../R/configure --prefix=/where/you/want/R/to/go
+    >> however
+    >> 1. make install-tests installed the tests folder in build-R .
+
+Are your sure?  I don't see how it would do this when I do
+
+    make -n install-tests
+
+(the `-n` "simulates" the make and tells you what make *would* do if you left away the `-n`)
+Rather it would (try to) install to the same place that
+
+    make -n install
+
+would do , namely the  $PREFIX/tests/  directory.
+Maybe you are just confused, because indeed, your
+.../build-R/tests/  directory also contains many of the files
+needed for the tests {but not e.g. the crucial *.R  ones !}.
+
+
+    >> 2.  In the installed R in /where/you/want/R/to/go, there is no even etc folder, there are only the folders bin, lib and share.
+
+    >> Am I  skipping some step? I am on Debain 12.
+Deb*ia*n  {Debora(h) + Ian }
+
+Could it be that the Debian/Ubuntu default (for *their* build of
+/usr/bin/R ) where they indeed use an  Rprofile.site and hence
+that Debian-specific setup is hurting you here  in some way?
+
+I'm close to sure that Debian users may be able to help you one
+step further.
+
+Martin
+
+    >> Thank you!
+    >> Iago
+
+
+From edd @end|ng |rom deb|@n@org  Fri Nov 10 14:41:17 2023
+From: edd @end|ng |rom deb|@n@org (Dirk Eddelbuettel)
+Date: Fri, 10 Nov 2023 07:41:17 -0600
+Subject: [Rd] 
+ [R] Why Rprofile.site is not built with manual installation of
+ R devel in linux?
+In-Reply-To: <25934.11765.552272.1395@stat.math.ethz.ch>
+References: <AM6PR02MB44230F37BC7E7A139581925F94AFA@AM6PR02MB4423.eurprd02.prod.outlook.com>
+ <205A4E17-50C5-45F0-8D91-F400C1B89E6E@dcn.davis.ca.us>
+ <25934.11765.552272.1395@stat.math.ethz.ch>
+Message-ID: <25934.13053.707608.395510@rob.eddelbuettel.com>
+
+
+On 10 November 2023 at 14:19, Martin Maechler wrote:
+|     >> 2.  In the installed R in /where/you/want/R/to/go, there is no even etc folder, there are only the folders bin, lib and share.
+
+That would appear to be an error in the locally installed R.
+
+What the package does has been discussed before. Per the Linux Filesystem
+Standard (or Filesystem Hierarchy or whatever it is called), Linux distro
+such as Debian and Ubuntu use _both_ /usr/lib _and_ /usr/share so the
+directories are split. Use the `R.home()` function to find them:
+
+    $ Rscript -e 'sapply(c("bin", "doc", "etc"), R.home)'
+                   bin                doc                etc 
+      "/usr/lib/R/bin" "/usr/share/R/doc"   "/usr/lib/R/etc" 
+    $ 
+
+That is from the packaged R via r-base-core.
+
+The behaviour can easily be validated by invoking, say, a Docker container
+based on these same (Debian) packages. One of the containers I look after in
+the Rocker Project has also been aliased to just 'r-base' for years by Docker
+itself so just prefix the above by 'docker run --rm -ti r-base' to run in a
+clean container:
+
+    $ docker run --rm -ti r-base Rscript -e 'sapply(c("bin", "doc", "etc"), R.home)'
+                   bin                doc                etc 
+      "/usr/lib/R/bin" "/usr/share/R/doc"   "/usr/lib/R/etc" 
+    $ 
+
+Being able to run Docker for such tests is a good superpower and on most
+systems these days only one package installation away.
+
+For a locally built one (my r-devel build here) it works the same but points
+of course to a different directory:
+
+    $ RDscript -e 'sapply(c("bin", "doc", "etc"), R.home)'
+                                   bin                                doc
+    "/usr/local/lib/R-devel/lib/R/bin" "/usr/local/lib/R-devel/lib/R/doc"
+                                   etc 
+    "/usr/local/lib/R-devel/lib/R/etc"
+    $ 
+
+As suggested, question for 'R on Debian, Ubuntu, ...' should probably go to
+r-sig-debian which is now CCed.  As usual, you must be subscribed to post or
+else you will get mistaken for a spammer and ignored.
+
+Dirk
+
+-- 
+dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From |@go@g|ne @end|ng |rom @jd@e@  Fri Nov 10 17:06:02 2023
+From: |@go@g|ne @end|ng |rom @jd@e@ (=?iso-8859-1?Q?Iago_Gin=E9_V=E1zquez?=)
+Date: Fri, 10 Nov 2023 16:06:02 +0000
+Subject: [Rd] 
+ [R] Why Rprofile.site is not built with manual installation of
+ R devel in linux?
+In-Reply-To: <25934.13053.707608.395510@rob.eddelbuettel.com>
+References: <AM6PR02MB44230F37BC7E7A139581925F94AFA@AM6PR02MB4423.eurprd02.prod.outlook.com>
+ <205A4E17-50C5-45F0-8D91-F400C1B89E6E@dcn.davis.ca.us>
+ <25934.11765.552272.1395@stat.math.ethz.ch>
+ <25934.13053.707608.395510@rob.eddelbuettel.com>
+Message-ID: <AM6PR02MB44230EDF08B28923C2D45E5A94AEA@AM6PR02MB4423.eurprd02.prod.outlook.com>
+
+Thanks all for your answers.
+
+First of all, I wrote to R-help and not R-devel, because I wanted to get help and not discussing anything relative to R development, and also because this issue could be due to my fault (as it was indeed), and not to the R devel branch...
+
+Thanks particularly to Martin, because one of his comments enlighten the issue with my tests.
+
+
+You must have forgotten to tell us a bit more about your setup.
+I never get the above error,
+and I do *not* have an  Rprofile.site  either in my  <build-R>/etc/
+
+Have you by chance set an R_LIBS_SITE or similar environment
+variable ?
+Does
+        env | grep '^R_'
+
+give a hint?
+
+Indeed, I had a ~/.Rprofile file sourcing the Rprofile.site file of Debian stable installation, so changing its name made the issue to vanish.
+
+Iago
+
+________________________________
+De: Dirk Eddelbuettel <edd at debian.org>
+Enviat el: divendres, 10 de novembre de 2023 14:41
+Per a: Martin Maechler <maechler at stat.math.ethz.ch>
+A/c: Iago Gin? V?zquez <iago.gine at sjd.es>; R-SIG-debian at r-project.org <R-SIG-debian at r-project.org>; r-devel at r-project.org <r-devel at r-project.org>; Jeff Newmiller <jdnewmil at dcn.davis.ca.us>
+Tema: Re: [Rd] [R] Why Rprofile.site is not built with manual installation of R devel in linux?
+
+
+On 10 November 2023 at 14:19, Martin Maechler wrote:
+|     >> 2.  In the installed R in /where/you/want/R/to/go, there is no even etc folder, there are only the folders bin, lib and share.
+
+That would appear to be an error in the locally installed R.
+
+What the package does has been discussed before. Per the Linux Filesystem
+Standard (or Filesystem Hierarchy or whatever it is called), Linux distro
+such as Debian and Ubuntu use _both_ /usr/lib _and_ /usr/share so the
+directories are split. Use the `R.home()` function to find them:
+
+    $ Rscript -e 'sapply(c("bin", "doc", "etc"), R.home)'
+                   bin                doc                etc
+      "/usr/lib/R/bin" "/usr/share/R/doc"   "/usr/lib/R/etc"
+    $
+
+That is from the packaged R via r-base-core.
+
+The behaviour can easily be validated by invoking, say, a Docker container
+based on these same (Debian) packages. One of the containers I look after in
+the Rocker Project has also been aliased to just 'r-base' for years by Docker
+itself so just prefix the above by 'docker run --rm -ti r-base' to run in a
+clean container:
+
+    $ docker run --rm -ti r-base Rscript -e 'sapply(c("bin", "doc", "etc"), R.home)'
+                   bin                doc                etc
+      "/usr/lib/R/bin" "/usr/share/R/doc"   "/usr/lib/R/etc"
+    $
+
+Being able to run Docker for such tests is a good superpower and on most
+systems these days only one package installation away.
+
+For a locally built one (my r-devel build here) it works the same but points
+of course to a different directory:
+
+    $ RDscript -e 'sapply(c("bin", "doc", "etc"), R.home)'
+                                   bin                                doc
+    "/usr/local/lib/R-devel/lib/R/bin" "/usr/local/lib/R-devel/lib/R/doc"
+                                   etc
+    "/usr/local/lib/R-devel/lib/R/etc"
+    $
+
+As suggested, question for 'R on Debian, Ubuntu, ...' should probably go to
+r-sig-debian which is now CCed.  As usual, you must be subscribed to post or
+else you will get mistaken for a spammer and ignored.
+
+Dirk
+
+--
+dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+	[[alternative HTML version deleted]]
+
+
+From kry|ov@r00t @end|ng |rom gm@||@com  Sat Nov 11 06:28:13 2023
+From: kry|ov@r00t @end|ng |rom gm@||@com (Ivan Krylov)
+Date: Sat, 11 Nov 2023 08:28:13 +0300
+Subject: [Rd] New syntax for positional-only function parameters?
+In-Reply-To: <w-ucjjtNdxQhl8Zu_e2FPoUCgc_P2TH5EXER3li56cz76Zt6YjohZrns85_ZaNLITdRwiSkqPGN7tPmheYu-N4kZNX0MhRtgE64ysN8C6Zc=@protonmail.com>
+References: <w-ucjjtNdxQhl8Zu_e2FPoUCgc_P2TH5EXER3li56cz76Zt6YjohZrns85_ZaNLITdRwiSkqPGN7tPmheYu-N4kZNX0MhRtgE64ysN8C6Zc=@protonmail.com>
+Message-ID: <754821DB-5E12-4AA7-BAF9-B2388DFC9595@gmail.com>
+
+6 ?????? 2023 ?. 22:54:24 GMT+03:00, mikkmart via R-devel <r-devel at r-project.org> ?????:
+
+>The pattern of functions accepting other functions as inputs and
+>passing additional ... arguments to them is prevalent throughout
+>the R ecosystem. Currently, however, all such functions must one
+>way or another tackle the problem of inadvertently passing arguments
+>meant to go to ... as arguments to the function itself instead.
+>
+>The typical workaround is to use somehow obfuscated names for the
+>parameters in the main function in order to make such collisions
+>unlikely.
+
+Some additional workarounds can be suggested. For example,
+
+* Take a MoreArgs argument, like in mapply(). Cons: this argument forwarding is not perfect, e.g. a missing argument will cause an error, even if the target function could have handled it.
+
+* Curry some or all of the arguments, i.e. replace the original closure with the one calling the original function and passing it extra arguments, e.g. my_lapply(X, curry(f, X = X, f = f), ...). I think I remember someone asking for dedicated currying syntax in R. Cons: a simple curry() implementation will suffer from the same problem.
+
+* Instead of taking the extra arguments in the same call, return a closure that would take them and perform the call: e.g. my_lapply(f, X)(...). Cons: this is not what R code usually looks like.
+
+>Python's PEP 570 discusses the same issue in the context of Python [1].
+>
+>Concretely, borrowing syntax from Python, the proposal would be
+>to have something along the lines of:
+>
+>    g <- function(x, f, /, ...) match.call()
+>    g(1, f, x = 2) == quote(g(1, f, x = 2))
+
+This is realistic to implement. In addition to changes in gram.y (or, perhaps, to the declare() special interface for giving extra instructions to the parser that was suggested for declaring arguments for NSE) to mark the formals as positional-only, the argument matching mechanism in src/main/match.c:matchArgs_NR will need to be changed to take the flag into account.
+
+I think it's also possible to implement a function with its own argument matching in C by making it .External and walking the LISTSXP it receives, but that's of course much less convenient that writing R.
+
+Unfortunately, this won't immediately help the original lapply(). Somewhere, there's a lot of R code calling lapply(X = X, FUN = FUN, ...), which is currently valid. If positional-only arguments are adopted, lapply() would have to go through a long deprecation cycle before being able to protect its callers from argument name collisions. Still, a new lapply2() would be able to use this immediately.
+
+
+-- 
+Best regards,
+Ivan
+
+
+From @vr@h@m@@d|er @end|ng |rom gm@||@com  Sun Nov 12 22:59:27 2023
+From: @vr@h@m@@d|er @end|ng |rom gm@||@com (Avraham Adler)
+Date: Sun, 12 Nov 2023 21:59:27 +0000
+Subject: [Rd] Segmentation fault early in compilation of revision 85514
+Message-ID: <CAL6gwnL1g-KfSD=7WQUnzYv8wwXQJy9cSOaYx++V=EGNhzjM-g@mail.gmail.com>
+
+When trying to compile R on Windows 10 64-bit using LTO as I always do, I
+encountered a segmentation fault early in the compilation. I am uncertain
+as to what it means (please see below for error extract). I am using the
+most recent version of Rtools43 (5863) and updated its libraries prior to
+starting the build. My EOPTS is " -march=native -pipe -mno-rtm" and my
+LTO/LTO_OPT/LTO_FC/LTO_FC_OPT is "-flto=1 -fuse-linker-plugin".
+
+Any explanation or suggestions would be appreciated.
+
+Thank you,
+
+Avi
+
+```
+installing zoneinfo
+making console.d from console.c
+making dynload.d from dynload.c
+making embeddedR.d from embeddedR.c
+making preferences.d from preferences.c
+making psignal.d from psignal.c
+making rui.d from rui.c
+making system.d from system.c
+gcc  -I../include -I. -I../extra -DHAVE_CONFIG_H -DR_DLL_BUILD  -O3 -Wall
+-pedantic -march=native -pipe -mno-rtm -flto=1 -fuse-linker-plugin   -c
+console.c -o console.o
+gcc  -I../include -I. -I../extra -DHAVE_CONFIG_H -DR_DLL_BUILD  -O3 -Wall
+-pedantic -march=native -pipe -mno-rtm -flto=1 -fuse-linker-plugin   -c
+dynload.c -o dynload.o
+gcc  -I../include -I. -I../extra -DHAVE_CONFIG_H -DR_DLL_BUILD  -O3 -Wall
+-pedantic -march=native -pipe -mno-rtm -flto=1 -fuse-linker-plugin   -c
+editor.c -o editor.o
+gcc  -I../include -I. -I../extra -DHAVE_CONFIG_H -DR_DLL_BUILD  -O3 -Wall
+-pedantic -march=native -pipe -mno-rtm -flto=1 -fuse-linker-plugin   -c
+embeddedR.c -o embeddedR.o
+gcc  -I../include -I. -I../extra -DHAVE_CONFIG_H -DR_DLL_BUILD
+-I../library/grDevices/src -O3 -Wall -pedantic -march=native -pipe -mno-rtm
+-flto=1 -fuse-linker-plugin   -c extra.c -o extra.o
+gcc  -I../include -I. -I../extra -DHAVE_CONFIG_H -DR_DLL_BUILD  -O3 -Wall
+-pedantic -march=native -pipe -mno-rtm -flto=1 -fuse-linker-plugin   -c
+opt.c -o opt.o
+gcc  -I../include -I. -I../extra -DHAVE_CONFIG_H -DR_DLL_BUILD  -O3 -Wall
+-pedantic -march=native -pipe -mno-rtm -flto=1 -fuse-linker-plugin   -c
+pager.c -o pager.o
+gcc  -I../include -I. -I../extra -DHAVE_CONFIG_H -DR_DLL_BUILD  -O3 -Wall
+-pedantic -march=native -pipe -mno-rtm -flto=1 -fuse-linker-plugin   -c
+preferences.c -o preferences.o
+gcc  -I../include -I. -I../extra -DHAVE_CONFIG_H -DR_DLL_BUILD  -O3 -Wall
+-pedantic -march=native -pipe -mno-rtm -flto=1 -fuse-linker-plugin   -c
+psignal.c -o psignal.o
+gcc  -I../include -I. -I../extra -DHAVE_CONFIG_H -DR_DLL_BUILD  -O3 -Wall
+-pedantic -march=native -pipe -mno-rtm -flto=1 -fuse-linker-plugin   -c
+rhome.c -o rhome.o
+gcc  -I../include -I. -I../extra -DHAVE_CONFIG_H -DR_DLL_BUILD  -O3 -Wall
+-pedantic -march=native -pipe -mno-rtm -flto=1 -fuse-linker-plugin   -c
+rt_complete.c -o rt_complete.o
+gcc  -I../include -I. -I../extra -DHAVE_CONFIG_H -DR_DLL_BUILD  -O3 -Wall
+-pedantic -march=native -pipe -mno-rtm -flto=1 -fuse-linker-plugin   -c
+rui.c -o rui.o
+gcc  -I../include -I. -I../extra -DHAVE_CONFIG_H -DR_DLL_BUILD  -O3 -Wall
+-pedantic -march=native -pipe -mno-rtm -flto=1 -fuse-linker-plugin   -c
+run.c -o run.o
+gcc  -I../include -I. -I../extra -DHAVE_CONFIG_H -DR_DLL_BUILD  -O3 -Wall
+-pedantic -march=native -pipe -mno-rtm -flto=1 -fuse-linker-plugin   -c
+sys-win32.c -o sys-win32.o
+gcc  -I../include -I. -I../extra -DHAVE_CONFIG_H -DR_DLL_BUILD
+-DR_ARCH='"x64"' -O3 -Wall -pedantic -march=native -pipe -mno-rtm -flto=1
+-fuse-linker-plugin   -c system.c -o system.o
+windres   -I../include -i dllversion.rc -o dllversion.o
+C:\rtools43\x86_64-w64-mingw32.static.posix\bin/nm.exe: mlutils.o: no
+symbols
+C:\rtools43\x86_64-w64-mingw32.static.posix\bin/nm.exe: log1p.o: no symbols
+C:\rtools43\x86_64-w64-mingw32.static.posix\bin/nm.exe: printf.o: no symbols
+C:\rtools43\x86_64-w64-mingw32.static.posix\bin/nm.exe: osdep.o: no symbols
+gcc  -shared -O3 -Wall -pedantic -march=native -pipe -mno-rtm -flto=1
+-fuse-linker-plugin -s -mwindows -o R.dll R.def console.o dynload.o
+editor.o embeddedR.o extra.o opt.o pager.o preferences.o psignal.o rhome.o
+rt_complete.o rui.o run.o shext.o sys-win32.o system.o dos_wglob.o
+dllversion.o ../main/libmain.a ../appl/libappl.a ../nmath/libnmath.a
+getline/gl.a ../extra/xdr/libxdr.a ../extra/intl/libintl.a
+../extra/trio/libtrio.a ../extra/tzone/libtz.a ../extra/tre/libtre.a
+-fopenmp -L. -lgfortran -lquadmath -lRblas -L../../bin/x64 -lRgraphapp
+-lRiconv -lcomctl32 -lole32 -luuid -lwinmm -lversion
+-L"/x86_64-w64-mingw32.static.posix"/lib/x64 -lpcre2-8 -lz -lbz2 -llzma
+-L""/lib/x64 -lsicuin -lsicuuc
+/x86_64-w64-mingw32.static.posix/lib/sicudt.a -lstdc++
+rui.h:37:18: warning: type of 'RConsole' does not match original
+declaration [-Wlto-type-mismatch]
+   37 | LibExtern window RConsole;
+      |                  ^
+rui.c:51:9: note: type 'struct objinfo' should match type 'struct gui_obj'
+   51 | console RConsole = NULL;
+      |         ^
+rui.c:51:9: note: 'RConsole' was previously declared here
+rui.c:51:9: note: code may be misoptimized unless '-fno-strict-aliasing' is
+used
+make[5]: [C:\rtools43\tmp\ccUw2zA8.mk:81:
+C:\rtools43\tmp\ccKMP0O7.ltrans26.ltrans.o] Error 1 (ignore
+d)
+make[5]: [C:\rtools43\tmp\ccUw2zA8.mk:171:
+C:\rtools43\tmp\ccKMP0O7.ltrans56.ltrans.o] Error 1 (ignor
+ed)
+make[5]: [C:\rtools43\tmp\ccUw2zA8.mk:87:
+C:\rtools43\tmp\ccKMP0O7.ltrans28.ltrans.o] Error 1 (ignore
+d)
+make[5]: [C:\rtools43\tmp\ccUw2zA8.mk:96:
+C:\rtools43\tmp\ccKMP0O7.ltrans31.ltrans.o] Error 1 (ignore
+d)
+make[5]: [C:\rtools43\tmp\ccUw2zA8.mk:6:
+C:\rtools43\tmp\ccKMP0O7.ltrans1.ltrans.o] Error 1 (ignored)
+make[5]: [C:\rtools43\tmp\ccUw2zA8.mk:195:
+C:\rtools43\tmp\ccKMP0O7.ltrans64.ltrans.o] Error 1 (ignor
+ed)
+make[5]: [C:\rtools43\tmp\ccUw2zA8.mk:18:
+C:\rtools43\tmp\ccKMP0O7.ltrans5.ltrans.o] Error 1 (ignored
+)
+make[5]: [C:\rtools43\tmp\ccUw2zA8.mk:117:
+C:\rtools43\tmp\ccKMP0O7.ltrans38.ltrans.o] Error 1 (ignor
+ed)
+make[5]: [C:\rtools43\tmp\ccUw2zA8.mk:189:
+C:\rtools43\tmp\ccKMP0O7.ltrans62.ltrans.o] Error 1 (ignor
+ed)
+make[5]: [C:\rtools43\tmp\ccUw2zA8.mk:69:
+C:\rtools43\tmp\ccKMP0O7.ltrans22.ltrans.o] Error 1 (ignore
+d)
+make[5]: [C:\rtools43\tmp\ccUw2zA8.mk:90:
+C:\rtools43\tmp\ccKMP0O7.ltrans29.ltrans.o] Error 1 (ignore
+d)
+make[5]: [C:\rtools43\tmp\ccUw2zA8.mk:36:
+C:\rtools43\tmp\ccKMP0O7.ltrans11.ltrans.o] Error 1 (ignore
+d)
+make[5]: [C:\rtools43\tmp\ccUw2zA8.mk:99:
+C:\rtools43\tmp\ccKMP0O7.ltrans32.ltrans.o] Error 1 (ignore
+d)
+during RTL pass: expand
+../extra\trio/trio.c: In function 'TrioPower':
+../extra\trio/trio.c:1261:1: internal compiler error: Segmentation fault
+ 1261 | }
+      | ^
+libbacktrace could not find executable to open
+Please submit a full bug report, with preprocessed source (by using
+-freport-bug).
+See <https://gcc.gnu.org/bugs/> for instructions.
+make[5]: *** [C:\rtools43\tmp\ccUw2zA8.mk:197:
+C:\rtools43\tmp\ccKMP0O7.ltrans65.ltrans.o] Error 1
+lto-wrapper.exe: fatal error: make returned 2 exit status
+compilation terminated.
+C:\rtools43\x86_64-w64-mingw32.static.posix\bin/ld.exe: error: lto-wrapper
+failed
+collect2.exe: error: ld returned 1 exit status
+make[4]: *** [Makefile:167: R.dll] Error 1
+make[3]: *** [Makefile:187: ../../bin/x64/R.dll] Error 2
+make[2]: *** [Makefile:115: rbuild] Error 2
+make[1]: *** [Makefile:17: all] Error 2
+make: *** [Makefile:392: distribution] Error 2
+```
+
+	[[alternative HTML version deleted]]
+
+
+From d@v|d@be||ot @end|ng |rom gm@||@com  Sun Nov 12 23:09:44 2023
+From: d@v|d@be||ot @end|ng |rom gm@||@com (David Bellot)
+Date: Mon, 13 Nov 2023 09:09:44 +1100
+Subject: [Rd] Wayland Display Support in R Plot
+In-Reply-To: <CALEXWq0LMFevo1yYwbaSYKwXQscR-3BZMg5DbXFMifek3VoFfA@mail.gmail.com>
+References: <SV0P279MB047573DF4EAD91093C4080D1EEA1A@SV0P279MB0475.NORP279.PROD.OUTLOOK.COM>
+ <CALEXWq0LMFevo1yYwbaSYKwXQscR-3BZMg5DbXFMifek3VoFfA@mail.gmail.com>
+Message-ID: <CAOE6ZJEX1yTBZ4Hi+v4nk-rOb-2bk4y0ub2hMjMkO1qRncyH9Q@mail.gmail.com>
+
+Hi,
+
+following on this topic, having full support for Wayland in R would be
+great indeed.
+In the news this week, after GNOME removed X11 support, KDE is doing the
+same. I really love X11, but maybe it's time to move forward.
+I've been using GNOME + Wayland for more than a year now, including screen
+sharing with various video call software (Google, Zoom, etc...) and had no
+issues at all. It works even better than my previous (very long) experience
+with X11.
+
+Best,
+David
+
+On Tue, Oct 31, 2023 at 12:13?AM I?aki Ucar <iucar at fedoraproject.org> wrote:
+
+> El lun., 30 oct. 2023 12:26, Roger Bivand <Roger.Bivand at nhh.no> escribi?:
+>
+> > I also noticed this:
+> >
+> > https://www.theregister.com/2023/10/13/gnome_proposes_dropping_x11/
+> >
+> > which is concerning. Until now, I've retained X11 on Fedora because of
+> > difficulties in screen sharing via zoom in Wayland sessions.
+> >
+>
+> KDE Plasma user here. FWIW, I've been using Wayland for a year and a half
+> now with no issues, including screen sharing, etc.
+>
+> I?aki
+>
+>
+> > Roger
+> >
+> > --
+> > Roger Bivand
+> > Emeritus Professor
+> > Norwegian School of Economics
+> > Postboks 3490 Ytre Sandviken, 5045 Bergen, Norway
+> > Roger.Bivand at nhh.no
+> > ______________________________________________
+> > R-devel at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-devel
+> >
+>
+>         [[alternative HTML version deleted]]
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+
+	[[alternative HTML version deleted]]
+
+
+From edd @end|ng |rom deb|@n@org  Mon Nov 13 02:13:30 2023
+From: edd @end|ng |rom deb|@n@org (Dirk Eddelbuettel)
+Date: Sun, 12 Nov 2023 19:13:30 -0600
+Subject: [Rd] Segmentation fault early in compilation of revision 85514
+In-Reply-To: <CAL6gwnL1g-KfSD=7WQUnzYv8wwXQJy9cSOaYx++V=EGNhzjM-g@mail.gmail.com>
+References: <CAL6gwnL1g-KfSD=7WQUnzYv8wwXQJy9cSOaYx++V=EGNhzjM-g@mail.gmail.com>
+Message-ID: <25937.30778.195129.450170@rob.eddelbuettel.com>
+
+
+Avi,
+
+Might be toolchain-dependent, might be options-dependent--it built fine here.
+Easier for you to vary option two so maybe try that?
+
+Dirk
+
+-- 
+dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From @vr@h@m@@d|er @end|ng |rom gm@||@com  Mon Nov 13 19:45:14 2023
+From: @vr@h@m@@d|er @end|ng |rom gm@||@com (Avraham Adler)
+Date: Mon, 13 Nov 2023 18:45:14 +0000
+Subject: [Rd] Segmentation fault early in compilation of revision 85514
+In-Reply-To: <25937.30778.195129.450170@rob.eddelbuettel.com>
+References: <CAL6gwnL1g-KfSD=7WQUnzYv8wwXQJy9cSOaYx++V=EGNhzjM-g@mail.gmail.com>
+ <25937.30778.195129.450170@rob.eddelbuettel.com>
+Message-ID: <CAL6gwnKf5J3jgBB2ApqJORc7LXOP6-L8fWM3OXeBimU0RiA2wQ@mail.gmail.com>
+
+On Mon, Nov 13, 2023 at 1:13?AM Dirk Eddelbuettel <edd at debian.org> wrote:
+>
+>
+> Avi,
+>
+> Might be toolchain-dependent, might be options-dependent--it built fine here.
+> Easier for you to vary option two so maybe try that?
+>
+> Dirk
+
+Thank you, Dirk.
+
+I think it was more a PEBCAK issue. When I deleted the entire trunk
+folder and started the process from scratch, it compiled properly as
+per usual. Although this was revision 85520, so perhaps something
+changed in the interim.
+
+Regardless, the issue resolved itself.
+
+Thanks,
+
+Avi
+
+
