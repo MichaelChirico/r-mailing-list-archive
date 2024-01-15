@@ -1,0 +1,1393 @@
+From du@@@@dr|@n @end|ng |rom gm@||@com  Thu Jan  4 10:57:15 2024
+From: du@@@@dr|@n @end|ng |rom gm@||@com (=?UTF-8?B?QWRyaWFuIER1yJlh?=)
+Date: Thu, 4 Jan 2024 11:57:15 +0200
+Subject: [Rd] static html vignette
+Message-ID: <CAJ=0CtCZM4AW_obdmipvd_X9pcF_b2JD49qbbNVpX+Z9VnZwGg@mail.gmail.com>
+
+Dear All,
+
+I learned how to include a static pdf vignette into an R package, using a
+dummy .Rnw file to include an already produced "vignette.pdf" file:
+
+\documentclass{article}
+\usepackage{pdfpages}
+\begin{document}
+\includepdf[pages=-, fitpaper=true]{vignette.pdf}
+\end{document}
+
+I wonder if it would be possible to include an html static vignette. Such
+Rmarkdown (to html) vignettes can be produced using package "knitr", which
+users are forced to install (along with dozens of knitr-dependent packages
+from tidyverse) despite having nothing to do with the package itself.
+
+If at all possible, I would like to avoid having users install "knitr" via
+the Suggests field. I love that package, but I don't like its dependency
+chain.
+
+Thank you for any suggestions,
+Adrian
+
+	[[alternative HTML version deleted]]
+
+
+From kry|ov@r00t @end|ng |rom gm@||@com  Thu Jan  4 11:55:48 2024
+From: kry|ov@r00t @end|ng |rom gm@||@com (Ivan Krylov)
+Date: Thu, 4 Jan 2024 13:55:48 +0300
+Subject: [Rd] static html vignette
+In-Reply-To: <CAJ=0CtCZM4AW_obdmipvd_X9pcF_b2JD49qbbNVpX+Z9VnZwGg@mail.gmail.com>
+References: <CAJ=0CtCZM4AW_obdmipvd_X9pcF_b2JD49qbbNVpX+Z9VnZwGg@mail.gmail.com>
+Message-ID: <20240104135548.03db2b3a@Tarkus>
+
+On Thu, 4 Jan 2024 11:57:15 +0200
+Adrian Du?a <dusa.adrian at gmail.com> wrote:
+
+> I wonder if it would be possible to include an html static vignette. 
+
+This is better suited for R-package-devel, not R-devel.
+
+I would say that static vignettes are against the spirit of vignettes:
+the idea is to provide another layer of unit testing to the package by
+providing a deeper executable example than is possible with just Rd
+examples. I think that Bioconductor will even refuse a package with a
+vignette with no executable code in it.
+
+Still, you can use the R.rsp package to provide static vignettes in
+both PDF and HTML formats:
+https://cran.r-project.org/package=R.rsp/vignettes/R_packages-Static_PDF_and_HTML_vignettes.pdf
+
+This will add 6 packages to your total Suggests budget:
+
+setdiff(
+ unlist(package_dependencies('R.rsp', recursive=TRUE)),
+ unlist(standard_package_names())
+)
+# [1] "R.methodsS3" "R.oo"        "R.utils"     "R.cache"     "digest"  
+
+HTML vignettes currently have much better accessibility than PDF
+vignettes, and the need for a low-dependency-footprint (in terms of
+both R packages and external tools like Pandoc) HTML vignette engine is
+evident <https://github.com/rstats-gsod/gsod2022/issues/5>. It's easy
+to solve this problem ~80% of the way, but making something that ticks
+all the boxes (zero-dependency and/or suitable for inclusion into R
+itself, handles plots *and* math, low-boilerplate, no external
+dependencies like Pandoc or JavaScript CDNs, compact output) is a hard
+problem that's mostly not fun to work on.
+
+The R2HTML package has no non-core hard dependencies and provides an
+HTML Sweave engine, but I'm not sure it can be used in a vignette (and
+it probably needs more maintainer work to be up to modern standards).
+
+The zero-dependency approach will be to bring your own vignette engine
+with you, but that requires lots of additional work (including bug
+workarounds: <https://bugs.r-project.org/show_bug.cgi?id=18191>). I've
+seen CRAN packages that do that, but I cannot find them right now. Yet
+another trick would be to provide a dummy *.Rnw file to trigger the
+vignette-building code and a Makefile in which the real vignette is
+produced (removing the dummy vignette and its intermediate output).
+Again, writing a portable Makefile is non-trivial and only lets you
+work around PR18191.
+
+-- 
+Best regards,
+Ivan
+
+
+From henr|k@bengt@@on @end|ng |rom gm@||@com  Sat Jan  6 18:38:06 2024
+From: henr|k@bengt@@on @end|ng |rom gm@||@com (Henrik Bengtsson)
+Date: Sat, 6 Jan 2024 09:38:06 -0800
+Subject: [Rd] tools::startDynamicHelp(): Randomly prevents R from exiting
+ (on MS Windows)
+Message-ID: <CAFDcVCSYSQ4zWvGuUdZ0PGC7C50GaRJtfAwqTq172vq30fEnQQ@mail.gmail.com>
+
+ISSUE:
+
+On MS Windows, running cmd.exe, calling
+
+Rscript --vanilla -e "port <- tools::startDynamicHelp(); port; port <-
+tools::startDynamicHelp(FALSE); port"
+
+will sometimes stall R at the end, preventing it from existing.  This
+also happens when running R in interactive mode.  It seems to stem
+from calling tools::startDynamicHelp(FALSE).
+
+Before filing a formal bug report, can someone please confirm this
+behavior? You might have to call it multiple times to hit the bug.
+
+DETAILS:
+
+Microsoft Windows [Version 10.0.19045.3803]
+(c) Microsoft Corporation. All rights reserved.
+
+C:\Users\hb>R --version
+R version 4.3.2 (2023-10-31 ucrt) -- "Eye Holes"
+Copyright (C) 2023 The R Foundation for Statistical Computing
+Platform: x86_64-w64-mingw32/x64 (64-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under the terms of the
+GNU General Public License versions 2 or 3.
+For more information about these matters see
+https://www.gnu.org/licenses/.
+
+C:\Users\hb> Rscript --vanilla -e "port <- tools::startDynamicHelp();
+port; port <- tools::startDynamicHelp(FALSE); port"
+starting httpd help server ... done
+[1] 18897
+[1] 0
+
+[WORKED]
+
+C:\Users\hb> Rscript --vanilla -e "port <- tools::startDynamicHelp();
+port; port <- tools::startDynamicHelp(FALSE); port"
+starting httpd help server ... done
+[1] 17840
+[1] 0
+
+[STALLED]
+
+Bugwhisperer Bengtsson
+
+
+From henr|k@bengt@@on @end|ng |rom gm@||@com  Sun Jan  7 03:13:15 2024
+From: henr|k@bengt@@on @end|ng |rom gm@||@com (Henrik Bengtsson)
+Date: Sat, 6 Jan 2024 18:13:15 -0800
+Subject: [Rd] 
+ tools::startDynamicHelp(): Randomly prevents R from exiting
+ (on MS Windows)
+In-Reply-To: <-kCL9HFdp7ApJkMOcy3SQa_-wjC2s5EkS2u8QrZqPdD9UUHVc9mtScrUZgVDrrX3CCa5Z8Bu657o4geN9sXutavIkKrHq9WUeQwOGEC8IE4=@protonmail.com>
+References: <CAFDcVCSYSQ4zWvGuUdZ0PGC7C50GaRJtfAwqTq172vq30fEnQQ@mail.gmail.com>
+ <-kCL9HFdp7ApJkMOcy3SQa_-wjC2s5EkS2u8QrZqPdD9UUHVc9mtScrUZgVDrrX3CCa5Z8Bu657o4geN9sXutavIkKrHq9WUeQwOGEC8IE4=@protonmail.com>
+Message-ID: <CAFDcVCTu9rXfeVvTnR5qDMDJMgpH33HEXSYnq+B9SAUD-LmopQ@mail.gmail.com>
+
+Thank you for confirming this. I just filed PR#18650
+(https://bugs.r-project.org/show_bug.cgi?id=18650).
+
+FWIW, I've found two other issues with startDynamicHelp() prior to this:
+
+* https://bugs.r-project.org/show_bug.cgi?id=18645
+* https://bugs.r-project.org/show_bug.cgi?id=18648
+
+/Henrik
+
+On Sat, Jan 6, 2024 at 5:53?PM Steve Martin <marberts at protonmail.com> wrote:
+>
+> Henrik,
+>
+> I was able to reproduce this both with Rscript and interactively using the same version of R you're using (fresh install) and Windows 10.0.22621.2715. It took about a dozen tries.
+>
+> Steve
+>
+>
+>
+>
+>
+>
+> -------- Original Message --------
+> On Jan 6, 2024, 12:38, Henrik Bengtsson < henrik.bengtsson at gmail.com> wrote:
+>
+>
+> ISSUE: On MS Windows, running cmd.exe, calling Rscript --vanilla -e "port <- tools::startDynamicHelp(); port; port <- tools::startDynamicHelp(FALSE); port" will sometimes stall R at the end, preventing it from existing. This also happens when running R in interactive mode. It seems to stem from calling tools::startDynamicHelp(FALSE). Before filing a formal bug report, can someone please confirm this behavior? You might have to call it multiple times to hit the bug. DETAILS: Microsoft Windows [Version 10.0.19045.3803] (c) Microsoft Corporation. All rights reserved. C:\Users\hb>R --version R version 4.3.2 (2023-10-31 ucrt) -- "Eye Holes" Copyright (C) 2023 The R Foundation for Statistical Computing Platform: x86_64-w64-mingw32/x64 (64-bit) R is free software and comes with ABSOLUTELY NO WARRANTY. You are welcome to redistribute it under the terms of the GNU General Public License versions 2 or 3. For more information about these matters see https://www.gnu.org/licenses/. C:\Users\hb> Rscript --vanilla -e "port <- tools::startDynamicHelp(); port; port <- tools::startDynamicHelp(FALSE); port" starting httpd help server ... done [1] 18897 [1] 0 [WORKED] C:\Users\hb> Rscript --vanilla -e "port <- tools::startDynamicHelp(); port; port <- tools::startDynamicHelp(FALSE); port" starting httpd help server ... done [1] 17840 [1] 0 [STALLED] Bugwhisperer Bengtsson ______________________________________________ R-devel at r-project.org mailing list https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From m@rbert@ @end|ng |rom protonm@||@com  Sun Jan  7 02:53:19 2024
+From: m@rbert@ @end|ng |rom protonm@||@com (Steve Martin)
+Date: Sun, 07 Jan 2024 01:53:19 +0000
+Subject: [Rd] 
+ tools::startDynamicHelp(): Randomly prevents R from exiting
+ (on MS Windows)
+In-Reply-To: <CAFDcVCSYSQ4zWvGuUdZ0PGC7C50GaRJtfAwqTq172vq30fEnQQ@mail.gmail.com>
+References: <CAFDcVCSYSQ4zWvGuUdZ0PGC7C50GaRJtfAwqTq172vq30fEnQQ@mail.gmail.com>
+Message-ID: <-kCL9HFdp7ApJkMOcy3SQa_-wjC2s5EkS2u8QrZqPdD9UUHVc9mtScrUZgVDrrX3CCa5Z8Bu657o4geN9sXutavIkKrHq9WUeQwOGEC8IE4=@protonmail.com>
+
+Henrik,
+
+I was able to reproduce this both with Rscript and interactively using the same version of R you're using (fresh install) and Windows 10.0.22621.2715. It took about a dozen tries.
+
+Steve
+
+-------- Original Message --------
+On Jan 6, 2024, 12:38, Henrik Bengtsson wrote:
+
+> ISSUE: On MS Windows, running cmd.exe, calling Rscript --vanilla -e "port R --version R version 4.3.2 (2023-10-31 ucrt) -- "Eye Holes" Copyright (C) 2023 The R Foundation for Statistical Computing Platform: x86_64-w64-mingw32/x64 (64-bit) R is free software and comes with ABSOLUTELY NO WARRANTY. You are welcome to redistribute it under the terms of the GNU General Public License versions 2 or 3. For more information about these matters see https://www.gnu.org/licenses/. C:\Users\hb> Rscript --vanilla -e "port Rscript --vanilla -e "port
+	[[alternative HTML version deleted]]
+
+
+From m@rchywk@ @end|ng |rom hotm@||@com  Tue Jan  9 15:20:17 2024
+From: m@rchywk@ @end|ng |rom hotm@||@com (Mike Marchywka)
+Date: Tue, 9 Jan 2024 14:20:17 +0000
+Subject: [Rd] using Paraview "in-situ" with R?
+Message-ID: <BL3PR11MB6338D814D9A3FF932D7E7F49BE6A2@BL3PR11MB6338.namprd11.prod.outlook.com>
+
+I had previously asked about R interfaces to various "other" visualization
+tools specifically lightweights for monitoring progress of
+various codes. I was working on this,
+
+https://github.com/mmarchywka/mjmdatascope
+
+but in the meantime found out that Paraview has an "in-situ"
+capability for similar objectives. 
+
+https://discourse.paraview.org/t/does-or-can-paraview-support-streaming-input/13637/9
+
+While R does have a lot of plotting features, 
+it seems like an excellent tool to interface to R allowing visualization without
+a bunch of temp files or 
+
+Is anyone aware of anyone doing this interface or reasons its  a boondoggle?
+
+Thanks. 
+
+
+
+?Mike Marchywka?
+44 Crosscreek Trail
+Jasper GA 30143
+was 306 Charles Cox Drive? Canton, GA 30115
+470-758-0799
+404-788-1216?
+
+
+
+
+From |kry|ov @end|ng |rom d|@root@org  Tue Jan  9 15:35:29 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Tue, 9 Jan 2024 17:35:29 +0300
+Subject: [Rd] using Paraview "in-situ" with R?
+In-Reply-To: <BL3PR11MB6338D814D9A3FF932D7E7F49BE6A2@BL3PR11MB6338.namprd11.prod.outlook.com>
+References: <BL3PR11MB6338D814D9A3FF932D7E7F49BE6A2@BL3PR11MB6338.namprd11.prod.outlook.com>
+Message-ID: <20240109173529.7e1ec15b@Tarkus>
+
+? Tue, 9 Jan 2024 14:20:17 +0000
+Mike Marchywka <marchywka at hotmail.com> ?????:
+
+> it seems like an excellent tool to interface to R allowing
+> visualization without a bunch of temp files or 
+> 
+> Is anyone aware of anyone doing this interface or reasons its  a
+> boondoggle?
+
+This sounds like it's better suited for r-package-devel at r-project.org,
+not R-devel itself.
+
+In theory, nothing should prevent you from writing C++ code interfacing
+with ParaView (via its "adios" streaming library) and with R. The Rcpp
+package will likely help you bring the semantics of the two languages
+closer together. (Memory allocation and error handling are the two
+major topics where R and C++ especially disagree.)
+
+On the R side, make an object with reference semantics (i.e. an
+external pointer) and use callbacks to update it with new information
+while R code is running. On the R extension side, translate these
+callbacks into necessary calls to the adios library to transfer the
+data to ParaView.
+
+For more informaion, see Writing R Extensions at
+<https://cran.r-project.org/doc/manuals/R-exts.html> and Rcpp
+documentation at <https://CRAN.R-project.org/package=Rcpp>.
+
+-- 
+Best regards,
+Ivan
+
+
+From |kry|ov @end|ng |rom d|@root@org  Wed Jan 10 20:43:31 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Wed, 10 Jan 2024 22:43:31 +0300
+Subject: [Rd] Sys.which() caching path to `which`
+Message-ID: <20240110224331.24ee0edf@Tarkus>
+
+Hello R-devel,
+
+Currently on Unix-like systems, Sys.which incorporates the absolute
+path to the `which` executable, obtained at the configure stage:
+
+>    ## hopefully configure found [/usr]/bin/which
+>    which <- "@WHICH@"
+>    if (!nzchar(which)) {
+>        warning("'which' was not found on this platform")
+
+This poses a problem for the Spack package manager and software
+distribution. In Spack, like in Nix, Guix, and GoboLinux, packages live
+under their own path prefixes, which look like the following:
+
+>> /opt/spack/opt/spack/linux-ubuntu18.04-x86_64_v3/gcc-7.5.0/r-4.3.0-eqteloqhjzix6ta373ruzt5imvvbcesc
+
+Unfortunately, Spack packages are expected to get relocated, changing
+the path prefix and invalidating stored paths, including the path to
+`which`: <https://github.com/spack/spack/issues/41953>.
+
+Harmen Stoppels, who is not subscribed to R-devel but interested in
+making R work in Spack, currently creates a symlink to `which`
+<https://github.com/r-devel/r-svn/pull/151> as part of a patch to R.
+
+What would be the minimally disruptive way to avoid this dependency or
+at least make it easier to fix post-factum, during relocation? What
+would be the pitfall if Sys.which() were to find `which` on the $PATH
+by itself, without remembering the full path?
+
+-- 
+Best regards,
+Ivan
+
+
+From georgeo@t @end|ng |rom gm@||@com  Wed Jan 10 21:06:03 2024
+From: georgeo@t @end|ng |rom gm@||@com (George Ostrouchov)
+Date: Wed, 10 Jan 2024 15:06:03 -0500
+Subject: [Rd] using Paraview "in-situ" with R?
+In-Reply-To: <mailman.53974.3.1704884401.50676.r-devel@r-project.org>
+References: <mailman.53974.3.1704884401.50676.r-devel@r-project.org>
+Message-ID: <450D9456-89A0-4589-B677-F5A524B2928E@gmail.com>
+
+At ORNL, we worked with VisIt (a sibling of Paraview, both funded largely by DOE) around 2016 and made an in situ demo with R. We used packages pbdMPI (on CRAN) and pbdDMAT (on GitHub/RbigData), which were in part built for this purpose. Later also the package hola (on GitHub/RbigData) was built to connect with adios2, which can do buffered in situ connections with various codes.
+
+But the VisIt developers were not interested in R (preferring to roll their own), so that direction fizzled. Paraview is a competetive sibling of VisIt, so I don?t know if they would be interested. The packages we developed are viable for that purpose. There is a lot in R that could benefit Paraview (or VisIt).
+
+George
+
+> 
+> Message: 1
+> Date: Tue, 9 Jan 2024 14:20:17 +0000
+> From: Mike Marchywka <marchywka at hotmail.com>
+> To: R-devel <r-devel at r-project.org>
+> Subject: [Rd] using Paraview "in-situ" with R?
+> Message-ID:
+> 	<BL3PR11MB6338D814D9A3FF932D7E7F49BE6A2 at BL3PR11MB6338.namprd11.prod.outlook.com>
+> 	
+> Content-Type: text/plain; charset="iso-8859-1"
+> 
+> I had previously asked about R interfaces to various "other" visualization
+> tools specifically lightweights for monitoring progress of
+> various codes. I was working on this,
+> 
+> https://github.com/mmarchywka/mjmdatascope
+> 
+> but in the meantime found out that Paraview has an "in-situ"
+> capability for similar objectives. 
+> 
+> https://discourse.paraview.org/t/does-or-can-paraview-support-streaming-input/13637/9
+> 
+> While R does have a lot of plotting features, 
+> it seems like an excellent tool to interface to R allowing visualization without
+> a bunch of temp files or 
+> 
+> Is anyone aware of anyone doing this interface or reasons its  a boondoggle?
+> 
+> Thanks. 
+> 
+> 
+> 
+>  Mike Marchywka 
+> 44 Crosscreek Trail
+> Jasper GA 30143
+> was 306 Charles Cox Drive  Canton, GA 30115
+> 470-758-0799
+> 404-788-1216 
+> 
+
+
+From georgeo@t @end|ng |rom gm@||@com  Wed Jan 10 21:06:03 2024
+From: georgeo@t @end|ng |rom gm@||@com (George Ostrouchov)
+Date: Wed, 10 Jan 2024 15:06:03 -0500
+Subject: [Rd] using Paraview "in-situ" with R?
+In-Reply-To: <mailman.53974.3.1704884401.50676.r-devel@r-project.org>
+References: <mailman.53974.3.1704884401.50676.r-devel@r-project.org>
+Message-ID: <450D9456-89A0-4589-B677-F5A524B2928E@gmail.com>
+
+At ORNL, we worked with VisIt (a sibling of Paraview, both funded largely by DOE) around 2016 and made an in situ demo with R. We used packages pbdMPI (on CRAN) and pbdDMAT (on GitHub/RbigData), which were in part built for this purpose. Later also the package hola (on GitHub/RbigData) was built to connect with adios2, which can do buffered in situ connections with various codes.
+
+But the VisIt developers were not interested in R (preferring to roll their own), so that direction fizzled. Paraview is a competetive sibling of VisIt, so I don?t know if they would be interested. The packages we developed are viable for that purpose. There is a lot in R that could benefit Paraview (or VisIt).
+
+George
+
+> 
+> Message: 1
+> Date: Tue, 9 Jan 2024 14:20:17 +0000
+> From: Mike Marchywka <marchywka at hotmail.com>
+> To: R-devel <r-devel at r-project.org>
+> Subject: [Rd] using Paraview "in-situ" with R?
+> Message-ID:
+> 	<BL3PR11MB6338D814D9A3FF932D7E7F49BE6A2 at BL3PR11MB6338.namprd11.prod.outlook.com>
+> 	
+> Content-Type: text/plain; charset="iso-8859-1"
+> 
+> I had previously asked about R interfaces to various "other" visualization
+> tools specifically lightweights for monitoring progress of
+> various codes. I was working on this,
+> 
+> https://github.com/mmarchywka/mjmdatascope
+> 
+> but in the meantime found out that Paraview has an "in-situ"
+> capability for similar objectives. 
+> 
+> https://discourse.paraview.org/t/does-or-can-paraview-support-streaming-input/13637/9
+> 
+> While R does have a lot of plotting features, 
+> it seems like an excellent tool to interface to R allowing visualization without
+> a bunch of temp files or 
+> 
+> Is anyone aware of anyone doing this interface or reasons its  a boondoggle?
+> 
+> Thanks. 
+> 
+> 
+> 
+>  Mike Marchywka 
+> 44 Crosscreek Trail
+> Jasper GA 30143
+> was 306 Charles Cox Drive  Canton, GA 30115
+> 470-758-0799
+> 404-788-1216 
+> 
+
+
+From @|mon@urb@nek @end|ng |rom R-project@org  Wed Jan 10 21:30:55 2024
+From: @|mon@urb@nek @end|ng |rom R-project@org (Simon Urbanek)
+Date: Thu, 11 Jan 2024 09:30:55 +1300
+Subject: [Rd] Sys.which() caching path to `which`
+In-Reply-To: <20240110224331.24ee0edf@Tarkus>
+References: <20240110224331.24ee0edf@Tarkus>
+Message-ID: <F5607414-92E9-4D46-AD93-8100D9ED6997@R-project.org>
+
+Ivan,
+
+I suspect that the `which' case is just the tip of the iceberg - generally, R expects all tools it detects at configure time to be callable, just to list a few from a running session:
+
+PAGER                   /usr/bin/less
+R_BROWSER               /usr/bin/open
+R_BZIPCMD               /usr/bin/bzip2
+R_GZIPCMD               /usr/bin/gzip
+R_PDFVIEWER             /usr/bin/open
+R_QPDF                  /Library/Frameworks/R.framework/Resources/bin/qpdf
+R_TEXI2DVICMD           /usr/local/bin/texi2dvi
+R_UNZIPCMD              /usr/bin/unzip
+R_ZIPCMD                /usr/bin/zip
+SED                     /usr/bin/sed
+TAR                     /usr/bin/tar
+
+I would claim it is not an unreasonable expectation that the user doesn't delete tools after R was built. Obviously it is tedious, but Spack may need to patch all absolute paths if it wants to relocate things (it's not easy as it includes all linker paths as well FWIW) - they must be doing something like that already as even the R start-up script uses absolute paths:
+
+$ grep ^R_ /Library/Frameworks/R.framework/Resources/bin/R 
+R_HOME_DIR=/Library/Frameworks/R.framework/Resources
+R_HOME="${R_HOME_DIR}"
+R_SHARE_DIR=/Library/Frameworks/R.framework/Resources/share
+R_INCLUDE_DIR=/Library/Frameworks/R.framework/Resources/include
+R_DOC_DIR=/Library/Frameworks/R.framework/Resources/doc
+R_binary="${R_HOME}/bin/exec${R_ARCH}/R"
+
+That said, WHICH is a mess - it may make sense to switch to the command -v built-in which is part of POSIX (where available - which is almost everywhere today) which would not require an external tool, but as noted I don't think this is the only problem Spack has... (and that's just core R - even a bigger can of worms with R packages :P).
+
+Cheers,
+Simon
+
+
+> On Jan 11, 2024, at 8:43 AM, Ivan Krylov via R-devel <r-devel at r-project.org> wrote:
+> 
+> Hello R-devel,
+> 
+> Currently on Unix-like systems, Sys.which incorporates the absolute
+> path to the `which` executable, obtained at the configure stage:
+> 
+>>   ## hopefully configure found [/usr]/bin/which
+>>   which <- "@WHICH@"
+>>   if (!nzchar(which)) {
+>>       warning("'which' was not found on this platform")
+> 
+> This poses a problem for the Spack package manager and software
+> distribution. In Spack, like in Nix, Guix, and GoboLinux, packages live
+> under their own path prefixes, which look like the following:
+> 
+>>> /opt/spack/opt/spack/linux-ubuntu18.04-x86_64_v3/gcc-7.5.0/r-4.3.0-eqteloqhjzix6ta373ruzt5imvvbcesc
+> 
+> Unfortunately, Spack packages are expected to get relocated, changing
+> the path prefix and invalidating stored paths, including the path to
+> `which`: <https://github.com/spack/spack/issues/41953>.
+> 
+> Harmen Stoppels, who is not subscribed to R-devel but interested in
+> making R work in Spack, currently creates a symlink to `which`
+> <https://github.com/r-devel/r-svn/pull/151> as part of a patch to R.
+> 
+> What would be the minimally disruptive way to avoid this dependency or
+> at least make it easier to fix post-factum, during relocation? What
+> would be the pitfall if Sys.which() were to find `which` on the $PATH
+> by itself, without remembering the full path?
+> 
+> -- 
+> Best regards,
+> Ivan
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+> 
+
+
+From @|mon@urb@nek @end|ng |rom R-project@org  Wed Jan 10 22:49:10 2024
+From: @|mon@urb@nek @end|ng |rom R-project@org (Simon Urbanek)
+Date: Thu, 11 Jan 2024 10:49:10 +1300
+Subject: [Rd] Sys.which() caching path to `which`
+In-Reply-To: <smSiCiOj6OVa5cU_i6rZFGKxzIKgEwi_KLsJrvUaxhHlgHjO1S2GT8qHbE3F6Zb2p69GpWrDZB3A_nbcetlUNmX8BLoXfVy8gh3FOn-s2gA=@harmenstoppels.nl>
+References: <20240110224331.24ee0edf@Tarkus>
+ <F5607414-92E9-4D46-AD93-8100D9ED6997@R-project.org>
+ <smSiCiOj6OVa5cU_i6rZFGKxzIKgEwi_KLsJrvUaxhHlgHjO1S2GT8qHbE3F6Zb2p69GpWrDZB3A_nbcetlUNmX8BLoXfVy8gh3FOn-s2gA=@harmenstoppels.nl>
+Message-ID: <178F021A-87EA-45B5-A503-406D5BAE105E@R-project.org>
+
+Harmen,
+
+thanks for the additional details, it wasn't exactly clear what this is about. Ivan's post didn't mention that the issue here is the caching, not the path replacement which you are apparently already doing, now it makes more sense.
+
+I still think it is dangerous as you have no way of knowing who else is caching values at installation time since there is no reason to assume that the system will change after installation - technically, it breaks the contract with the application. We are trying to get packages to not hard-code or cache paths, but that typically only applies to the package library location, not to system tools.
+
+Cheers,
+Simon
+
+
+> On Jan 11, 2024, at 10:36 AM, Harmen Stoppels <me at harmenstoppels.nl> wrote:
+> 
+> For context: I don't think Nix and Guix have to relocate anything, cause I think they require absolute paths like /nix/store where all binaries go. Spack on the other hand can install packages w/o sudo to a location of choice, e.g. ~/spack/opt/spack. That's why we have to patch binaries.
+> 
+> However, Spack's relocation stuff is not about creating truly relocatable binaries where everything is referenced by relative paths. We still use absolute paths almost everywhere, it's just that they have to be rewired when the location things are built is different from where they are installed.
+> 
+> I'm sure there are people who would like to have an actually fully relocatable R, but that's not my goal.
+> 
+>> I would claim it is not an unreasonable expectation that the user doesn't delete tools after R was built. Obviously it is tedious, but Spack may need to patch all absolute paths if it wants to relocate things (it's not easy as it includes all linker paths as well FWIW) - they must be doing something like that already as even the R start-up script uses absolute paths
+> 
+> Basically Spack does (a) special handling of the dynamic section of ELF files for Linux / FreeBSD, and load commands of mach-o files for macOS, (b) find & replace of prefixes in text files / scripts and (c) somewhat fancy but still basic replacement of C-strings containing prefixes in binaries.
+> 
+> This works reliably because the package prefixes contain hashes that make false positives unlikely.
+> 
+> It's just that it does not work when the absolute path to be relocated is captured inside serialized bytecode in a zlib-compressed database base.rdb :)
+> 
+> I believe `which` is the only occurrence of this.
+> 
+>> That said, WHICH is a mess - it may make sense to switch to the command -v built-in which is part of POSIX (where available - which is almost everywhere today) which would not require an external tool
+> 
+> That sounds like a decent solution to me, probably `command -v` is more commonly available than `which`.
+> 
+>> I don't think this is the only problem Spack has... (and that's just core R - even a bigger can of worms with R packages :P).
+> 
+> We can deal with most issues, just not with compressed byte code.
+> 
+> 
+
+
+From m|kkm@rt @end|ng |rom protonm@||@com  Thu Jan 11 01:29:58 2024
+From: m|kkm@rt @end|ng |rom protonm@||@com (mikkmart)
+Date: Thu, 11 Jan 2024 00:29:58 +0000
+Subject: [Rd] New syntax for positional-only function parameters?
+In-Reply-To: <754821DB-5E12-4AA7-BAF9-B2388DFC9595@gmail.com>
+References: <w-ucjjtNdxQhl8Zu_e2FPoUCgc_P2TH5EXER3li56cz76Zt6YjohZrns85_ZaNLITdRwiSkqPGN7tPmheYu-N4kZNX0MhRtgE64ysN8C6Zc=@protonmail.com>
+ <754821DB-5E12-4AA7-BAF9-B2388DFC9595@gmail.com>
+Message-ID: <kKmFW-reimfGaOU1E8hJgbAcdp-n2nTZ3XUKakDjUBAaeIbVNG1AHp7etcbCCu37cPzhjMGjoipqNKvT5T50uh1CP3HT8OJaRY3nEW2VCwM=@protonmail.com>
+
+Thanks Aidan and Ivan,
+
+> Could you give a little more detail on this [...]? [...] Typically, the
+> default scoping rules are sufficient to resolve these [...].
+
+I agree these conflicts can be solved when spotted. And certainly more easily
+so if there were a dedicated currying syntax in base R as Ivan mentioned.
+However I think both users and package authors would benefit from being able
+to prevent the collisions altogether.
+
+To collect some data on the prevalence, I analyzed the 387 installed packages
+on my machine, including 23 433 functions. Of those, 2 585 (11%) both accepted
+... and had a "mangled" first argument name (one that did not start with a
+lower case letter), indicating that the function might have benefited from
+the availability of a positional-only parameter syntax.
+
+> This is realistic to implement. In addition to changes in gram.y (or,
+> perhaps, to the declare() special interface for giving extra instructions to
+> the parser that was suggested for declaring arguments for NSE) to mark the
+> formals as positional-only, the argument matching mechanism in
+> src/main/match.c:matchArgs_NR will need to be changed to take the flag
+> into account.
+
+Thanks, Ivan, for the pointers. Following them I was able to put together a...
+let's say proof of concept patch for this, included below. With the patch[1]
+we indeed have for example:
+
+g <- function(x, f, /, ...) match.call()
+g(1, f, x = 2) == quote(g(1, f, x = 2))
+
+Or:
+
+my_lapply <- function(x, f, /, ...) {
+  res <- vector("list", length(x))
+  for (i in seq_along(x)) {
+    res[[i]] <- f(x[[i]], ...)
+  }
+  res
+}
+
+add <- function(x, y) x + y
+my_lapply(1:5, add, x = 1)
+
+Best wishes,
+
+Mikko
+
+[1]: Compiled with `RUN_BISON=1 make all recommended` on Windows, as it took
+  me a painful while to figure out.
+
+Index: src/main/gram.y
+===================================================================
+--- src/main/gram.y     (revision 85797)
++++ src/main/gram.y     (working copy)
+@@ -557,6 +557,7 @@
+ formlist:                                      { $$ = xxnullformal(); }
+        |       SYMBOL                          { $$ = xxfirstformal0($1);      modif_token( &@1, SYMBOL_FORMALS ) ; }
+        |       SYMBOL EQ_ASSIGN expr_or_help   { $$ = xxfirstformal1($1,$3);   modif_token( &@1, SYMBOL_FORMALS ) ; modif_token( &@2, EQ_FORMALS ) ; }
++       |       formlist ',' '/'                { $$ = xxaddformal0($1,$3, &@3);   modif_token( &@3, SYMBOL_FORMALS ) ; }
+        |       formlist ',' SYMBOL             { $$ = xxaddformal0($1,$3, &@3);   modif_token( &@3, SYMBOL_FORMALS ) ; }
+        |       formlist ',' SYMBOL EQ_ASSIGN expr_or_help
+                                                { $$ = xxaddformal1($1,$3,$5,&@3); modif_token( &@3, SYMBOL_FORMALS ) ; modif_token( &@4, EQ_FORMALS ) ;}
+Index: src/main/match.c
+===================================================================
+--- src/main/match.c    (revision 85797)
++++ src/main/match.c    (working copy)
+@@ -185,10 +185,13 @@
+ {
+     Rboolean seendots;
+     int i, arg_i = 0;
++    int nfargposonly = 0;
+     SEXP f, a, b, dots, actuals;
+
+     actuals = R_NilValue;
+     for (f = formals ; f != R_NilValue ; f = CDR(f), arg_i++) {
++       /* Get count of positional-only formal arguments */
++       if (TAG(f) == Rf_install("/")) nfargposonly = arg_i + 1;
+        /* CONS_NR is used since argument lists created here are only
+           used internally and so should not increment reference
+           counts */
+@@ -218,6 +221,7 @@
+     a = actuals;
+     arg_i = 0;
+     while (f != R_NilValue) {
++       if (arg_i >= nfargposonly) {
+       SEXP ftag = TAG(f);
+       const char *ftag_name = CHAR(PRINTNAME(ftag));
+       if (ftag != R_DotsSymbol && ftag != R_NilValue) {
+@@ -241,6 +245,7 @@
+                  }
+              }
+            }
++         }
+        }
+        f = CDR(f);
+        a = CDR(a);
+@@ -257,7 +262,7 @@
+     a = actuals;
+     arg_i = 0;
+     while (f != R_NilValue) {
+-       if (fargused[arg_i] == 0) {
++       if (fargused[arg_i] == 0 && arg_i >= nfargposonly) {
+            if (TAG(f) == R_DotsSymbol && !seendots) {
+                /* Record where ... value goes */
+                dots = a;
+@@ -310,6 +315,10 @@
+            seendots = TRUE;
+            f = CDR(f);
+            a = CDR(a);
++       } else if (TAG(f) == Rf_install("/")) {
++           /* Ignore positional-only marker */
++           f = CDR(f);
++           a = CDR(a);
+        } else if (CAR(a) != R_MissingArg) {
+            /* Already matched by tag */
+            /* skip to next formal */
+Index: src/main/unique.c
+===================================================================
+--- src/main/unique.c   (revision 85797)
++++ src/main/unique.c   (working copy)
+@@ -1919,10 +1919,14 @@
+
+     /* Attach the argument names as tags */
+
+-    for (f = formals, b = rlist; b != R_NilValue; b = CDR(b), f = CDR(f)) {
+-       SET_TAG(b, TAG(f));
++       int nfargposonly = 0, arg_i = 0;
++    for (f = formals ; f != R_NilValue ; f = CDR(f), arg_i++) {
++       if (TAG(f) == Rf_install("/")) nfargposonly = arg_i + 1;
+     }
+
++    for (f = formals, b = rlist, arg_i = 0; b != R_NilValue; b = CDR(b), f = CDR(f), arg_i++) {
++       if (arg_i >= nfargposonly) SET_TAG(b, TAG(f));
++    }
+
+     /* Handle the dots */
+
+
+From me @end|ng |rom h@rmen@toppe|@@n|  Wed Jan 10 22:36:46 2024
+From: me @end|ng |rom h@rmen@toppe|@@n| (Harmen Stoppels)
+Date: Wed, 10 Jan 2024 21:36:46 +0000
+Subject: [Rd] Sys.which() caching path to `which`
+In-Reply-To: <F5607414-92E9-4D46-AD93-8100D9ED6997@R-project.org>
+References: <20240110224331.24ee0edf@Tarkus>
+ <F5607414-92E9-4D46-AD93-8100D9ED6997@R-project.org>
+Message-ID: <smSiCiOj6OVa5cU_i6rZFGKxzIKgEwi_KLsJrvUaxhHlgHjO1S2GT8qHbE3F6Zb2p69GpWrDZB3A_nbcetlUNmX8BLoXfVy8gh3FOn-s2gA=@harmenstoppels.nl>
+
+For context: I don't think Nix and Guix have to relocate anything, cause I think they require absolute paths like /nix/store where all binaries go. Spack on the other hand can install packages w/o sudo to a location of choice, e.g. ~/spack/opt/spack. That's why we have to patch binaries.
+
+However, Spack's relocation stuff is not about creating truly relocatable binaries where everything is referenced by relative paths. We still use absolute paths almost everywhere, it's just that they have to be rewired when the location things are built is different from where they are installed.
+
+I'm sure there are people who would like to have an actually fully relocatable R, but that's not my goal.
+
+> I would claim it is not an unreasonable expectation that the user doesn't delete tools after R was built. Obviously it is tedious, but Spack may need to patch all absolute paths if it wants to relocate things (it's not easy as it includes all linker paths as well FWIW) - they must be doing something like that already as even the R start-up script uses absolute paths
+
+Basically Spack does (a) special handling of the dynamic section of ELF files for Linux / FreeBSD, and load commands of mach-o files for macOS, (b) find & replace of prefixes in text files / scripts and (c) somewhat fancy but still basic replacement of C-strings containing prefixes in binaries.
+
+This works reliably because the package prefixes contain hashes that make false positives unlikely.
+
+It's just that it does not work when the absolute path to be relocated is captured inside serialized bytecode in a zlib-compressed database base.rdb :)
+
+I believe `which` is the only occurrence of this.
+ 
+> That said, WHICH is a mess - it may make sense to switch to the command -v built-in which is part of POSIX (where available - which is almost everywhere today) which would not require an external tool
+
+That sounds like a decent solution to me, probably `command -v` is more commonly available than `which`.
+
+> I don't think this is the only problem Spack has... (and that's just core R - even a bigger can of worms with R packages :P).
+
+We can deal with most issues, just not with compressed byte code.
+
+
+From m@rchywk@ @end|ng |rom hotm@||@com  Thu Jan 11 12:30:43 2024
+From: m@rchywk@ @end|ng |rom hotm@||@com (Mike Marchywka)
+Date: Thu, 11 Jan 2024 11:30:43 +0000
+Subject: [Rd] using Paraview "in-situ" with R?
+In-Reply-To: <450D9456-89A0-4589-B677-F5A524B2928E@gmail.com>
+References: <mailman.53974.3.1704884401.50676.r-devel@r-project.org>
+ <450D9456-89A0-4589-B677-F5A524B2928E@gmail.com>
+Message-ID: <BL3PR11MB63385CEDAE7F3469C6D6189FBE682@BL3PR11MB6338.namprd11.prod.outlook.com>
+
+Thanks. I take it though you see "R" in this role as adding to the capabilities of 
+the viewers, maybe adding some quick model fits over FEM results or something?
+Right now I was imagining working with freefem and rolling my own c++ code
+with supporting use of R code. Ideally I could easily overlay stuff without
+messing around with temp files.  There are a lot of R things, probably
+optimizations etc, that may be nice to view as they progress
+with more than just a figure of merit. 
+Right now I'm just trying to use Runge-Kutta on a simple orbit 
+and the mjmdatascope output is much more useful on-the-fly 
+than text or after the fact.
+
+
+?Mike Marchywka?
+44 Crosscreek Trail
+Jasper GA 30143
+was 306 Charles Cox Drive? Canton, GA 30115
+470-758-0799
+404-788-1216?
+
+
+
+
+________________________________________
+From: George Ostrouchov <georgeost at gmail.com>
+Sent: Wednesday, January 10, 2024 3:06 PM
+To: r-devel at r-project.org
+Cc: Mike Marchywka
+Subject: Re:  [Rd] using Paraview "in-situ" with R?
+
+At ORNL, we worked with VisIt (a sibling of Paraview, both funded largely by DOE) around 2016 and made an in situ demo with R. We used packages pbdMPI (on CRAN) and pbdDMAT (on GitHub/RbigData), which were in part built for this purpose. Later also the package hola (on GitHub/RbigData) was built to connect with adios2, which can do buffered in situ connections with various codes.
+
+But the VisIt developers were not interested in R (preferring to roll their own), so that direction fizzled. Paraview is a competetive sibling of VisIt, so I don?t know if they would be interested. The packages we developed are viable for that purpose. There is a lot in R that could benefit Paraview (or VisIt).
+
+George
+
+>
+> Message: 1
+> Date: Tue, 9 Jan 2024 14:20:17 +0000
+> From: Mike Marchywka <marchywka at hotmail.com>
+> To: R-devel <r-devel at r-project.org>
+> Subject: [Rd] using Paraview "in-situ" with R?
+> Message-ID:
+>       <BL3PR11MB6338D814D9A3FF932D7E7F49BE6A2 at BL3PR11MB6338.namprd11.prod.outlook.com>
+>
+> Content-Type: text/plain; charset="iso-8859-1"
+>
+> I had previously asked about R interfaces to various "other" visualization
+> tools specifically lightweights for monitoring progress of
+> various codes. I was working on this,
+>
+> https://github.com/mmarchywka/mjmdatascope
+>
+> but in the meantime found out that Paraview has an "in-situ"
+> capability for similar objectives.
+>
+> https://discourse.paraview.org/t/does-or-can-paraview-support-streaming-input/13637/9
+>
+> While R does have a lot of plotting features,
+> it seems like an excellent tool to interface to R allowing visualization without
+> a bunch of temp files or
+>
+> Is anyone aware of anyone doing this interface or reasons its  a boondoggle?
+>
+> Thanks.
+>
+>
+>
+>  Mike Marchywka
+> 44 Crosscreek Trail
+> Jasper GA 30143
+> was 306 Charles Cox Drive  Canton, GA 30115
+> 470-758-0799
+> 404-788-1216
+>
+
+
+
+From georgeo@t @end|ng |rom gm@||@com  Thu Jan 11 18:41:05 2024
+From: georgeo@t @end|ng |rom gm@||@com (George Ostrouchov)
+Date: Thu, 11 Jan 2024 12:41:05 -0500
+Subject: [Rd] using Paraview "in-situ" with R?
+In-Reply-To: <BL3PR11MB63385CEDAE7F3469C6D6189FBE682@BL3PR11MB6338.namprd11.prod.outlook.com>
+References: <mailman.53974.3.1704884401.50676.r-devel@r-project.org>
+ <450D9456-89A0-4589-B677-F5A524B2928E@gmail.com>
+ <BL3PR11MB63385CEDAE7F3469C6D6189FBE682@BL3PR11MB6338.namprd11.prod.outlook.com>
+Message-ID: <A7B623F5-9619-4EFF-97C4-7B4AAE8B2A21@gmail.com>
+
+Thanks for adding more explanation. As Ivan Krylov mentioned earlier, this sounds like an idea for developing an R package. The viewers and R largely operate in communities that so far have little interaction and both can benefit from ideas in the other. 
+
+George
+
+> On Jan 11, 2024, at 6:30?AM, Mike Marchywka <marchywka at hotmail.com> wrote:
+> 
+> Thanks. I take it though you see "R" in this role as adding to the capabilities of 
+> the viewers, maybe adding some quick model fits over FEM results or something?
+> Right now I was imagining working with freefem and rolling my own c++ code
+> with supporting use of R code. Ideally I could easily overlay stuff without
+> messing around with temp files.  There are a lot of R things, probably
+> optimizations etc, that may be nice to view as they progress
+> with more than just a figure of merit. 
+> Right now I'm just trying to use Runge-Kutta on a simple orbit 
+> and the mjmdatascope output is much more useful on-the-fly 
+> than text or after the fact.
+> 
+> 
+>  Mike Marchywka 
+> 44 Crosscreek Trail
+> Jasper GA 30143
+> was 306 Charles Cox Drive  Canton, GA 30115
+> 470-758-0799
+> 404-788-1216 
+> 
+> 
+> 
+> 
+> ________________________________________
+> From: George Ostrouchov <georgeost at gmail.com>
+> Sent: Wednesday, January 10, 2024 3:06 PM
+> To: r-devel at r-project.org
+> Cc: Mike Marchywka
+> Subject: Re:  [Rd] using Paraview "in-situ" with R?
+> 
+> At ORNL, we worked with VisIt (a sibling of Paraview, both funded largely by DOE) around 2016 and made an in situ demo with R. We used packages pbdMPI (on CRAN) and pbdDMAT (on GitHub/RbigData), which were in part built for this purpose. Later also the package hola (on GitHub/RbigData) was built to connect with adios2, which can do buffered in situ connections with various codes.
+> 
+> But the VisIt developers were not interested in R (preferring to roll their own), so that direction fizzled. Paraview is a competetive sibling of VisIt, so I don?t know if they would be interested. The packages we developed are viable for that purpose. There is a lot in R that could benefit Paraview (or VisIt).
+> 
+> George
+> 
+>> 
+>> Message: 1
+>> Date: Tue, 9 Jan 2024 14:20:17 +0000
+>> From: Mike Marchywka <marchywka at hotmail.com>
+>> To: R-devel <r-devel at r-project.org>
+>> Subject: [Rd] using Paraview "in-situ" with R?
+>> Message-ID:
+>>      <BL3PR11MB6338D814D9A3FF932D7E7F49BE6A2 at BL3PR11MB6338.namprd11.prod.outlook.com>
+>> 
+>> Content-Type: text/plain; charset="iso-8859-1"
+>> 
+>> I had previously asked about R interfaces to various "other" visualization
+>> tools specifically lightweights for monitoring progress of
+>> various codes. I was working on this,
+>> 
+>> https://github.com/mmarchywka/mjmdatascope
+>> 
+>> but in the meantime found out that Paraview has an "in-situ"
+>> capability for similar objectives.
+>> 
+>> https://discourse.paraview.org/t/does-or-can-paraview-support-streaming-input/13637/9
+>> 
+>> While R does have a lot of plotting features,
+>> it seems like an excellent tool to interface to R allowing visualization without
+>> a bunch of temp files or
+>> 
+>> Is anyone aware of anyone doing this interface or reasons its  a boondoggle?
+>> 
+>> Thanks.
+>> 
+>> 
+>> 
+>> Mike Marchywka
+>> 44 Crosscreek Trail
+>> Jasper GA 30143
+>> was 306 Charles Cox Drive  Canton, GA 30115
+>> 470-758-0799
+>> 404-788-1216
+>> 
+> 
+
+
+From d|pter|x@w@ng @end|ng |rom gm@||@com  Fri Jan 12 06:11:45 2024
+From: d|pter|x@w@ng @end|ng |rom gm@||@com (Dipterix Wang)
+Date: Fri, 12 Jan 2024 00:11:45 -0500
+Subject: [Rd] Choices to remove `srcref` (and its buddies) when serializing
+ objects
+Message-ID: <0FEDCC6B-B07A-48B1-8CF7-E130BEBB0A7D@gmail.com>
+
+Dear R devs,
+
+I was digging into a package issue today when I realized R serialize function not always generate the same results on equivalent objects when users choose to run differently. For example, the following code
+
+serialize(with(new.env(), { function(){} }), NULL, TRUE)
+
+generates different results when I copy-paste into console vs when I use ctrl+shift+enter to source the file in RStudio. 
+
+With a deeper inspect into the cause, I found that function and language get source reference when getOption("keep.source") is TRUE. This means the source reference will make the functions different while in most cases, whether keeping function source might not impact how a function behaves.
+
+While it's OK that function serialize generates different results, functions such as `rlang::hash` and `digest::digest`, which depend on `serialize` might eventually deliver false positives on same inputs. I've checked source code in digest package hoping to get around this issue (for example serialize(..., refhook = ...)). However, my workaround did not work. It seems that the markers to the objects are different even if I used `refhook` to force srcref to be the same. I also tried `removeSource` and `rlang::zap_srcref`. None of them works directly on nested environments with multiple functions. 
+
+I wonder how hard it would be to have options to discard source when serializing R objects? 
+
+Currently my analyses heavily depend on digest function to generate file caches and automatically schedule pipelines (to update cache) when changes are detected. The pipelines save the hashes of source code, inputs, and outputs together so other people can easily verify the calculation without accessing the original data (which could be sensitive), or running hour-long analyses, or having to buy servers. All of these require `serialize` to produce the same results regardless of how users choose to run the code.
+
+It would be great if this feature could be in the future R. Other pipeline packages such as `targets` and `drake` can also benefit from it.
+
+Thanks,
+
+- Dipterix
+	[[alternative HTML version deleted]]
+
+
+From |kry|ov @end|ng |rom d|@root@org  Fri Jan 12 09:42:33 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Fri, 12 Jan 2024 11:42:33 +0300
+Subject: [Rd] 
+ Choices to remove `srcref` (and its buddies) when serializing
+ objects
+In-Reply-To: <0FEDCC6B-B07A-48B1-8CF7-E130BEBB0A7D@gmail.com>
+References: <0FEDCC6B-B07A-48B1-8CF7-E130BEBB0A7D@gmail.com>
+Message-ID: <20240112114233.553a254e@Tarkus>
+
+? Fri, 12 Jan 2024 00:11:45 -0500
+Dipterix Wang <dipterix.wang at gmail.com> ?????:
+
+> I wonder how hard it would be to have options to discard source when
+> serializing R objects? 
+
+> Currently my analyses heavily depend on digest function to generate
+> file caches and automatically schedule pipelines (to update cache)
+> when changes are detected.
+
+Source references may be the main problem here, but not the only one.
+There are also string encodings and function bytecode (which may or may
+not be present and probably changes between R versions). I've been
+collecting the ways that the objects that are identical() to each other
+can serialize() differently in my package 'depcache'; I'm sure I missed
+a few.
+
+Admittedly, string encodings are less important nowadays (except on
+older Windows and weirdly set up Unix-like systems). Thankfully, the
+digest package already knows to skip the serialization header (which
+contains the current version of R).
+
+serialize() only knows about basic types [*], and source references are
+implemented on top of these as objects of class 'srcref'. Sometimes
+they are attached as attributes to other objects, other times (e.g. in
+quote(function(){}), [**]) just sitting there as arguments to a call.
+
+Sometimes you can hash the output of deparse(x) instead of serialize(x)
+[***]. Text representations aren't without their own problems (e.g.
+IEEE floating-point numbers not being representable as decimal
+fractions), but at least deparsing both ignores the source references
+and punts the encoding problem to the abstraction layer above it:
+deparse() is the same for both '\uff' and iconv('\uff', 'UTF-8',
+'latin1'): just "?".
+
+Unfortunately, this doesn't solve the environment problem. For these,
+you really need a way to canonicalize the reference-semantics objects
+before serializing them without changing the originals, even in cases
+like a <- new.env(); b <- new.env(); a$x <- b; b$x <- a. I'm not sure
+that reference hooks can help with that. In order to implement it
+properly, the fixup process will have to rely on global state and keep
+weak references to the environments it visits and creates shadow copies
+of.
+
+I think it's not impossible to implement
+serialize_to_canonical_representation() for an R package, but it will
+be a lot of work to decide which parts are canonical and which should
+be discarded.
+
+-- 
+Best regards,
+Ivan
+
+[*]
+https://cran.r-project.org/doc/manuals/R-ints.html#Serialization-Formats
+
+[**]
+https://bugs.r-project.org/show_bug.cgi?id=18638
+
+[***]
+https://stat.ethz.ch/pipermail/r-devel/2023-March/082505.html
+
+
+From |kry|ov @end|ng |rom d|@root@org  Fri Jan 12 16:11:25 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Fri, 12 Jan 2024 18:11:25 +0300
+Subject: [Rd] Sys.which() caching path to `which`
+In-Reply-To: <F5607414-92E9-4D46-AD93-8100D9ED6997@R-project.org>
+References: <20240110224331.24ee0edf@Tarkus>
+ <F5607414-92E9-4D46-AD93-8100D9ED6997@R-project.org>
+Message-ID: <20240112181125.7616fc6e@arachnoid>
+
+On Thu, 11 Jan 2024 09:30:55 +1300
+Simon Urbanek <simon.urbanek at R-project.org> wrote:
+
+> That said, WHICH is a mess - it may make sense to switch to the
+> command -v built-in which is part of POSIX (where available - which
+> is almost everywhere today) which would not require an external tool
+
+This is a bit tricky to implement. I've prepared the patch at the end
+of this e-mail, tested it on GNU/Linux and tried to test on OpenBSD [*]
+(I cannot test on a Mac), but then I realised one crucial detail:
+unlike `which`, `command -v` returns names of shell builtins if
+something is both an executable and a builtin. So for things like `[`,
+Sys.which would behave differently if changed to use command -v:
+
+$ sh -c 'which ['
+/usr/bin/[
+$ sh -c 'command -v ['
+[
+
+R checks the returned string with file.exists(), so the new
+Sys.which('[') returns an empty string instead of /usr/bin/[. That's
+probably undesirable, isn't it?
+
+Index: configure
+===================================================================
+--- configure	(revision 85802)
++++ configure	(working copy)
+@@ -949,7 +949,6 @@
+ PDFTEX
+ TEX
+ PAGER
+-WHICH
+ SED
+ INSTALL_DATA
+ INSTALL_SCRIPT
+@@ -5390,66 +5389,6 @@
+ done
+ test -n "$SED" || SED="/bin/sed"
+ 
+-
+-## 'which' is not POSIX, and might be a shell builtin or alias
+-##  (but should not be in 'sh')
+-for ac_prog in which
+-do
+-  # Extract the first word of "$ac_prog", so it can be a program name with args.
+-set dummy $ac_prog; ac_word=$2
+-{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for $ac_word" >&5
+-printf %s "checking for $ac_word... " >&6; }
+-if test ${ac_cv_path_WHICH+y}
+-then :
+-  printf %s "(cached) " >&6
+-else $as_nop
+-  case $WHICH in
+-  [\\/]* | ?:[\\/]*)
+-  ac_cv_path_WHICH="$WHICH" # Let the user override the test with a path.
+-  ;;
+-  *)
+-  as_save_IFS=$IFS; IFS=$PATH_SEPARATOR
+-for as_dir in $PATH
+-do
+-  IFS=$as_save_IFS
+-  case $as_dir in #(((
+-    '') as_dir=./ ;;
+-    */) ;;
+-    *) as_dir=$as_dir/ ;;
+-  esac
+-    for ac_exec_ext in '' $ac_executable_extensions; do
+-  if as_fn_executable_p "$as_dir$ac_word$ac_exec_ext"; then
+-    ac_cv_path_WHICH="$as_dir$ac_word$ac_exec_ext"
+-    printf "%s\n" "$as_me:${as_lineno-$LINENO}: found $as_dir$ac_word$ac_exec_ext" >&5
+-    break 2
+-  fi
+-done
+-  done
+-IFS=$as_save_IFS
+-
+-  ;;
+-esac
+-fi
+-WHICH=$ac_cv_path_WHICH
+-if test -n "$WHICH"; then
+-  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $WHICH" >&5
+-printf "%s\n" "$WHICH" >&6; }
+-else
+-  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: no" >&5
+-printf "%s\n" "no" >&6; }
+-fi
+-
+-
+-  test -n "$WHICH" && break
+-done
+-test -n "$WHICH" || WHICH="which"
+-
+-if test "${WHICH}" = which ; then
+-  ## needed to build and run R
+-  ## ends up hard-coded in the utils package
+-  as_fn_error $? "which is required but missing" "$LINENO" 5
+-fi
+-
+ ## Make
+ : ${MAKE=make}
+ 
+Index: configure.ac
+===================================================================
+--- configure.ac	(revision 85802)
++++ configure.ac	(working copy)
+@@ -680,15 +680,6 @@
+ ## we would like a POSIX sed, and need one on Solaris
+ AC_PATH_PROGS(SED, sed, /bin/sed, [/usr/xpg4/bin:$PATH])
+ 
+-## 'which' is not POSIX, and might be a shell builtin or alias
+-##  (but should not be in 'sh')
+-AC_PATH_PROGS(WHICH, which, which)
+-if test "${WHICH}" = which ; then
+-  ## needed to build and run R
+-  ## ends up hard-coded in the utils package
+-  AC_MSG_ERROR([[which is required but missing]])
+-fi
+-
+ ## Make
+ : ${MAKE=make}
+ AC_SUBST(MAKE)
+Index: src/library/base/Makefile.in
+===================================================================
+--- src/library/base/Makefile.in	(revision 85802)
++++ src/library/base/Makefile.in	(working copy)
+@@ -28,7 +28,7 @@
+ all: Makefile DESCRIPTION
+ 	@$(ECHO) "building package '$(pkg)'"
+ 	@$(MKINSTALLDIRS) $(top_builddir)/library/$(pkg)
+-	@WHICH="@WHICH@" $(MAKE) mkRbase mkdesc2 mkdemos2
++	@$(MAKE) mkRbase mkdesc2 mkdemos2
+ 	@$(INSTALL_DATA) $(srcdir)/inst/CITATION $(top_builddir)/library/$(pkg)
+ 
+ include $(top_srcdir)/share/make/basepkg.mk
+@@ -45,12 +45,12 @@
+ mkR: mkRbase
+ 
+ Rsimple:
+-	@WHICH="@WHICH@" $(MAKE) mkRbase mkRsimple
++	@$(MAKE) mkRbase mkRsimple
+ 
+ ## Remove files to allow this to be done repeatedly
+ Rlazy:
+ 	- at rm -f  $(top_builddir)/library/$(pkg)/R/$(pkg)*
+-	@WHICH="@WHICH@" $(MAKE) mkRbase
++	@$(MAKE) mkRbase
+ 	@cat $(srcdir)/makebasedb.R | \
+ 	  R_DEFAULT_PACKAGES=NULL LC_ALL=C $(R_EXE) > /dev/null
+ 	@$(INSTALL_DATA) $(srcdir)/baseloader.R \
+@@ -57,4 +57,4 @@
+ 	  $(top_builddir)/library/$(pkg)/R/$(pkg)
+ 
+ Rlazycomp:
+-	@WHICH="@WHICH@" $(MAKE) mkRbase mklazycomp
++	@$(MAKE) mkRbase mklazycomp
+Index: src/library/base/R/unix/system.unix.R
+===================================================================
+--- src/library/base/R/unix/system.unix.R	(revision 85802)
++++ src/library/base/R/unix/system.unix.R	(working copy)
+@@ -114,23 +114,14 @@
+ Sys.which <- function(names)
+ {
+     res <- character(length(names)); names(res) <- names
+-    ## hopefully configure found [/usr]/bin/which
+-    which <- "@WHICH@"
+-    if (!nzchar(which)) {
+-        warning("'which' was not found on this platform")
+-        return(res)
+-    }
+     for(i in seq_along(names)) {
+         if(is.na(names[i])) {res[i] <- NA; next}
+         ## Quoting was added in 3.0.0
+-        ans <- suppressWarnings(system(paste(which, shQuote(names[i])),
+-                                       intern = TRUE, ignore.stderr = TRUE))
+-        ## Solaris' which gives 'no foo in ...' message on stdout,
+-        ## GNU which does it on stderr
+-        if(grepl("solaris", R.version$os)) {
+-            tmp <- strsplit(ans[1], " ", fixed = TRUE)[[1]]
+-            if(identical(tmp[1:3], c("no", i, "in"))) ans <- ""
+-        }
++        ans <- tryCatch(
++            suppressWarnings(system(paste("command -v", shQuote(names[i])),
++                                          intern = TRUE, ignore.stderr = TRUE)),
++            error = \(e) ""
++        )
+         res[i] <- if(length(ans)) ans[1] else ""
+         ## final check that this is a real path and not an error message
+         if(!file.exists(res[i])) res[i] <- ""
+
+
+-- 
+Best regards,
+Ivan
+
+[*] example(Sys.which()) works, but there are multiple problems
+elsewhere, e.g. tan(1+1000i) returns NaN+1i and Matrix doesn't install
+without gmake
+
+
+From tom@@@k@||ber@ @end|ng |rom gm@||@com  Fri Jan 12 17:33:30 2024
+From: tom@@@k@||ber@ @end|ng |rom gm@||@com (Tomas Kalibera)
+Date: Fri, 12 Jan 2024 17:33:30 +0100
+Subject: [Rd] 
+ Choices to remove `srcref` (and its buddies) when serializing
+ objects
+In-Reply-To: <0FEDCC6B-B07A-48B1-8CF7-E130BEBB0A7D@gmail.com>
+References: <0FEDCC6B-B07A-48B1-8CF7-E130BEBB0A7D@gmail.com>
+Message-ID: <577d4e34-7abc-4aa9-b850-09ed71c73bd5@gmail.com>
+
+
+On 1/12/24 06:11, Dipterix Wang wrote:
+> Dear R devs,
+>
+> I was digging into a package issue today when I realized R serialize function not always generate the same results on equivalent objects when users choose to run differently. For example, the following code
+>
+> serialize(with(new.env(), { function(){} }), NULL, TRUE)
+>
+> generates different results when I copy-paste into console vs when I use ctrl+shift+enter to source the file in RStudio.
+>
+> With a deeper inspect into the cause, I found that function and language get source reference when getOption("keep.source") is TRUE. This means the source reference will make the functions different while in most cases, whether keeping function source might not impact how a function behaves.
+>
+> While it's OK that function serialize generates different results, functions such as `rlang::hash` and `digest::digest`, which depend on `serialize` might eventually deliver false positives on same inputs. I've checked source code in digest package hoping to get around this issue (for example serialize(..., refhook = ...)). However, my workaround did not work. It seems that the markers to the objects are different even if I used `refhook` to force srcref to be the same. I also tried `removeSource` and `rlang::zap_srcref`. None of them works directly on nested environments with multiple functions.
+>
+> I wonder how hard it would be to have options to discard source when serializing R objects?
+>
+> Currently my analyses heavily depend on digest function to generate file caches and automatically schedule pipelines (to update cache) when changes are detected. The pipelines save the hashes of source code, inputs, and outputs together so other people can easily verify the calculation without accessing the original data (which could be sensitive), or running hour-long analyses, or having to buy servers. All of these require `serialize` to produce the same results regardless of how users choose to run the code.
+>
+> It would be great if this feature could be in the future R. Other pipeline packages such as `targets` and `drake` can also benefit from it.
+
+I don't think such functionality would belong to serialize(). This 
+function is not meant to produce stable results based on the input, the 
+serialized representation may even differ based on properties not seen 
+by users.
+
+I think an option to ignore source code would belong to a function that 
+computes the hash, as other options of identical().
+
+Tomas
+
+
+> Thanks,
+>
+> - Dipterix
+> 	[[alternative HTML version deleted]]
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From z@yne@hunter @end|ng |rom b@u@edu  Fri Jan 12 20:50:29 2024
+From: z@yne@hunter @end|ng |rom b@u@edu (Hunter, Zayne)
+Date: Fri, 12 Jan 2024 19:50:29 +0000
+Subject: [Rd] ADA Compliance
+Message-ID: <D31D66EF-4057-4695-85F0-5EE61D47E100@bsu.edu>
+
+Hello,
+
+
+I am working with Ball State University to obtain a license of R. As part of our requirements for obtaining new software, we must review the VPAT for ADA compliance. Can you provide this information for me?
+
+Thanks,
+
+
+Zayne Hunter
+Technology Advisor & Vendor Relations Manager
+Ball State University
+zayne.hunter at bsu.edu
+(765)285-7853
+
+
+
+
+
+
+	[[alternative HTML version deleted]]
+
+
+From bbo|ker @end|ng |rom gm@||@com  Sat Jan 13 00:14:29 2024
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Fri, 12 Jan 2024 18:14:29 -0500
+Subject: [Rd] ADA Compliance
+In-Reply-To: <D31D66EF-4057-4695-85F0-5EE61D47E100@bsu.edu>
+References: <D31D66EF-4057-4695-85F0-5EE61D47E100@bsu.edu>
+Message-ID: <6c2e35fc-b868-40a6-967a-8fe08f9ec602@gmail.com>
+
+  I would be very surprised if anyone had written up a VPAT 
+<https://www.section508.gov/sell/vpat/> for R.
+
+   It won't help you with the bureaucratic requirements, but R is in 
+fact very accessible to visually impaired users: e.g. see
+
+ 
+https://community.rstudio.com/t/accessibility-of-r-rstudio-compared-to-excel-for-student-that-is-legally-blind/103849/3
+
+ From https://github.com/ajrgodfrey/BrailleR
+
+ > R is perhaps the most blind-friendly statistical software option 
+because all scripts can be written in plain text, using the text editor 
+a user prefers, and all output can be saved in a wide range of file 
+formats. The advent of R markdown and other reproducible research 
+techniques can offer the blind user a degree of efficiency that is not 
+offered in many other statistical software options. In addition, the 
+processed Rmd files are usually HTML which are the best supported files 
+in terms of screen reader development.
+
+   (And there is continued attention to making sure R stays accessible 
+in this way: 
+https://stat.ethz.ch/pipermail/r-devel/2022-December/082180.html; 
+https://stat.ethz.ch/pipermail/r-devel/2023-February/082313.html)
+
+   R is also easy to use without a mouse, which should improve 
+accessibility for users with neuromuscular conditions.
+
+    cheers
+     Ben Bolker
+
+
+
+
+On 2024-01-12 2:50 p.m., Hunter, Zayne via R-devel wrote:
+> Hello,
+> 
+> 
+> I am working with Ball State University to obtain a license of R. As part of our requirements for obtaining new software, we must review the VPAT for ADA compliance. Can you provide this information for me?
+> 
+> Thanks,
+> 
+> 
+> Zayne Hunter
+> Technology Advisor & Vendor Relations Manager
+> Ball State University
+> zayne.hunter at bsu.edu
+> (765)285-7853
+> 
+> 
+> 
+> 
+> 
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+

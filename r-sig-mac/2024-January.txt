@@ -1,0 +1,185 @@
+From jeroenoom@ @end|ng |rom gm@||@com  Tue Jan  2 20:21:56 2024
+From: jeroenoom@ @end|ng |rom gm@||@com (Jeroen Ooms)
+Date: Tue, 2 Jan 2024 20:21:56 +0100
+Subject: [R-SIG-Mac] Cross compilation and linking without -undefined
+Message-ID: <CABFfbXswfjj3dWg3+2SaWMBS8rQVLW6SiMZ_3wXRcpSf31edvw@mail.gmail.com>
+
+R on MacOS defaults to linking with "-undefined dynamic_lookup" when
+building packages, which suppresses linking errors due to undefined
+symbols. Undefined symbols often indicate that the package has omitted
+a required library in PKG_LIBS, or that the architecture of the static
+lib does not match the target. When this happens, CMD INSTALL usually
+fails to load the package dylib in the subsequent "test-load" step,
+unless the undefined symbols are already preloaded in the process via
+base R (e.g. zlib, iconv, etc) in which case it goes unnoticed.
+
+I was wondering what is the benefit of suppressing linking errors this
+way? Afaik R does not do this on other platforms. A failure at the
+"test-load" step gives a cryptic error indicating only the mangled
+name of the first undefined symbol. The linker can provide much nicer
+error messages, detailing the names and locations of undefined
+symbols.
+
+Another motivation for looking into this is to support cross compiling
+of R packages on MacOS. We are exploring several ways to cross compile
+R packages, including:
+
+  macos-x86_64 -> macos-arm64 (by overriding -arch in Makeconf)
+  linux-x86_64 -> macos-x86_64 (using osxcross)
+  linux-x86_64 -> macos-arm64 (using osxcross)
+
+The main challenge with cross compiling is that we cannot test-load
+the R package on the host machine, so we always have to build with
+--no-test-load. However this is dangerous in combination with the
+"-undefined" flag, because we don't catch undefined symbols anymore.
+
+Unfortunately undefined symbols are a common problem when cross
+compiling, because some packages mistakenly assume host == target, and
+then build/link a lib for the wrong arch. If we don't catch this, we
+end up shipping broken binary R packages to end-users, which we want
+to prevent.
+
+To remedy this, I am testing to build packages using the same setup as
+CRAN (MacOSX11.sdk + libs from
+https://mac.r-project.org/bin/darwin20/) but without the "-undefined
+dynamic_lookup" flag, like so:
+
+  sed -i.bak 's/-undefined dynamic_lookup//g' $(R RHOME)/etc/Makeconf
+
+This works fine for almost all packages. Some do reveal a linking
+problem, but these are mostly real bugs and easily fixable. For
+example the httpuv package fails with:
+
+ld: Undefined symbols:
+  _deflate, referenced from:
+      GZipDataSource::getData(unsigned long) in gzipdatasource.o
+      GZipDataSource::deflateNext() in gzipdatasource.o
+  _deflateEnd, referenced from:
+      GZipDataSource::~GZipDataSource() in gzipdatasource.o
+
+Note how the above message from the linker is very clear in what is
+missing and where. This error is accurate, because httpuv indeed calls
+external libz, but fails to set "-lz" in PKG_LIBS. This was never
+noticed because libz.dylib is preloaded in R, hence the test-load does
+not notice the bug.
+
+Another example is 'arrow' which was missing "-framework Security" in
+PKG_LIBS. This will be fixed in the upcoming CRAN release. There were
+a few more of such cases where PKG_LIBS was missing some lib of
+Framework, but they are mostly fixable.
+
+One problem I have not solved is the RcppParallel package, which
+bundles another library (libtbb) which is not linked but lazy-loaded
+(not sure why). This causes linking errors or some other packages that
+have LinkingTo: RcppParallel. Perhaps this can be solved by providing
+a static libtbb via the cran recipes, such that RcppParallel does not
+have to bundle one.
+
+It would be really nice if eventually R could remove "-undefined" from
+the default linker flags when building R packages. This makes build
+logs more informative and easier to debug, and forces packages to
+specify complete linker flags, which will eventually enable safer
+cross-compiling (including of universal binaries).
+
+
+From r|p|ey @end|ng |rom @t@t@@ox@@c@uk  Wed Jan  3 08:11:53 2024
+From: r|p|ey @end|ng |rom @t@t@@ox@@c@uk (Prof Brian Ripley)
+Date: Wed, 3 Jan 2024 07:11:53 +0000
+Subject: [R-SIG-Mac] Cross compilation and linking without -undefined
+In-Reply-To: <CABFfbXswfjj3dWg3+2SaWMBS8rQVLW6SiMZ_3wXRcpSf31edvw@mail.gmail.com>
+References: <CABFfbXswfjj3dWg3+2SaWMBS8rQVLW6SiMZ_3wXRcpSf31edvw@mail.gmail.com>
+Message-ID: <1acde9d4-7bbb-4654-a073-33dabf92b1cb@stats.ox.ac.uk>
+
+This is just a default.  AFAICS it is set in DYLIB_LDFLAGS and you can 
+set that as you wish - it is documented in config.site.
+
+That cross-compilation cannot test-load is a major reason not to use it 
+and why support for packages was downplayed on Windows.
+
+On 02/01/2024 19:21, Jeroen Ooms wrote:
+> R on MacOS defaults to linking with "-undefined dynamic_lookup" when
+> building packages, which suppresses linking errors due to undefined
+> symbols. Undefined symbols often indicate that the package has omitted
+> a required library in PKG_LIBS, or that the architecture of the static
+> lib does not match the target. When this happens, CMD INSTALL usually
+> fails to load the package dylib in the subsequent "test-load" step,
+> unless the undefined symbols are already preloaded in the process via
+> base R (e.g. zlib, iconv, etc) in which case it goes unnoticed.
+> 
+> I was wondering what is the benefit of suppressing linking errors this
+> way? Afaik R does not do this on other platforms. A failure at the
+> "test-load" step gives a cryptic error indicating only the mangled
+> name of the first undefined symbol. The linker can provide much nicer
+> error messages, detailing the names and locations of undefined
+> symbols.
+
+It may, but it often does not.  Frequently test-loading shows issues in 
+complex C++-using packages: you mention 'arrow' and that is a current 
+(and frequent) failure on Linux.
+
+> Another motivation for looking into this is to support cross compiling
+> of R packages on MacOS. We are exploring several ways to cross compile
+> R packages, including:
+> 
+>    macos-x86_64 -> macos-arm64 (by overriding -arch in Makeconf)
+>    linux-x86_64 -> macos-x86_64 (using osxcross)
+>    linux-x86_64 -> macos-arm64 (using osxcross)
+> 
+> The main challenge with cross compiling is that we cannot test-load
+> the R package on the host machine, so we always have to build with
+> --no-test-load. However this is dangerous in combination with the
+> "-undefined" flag, because we don't catch undefined symbols anymore.
+> 
+> Unfortunately undefined symbols are a common problem when cross
+> compiling, because some packages mistakenly assume host == target, and
+> then build/link a lib for the wrong arch. If we don't catch this, we
+> end up shipping broken binary R packages to end-users, which we want
+> to prevent.
+> 
+> To remedy this, I am testing to build packages using the same setup as
+> CRAN (MacOSX11.sdk + libs from
+> https://mac.r-project.org/bin/darwin20/) but without the "-undefined
+> dynamic_lookup" flag, like so:
+> 
+>    sed -i.bak 's/-undefined dynamic_lookup//g' $(R RHOME)/etc/Makeconf
+> 
+> This works fine for almost all packages. Some do reveal a linking
+> problem, but these are mostly real bugs and easily fixable. For
+> example the httpuv package fails with:
+> 
+> ld: Undefined symbols:
+>    _deflate, referenced from:
+>        GZipDataSource::getData(unsigned long) in gzipdatasource.o
+>        GZipDataSource::deflateNext() in gzipdatasource.o
+>    _deflateEnd, referenced from:
+>        GZipDataSource::~GZipDataSource() in gzipdatasource.o
+> 
+> Note how the above message from the linker is very clear in what is
+> missing and where. This error is accurate, because httpuv indeed calls
+> external libz, but fails to set "-lz" in PKG_LIBS. This was never
+> noticed because libz.dylib is preloaded in R, hence the test-load does
+> not notice the bug.
+> 
+> Another example is 'arrow' which was missing "-framework Security" in
+> PKG_LIBS. This will be fixed in the upcoming CRAN release. There were
+> a few more of such cases where PKG_LIBS was missing some lib of
+> Framework, but they are mostly fixable.
+> 
+> One problem I have not solved is the RcppParallel package, which
+> bundles another library (libtbb) which is not linked but lazy-loaded
+> (not sure why). This causes linking errors or some other packages that
+> have LinkingTo: RcppParallel. Perhaps this can be solved by providing
+> a static libtbb via the cran recipes, such that RcppParallel does not
+> have to bundle one.
+> 
+> It would be really nice if eventually R could remove "-undefined" from
+> the default linker flags when building R packages. This makes build
+> logs more informative and easier to debug, and forces packages to
+> specify complete linker flags, which will eventually enable safer
+> cross-compiling (including of universal binaries).
+
+-- 
+Brian D. Ripley,                  ripley at stats.ox.ac.uk
+Emeritus Professor of Applied Statistics, University of Oxford
+
+
