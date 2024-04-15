@@ -1,0 +1,2176 @@
+From greg @end|ng |rom ||rm@n@y@h@com  Mon Apr  1 02:07:50 2024
+From: greg @end|ng |rom ||rm@n@y@h@com (Greg Hunt)
+Date: Mon, 1 Apr 2024 11:07:50 +1100
+Subject: [R-pkg-devel] Order of repo access from options("repos")
+In-Reply-To: <DS7PR10MB72772B725366224EBC69FD08FA382@DS7PR10MB7277.namprd10.prod.outlook.com>
+References: <CAAS8PAJPuwDoWWJ1at5py49o0OA6GvuMxd7DW3Xy8Ze17X73Gg@mail.gmail.com>
+ <26121.17883.118636.415791@rob.eddelbuettel.com>
+ <CAAS8PAJP60tT2sZou4gcHFV2rynCiF1eDFDWu6Ba_trPb8hQuQ@mail.gmail.com>
+ <DS7PR10MB72772B725366224EBC69FD08FA382@DS7PR10MB7277.namprd10.prod.outlook.com>
+Message-ID: <CAAS8PALv8D6bq3U7J=Re0v0HX=26GzxaZM7ENAmzXW6VavZFng@mail.gmail.com>
+
+Martin, Dirk, Kevin,
+Thanks for your help.  To summarise: the order of access is undefined, and
+every repo URL is accessed.   I'm working in an environment
+where "known-good" is more important than "latest", so what follows is an
+explanation of the problem space from my perspective.
+
+What I am experimenting with is pinning down the versions of the packages
+that a moderately complex solution is built against using a combination of
+an internal repository of cached packages (internally written packages, our
+own hopefully transient copies of packages archived from CRAN,
+packages live on CRAN, and packages present in both Github and CRAN which
+we build and cache locally) and a proxy that separately populates that
+cache in specific build processes by intercepting requests to CRAN.  I'd
+like to use the base R function if possible and I want to let the version
+numbers in the dependencies float because a) we do need to maintain
+approximate currency in what versions of packages we use and b) I have no
+business monkeying around with third party's dependencies.  Renv looks
+helpful but has some assumptions about disk access to its cache that I'd
+rather avoid by running an internal repo.  The team is spread around the
+world, so shared cache volumes are not a great idea.
+
+The business with the multiple repo addresses is one approach to working
+around Docker's inability to understand that people need to access the
+Docker host's ports from inside a container or a build, and that the
+current Docker treatment of the host's internal IP is far from transparent
+(I have scripts that run both inside and outside of Docker containers and
+they used to be able to work out for themselves what environment they run
+in, thats got harder lately).  That led down a path in which one set of
+addresses did not reject connection attempts, making each package
+installation (and there are hundreds) take some number of minutes for the
+connections to time out.  Thankfully I don't actually have to deal with
+that.
+
+We have had a few cases where our dependencies have been archived from CRAN
+and we have maintained our own copy for a period of days to months, a
+period in which we do not know what the next package version number is.  It
+would be convenient to not have to think about that - a deterministic,
+terminating search of a sequence of repos looked like a nice idea for that,
+but I may have to do something different.
+
+There was a recent case where a package made a breaking change in its
+interface in a release (not version) update that broke another package we
+depend on.  It would be nice to be able to temporarily pin that package at
+its previous version (without updating the source of the third party
+package that depends on it) to preserve our own build-ability while those
+packages sort themselves out.
+
+There is one case where a pull request for a CRAN-hosted package was
+verbally accepted but never actioned so we have our own forked version of a
+CRAN-hosted package which I need to decide what to do with one day soon.
+Another case where the package version number is different in CRAN from the
+one we want.
+
+We have a dependency on a package that we build from a Git repo but which
+is also present in CRAN.  I don't want to be dependent on the maintainers
+keeping the package version in the Git copy of the DESCRIPTION file higher
+than the version in CRAN.  Ideally I'd like to build and push to the
+internal repo and not have to think about it after that. Same issue as
+before arises, as it stands today I have to either worry about, and
+probably edit, the version number in the build or manage the cache
+population process so the internal package instance is added after any
+CRAN-sourced dependencies and make sure that the public CRAN instances are
+not accessed in the build.
+
+All of these problems are soluble by special-casing the affected installs,
+specifically managing the cache population (with a requirement that the
+cache and CRAN not be searched at the same time), or editing version
+numbers whose next values I do not control, but I would like to try for the
+simplest approach first. I know I'm not going to get a clean solution here,
+the relative weights of "known-good" and "latest" are different
+depending on where you stand.
+
+
+Greg
+
+On Sun, 31 Mar 2024 at 22:43, Martin Morgan <mtmorgan.xyz at gmail.com> wrote:
+
+> available.packages indicates that
+>
+>
+>
+>      By default, the return value includes only packages whose version
+>
+>      and OS requirements are met by the running version of R, and only
+>
+>      gives information on the latest versions of packages.
+>
+>
+>
+> So all repositories are consulted and then the result filtered to contain
+> just the most recent version of each. Does it matter then what order the
+> repositories are visited?
+>
+>
+>
+> Martin Morgan
+>
+>
+>
+> *From: *R-package-devel <r-package-devel-bounces at r-project.org> on behalf
+> of Greg Hunt <greg at firmansyah.com>
+> *Date: *Sunday, March 31, 2024 at 7:35?AM
+> *To: *Dirk Eddelbuettel <edd at debian.org>
+> *Cc: *List r-package-devel <r-package-devel at r-project.org>
+> *Subject: *Re: [R-pkg-devel] Order of repo access from options("repos")
+>
+> Dirk,
+> Sadly I can't use localhost for all of those.  172.17.0.1 is an internal
+> Docker IP, not the localhost address (127.0.0.1), they are there to handle
+> two different scenarios and different ones will fail to resolve in
+> different scenarios.  Are you saying that the DNS lookup adds a timing
+> issue to the search order?  Isn't the list deterministically ordered?
+>
+>
+> Greg
+>
+> On Sun, 31 Mar 2024 at 22:15, Dirk Eddelbuettel <edd at debian.org> wrote:
+>
+> >
+> > Greg,
+> >
+> > There are AFAICT two issues here: how R unrolls the named vector that is
+> > the
+> > 'repos' element in the list 'options', and how your computer resolves DNS
+> > for
+> > localhost vs 172.17.0.1.  I would try something like
+> >
+> >    options(repos = c(CRAN = "http://localhost:3001/proxy",
+> >                      C = "http://localhost:3002",
+> >                      B = "http://localhost:3003/proxy",
+> >                      A = "http://localhost:3004"))
+> >
+> > or the equivalent with 172.17.0.1. When I do that here I get errors from
+> > first to last as we expect:
+> >
+> >    > options(repos = c(CRAN = "http://localhost:3001/proxy",
+> >                      C = "http://localhost:3002",
+> >                      B = "http://localhost:3003/proxy",
+> >                      A = "http://localhost:3004"))
+> >    > available.packages()
+> >    Warning: unable to access index for repository
+> > http://localhost:3001/proxy/src/contrib:
+> >      cannot open URL 'http://localhost:3001/proxy/src/contrib/PACKAGES'
+> >    Warning: unable to access index for repository
+> > http://localhost:3002/src/contrib:
+> >      cannot open URL 'http://localhost:3002/src/contrib/PACKAGES'
+> >    Warning: unable to access index for repository
+> > http://localhost:3003/proxy/src/contrib:
+> >      cannot open URL 'http://localhost:3003/proxy/src/contrib/PACKAGES'
+> >    Warning: unable to access index for repository
+> > http://localhost:3004/src/contrib:
+> >      cannot open URL 'http://localhost:3004/src/contrib/PACKAGES'
+> >         Package Version Priority Depends Imports LinkingTo Suggests
+> > Enhances License License_is_FOSS License_restricts_use OS_type Archs
+> MD5sum
+> > NeedsCompilation File Repository
+> >    >
+> >
+> > Dirk
+> >
+> > --
+> > dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+> >
+>
+>         [[alternative HTML version deleted]]
+>
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+
+	[[alternative HTML version deleted]]
+
+
+From ||gge@ @end|ng |rom @t@t|@t|k@tu-dortmund@de  Mon Apr  1 17:44:43 2024
+From: ||gge@ @end|ng |rom @t@t|@t|k@tu-dortmund@de (Uwe Ligges)
+Date: Mon, 1 Apr 2024 17:44:43 +0200
+Subject: [R-pkg-devel] Order of repo access from options("repos")
+In-Reply-To: <CAAS8PALv8D6bq3U7J=Re0v0HX=26GzxaZM7ENAmzXW6VavZFng@mail.gmail.com>
+References: <CAAS8PAJPuwDoWWJ1at5py49o0OA6GvuMxd7DW3Xy8Ze17X73Gg@mail.gmail.com>
+ <26121.17883.118636.415791@rob.eddelbuettel.com>
+ <CAAS8PAJP60tT2sZou4gcHFV2rynCiF1eDFDWu6Ba_trPb8hQuQ@mail.gmail.com>
+ <DS7PR10MB72772B725366224EBC69FD08FA382@DS7PR10MB7277.namprd10.prod.outlook.com>
+ <CAAS8PALv8D6bq3U7J=Re0v0HX=26GzxaZM7ENAmzXW6VavZFng@mail.gmail.com>
+Message-ID: <f3047920-6cc0-4b21-aabe-70f9a811c4ed@statistik.tu-dortmund.de>
+
+Untested:
+
+install.packages() calls available.packages() to find out which packages 
+are available - and passes a "filters" argument if supplied.
+That can be a user defined filter. It should be possible to write a user 
+defined filter which prefers the packages in your local repo.
+
+Best,
+Uwe Ligges
+
+
+
+
+On 01.04.2024 02:07, Greg Hunt wrote:
+> Martin, Dirk, Kevin,
+> Thanks for your help.  To summarise: the order of access is undefined, and
+> every repo URL is accessed.   I'm working in an environment
+> where "known-good" is more important than "latest", so what follows is an
+> explanation of the problem space from my perspective.
+> 
+> What I am experimenting with is pinning down the versions of the packages
+> that a moderately complex solution is built against using a combination of
+> an internal repository of cached packages (internally written packages, our
+> own hopefully transient copies of packages archived from CRAN,
+> packages live on CRAN, and packages present in both Github and CRAN which
+> we build and cache locally) and a proxy that separately populates that
+> cache in specific build processes by intercepting requests to CRAN.  I'd
+> like to use the base R function if possible and I want to let the version
+> numbers in the dependencies float because a) we do need to maintain
+> approximate currency in what versions of packages we use and b) I have no
+> business monkeying around with third party's dependencies.  Renv looks
+> helpful but has some assumptions about disk access to its cache that I'd
+> rather avoid by running an internal repo.  The team is spread around the
+> world, so shared cache volumes are not a great idea.
+> 
+> The business with the multiple repo addresses is one approach to working
+> around Docker's inability to understand that people need to access the
+> Docker host's ports from inside a container or a build, and that the
+> current Docker treatment of the host's internal IP is far from transparent
+> (I have scripts that run both inside and outside of Docker containers and
+> they used to be able to work out for themselves what environment they run
+> in, thats got harder lately).  That led down a path in which one set of
+> addresses did not reject connection attempts, making each package
+> installation (and there are hundreds) take some number of minutes for the
+> connections to time out.  Thankfully I don't actually have to deal with
+> that.
+> 
+> We have had a few cases where our dependencies have been archived from CRAN
+> and we have maintained our own copy for a period of days to months, a
+> period in which we do not know what the next package version number is.  It
+> would be convenient to not have to think about that - a deterministic,
+> terminating search of a sequence of repos looked like a nice idea for that,
+> but I may have to do something different.
+> 
+> There was a recent case where a package made a breaking change in its
+> interface in a release (not version) update that broke another package we
+> depend on.  It would be nice to be able to temporarily pin that package at
+> its previous version (without updating the source of the third party
+> package that depends on it) to preserve our own build-ability while those
+> packages sort themselves out.
+> 
+> There is one case where a pull request for a CRAN-hosted package was
+> verbally accepted but never actioned so we have our own forked version of a
+> CRAN-hosted package which I need to decide what to do with one day soon.
+> Another case where the package version number is different in CRAN from the
+> one we want.
+> 
+> We have a dependency on a package that we build from a Git repo but which
+> is also present in CRAN.  I don't want to be dependent on the maintainers
+> keeping the package version in the Git copy of the DESCRIPTION file higher
+> than the version in CRAN.  Ideally I'd like to build and push to the
+> internal repo and not have to think about it after that. Same issue as
+> before arises, as it stands today I have to either worry about, and
+> probably edit, the version number in the build or manage the cache
+> population process so the internal package instance is added after any
+> CRAN-sourced dependencies and make sure that the public CRAN instances are
+> not accessed in the build.
+> 
+> All of these problems are soluble by special-casing the affected installs,
+> specifically managing the cache population (with a requirement that the
+> cache and CRAN not be searched at the same time), or editing version
+> numbers whose next values I do not control, but I would like to try for the
+> simplest approach first. I know I'm not going to get a clean solution here,
+> the relative weights of "known-good" and "latest" are different
+> depending on where you stand.
+> 
+> 
+> Greg
+> 
+> On Sun, 31 Mar 2024 at 22:43, Martin Morgan <mtmorgan.xyz at gmail.com> wrote:
+> 
+>> available.packages indicates that
+>>
+>>
+>>
+>>       By default, the return value includes only packages whose version
+>>
+>>       and OS requirements are met by the running version of R, and only
+>>
+>>       gives information on the latest versions of packages.
+>>
+>>
+>>
+>> So all repositories are consulted and then the result filtered to contain
+>> just the most recent version of each. Does it matter then what order the
+>> repositories are visited?
+>>
+>>
+>>
+>> Martin Morgan
+>>
+>>
+>>
+>> *From: *R-package-devel <r-package-devel-bounces at r-project.org> on behalf
+>> of Greg Hunt <greg at firmansyah.com>
+>> *Date: *Sunday, March 31, 2024 at 7:35?AM
+>> *To: *Dirk Eddelbuettel <edd at debian.org>
+>> *Cc: *List r-package-devel <r-package-devel at r-project.org>
+>> *Subject: *Re: [R-pkg-devel] Order of repo access from options("repos")
+>>
+>> Dirk,
+>> Sadly I can't use localhost for all of those.  172.17.0.1 is an internal
+>> Docker IP, not the localhost address (127.0.0.1), they are there to handle
+>> two different scenarios and different ones will fail to resolve in
+>> different scenarios.  Are you saying that the DNS lookup adds a timing
+>> issue to the search order?  Isn't the list deterministically ordered?
+>>
+>>
+>> Greg
+>>
+>> On Sun, 31 Mar 2024 at 22:15, Dirk Eddelbuettel <edd at debian.org> wrote:
+>>
+>>>
+>>> Greg,
+>>>
+>>> There are AFAICT two issues here: how R unrolls the named vector that is
+>>> the
+>>> 'repos' element in the list 'options', and how your computer resolves DNS
+>>> for
+>>> localhost vs 172.17.0.1.  I would try something like
+>>>
+>>>     options(repos = c(CRAN = "http://localhost:3001/proxy",
+>>>                       C = "http://localhost:3002",
+>>>                       B = "http://localhost:3003/proxy",
+>>>                       A = "http://localhost:3004"))
+>>>
+>>> or the equivalent with 172.17.0.1. When I do that here I get errors from
+>>> first to last as we expect:
+>>>
+>>>     > options(repos = c(CRAN = "http://localhost:3001/proxy",
+>>>                       C = "http://localhost:3002",
+>>>                       B = "http://localhost:3003/proxy",
+>>>                       A = "http://localhost:3004"))
+>>>     > available.packages()
+>>>     Warning: unable to access index for repository
+>>> http://localhost:3001/proxy/src/contrib:
+>>>       cannot open URL 'http://localhost:3001/proxy/src/contrib/PACKAGES'
+>>>     Warning: unable to access index for repository
+>>> http://localhost:3002/src/contrib:
+>>>       cannot open URL 'http://localhost:3002/src/contrib/PACKAGES'
+>>>     Warning: unable to access index for repository
+>>> http://localhost:3003/proxy/src/contrib:
+>>>       cannot open URL 'http://localhost:3003/proxy/src/contrib/PACKAGES'
+>>>     Warning: unable to access index for repository
+>>> http://localhost:3004/src/contrib:
+>>>       cannot open URL 'http://localhost:3004/src/contrib/PACKAGES'
+>>>          Package Version Priority Depends Imports LinkingTo Suggests
+>>> Enhances License License_is_FOSS License_restricts_use OS_type Archs
+>> MD5sum
+>>> NeedsCompilation File Repository
+>>>     >
+>>>
+>>> Dirk
+>>>
+>>> --
+>>> dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+>>>
+>>
+>>          [[alternative HTML version deleted]]
+>>
+>> ______________________________________________
+>> R-package-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>>
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+From edd @end|ng |rom deb|@n@org  Tue Apr  2 14:07:14 2024
+From: edd @end|ng |rom deb|@n@org (Dirk Eddelbuettel)
+Date: Tue, 2 Apr 2024 07:07:14 -0500
+Subject: [R-pkg-devel] Order of repo access from options("repos")
+In-Reply-To: <f3047920-6cc0-4b21-aabe-70f9a811c4ed@statistik.tu-dortmund.de>
+References: <CAAS8PAJPuwDoWWJ1at5py49o0OA6GvuMxd7DW3Xy8Ze17X73Gg@mail.gmail.com>
+ <26121.17883.118636.415791@rob.eddelbuettel.com>
+ <CAAS8PAJP60tT2sZou4gcHFV2rynCiF1eDFDWu6Ba_trPb8hQuQ@mail.gmail.com>
+ <DS7PR10MB72772B725366224EBC69FD08FA382@DS7PR10MB7277.namprd10.prod.outlook.com>
+ <CAAS8PALv8D6bq3U7J=Re0v0HX=26GzxaZM7ENAmzXW6VavZFng@mail.gmail.com>
+ <f3047920-6cc0-4b21-aabe-70f9a811c4ed@statistik.tu-dortmund.de>
+Message-ID: <26123.62706.319538.46397@rob.eddelbuettel.com>
+
+
+On 1 April 2024 at 17:44, Uwe Ligges wrote:
+| Untested:
+| 
+| install.packages() calls available.packages() to find out which packages 
+| are available - and passes a "filters" argument if supplied.
+| That can be a user defined filter. It should be possible to write a user 
+| defined filter which prefers the packages in your local repo.
+
+Intriguing.  Presumably that would work for update.packages() too?
+
+(We actually have a use case at work, and as one way out I created another
+side-repo to place a package with an incremented version number so it would
+'win' on hightest version; this is due to some non-trivial issues with the
+underlying dependencies.)
+
+Dirk
+
+-- 
+dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From rhe|p @end|ng |rom eoo@@dd@@n|  Tue Apr  2 16:05:27 2024
+From: rhe|p @end|ng |rom eoo@@dd@@n| (Jan van der Laan)
+Date: Tue, 2 Apr 2024 16:05:27 +0200
+Subject: [R-pkg-devel] Order of repo access from options("repos")
+In-Reply-To: <CAAS8PALv8D6bq3U7J=Re0v0HX=26GzxaZM7ENAmzXW6VavZFng@mail.gmail.com>
+References: <CAAS8PAJPuwDoWWJ1at5py49o0OA6GvuMxd7DW3Xy8Ze17X73Gg@mail.gmail.com>
+ <26121.17883.118636.415791@rob.eddelbuettel.com>
+ <CAAS8PAJP60tT2sZou4gcHFV2rynCiF1eDFDWu6Ba_trPb8hQuQ@mail.gmail.com>
+ <DS7PR10MB72772B725366224EBC69FD08FA382@DS7PR10MB7277.namprd10.prod.outlook.com>
+ <CAAS8PALv8D6bq3U7J=Re0v0HX=26GzxaZM7ENAmzXW6VavZFng@mail.gmail.com>
+Message-ID: <411a7cb8-9090-472c-a2b3-64644688aa62@eoos.dds.nl>
+
+Interesting. That would also mean that putting a company repo first does 
+not protect against dependency confusion attacks (people intentionally 
+uploading packages with the same name as company internal packages on 
+CRAN; 
+https://arstechnica.com/information-technology/2021/02/supply-chain-attack-that-fooled-apple-and-microsoft-is-attracting-copycats/) 
+
+
+Jan
+
+
+
+On 01-04-2024 02:07, Greg Hunt wrote:
+> Martin, Dirk, Kevin,
+> Thanks for your help.  To summarise: the order of access is undefined, and
+> every repo URL is accessed.   I'm working in an environment
+> where "known-good" is more important than "latest", so what follows is an
+> explanation of the problem space from my perspective.
+> 
+> What I am experimenting with is pinning down the versions of the packages
+> that a moderately complex solution is built against using a combination of
+> an internal repository of cached packages (internally written packages, our
+> own hopefully transient copies of packages archived from CRAN,
+> packages live on CRAN, and packages present in both Github and CRAN which
+> we build and cache locally) and a proxy that separately populates that
+> cache in specific build processes by intercepting requests to CRAN.  I'd
+> like to use the base R function if possible and I want to let the version
+> numbers in the dependencies float because a) we do need to maintain
+> approximate currency in what versions of packages we use and b) I have no
+> business monkeying around with third party's dependencies.  Renv looks
+> helpful but has some assumptions about disk access to its cache that I'd
+> rather avoid by running an internal repo.  The team is spread around the
+> world, so shared cache volumes are not a great idea.
+> 
+> The business with the multiple repo addresses is one approach to working
+> around Docker's inability to understand that people need to access the
+> Docker host's ports from inside a container or a build, and that the
+> current Docker treatment of the host's internal IP is far from transparent
+> (I have scripts that run both inside and outside of Docker containers and
+> they used to be able to work out for themselves what environment they run
+> in, thats got harder lately).  That led down a path in which one set of
+> addresses did not reject connection attempts, making each package
+> installation (and there are hundreds) take some number of minutes for the
+> connections to time out.  Thankfully I don't actually have to deal with
+> that.
+> 
+> We have had a few cases where our dependencies have been archived from CRAN
+> and we have maintained our own copy for a period of days to months, a
+> period in which we do not know what the next package version number is.  It
+> would be convenient to not have to think about that - a deterministic,
+> terminating search of a sequence of repos looked like a nice idea for that,
+> but I may have to do something different.
+> 
+> There was a recent case where a package made a breaking change in its
+> interface in a release (not version) update that broke another package we
+> depend on.  It would be nice to be able to temporarily pin that package at
+> its previous version (without updating the source of the third party
+> package that depends on it) to preserve our own build-ability while those
+> packages sort themselves out.
+> 
+> There is one case where a pull request for a CRAN-hosted package was
+> verbally accepted but never actioned so we have our own forked version of a
+> CRAN-hosted package which I need to decide what to do with one day soon.
+> Another case where the package version number is different in CRAN from the
+> one we want.
+> 
+> We have a dependency on a package that we build from a Git repo but which
+> is also present in CRAN.  I don't want to be dependent on the maintainers
+> keeping the package version in the Git copy of the DESCRIPTION file higher
+> than the version in CRAN.  Ideally I'd like to build and push to the
+> internal repo and not have to think about it after that. Same issue as
+> before arises, as it stands today I have to either worry about, and
+> probably edit, the version number in the build or manage the cache
+> population process so the internal package instance is added after any
+> CRAN-sourced dependencies and make sure that the public CRAN instances are
+> not accessed in the build.
+> 
+> All of these problems are soluble by special-casing the affected installs,
+> specifically managing the cache population (with a requirement that the
+> cache and CRAN not be searched at the same time), or editing version
+> numbers whose next values I do not control, but I would like to try for the
+> simplest approach first. I know I'm not going to get a clean solution here,
+> the relative weights of "known-good" and "latest" are different
+> depending on where you stand.
+> 
+> 
+> Greg
+> 
+> On Sun, 31 Mar 2024 at 22:43, Martin Morgan <mtmorgan.xyz at gmail.com> wrote:
+> 
+>> available.packages indicates that
+>>
+>>
+>>
+>>       By default, the return value includes only packages whose version
+>>
+>>       and OS requirements are met by the running version of R, and only
+>>
+>>       gives information on the latest versions of packages.
+>>
+>>
+>>
+>> So all repositories are consulted and then the result filtered to contain
+>> just the most recent version of each. Does it matter then what order the
+>> repositories are visited?
+>>
+>>
+>>
+>> Martin Morgan
+>>
+>>
+>>
+>> *From: *R-package-devel <r-package-devel-bounces at r-project.org> on behalf
+>> of Greg Hunt <greg at firmansyah.com>
+>> *Date: *Sunday, March 31, 2024 at 7:35?AM
+>> *To: *Dirk Eddelbuettel <edd at debian.org>
+>> *Cc: *List r-package-devel <r-package-devel at r-project.org>
+>> *Subject: *Re: [R-pkg-devel] Order of repo access from options("repos")
+>>
+>> Dirk,
+>> Sadly I can't use localhost for all of those.  172.17.0.1 is an internal
+>> Docker IP, not the localhost address (127.0.0.1), they are there to handle
+>> two different scenarios and different ones will fail to resolve in
+>> different scenarios.  Are you saying that the DNS lookup adds a timing
+>> issue to the search order?  Isn't the list deterministically ordered?
+>>
+>>
+>> Greg
+>>
+>> On Sun, 31 Mar 2024 at 22:15, Dirk Eddelbuettel <edd at debian.org> wrote:
+>>
+>>>
+>>> Greg,
+>>>
+>>> There are AFAICT two issues here: how R unrolls the named vector that is
+>>> the
+>>> 'repos' element in the list 'options', and how your computer resolves DNS
+>>> for
+>>> localhost vs 172.17.0.1.  I would try something like
+>>>
+>>>     options(repos = c(CRAN = "http://localhost:3001/proxy",
+>>>                       C = "http://localhost:3002",
+>>>                       B = "http://localhost:3003/proxy",
+>>>                       A = "http://localhost:3004"))
+>>>
+>>> or the equivalent with 172.17.0.1. When I do that here I get errors from
+>>> first to last as we expect:
+>>>
+>>>     > options(repos = c(CRAN = "http://localhost:3001/proxy",
+>>>                       C = "http://localhost:3002",
+>>>                       B = "http://localhost:3003/proxy",
+>>>                       A = "http://localhost:3004"))
+>>>     > available.packages()
+>>>     Warning: unable to access index for repository
+>>> http://localhost:3001/proxy/src/contrib:
+>>>       cannot open URL 'http://localhost:3001/proxy/src/contrib/PACKAGES'
+>>>     Warning: unable to access index for repository
+>>> http://localhost:3002/src/contrib:
+>>>       cannot open URL 'http://localhost:3002/src/contrib/PACKAGES'
+>>>     Warning: unable to access index for repository
+>>> http://localhost:3003/proxy/src/contrib:
+>>>       cannot open URL 'http://localhost:3003/proxy/src/contrib/PACKAGES'
+>>>     Warning: unable to access index for repository
+>>> http://localhost:3004/src/contrib:
+>>>       cannot open URL 'http://localhost:3004/src/contrib/PACKAGES'
+>>>          Package Version Priority Depends Imports LinkingTo Suggests
+>>> Enhances License License_is_FOSS License_restricts_use OS_type Archs
+>> MD5sum
+>>> NeedsCompilation File Repository
+>>>     >
+>>>
+>>> Dirk
+>>>
+>>> --
+>>> dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+>>>
+>>
+>>          [[alternative HTML version deleted]]
+>>
+>> ______________________________________________
+>> R-package-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>>
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+
+From greg @end|ng |rom ||rm@n@y@h@com  Wed Apr  3 01:24:22 2024
+From: greg @end|ng |rom ||rm@n@y@h@com (Greg Hunt)
+Date: Wed, 3 Apr 2024 10:24:22 +1100
+Subject: [R-pkg-devel] Order of repo access from options("repos")
+In-Reply-To: <411a7cb8-9090-472c-a2b3-64644688aa62@eoos.dds.nl>
+References: <CAAS8PAJPuwDoWWJ1at5py49o0OA6GvuMxd7DW3Xy8Ze17X73Gg@mail.gmail.com>
+ <26121.17883.118636.415791@rob.eddelbuettel.com>
+ <CAAS8PAJP60tT2sZou4gcHFV2rynCiF1eDFDWu6Ba_trPb8hQuQ@mail.gmail.com>
+ <DS7PR10MB72772B725366224EBC69FD08FA382@DS7PR10MB7277.namprd10.prod.outlook.com>
+ <CAAS8PALv8D6bq3U7J=Re0v0HX=26GzxaZM7ENAmzXW6VavZFng@mail.gmail.com>
+ <411a7cb8-9090-472c-a2b3-64644688aa62@eoos.dds.nl>
+Message-ID: <CAAS8PAJXMaX8C9CB0-hDQNLZD2NTgsTtpQL8DEnMJiLf0Kez0g@mail.gmail.com>
+
+Jan,
+Thats only the case if you want to allow later version numbers to override
+the versions in the internal repository, the "known-good" is more important
+than "latest" point above.
+
+Having a defined set of dependencies while still maintaining currency is a
+difficult problem.  Always fetching dependencies from a public source is a
+very bad idea (which is why I am looking at these issues), but not doing it
+accumulates future costs as interfaces and sets of bugs evolve and need to
+be remediated.  Those future costs can become very large indeed in a large
+system.
+
+Compounding the problem, CRAN caching is not supported universally by
+commercial infrastructure.  I think Artifactory and Nexus do it, the AWS
+and Azure offerings don't.
+
+
+Greg
+
+On Wed, 3 Apr 2024 at 01:05, Jan van der Laan <rhelp at eoos.dds.nl> wrote:
+
+> Interesting. That would also mean that putting a company repo first does
+> not protect against dependency confusion attacks (people intentionally
+> uploading packages with the same name as company internal packages on
+> CRAN;
+>
+> https://arstechnica.com/information-technology/2021/02/supply-chain-attack-that-fooled-apple-and-microsoft-is-attracting-copycats/)
+>
+>
+>
+> Jan
+>
+>
+>
+> On 01-04-2024 02:07, Greg Hunt wrote:
+> > Martin, Dirk, Kevin,
+> > Thanks for your help.  To summarise: the order of access is undefined,
+> and
+> > every repo URL is accessed.   I'm working in an environment
+> > where "known-good" is more important than "latest", so what follows is an
+> > explanation of the problem space from my perspective.
+> >
+> > What I am experimenting with is pinning down the versions of the packages
+> > that a moderately complex solution is built against using a combination
+> of
+> > an internal repository of cached packages (internally written packages,
+> our
+> > own hopefully transient copies of packages archived from CRAN,
+> > packages live on CRAN, and packages present in both Github and CRAN which
+> > we build and cache locally) and a proxy that separately populates that
+> > cache in specific build processes by intercepting requests to CRAN.  I'd
+> > like to use the base R function if possible and I want to let the version
+> > numbers in the dependencies float because a) we do need to maintain
+> > approximate currency in what versions of packages we use and b) I have no
+> > business monkeying around with third party's dependencies.  Renv looks
+> > helpful but has some assumptions about disk access to its cache that I'd
+> > rather avoid by running an internal repo.  The team is spread around the
+> > world, so shared cache volumes are not a great idea.
+> >
+> > The business with the multiple repo addresses is one approach to working
+> > around Docker's inability to understand that people need to access the
+> > Docker host's ports from inside a container or a build, and that the
+> > current Docker treatment of the host's internal IP is far from
+> transparent
+> > (I have scripts that run both inside and outside of Docker containers and
+> > they used to be able to work out for themselves what environment they run
+> > in, thats got harder lately).  That led down a path in which one set of
+> > addresses did not reject connection attempts, making each package
+> > installation (and there are hundreds) take some number of minutes for the
+> > connections to time out.  Thankfully I don't actually have to deal with
+> > that.
+> >
+> > We have had a few cases where our dependencies have been archived from
+> CRAN
+> > and we have maintained our own copy for a period of days to months, a
+> > period in which we do not know what the next package version number is.
+> It
+> > would be convenient to not have to think about that - a deterministic,
+> > terminating search of a sequence of repos looked like a nice idea for
+> that,
+> > but I may have to do something different.
+> >
+> > There was a recent case where a package made a breaking change in its
+> > interface in a release (not version) update that broke another package we
+> > depend on.  It would be nice to be able to temporarily pin that package
+> at
+> > its previous version (without updating the source of the third party
+> > package that depends on it) to preserve our own build-ability while those
+> > packages sort themselves out.
+> >
+> > There is one case where a pull request for a CRAN-hosted package was
+> > verbally accepted but never actioned so we have our own forked version
+> of a
+> > CRAN-hosted package which I need to decide what to do with one day soon.
+> > Another case where the package version number is different in CRAN from
+> the
+> > one we want.
+> >
+> > We have a dependency on a package that we build from a Git repo but which
+> > is also present in CRAN.  I don't want to be dependent on the maintainers
+> > keeping the package version in the Git copy of the DESCRIPTION file
+> higher
+> > than the version in CRAN.  Ideally I'd like to build and push to the
+> > internal repo and not have to think about it after that. Same issue as
+> > before arises, as it stands today I have to either worry about, and
+> > probably edit, the version number in the build or manage the cache
+> > population process so the internal package instance is added after any
+> > CRAN-sourced dependencies and make sure that the public CRAN instances
+> are
+> > not accessed in the build.
+> >
+> > All of these problems are soluble by special-casing the affected
+> installs,
+> > specifically managing the cache population (with a requirement that the
+> > cache and CRAN not be searched at the same time), or editing version
+> > numbers whose next values I do not control, but I would like to try for
+> the
+> > simplest approach first. I know I'm not going to get a clean solution
+> here,
+> > the relative weights of "known-good" and "latest" are different
+> > depending on where you stand.
+> >
+> >
+> > Greg
+> >
+> > On Sun, 31 Mar 2024 at 22:43, Martin Morgan <mtmorgan.xyz at gmail.com>
+> wrote:
+> >
+> >> available.packages indicates that
+> >>
+> >>
+> >>
+> >>       By default, the return value includes only packages whose version
+> >>
+> >>       and OS requirements are met by the running version of R, and only
+> >>
+> >>       gives information on the latest versions of packages.
+> >>
+> >>
+> >>
+> >> So all repositories are consulted and then the result filtered to
+> contain
+> >> just the most recent version of each. Does it matter then what order the
+> >> repositories are visited?
+> >>
+> >>
+> >>
+> >> Martin Morgan
+> >>
+> >>
+> >>
+> >> *From: *R-package-devel <r-package-devel-bounces at r-project.org> on
+> behalf
+> >> of Greg Hunt <greg at firmansyah.com>
+> >> *Date: *Sunday, March 31, 2024 at 7:35?AM
+> >> *To: *Dirk Eddelbuettel <edd at debian.org>
+> >> *Cc: *List r-package-devel <r-package-devel at r-project.org>
+> >> *Subject: *Re: [R-pkg-devel] Order of repo access from options("repos")
+> >>
+> >> Dirk,
+> >> Sadly I can't use localhost for all of those.  172.17.0.1 is an internal
+> >> Docker IP, not the localhost address (127.0.0.1), they are there to
+> handle
+> >> two different scenarios and different ones will fail to resolve in
+> >> different scenarios.  Are you saying that the DNS lookup adds a timing
+> >> issue to the search order?  Isn't the list deterministically ordered?
+> >>
+> >>
+> >> Greg
+> >>
+> >> On Sun, 31 Mar 2024 at 22:15, Dirk Eddelbuettel <edd at debian.org> wrote:
+> >>
+> >>>
+> >>> Greg,
+> >>>
+> >>> There are AFAICT two issues here: how R unrolls the named vector that
+> is
+> >>> the
+> >>> 'repos' element in the list 'options', and how your computer resolves
+> DNS
+> >>> for
+> >>> localhost vs 172.17.0.1.  I would try something like
+> >>>
+> >>>     options(repos = c(CRAN = "http://localhost:3001/proxy",
+> >>>                       C = "http://localhost:3002",
+> >>>                       B = "http://localhost:3003/proxy",
+> >>>                       A = "http://localhost:3004"))
+> >>>
+> >>> or the equivalent with 172.17.0.1. When I do that here I get errors
+> from
+> >>> first to last as we expect:
+> >>>
+> >>>     > options(repos = c(CRAN = "http://localhost:3001/proxy",
+> >>>                       C = "http://localhost:3002",
+> >>>                       B = "http://localhost:3003/proxy",
+> >>>                       A = "http://localhost:3004"))
+> >>>     > available.packages()
+> >>>     Warning: unable to access index for repository
+> >>> http://localhost:3001/proxy/src/contrib:
+> >>>       cannot open URL '
+> http://localhost:3001/proxy/src/contrib/PACKAGES'
+> >>>     Warning: unable to access index for repository
+> >>> http://localhost:3002/src/contrib:
+> >>>       cannot open URL 'http://localhost:3002/src/contrib/PACKAGES'
+> >>>     Warning: unable to access index for repository
+> >>> http://localhost:3003/proxy/src/contrib:
+> >>>       cannot open URL '
+> http://localhost:3003/proxy/src/contrib/PACKAGES'
+> >>>     Warning: unable to access index for repository
+> >>> http://localhost:3004/src/contrib:
+> >>>       cannot open URL 'http://localhost:3004/src/contrib/PACKAGES'
+> >>>          Package Version Priority Depends Imports LinkingTo Suggests
+> >>> Enhances License License_is_FOSS License_restricts_use OS_type Archs
+> >> MD5sum
+> >>> NeedsCompilation File Repository
+> >>>     >
+> >>>
+> >>> Dirk
+> >>>
+> >>> --
+> >>> dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+> >>>
+> >>
+> >>          [[alternative HTML version deleted]]
+> >>
+> >> ______________________________________________
+> >> R-package-devel at r-project.org mailing list
+> >> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+> >>
+> >
+> >       [[alternative HTML version deleted]]
+> >
+> > ______________________________________________
+> > R-package-devel at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+
+	[[alternative HTML version deleted]]
+
+
+From ||gge@ @end|ng |rom @t@t|@t|k@tu-dortmund@de  Wed Apr  3 01:30:55 2024
+From: ||gge@ @end|ng |rom @t@t|@t|k@tu-dortmund@de (Uwe Ligges)
+Date: Wed, 3 Apr 2024 01:30:55 +0200
+Subject: [R-pkg-devel] Order of repo access from options("repos")
+In-Reply-To: <26123.62706.319538.46397@rob.eddelbuettel.com>
+References: <CAAS8PAJPuwDoWWJ1at5py49o0OA6GvuMxd7DW3Xy8Ze17X73Gg@mail.gmail.com>
+ <26121.17883.118636.415791@rob.eddelbuettel.com>
+ <CAAS8PAJP60tT2sZou4gcHFV2rynCiF1eDFDWu6Ba_trPb8hQuQ@mail.gmail.com>
+ <DS7PR10MB72772B725366224EBC69FD08FA382@DS7PR10MB7277.namprd10.prod.outlook.com>
+ <CAAS8PALv8D6bq3U7J=Re0v0HX=26GzxaZM7ENAmzXW6VavZFng@mail.gmail.com>
+ <f3047920-6cc0-4b21-aabe-70f9a811c4ed@statistik.tu-dortmund.de>
+ <26123.62706.319538.46397@rob.eddelbuettel.com>
+Message-ID: <48c6194f-5534-4437-bd3b-b8b558fb6610@statistik.tu-dortmund.de>
+
+
+
+On 02.04.2024 14:07, Dirk Eddelbuettel wrote:
+> 
+> On 1 April 2024 at 17:44, Uwe Ligges wrote:
+> | Untested:
+> |
+> | install.packages() calls available.packages() to find out which packages
+> | are available - and passes a "filters" argument if supplied.
+> | That can be a user defined filter. It should be possible to write a user
+> | defined filter which prefers the packages in your local repo.
+> 
+> Intriguing.  Presumably that would work for update.packages() too?
+
+Yes. I think so.
+
+Best,
+Uwe
+
+
+> 
+> (We actually have a use case at work, and as one way out I created another
+> side-repo to place a package with an incremented version number so it would
+> 'win' on hightest version; this is due to some non-trivial issues with the
+> underlying dependencies.)
+> 
+> Dirk
+> 
+
+From ||gge@ @end|ng |rom @t@t|@t|k@tu-dortmund@de  Wed Apr  3 01:40:09 2024
+From: ||gge@ @end|ng |rom @t@t|@t|k@tu-dortmund@de (Uwe Ligges)
+Date: Wed, 3 Apr 2024 01:40:09 +0200
+Subject: [R-pkg-devel] Order of repo access from options("repos")
+In-Reply-To: <411a7cb8-9090-472c-a2b3-64644688aa62@eoos.dds.nl>
+References: <CAAS8PAJPuwDoWWJ1at5py49o0OA6GvuMxd7DW3Xy8Ze17X73Gg@mail.gmail.com>
+ <26121.17883.118636.415791@rob.eddelbuettel.com>
+ <CAAS8PAJP60tT2sZou4gcHFV2rynCiF1eDFDWu6Ba_trPb8hQuQ@mail.gmail.com>
+ <DS7PR10MB72772B725366224EBC69FD08FA382@DS7PR10MB7277.namprd10.prod.outlook.com>
+ <CAAS8PALv8D6bq3U7J=Re0v0HX=26GzxaZM7ENAmzXW6VavZFng@mail.gmail.com>
+ <411a7cb8-9090-472c-a2b3-64644688aa62@eoos.dds.nl>
+Message-ID: <eb8fa103-cd4f-4267-8705-a26c6736a1f3@statistik.tu-dortmund.de>
+
+If your company is going to ensure that a package called pkgCompany is 
+only looked for in a local repo by installl.packages() and friends,
+I think in your cpmpany wide R installation you can set the option 
+"available_packages_filters" to a self written one that is exclusively 
+reporting results from the local repo for 'pkgCompany'.
+
+Of course, this is not safe and can be overwritten by e user etc., but 
+it needs quite some effort to trick people this way in using a malicious 
+package from another repo. It would be simpler for attackers to persuade 
+people to install the malicious software directly, I believe.
+
+Best,
+Uwe Ligges
+
+
+
+
+
+
+
+
+
+On 02.04.2024 16:05, Jan van der Laan wrote:
+> Interesting. That would also mean that putting a company repo first does 
+> not protect against dependency confusion attacks (people intentionally 
+> uploading packages with the same name as company internal packages on 
+> CRAN; 
+> https://arstechnica.com/information-technology/2021/02/supply-chain-attack-that-fooled-apple-and-microsoft-is-attracting-copycats/)
+> 
+> Jan
+> 
+> 
+> 
+> On 01-04-2024 02:07, Greg Hunt wrote:
+>> Martin, Dirk, Kevin,
+>> Thanks for your help.? To summarise: the order of access is undefined, 
+>> and
+>> every repo URL is accessed.?? I'm working in an environment
+>> where "known-good" is more important than "latest", so what follows is an
+>> explanation of the problem space from my perspective.
+>>
+>> What I am experimenting with is pinning down the versions of the packages
+>> that a moderately complex solution is built against using a 
+>> combination of
+>> an internal repository of cached packages (internally written 
+>> packages, our
+>> own hopefully transient copies of packages archived from CRAN,
+>> packages live on CRAN, and packages present in both Github and CRAN which
+>> we build and cache locally) and a proxy that separately populates that
+>> cache in specific build processes by intercepting requests to CRAN.? I'd
+>> like to use the base R function if possible and I want to let the version
+>> numbers in the dependencies float because a) we do need to maintain
+>> approximate currency in what versions of packages we use and b) I have no
+>> business monkeying around with third party's dependencies.? Renv looks
+>> helpful but has some assumptions about disk access to its cache that I'd
+>> rather avoid by running an internal repo.? The team is spread around the
+>> world, so shared cache volumes are not a great idea.
+>>
+>> The business with the multiple repo addresses is one approach to working
+>> around Docker's inability to understand that people need to access the
+>> Docker host's ports from inside a container or a build, and that the
+>> current Docker treatment of the host's internal IP is far from 
+>> transparent
+>> (I have scripts that run both inside and outside of Docker containers and
+>> they used to be able to work out for themselves what environment they run
+>> in, thats got harder lately).? That led down a path in which one set of
+>> addresses did not reject connection attempts, making each package
+>> installation (and there are hundreds) take some number of minutes for the
+>> connections to time out.? Thankfully I don't actually have to deal with
+>> that.
+>>
+>> We have had a few cases where our dependencies have been archived from 
+>> CRAN
+>> and we have maintained our own copy for a period of days to months, a
+>> period in which we do not know what the next package version number 
+>> is.? It
+>> would be convenient to not have to think about that - a deterministic,
+>> terminating search of a sequence of repos looked like a nice idea for 
+>> that,
+>> but I may have to do something different.
+>>
+>> There was a recent case where a package made a breaking change in its
+>> interface in a release (not version) update that broke another package we
+>> depend on.? It would be nice to be able to temporarily pin that 
+>> package at
+>> its previous version (without updating the source of the third party
+>> package that depends on it) to preserve our own build-ability while those
+>> packages sort themselves out.
+>>
+>> There is one case where a pull request for a CRAN-hosted package was
+>> verbally accepted but never actioned so we have our own forked version 
+>> of a
+>> CRAN-hosted package which I need to decide what to do with one day soon.
+>> Another case where the package version number is different in CRAN 
+>> from the
+>> one we want.
+>>
+>> We have a dependency on a package that we build from a Git repo but which
+>> is also present in CRAN.? I don't want to be dependent on the maintainers
+>> keeping the package version in the Git copy of the DESCRIPTION file 
+>> higher
+>> than the version in CRAN.? Ideally I'd like to build and push to the
+>> internal repo and not have to think about it after that. Same issue as
+>> before arises, as it stands today I have to either worry about, and
+>> probably edit, the version number in the build or manage the cache
+>> population process so the internal package instance is added after any
+>> CRAN-sourced dependencies and make sure that the public CRAN instances 
+>> are
+>> not accessed in the build.
+>>
+>> All of these problems are soluble by special-casing the affected 
+>> installs,
+>> specifically managing the cache population (with a requirement that the
+>> cache and CRAN not be searched at the same time), or editing version
+>> numbers whose next values I do not control, but I would like to try 
+>> for the
+>> simplest approach first. I know I'm not going to get a clean solution 
+>> here,
+>> the relative weights of "known-good" and "latest" are different
+>> depending on where you stand.
+>>
+>>
+>> Greg
+>>
+>> On Sun, 31 Mar 2024 at 22:43, Martin Morgan <mtmorgan.xyz at gmail.com> 
+>> wrote:
+>>
+>>> available.packages indicates that
+>>>
+>>>
+>>>
+>>> ????? By default, the return value includes only packages whose version
+>>>
+>>> ????? and OS requirements are met by the running version of R, and only
+>>>
+>>> ????? gives information on the latest versions of packages.
+>>>
+>>>
+>>>
+>>> So all repositories are consulted and then the result filtered to 
+>>> contain
+>>> just the most recent version of each. Does it matter then what order the
+>>> repositories are visited?
+>>>
+>>>
+>>>
+>>> Martin Morgan
+>>>
+>>>
+>>>
+>>> *From: *R-package-devel <r-package-devel-bounces at r-project.org> on 
+>>> behalf
+>>> of Greg Hunt <greg at firmansyah.com>
+>>> *Date: *Sunday, March 31, 2024 at 7:35?AM
+>>> *To: *Dirk Eddelbuettel <edd at debian.org>
+>>> *Cc: *List r-package-devel <r-package-devel at r-project.org>
+>>> *Subject: *Re: [R-pkg-devel] Order of repo access from options("repos")
+>>>
+>>> Dirk,
+>>> Sadly I can't use localhost for all of those.? 172.17.0.1 is an internal
+>>> Docker IP, not the localhost address (127.0.0.1), they are there to 
+>>> handle
+>>> two different scenarios and different ones will fail to resolve in
+>>> different scenarios.? Are you saying that the DNS lookup adds a timing
+>>> issue to the search order?? Isn't the list deterministically ordered?
+>>>
+>>>
+>>> Greg
+>>>
+>>> On Sun, 31 Mar 2024 at 22:15, Dirk Eddelbuettel <edd at debian.org> wrote:
+>>>
+>>>>
+>>>> Greg,
+>>>>
+>>>> There are AFAICT two issues here: how R unrolls the named vector 
+>>>> that is
+>>>> the
+>>>> 'repos' element in the list 'options', and how your computer 
+>>>> resolves DNS
+>>>> for
+>>>> localhost vs 172.17.0.1.? I would try something like
+>>>>
+>>>> ??? options(repos = c(CRAN = "http://localhost:3001/proxy",
+>>>> ????????????????????? C = "http://localhost:3002",
+>>>> ????????????????????? B = "http://localhost:3003/proxy",
+>>>> ????????????????????? A = "http://localhost:3004"))
+>>>>
+>>>> or the equivalent with 172.17.0.1. When I do that here I get errors 
+>>>> from
+>>>> first to last as we expect:
+>>>>
+>>>> ??? > options(repos = c(CRAN = "http://localhost:3001/proxy",
+>>>> ????????????????????? C = "http://localhost:3002",
+>>>> ????????????????????? B = "http://localhost:3003/proxy",
+>>>> ????????????????????? A = "http://localhost:3004"))
+>>>> ??? > available.packages()
+>>>> ??? Warning: unable to access index for repository
+>>>> http://localhost:3001/proxy/src/contrib:
+>>>> ????? cannot open URL 
+>>>> 'http://localhost:3001/proxy/src/contrib/PACKAGES'
+>>>> ??? Warning: unable to access index for repository
+>>>> http://localhost:3002/src/contrib:
+>>>> ????? cannot open URL 'http://localhost:3002/src/contrib/PACKAGES'
+>>>> ??? Warning: unable to access index for repository
+>>>> http://localhost:3003/proxy/src/contrib:
+>>>> ????? cannot open URL 
+>>>> 'http://localhost:3003/proxy/src/contrib/PACKAGES'
+>>>> ??? Warning: unable to access index for repository
+>>>> http://localhost:3004/src/contrib:
+>>>> ????? cannot open URL 'http://localhost:3004/src/contrib/PACKAGES'
+>>>> ???????? Package Version Priority Depends Imports LinkingTo Suggests
+>>>> Enhances License License_is_FOSS License_restricts_use OS_type Archs
+>>> MD5sum
+>>>> NeedsCompilation File Repository
+>>>> ??? >
+>>>>
+>>>> Dirk
+>>>>
+>>>> -- 
+>>>> dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+>>>>
+>>>
+>>> ???????? [[alternative HTML version deleted]]
+>>>
+>>> ______________________________________________
+>>> R-package-devel at r-project.org mailing list
+>>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>>>
+>>
+>> ????[[alternative HTML version deleted]]
+>>
+>> ______________________________________________
+>> R-package-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+> 
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+From greg @end|ng |rom ||rm@n@y@h@com  Wed Apr  3 22:37:36 2024
+From: greg @end|ng |rom ||rm@n@y@h@com (Greg Hunt)
+Date: Thu, 4 Apr 2024 07:37:36 +1100
+Subject: [R-pkg-devel] Package vulnerabilities
+In-Reply-To: <eb8fa103-cd4f-4267-8705-a26c6736a1f3@statistik.tu-dortmund.de>
+References: <CAAS8PAJPuwDoWWJ1at5py49o0OA6GvuMxd7DW3Xy8Ze17X73Gg@mail.gmail.com>
+ <26121.17883.118636.415791@rob.eddelbuettel.com>
+ <CAAS8PAJP60tT2sZou4gcHFV2rynCiF1eDFDWu6Ba_trPb8hQuQ@mail.gmail.com>
+ <DS7PR10MB72772B725366224EBC69FD08FA382@DS7PR10MB7277.namprd10.prod.outlook.com>
+ <CAAS8PALv8D6bq3U7J=Re0v0HX=26GzxaZM7ENAmzXW6VavZFng@mail.gmail.com>
+ <411a7cb8-9090-472c-a2b3-64644688aa62@eoos.dds.nl>
+ <eb8fa103-cd4f-4267-8705-a26c6736a1f3@statistik.tu-dortmund.de>
+Message-ID: <CAAS8PAKjxRUsTrPsLUEN2s967m6Pc2ZDmtVLKeoQp_+8_45Mmw@mail.gmail.com>
+
+Uwe,
+Whether it takes a lot of effort to get malicious code into a company
+depends on the pay-off, which can be large relative to the effort.  The
+example of the hack before was largely interesting because the priorities
+of the package users were fundamentally insecure (higher version number
+wins, defaulting to public repositories) and the specific package names
+meant that the hack was narrowly targeted, making it less likely to be
+discovered than exfiltration code inserted into a widely used package.
+Having an identifiable set of package dependencies at any point in time is
+a beginning.  Its difficult to effectively control developer behaviour, so
+there is a risk there, but what makes it into production can in principle
+be identified and controlled.
+
+I had a look at the CVE database, its difficult to identify R package
+vulnerabilities there.  Some other searching turned up a couple of
+vulnerabilities and some rather promotional blog posts, one of which
+asserted that R code is almost always run in controlled environments, which
+was sadly hilarious.
+
+Is there a source of vulnerability information for R packages?  Are there
+or have there been examples of actually malicious R packages in the wild?
+
+
+Greg
+
+	[[alternative HTML version deleted]]
+
+
+From bbo|ker @end|ng |rom gm@||@com  Wed Apr  3 23:20:25 2024
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Wed, 3 Apr 2024 17:20:25 -0400
+Subject: [R-pkg-devel] Package vulnerabilities
+In-Reply-To: <CAAS8PAKjxRUsTrPsLUEN2s967m6Pc2ZDmtVLKeoQp_+8_45Mmw@mail.gmail.com>
+References: <CAAS8PAJPuwDoWWJ1at5py49o0OA6GvuMxd7DW3Xy8Ze17X73Gg@mail.gmail.com>
+ <26121.17883.118636.415791@rob.eddelbuettel.com>
+ <CAAS8PAJP60tT2sZou4gcHFV2rynCiF1eDFDWu6Ba_trPb8hQuQ@mail.gmail.com>
+ <DS7PR10MB72772B725366224EBC69FD08FA382@DS7PR10MB7277.namprd10.prod.outlook.com>
+ <CAAS8PALv8D6bq3U7J=Re0v0HX=26GzxaZM7ENAmzXW6VavZFng@mail.gmail.com>
+ <411a7cb8-9090-472c-a2b3-64644688aa62@eoos.dds.nl>
+ <eb8fa103-cd4f-4267-8705-a26c6736a1f3@statistik.tu-dortmund.de>
+ <CAAS8PAKjxRUsTrPsLUEN2s967m6Pc2ZDmtVLKeoQp_+8_45Mmw@mail.gmail.com>
+Message-ID: <81c96bf9-0b8b-403d-994b-46aa57793b99@gmail.com>
+
+   FWIW there is a repo for R advisories.
+
+https://github.com/RConsortium/r-advisory-database
+
+  with a front-end here
+
+https://osv.dev/list?ecosystem=CRAN&q=
+
+   At present all of the *reported* vulnerabilities seem to be caused by 
+problems with underlying/bundled libraries ...
+
+On 2024-04-03 4:37 p.m., Greg Hunt wrote:
+> Uwe,
+> Whether it takes a lot of effort to get malicious code into a company
+> depends on the pay-off, which can be large relative to the effort.  The
+> example of the hack before was largely interesting because the priorities
+> of the package users were fundamentally insecure (higher version number
+> wins, defaulting to public repositories) and the specific package names
+> meant that the hack was narrowly targeted, making it less likely to be
+> discovered than exfiltration code inserted into a widely used package.
+> Having an identifiable set of package dependencies at any point in time is
+> a beginning.  Its difficult to effectively control developer behaviour, so
+> there is a risk there, but what makes it into production can in principle
+> be identified and controlled.
+> 
+> I had a look at the CVE database, its difficult to identify R package
+> vulnerabilities there.  Some other searching turned up a couple of
+> vulnerabilities and some rather promotional blog posts, one of which
+> asserted that R code is almost always run in controlled environments, which
+> was sadly hilarious.
+> 
+> Is there a source of vulnerability information for R packages?  Are there
+> or have there been examples of actually malicious R packages in the wild?
+> 
+> 
+> Greg
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+
+From Sergej@Ru|| @end|ng |rom t|ho-h@nnover@de  Sat Apr  6 20:27:24 2024
+From: Sergej@Ru|| @end|ng |rom t|ho-h@nnover@de (Ruff, Sergej)
+Date: Sat, 6 Apr 2024 18:27:24 +0000
+Subject: [R-pkg-devel] Linking Tutorial Site to CRAN Package site.
+Message-ID: <e9892ae5abbd41048cb770db27f5e927@tiho-hannover.de>
+
+Hello,
+
+
+I was wondering if its possible to link the toturial site for a package on the CRAN Cite to the package?
+
+I want to publish the next version of our package.
+
+The CRAN site (https://cran.r-project.org/web/packages/RepeatedHighDim/index.html) has a "documentation" part with the refrence pdf.
+
+Can I link to our tutorial site (https://software.klausjung-lab.de/.) under documentation?
+
+
+Sergej
+
+	[[alternative HTML version deleted]]
+
+
+From ||gge@ @end|ng |rom @t@t|@t|k@tu-dortmund@de  Sun Apr  7 01:20:40 2024
+From: ||gge@ @end|ng |rom @t@t|@t|k@tu-dortmund@de (Uwe Ligges)
+Date: Sun, 7 Apr 2024 01:20:40 +0200
+Subject: [R-pkg-devel] Linking Tutorial Site to CRAN Package site.
+In-Reply-To: <e9892ae5abbd41048cb770db27f5e927@tiho-hannover.de>
+References: <e9892ae5abbd41048cb770db27f5e927@tiho-hannover.de>
+Message-ID: <9b657250-0b14-477c-b609-a844f9680610@statistik.tu-dortmund.de>
+
+Use the URL firld of the package.
+
+Best,
+Uwe Ligges
+
+
+On 06.04.2024 20:27, Ruff, Sergej wrote:
+> Hello,
+> 
+> 
+> I was wondering if its possible to link the toturial site for a package on the CRAN Cite to the package?
+> 
+> I want to publish the next version of our package.
+> 
+> The CRAN site (https://cran.r-project.org/web/packages/RepeatedHighDim/index.html) has a "documentation" part with the refrence pdf.
+> 
+> Can I link to our tutorial site (https://software.klausjung-lab.de/.) under documentation?
+> 
+> 
+> Sergej
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+From |kry|ov @end|ng |rom d|@root@org  Sun Apr  7 09:45:47 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Sun, 7 Apr 2024 10:45:47 +0300
+Subject: [R-pkg-devel] Linking Tutorial Site to CRAN Package site.
+In-Reply-To: <e9892ae5abbd41048cb770db27f5e927@tiho-hannover.de>
+References: <e9892ae5abbd41048cb770db27f5e927@tiho-hannover.de>
+Message-ID: <20240407104547.465a154a@Tarkus>
+
+? Sat, 6 Apr 2024 18:27:24 +0000
+"Ruff, Sergej" <Sergej.Ruff at tiho-hannover.de> ?????:
+
+> The CRAN site
+> (https://cran.r-project.org/web/packages/RepeatedHighDim/index.html)
+> has a "documentation" part with the refrence pdf.
+> 
+> Can I link to our tutorial site (https://software.klausjung-lab.de/.)
+> under documentation?
+
+Since your tutorial is relatively short and contains R code intermixed
+with the results of running it, it could make a great vignette.
+Vignettes are linked on the CRAN page for a package right under the
+PDF reference manual. For example, the BiocManager package has one
+vignette: https://cran.r-project.org/package=BiocManager
+
+Vignettes are a part of the package and their code is automatically
+checked together with your examples. For the users of your package,
+this will help keep the tutorial available (even if the website moves
+in the future) and compatible with the current version of the package
+(even if the package evolves and the tutorial website evolves together
+with it).
+
+R has built-in support for PDF vignettes via LaTeX using Sweave [*].
+HTML vignettes can be much more accessible than PDF files, but there is
+no built-in HTML vignette engine in R [**]. The 'markdown' package is
+reasonably lightweight and has an HTML vignette engine. Markdown tries
+to be a superset of HTML, so it should be possible to keep most of your
+original HTML, including the styling, while rewriting the tutorial as
+an executable vignette.
+
+-- 
+Best regards,
+Ivan
+
+[*]
+https://cran.r-project.org/doc/manuals/R-exts.html#Writing-package-vignettes
+
+[**]
+It's possible to write a crude HTML vignette engine in ~100 lines of R
+code, but we cannot expect every package author to do that.
+
+
+From @di@@o m@iii@g oii pdx@edu  Sun Apr  7 05:58:57 2024
+From: @di@@o m@iii@g oii pdx@edu (@di@@o m@iii@g oii pdx@edu)
+Date: Sat, 6 Apr 2024 20:58:57 -0700 (PDT)
+Subject: [R-pkg-devel] Need help with "Lost braces" in R under development
+ checks
+Message-ID: <alpine.DEB.2.21.2404062047010.31629@anzu.alexisdinno.com>
+
+
+Hello,
+
+I would appreciate help with two build NOTEs:
+
+
+First, On the Winbuilder check, the check for R version 4.4.0 alpha 
+(2024-04-05 r86346 ucrt) and also under the Debian R Under development 
+(unstable) (2024-04-05 r86348) I got a NOTE about a bunch of 'Lost 
+braces' in my .Rd files. I am confused because my braces appear to match 
+when I count them, and I don't *think* I am runing into an item/itemize 
+situation. Here's an example (all the reported issues in this NOTE are 
+within \references sections ):
+
+  checkRd: (-1) LoopAnalyst-package.Rd:14: Lost braces
+    14 |  Dambacher, J. M. and Li, H. W. and Rossignol, P. A. (2002) 
+  \doi{10.2307/3071950}{Relevance of community structure in assessing 
+  indeterminacy of ecological predictions}. \emph{Ecology}, 
+  \bold{83(5)},1372--1385.
+
+Here's the Winbuilder log:
+https://win-builder.r-project.org/incoming_pretest/LoopAnalyst_1.2-7_20240406_215835/Windows/00check.log
+
+And here's the Debian log:
+https://win-builder.r-project.org/incoming_pretest/LoopAnalyst_1.2-7_20240406_215835/Debian/00check.log
+
+
+The second NOTE is about "(possibly) invalid URLs:"
+  URL: https://www.journals.uchicago.edu/doi/10.1086/367590
+    Status: 403
+    Message: Forbidden
+
+However, when I follow this URL in my browser it appears to link 
+appropriately to the intended page. If I use a \doi{10.1086/367590} 
+instead of an \href I get the same behavior: check says "(possibly) 
+invalid URLs" but https://doi.org/10.1086/367590 appears to work just 
+fine in the browser. Not sure what I am doing wrong here.
+
+
+
+Thank you!
+
+
+Alexis Dinno
+Associate Professor
+OHSU-PSU School of Public Health
+Pronouns: she/her/hers
+
+610-R Vanport Building
+1810 SW 5th Avenue, Suite 610
+Portland, OR 97201-5202
+
+p: (503) 725-3076
+f: (503) 725-5100
+e: alexis.dinno at pdx.edu
+
+Note: I do not use a networked calendar, so meeting dates should be communicated directly via email.
+
+
+From georg|@bo@hn@kov @end|ng |rom m@nche@ter@@c@uk  Sun Apr  7 17:04:40 2024
+From: georg|@bo@hn@kov @end|ng |rom m@nche@ter@@c@uk (Georgi Boshnakov)
+Date: Sun, 7 Apr 2024 15:04:40 +0000
+Subject: [R-pkg-devel] 
+ Need help with "Lost braces" in R under development checks
+In-Reply-To: <alpine.DEB.2.21.2404062047010.31629@anzu.alexisdinno.com>
+References: <alpine.DEB.2.21.2404062047010.31629@anzu.alexisdinno.com>
+Message-ID: <LO0P265MB6325FA997460EB4BEBC5DB52AE012@LO0P265MB6325.GBRP265.PROD.OUTLOOK.COM>
+
+The braces are lost in the sense that they are superfluous (not typeset in the pdf manual but may be typeset in other formats. In your example \doi has one argument, so the braces enclosing the following phrase are superfluous.
+
+This may not be harmful here but since CRAN introduced the NOTE it has uncovered thousands of actual typos and similar.
+
+As to the 'invalid url', you can ignore it when you are sure that it is correct - some sites don't like being accessed programatically and start blocking the caller (eg if you run R checks several times in succession).
+
+
+Georgi Boshnakov
+
+Sent from Outlook for Android<https://aka.ms/AAb9ysg>
+________________________________
+From: R-package-devel <r-package-devel-bounces at r-project.org> on behalf of adinno at pdx.edu <adinno at pdx.edu>
+Sent: Sunday, April 7, 2024 5:58:57 AM
+To: r-package-devel at r-project.org <r-package-devel at r-project.org>
+Subject: [R-pkg-devel] Need help with "Lost braces" in R under development checks
+
+
+Hello,
+
+I would appreciate help with two build NOTEs:
+
+
+First, On the Winbuilder check, the check for R version 4.4.0 alpha
+(2024-04-05 r86346 ucrt) and also under the Debian R Under development
+(unstable) (2024-04-05 r86348) I got a NOTE about a bunch of 'Lost
+braces' in my .Rd files. I am confused because my braces appear to match
+when I count them, and I don't *think* I am runing into an item/itemize
+situation. Here's an example (all the reported issues in this NOTE are
+within \references sections ):
+
+  checkRd: (-1) LoopAnalyst-package.Rd:14: Lost braces
+    14 |  Dambacher, J. M. and Li, H. W. and Rossignol, P. A. (2002)
+  \doi{10.2307/3071950}{Relevance of community structure in assessing
+  indeterminacy of ecological predictions}. \emph{Ecology},
+  \bold{83(5)},1372--1385.
+
+Here's the Winbuilder log:
+https://urldefense.com/v3/__https://win-builder.r-project.org/incoming_pretest/LoopAnalyst_1.2-7_20240406_215835/Windows/00check.log__;!!PDiH4ENfjr2_Jw!A109ZbFKcZjQ25lSt1JJSlLziJ-IyfouQzdKPv5pnUKRq_3-RoKd52MVDkHUoho-VQ5Ld85q6WmdGwh5eSSWPstUjY95nA$ [win-builder[.]r-project[.]org]
+
+And here's the Debian log:
+https://urldefense.com/v3/__https://win-builder.r-project.org/incoming_pretest/LoopAnalyst_1.2-7_20240406_215835/Debian/00check.log__;!!PDiH4ENfjr2_Jw!A109ZbFKcZjQ25lSt1JJSlLziJ-IyfouQzdKPv5pnUKRq_3-RoKd52MVDkHUoho-VQ5Ld85q6WmdGwh5eSSWPstlRfRWeA$ [win-builder[.]r-project[.]org]
+
+
+The second NOTE is about "(possibly) invalid URLs:"
+  URL: https://urldefense.com/v3/__https://www.journals.uchicago.edu/doi/10.1086/367590__;!!PDiH4ENfjr2_Jw!A109ZbFKcZjQ25lSt1JJSlLziJ-IyfouQzdKPv5pnUKRq_3-RoKd52MVDkHUoho-VQ5Ld85q6WmdGwh5eSSWPsuMHqle7Q$ [journals[.]uchicago[.]edu]
+    Status: 403
+    Message: Forbidden
+
+However, when I follow this URL in my browser it appears to link
+appropriately to the intended page. If I use a \doi{10.1086/367590}
+instead of an \href I get the same behavior: check says "(possibly)
+invalid URLs" but https://urldefense.com/v3/__https://doi.org/10.1086/367590__;!!PDiH4ENfjr2_Jw!A109ZbFKcZjQ25lSt1JJSlLziJ-IyfouQzdKPv5pnUKRq_3-RoKd52MVDkHUoho-VQ5Ld85q6WmdGwh5eSSWPstaKkb77Q$ [doi[.]org] appears to work just
+fine in the browser. Not sure what I am doing wrong here.
+
+
+
+Thank you!
+
+
+Alexis Dinno
+Associate Professor
+OHSU-PSU School of Public Health
+Pronouns: she/her/hers
+
+610-R Vanport Building
+1810 SW 5th Avenue, Suite 610
+Portland, OR 97201-5202
+
+p: (503) 725-3076
+f: (503) 725-5100
+e: alexis.dinno at pdx.edu
+
+Note: I do not use a networked calendar, so meeting dates should be communicated directly via email.
+
+______________________________________________
+R-package-devel at r-project.org mailing list
+https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-package-devel__;!!PDiH4ENfjr2_Jw!A109ZbFKcZjQ25lSt1JJSlLziJ-IyfouQzdKPv5pnUKRq_3-RoKd52MVDkHUoho-VQ5Ld85q6WmdGwh5eSSWPssk-Dl_sw$ [stat[.]ethz[.]ch]
+
+	[[alternative HTML version deleted]]
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Sun Apr  7 17:05:59 2024
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Sun, 7 Apr 2024 11:05:59 -0400
+Subject: [R-pkg-devel] 
+ Need help with "Lost braces" in R under development checks
+In-Reply-To: <alpine.DEB.2.21.2404062047010.31629@anzu.alexisdinno.com>
+References: <alpine.DEB.2.21.2404062047010.31629@anzu.alexisdinno.com>
+Message-ID: <4937dd63-ff8a-473f-add8-8fb2cfc5015e@gmail.com>
+
+On 06/04/2024 11:58 p.m., adinno at pdx.edu wrote:
+> 
+> Hello,
+> 
+> I would appreciate help with two build NOTEs:
+> 
+> 
+> First, On the Winbuilder check, the check for R version 4.4.0 alpha
+> (2024-04-05 r86346 ucrt) and also under the Debian R Under development
+> (unstable) (2024-04-05 r86348) I got a NOTE about a bunch of 'Lost
+> braces' in my .Rd files. I am confused because my braces appear to match
+> when I count them, and I don't *think* I am runing into an item/itemize
+> situation. Here's an example (all the reported issues in this NOTE are
+> within \references sections ):
+> 
+>    checkRd: (-1) LoopAnalyst-package.Rd:14: Lost braces
+>      14 |  Dambacher, J. M. and Li, H. W. and Rossignol, P. A. (2002)
+>    \doi{10.2307/3071950}{Relevance of community structure in assessing
+>    indeterminacy of ecological predictions}. \emph{Ecology},
+>    \bold{83(5)},1372--1385.
+
+It appears you are trying to pass two arguments to \doi, but it only 
+takes one.  I would have thought that would be fine, but apparently not.
+
+So add a space after "\doi{10.2307/3071950}" and/or remove the braces 
+around "{Relevance of community structure in assessing indeterminacy of 
+ecological predictions}".
+
+Duncan Murdoch
+
+> 
+> Here's the Winbuilder log:
+> https://win-builder.r-project.org/incoming_pretest/LoopAnalyst_1.2-7_20240406_215835/Windows/00check.log
+> 
+> And here's the Debian log:
+> https://win-builder.r-project.org/incoming_pretest/LoopAnalyst_1.2-7_20240406_215835/Debian/00check.log
+> 
+> 
+> The second NOTE is about "(possibly) invalid URLs:"
+>    URL: https://www.journals.uchicago.edu/doi/10.1086/367590
+>      Status: 403
+>      Message: Forbidden
+> 
+> However, when I follow this URL in my browser it appears to link
+> appropriately to the intended page. If I use a \doi{10.1086/367590}
+> instead of an \href I get the same behavior: check says "(possibly)
+> invalid URLs" but https://doi.org/10.1086/367590 appears to work just
+> fine in the browser. Not sure what I am doing wrong here.
+> 
+> 
+> 
+> Thank you!
+> 
+> 
+> Alexis Dinno
+> Associate Professor
+> OHSU-PSU School of Public Health
+> Pronouns: she/her/hers
+> 
+> 610-R Vanport Building
+> 1810 SW 5th Avenue, Suite 610
+> Portland, OR 97201-5202
+> 
+> p: (503) 725-3076
+> f: (503) 725-5100
+> e: alexis.dinno at pdx.edu
+> 
+> Note: I do not use a networked calendar, so meeting dates should be communicated directly via email.
+> 
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+
+From t|m@t@y|or @end|ng |rom h|ddene|eph@nt@@co@uk  Wed Apr 10 11:37:00 2024
+From: t|m@t@y|or @end|ng |rom h|ddene|eph@nt@@co@uk (Tim Taylor)
+Date: Wed, 10 Apr 2024 10:37:00 +0100
+Subject: [R-pkg-devel] Matrix 1.7-0 to be released in March with
+ ABI-breaking SuiteSparse update
+In-Reply-To: <85c8662e-4658-482e-93b6-07975c8b9e85@gmail.com>
+References: <85c8662e-4658-482e-93b6-07975c8b9e85@gmail.com>
+Message-ID: <db516b50-eebe-497d-a581-a12e9d515720@app.fastmail.com>
+
+Hi Mikael
+
+Revisiting this. Have the plans changed for 1.7-0 release?
+
+Tim
+
+On Mon, 12 Feb 2024, at 6:36 PM, Mikael Jagan wrote:
+> Dear users and binary repository maintainers,
+> 
+> We are preparing Matrix version 1.7-0 for CRAN submission on March 11, ahead
+> of the spring release of R version 4.4.0.  The only significant change from
+> Matrix 1.6-5 is an update of the internal SuiteSparse libraries
+> (5.10.1 -> 7.6.0).  Unfortunately, the old and new SuiteSparse versions are 
+> binary incompatible, hence so too will be the old and new Matrix versions.
+> 
+> A corollary is that users and binary repository maintainers switching between
+> Matrix < 1.7-0 and Matrix >= 1.7-0 must rebuild _from sources_ packages that
+> link Matrix:
+> 
+> > tools::package_dependencies("Matrix", which = "LinkingTo", reverse = TRUE)[[1L]]
+>   [1] "ahMLE"               "bayesWatch"          "cplm"
+>   [4] "GeneralizedWendland" "geostatsp"           "irlba"
+>   [7] "lme4"                "mcmcsae"             "OpenMx"
+> [10] "PRIMME"              "PUlasso"             "robustlmm"
+> [13] "spGARCH"             "TMB"                 "bcSeq"
+> 
+> For users, that means doing, e.g.,
+> 
+>      install.packages("lme4", type = "source")
+> 
+> but an alternative for Windows and macOS users without the required tools is
+> 
+>      oo <- options(repos = "https://cran.r-project.org/")
+>      install.packages("Matrix")
+>      install.packages("lme4")
+>      options(oo)
+> 
+> where we trust CRAN to provide binaries compatible with the latest Matrix
+> version (because we notify CRAN upon submission about required rebuilds).
+> Once other repositories react with rebuilds, they can be used instead of
+> CRAN.
+> 
+> Our reverse dependency checks (and history, intuition, ...) show that most
+> problems (caught segfaults in this case) can be traced to a binary incompatible
+> lme4 and not to one of the other packages linking Matrix.  Still, we recommend
+> rebuilds for all 15 packages.
+> 
+> Maintainers of packages that link Matrix can implement an .onLoad test for
+> possible binary incompatibility by comparing the value of
+> 
+>      if (utils::packageVersion("Matrix") >= "1.6.2")
+>          Matrix::Matrix.Version()[["abi"]]
+>      else numeric_version("0")
+> 
+> at install time and at load time, warning the user if the values differ.
+> But please do look at the above and not at packageVersion("Matrix") directly,
+> as the ABI version is incremented less often than the package version.
+> 
+> Mikael {on behalf of citation("Matrix")$author}
+> 
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+> 
+
+	[[alternative HTML version deleted]]
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Wed Apr 10 12:52:25 2024
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Wed, 10 Apr 2024 12:52:25 +0200
+Subject: [R-pkg-devel] Matrix 1.7-0 to be released in March with
+ ABI-breaking SuiteSparse update
+In-Reply-To: <db516b50-eebe-497d-a581-a12e9d515720@app.fastmail.com>
+References: <85c8662e-4658-482e-93b6-07975c8b9e85@gmail.com>
+ <db516b50-eebe-497d-a581-a12e9d515720@app.fastmail.com>
+Message-ID: <26134.28521.469748.126031@stat.math.ethz.ch>
+
+>>>>> Tim Taylor 
+>>>>>     on Wed, 10 Apr 2024 10:37:00 +0100 writes:
+
+    > Hi Mikael Revisiting this. Have the plans changed for
+    > 1.7-0 release?
+
+    > Tim
+
+Yes.  Matrix 1.7-0 *has* been on CRAN now for while
+(i.e. 'March' has remained as announced), *but*
+-- because of the ABI change and the problem it can cause for
+   *some* users --
+
+we have made it  'Depends: R (>= 4.4.0)'
+i.e., you *see* the new Matrix only once you use R 4.4.0
+which has been available as "alpha" already and is now in
+"beta" already, e.g.,
+
+  R version 4.4.0 beta (2024-04-10 r86393) -- "Puppy Cup"
+
+
+Best regards,
+Martin
+
+--
+Martin Maechler
+ETH Zurich  and  R Core Team
+
+
+    > On Mon, 12 Feb 2024, at 6:36 PM, Mikael Jagan wrote:
+    >> Dear users and binary repository maintainers,
+    >> 
+    >> We are preparing Matrix version 1.7-0 for CRAN submission
+    >> on March 11, ahead of the spring release of R version
+    >> 4.4.0.  The only significant change from Matrix 1.6-5 is
+    >> an update of the internal SuiteSparse libraries (5.10.1
+    >> -> 7.6.0).  Unfortunately, the old and new SuiteSparse
+    >> versions are binary incompatible, hence so too will be
+    >> the old and new Matrix versions.
+    >> 
+    >> A corollary is that users and binary repository
+    >> maintainers switching between Matrix < 1.7-0 and Matrix
+    >> >= 1.7-0 must rebuild _from sources_ packages that link
+    >> Matrix:
+    >> 
+    >> > tools::package_dependencies("Matrix", which =
+    >> "LinkingTo", reverse = TRUE)[[1L]] [1] "ahMLE"
+    >> "bayesWatch" "cplm" [4] "GeneralizedWendland" "geostatsp"
+    >> "irlba" [7] "lme4" "mcmcsae" "OpenMx" [10] "PRIMME"
+    >> "PUlasso" "robustlmm" [13] "spGARCH" "TMB" "bcSeq"
+    >> 
+    >> For users, that means doing, e.g.,
+    >> 
+    >> install.packages("lme4", type = "source")
+    >> 
+    >> but an alternative for Windows and macOS users without
+    >> the required tools is
+    >> 
+    >> oo <- options(repos = "https://cran.r-project.org/")
+    >> install.packages("Matrix") install.packages("lme4")
+    >> options(oo)
+    >> 
+    >> where we trust CRAN to provide binaries compatible with
+    >> the latest Matrix version (because we notify CRAN upon
+    >> submission about required rebuilds).  Once other
+    >> repositories react with rebuilds, they can be used
+    >> instead of CRAN.
+    >> 
+    >> Our reverse dependency checks (and history, intuition,
+    >> ...) show that most problems (caught segfaults in this
+    >> case) can be traced to a binary incompatible lme4 and not
+    >> to one of the other packages linking Matrix.  Still, we
+    >> recommend rebuilds for all 15 packages.
+    >> 
+    >> Maintainers of packages that link Matrix can implement an
+    >> .onLoad test for possible binary incompatibility by
+    >> comparing the value of
+    >> 
+    >> if (utils::packageVersion("Matrix") >= "1.6.2")
+    >> Matrix::Matrix.Version()[["abi"]] else
+    >> numeric_version("0")
+    >> 
+    >> at install time and at load time, warning the user if the
+    >> values differ.  But please do look at the above and not
+    >> at packageVersion("Matrix") directly, as the ABI version
+    >> is incremented less often than the package version.
+    >> 
+    >> Mikael {on behalf of citation("Matrix")$author}
+    >> 
+    >> ______________________________________________
+    >> R-package-devel at r-project.org mailing list
+    >> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+    >> 
+
+    > 	[[alternative HTML version deleted]]
+
+    > ______________________________________________
+    > R-package-devel at r-project.org mailing list
+    > https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+
+From t|m@t@y|or @end|ng |rom h|ddene|eph@nt@@co@uk  Wed Apr 10 13:00:55 2024
+From: t|m@t@y|or @end|ng |rom h|ddene|eph@nt@@co@uk (Tim Taylor)
+Date: Wed, 10 Apr 2024 12:00:55 +0100
+Subject: [R-pkg-devel] Matrix 1.7-0 to be released in March with
+ ABI-breaking SuiteSparse update
+In-Reply-To: <26134.28521.469748.126031@stat.math.ethz.ch>
+References: <85c8662e-4658-482e-93b6-07975c8b9e85@gmail.com>
+ <db516b50-eebe-497d-a581-a12e9d515720@app.fastmail.com>
+ <26134.28521.469748.126031@stat.math.ethz.ch>
+Message-ID: <3ae4118b-1338-4d83-870d-2981ca6c626e@app.fastmail.com>
+
+On Wed, 10 Apr 2024, at 11:52 AM, Martin Maechler wrote:
+>>>>>> Tim Taylor 
+>>>>>>     on Wed, 10 Apr 2024 10:37:00 +0100 writes:
+>
+>     > Hi Mikael Revisiting this. Have the plans changed for
+>     > 1.7-0 release?
+>
+>     > Tim
+>
+> Yes.  Matrix 1.7-0 *has* been on CRAN now for while
+> (i.e. 'March' has remained as announced), *but*
+> -- because of the ABI change and the problem it can cause for
+>    *some* users --
+>
+> we have made it  'Depends: R (>= 4.4.0)'
+> i.e., you *see* the new Matrix only once you use R 4.4.0
+> which has been available as "alpha" already and is now in
+> "beta" already, e.g.,
+>
+>   R version 4.4.0 beta (2024-04-10 r86393) -- "Puppy Cup"
+>
+>
+> Best regards,
+> Martin
+>
+> --
+> Martin Maechler
+> ETH Zurich  and  R Core Team
+
+Thank you Martin.
+
+Indeed, I should have dug further.
+
+Rdevel> packageVersion("Matrix")
+[1] '1.7.0'
+
+Cheers
+
+Tim
+
+
+From ckno|| @end|ng |rom ohd@|@org  Wed Apr 10 16:11:53 2024
+From: ckno|| @end|ng |rom ohd@|@org (Chris Knoll)
+Date: Wed, 10 Apr 2024 14:11:53 +0000
+Subject: [R-pkg-devel] Question about CRAN submission resulting in 1 note
+Message-ID: <DM6PR13MB29530C143E809E031845541EDE062@DM6PR13MB2953.namprd13.prod.outlook.com>
+
+Hello,
+
+I'm tryign to resolve a note that is preventing my cran submission. This is from the detail log:
+
+
+Flavor: r-devel-linux-x86_64-debian-gcc, r-devel-windows-x86_64
+Check: CRAN incoming feasibility, Result: NOTE
+  Maintainer: 'Chris Knoll <cknoll at ohdsi.org>'
+
+  New submission
+
+  Package has a VignetteBuilder field but no prebuilt vignette index.
+
+  Package has FOSS license, installs .class/.jar but has no 'java' directory.
+
+  Found the following (possibly) invalid URLs:
+    URL: http://ohdsi.github.io/CirceR/ (moved to https://ohdsi.github.io/CirceR/)
+      From: README.md
+      Status: 301
+      Message: Moved Permanently
+    URL: https://codecov.io/github/OHDSI/CirceR?branch=main (moved to https://app.codecov.io/github/OHDSI/CirceR?branch=main)
+      From: README.md
+      Status: 301
+      Message: Moved Permanently
+    URL: https://www.github.com/OHDSI/circe-be (moved to https://github.com/OHDSI/circe-be)
+      From: README.md
+      Status: 301
+      Message: Moved Permanently
+    For content that is 'Moved Permanently', please change http to https,
+    add trailing slashes, or replace the old by the new URL.
+
+
+The URL changes are easy enough, but I'm curious about the first 2 notes:
+
+For "Package has VignetteBuilder field but no prebuilt vignette index", how would this be resolved?
+
+For "Package ahs FOSS license, installs .class/.jar but has no 'java directory'':  This is custom code that I've written in Java plus has a few maven dependencies and I'm not sure if they are asking me to bundle the source code of all Java dependencies (that have classes in the jar file).   That could be hard to do, and was hoping if anyone had experience in this, is it enough to put into the Readme where such source code could be found?
+
+Thank you for your guidance.
+
+-Chris
+
+
+	[[alternative HTML version deleted]]
+
+
+From |kry|ov @end|ng |rom d|@root@org  Wed Apr 10 21:05:41 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Wed, 10 Apr 2024 22:05:41 +0300
+Subject: [R-pkg-devel] 
+ Question about CRAN submission resulting in 1 note
+In-Reply-To: <DM6PR13MB29530C143E809E031845541EDE062@DM6PR13MB2953.namprd13.prod.outlook.com>
+References: <DM6PR13MB29530C143E809E031845541EDE062@DM6PR13MB2953.namprd13.prod.outlook.com>
+Message-ID: <20240410220541.1dea3101@Tarkus>
+
+? Wed, 10 Apr 2024 14:11:53 +0000
+Chris Knoll <cknoll at ohdsi.org> ?????:
+
+> For "Package has VignetteBuilder field but no prebuilt vignette
+> index", how would this be resolved?
+
+The package at https://github.com/OHDSI/CirceR/ doesn't seem to have any
+vignettes. Without vignettes, there's no need for VignetteBuilder:
+knitr.
+
+> For "Package ahs FOSS license, installs .class/.jar but has no 'java
+> directory'':  This is custom code that I've written in Java plus has
+> a few maven dependencies and I'm not sure if they are asking me to
+> bundle the source code of all Java dependencies (that have classes in
+> the jar file).   That could be hard to do, and was hoping if anyone
+> had experience in this, is it enough to put into the Readme where
+> such source code could be found?
+
+Here's what the policy has to say:
+
+>> For Java .class and .jar files, the sources should be in a top-level
+>> java directory in the source package (or that directory should
+>> explain how they can be obtained).
+
+<https://cran.r-project.org/web/packages/policies.html>
+
+At the very least, XLconnect seems to be fine supplying just the
+README. If it's not too much trouble, shipping your custom source code
+(definitely not all of the maven dependencies) would be the kind thing
+to do, I think. (Feel free to disregard this part if a more experienced
+Java package developer says otherwise.)
+
+-- 
+Best regards,
+Ivan
+
+
+From g@br|e|@b|@|n @end|ng |rom @p@gov@br  Thu Apr 11 13:57:00 2024
+From: g@br|e|@b|@|n @end|ng |rom @p@gov@br (Gabriel Constantino Blain)
+Date: Thu, 11 Apr 2024 11:57:00 +0000
+Subject: [R-pkg-devel] Old references in the Description file.
+Message-ID: <CPYP284MB1543988AB4DFDEC9535E1FBDA7052@CPYP284MB1543.BRAP284.PROD.OUTLOOK.COM>
+
+Hello everyone,
+I need to write references in the description of my package Description file in the form authors (year) <doi:>.
+The problem is that it is a paper from the 70's (Priestley and Taylor, 1972) and its DOI has very uncommon symbols, such as <>. The DOI is:
+10.1175/1520-0493(1972)100<0081:OTAOSH>2.3.CO;2.
+Therefore, when I write it in the description, I mean
+Priestley and Taylor (1972) <doi:10.1175/1520-0493(1972)100<0081:OTAOSH>2.3.CO;2>  the devtools::check_win_devel() returns the following message:
+"Found the following (possibly) invalid DOIs:
+  DOI: 10.1175/1520-0493(1972)100<0081:OTAOSH
+    From: DESCRIPTION
+          man/CropWaterBalance-package.Rd
+    Status: 404
+    Message: Not Found"
+Even though the doi is available, should I replace the doi by the authors (year) <[https:...]https:...> ?
+If yes, would the reference become?
+Priestley and Taylor (1972) <[https://journals.ametsoc.org/view/journals/mwre/100/2/1520-0493_1972_100_0081_otaosh_2_3_co_2.xml]https://journals.ametsoc.org/view/journals/mwre/100/2/1520-0493_1972_100_0081_otaosh_2_3_co_2.xml> ?
+Thank you
+Bests
+Gabriel
+
+	[[alternative HTML version deleted]]
+
+
+From |kry|ov @end|ng |rom d|@root@org  Thu Apr 11 14:33:32 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Thu, 11 Apr 2024 15:33:32 +0300
+Subject: [R-pkg-devel] Old references in the Description file.
+In-Reply-To: <CPYP284MB1543988AB4DFDEC9535E1FBDA7052@CPYP284MB1543.BRAP284.PROD.OUTLOOK.COM>
+References: <CPYP284MB1543988AB4DFDEC9535E1FBDA7052@CPYP284MB1543.BRAP284.PROD.OUTLOOK.COM>
+Message-ID: <20240411153332.57166b1b@arachnoid>
+
+? Thu, 11 Apr 2024 11:57:00 +0000
+Gabriel Constantino Blain <gabriel.blain at sp.gov.br> ?????:
+
+> The problem is that it is a paper from the 70's (Priestley and
+> Taylor, 1972) and its DOI has very uncommon symbols, such as <>. The
+> DOI is: 10.1175/1520-0493(1972)100<0081:OTAOSH>2.3.CO;2.
+
+Since the R CMD check function responsible for locating and checking
+the DOIs from the package metadata expects to see them URL-encoded, it
+should be possible to put your DOI through paste0('<doi:',
+utils::URLencode(doi), '>') in order to generate the correct link.
+
+Another workaround is to generate a shortDOI that would redirect to the
+same place as the original DOI:
+https://shortdoi.org/10.1175/1520-0493(1972)100%3C0081:OTAOSH%3E2.3.CO;2
+Now <doi:10/cr3qwn> should work like the original DOI.
+
+-- 
+Best regards,
+Ivan
+
+
+From g@br|e|@b|@|n @end|ng |rom @p@gov@br  Fri Apr 12 15:18:48 2024
+From: g@br|e|@b|@|n @end|ng |rom @p@gov@br (Gabriel Constantino Blain)
+Date: Fri, 12 Apr 2024 13:18:48 +0000
+Subject: [R-pkg-devel] Avoid Possibly misspelled words in DESCRIPTION
+Message-ID: <CPYP284MB1543E696E57C78EC2AEEBD22A7042@CPYP284MB1543.BRAP284.PROD.OUTLOOK.COM>
+
+Hello,
+When I apply the devtools::check_win_devel() to my package it shows the following message:
+----------------
+Possibly misspelled words in DESCRIPTION:
+  Samani (40:21)
+  al (38:45)
+  et (38:42)
+-----------------
+I already inserted these words in the WORDLIST.
+Should I use 'Samani' and 'et al.' to prevent this message in the text below?
+
+Description: Calculates daily climate water balance for irrigation purposes.  The package also calculates the reference 'evapotranspiration' using three methods, ('Penman and Monteith') Allen et al. (1998,ISBN:92-5-104219-5),
+ Priestley and Taylor (1972) <doi:10/cr3qwn>,
+  or Hargreaves and Samani (1985) <doi:10.13031/2013.26773>.
+  Users may specify a management allowed depletion ('MAD'), which is
+  used by the package to suggest when irrigate. It also allows the use of crop and water stress coefficients.
+
+Thanks in advance.
+
+	[[alternative HTML version deleted]]
+
+
+From bbo|ker @end|ng |rom gm@||@com  Fri Apr 12 15:29:26 2024
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Fri, 12 Apr 2024 09:29:26 -0400
+Subject: [R-pkg-devel] Avoid Possibly misspelled words in DESCRIPTION
+In-Reply-To: <CPYP284MB1543E696E57C78EC2AEEBD22A7042@CPYP284MB1543.BRAP284.PROD.OUTLOOK.COM>
+References: <CPYP284MB1543E696E57C78EC2AEEBD22A7042@CPYP284MB1543.BRAP284.PROD.OUTLOOK.COM>
+Message-ID: <9a4e0a5c-75b2-425f-8443-a6ddd0d85abf@gmail.com>
+
+   Based on the information in this thread,
+
+https://stat.ethz.ch/pipermail/r-package-devel/2024q1/010558.html
+
+   I don't think there is any way to suppress these notes. (I have been 
+meaning to submit a documentation for _Writing R Extensions_ that talks 
+about spell-checking options, which AFAICT isn't actually mentioned 
+anywhere in the docs ...)
+
+   What do you mean by "already inserted these words in the WORDLIST"?
+
+   cheers
+    Ben Bolker
+
+
+On 2024-04-12 9:18 a.m., Gabriel Constantino Blain wrote:
+> Hello,
+> When I apply the devtools::check_win_devel() to my package it shows the following message:
+> ----------------
+> Possibly misspelled words in DESCRIPTION:
+>    Samani (40:21)
+>    al (38:45)
+>    et (38:42)
+> -----------------
+> I already inserted these words in the WORDLIST.
+> Should I use 'Samani' and 'et al.' to prevent this message in the text below?
+> 
+> Description: Calculates daily climate water balance for irrigation purposes.  The package also calculates the reference 'evapotranspiration' using three methods, ('Penman and Monteith') Allen et al. (1998,ISBN:92-5-104219-5),
+>   Priestley and Taylor (1972) <doi:10/cr3qwn>,
+>    or Hargreaves and Samani (1985) <doi:10.13031/2013.26773>.
+>    Users may specify a management allowed depletion ('MAD'), which is
+>    used by the package to suggest when irrigate. It also allows the use of crop and water stress coefficients.
+> 
+> Thanks in advance.
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+
+From tony_@_w||ke@ @end|ng |rom out|ook@com  Sat Apr 13 11:35:18 2024
+From: tony_@_w||ke@ @end|ng |rom out|ook@com (Tony Wilkes)
+Date: Sat, 13 Apr 2024 09:35:18 +0000
+Subject: [R-pkg-devel] error in windows R-devel builder,
+ but not anywhere else
+Message-ID: <AS4P195MB143048FFE27E4C642158B035BE0B2@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+
+Hi everyone,
+
+I am updating my R package (tinycodet), and I have checked my R-package in all operating systems (Linux, Mac, Windows). All examples and tests run correctly for Linux, Mac, and Windows.  Rcmd checks also finds no issues on GitHub (I use rather strict Rcmdcheck workflows on GitHub, so any issues should be found quickly on GitHub; see https://github.com/tony-aw/tinycodet). But on the Win R-devel builder, I get an error. I use a Windows computer myself, and I can see where the error takes place on the win R-devel-builder, but I cannot reproduce the error. The error should not even be there.
+
+The error takes place in the function `strfind(x, p, ..., i, rt)<-`. When the user specifies an incorrect string for the optional argument `rt`, the error message "improper `rt?`given" is called. This is also the error message that occurs in Win R-devel Builder, but it shouldn't be there, since no incorrect string is specified for "rt" there - otherwise, all operating systems would give an error there.
+Link to win R-devel builder results: https://win-builder.r-project.org/2mG2vk48tri3/
+
+My package has no Operating System specific functionality.
+
+The fact that this error ONLY happens on win R-devel builder, and not when I run it on my windows laptop, nor on any other OS, nor on the many checks on GitHub, implies the issue might be on the Windows R-devel builder. But I don't want to jump to conclusions. Hence my question is:
+Is there currently an issue in win R-devel-builder? If not, why is the error only on win R-devel-builder, and not anywhere else?
+
+Thanks in advance for your help.
+
+Kind regards,
+
+Tony
+
+	[[alternative HTML version deleted]]
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Sat Apr 13 11:51:18 2024
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Sat, 13 Apr 2024 05:51:18 -0400
+Subject: [R-pkg-devel] error in windows R-devel builder,
+ but not anywhere else
+In-Reply-To: <AS4P195MB143048FFE27E4C642158B035BE0B2@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+References: <AS4P195MB143048FFE27E4C642158B035BE0B2@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+Message-ID: <428bcb7d-427b-4960-ad97-fe7ba1bfb483@gmail.com>
+
+Looks like this recent change to R-devel has caught you:
+
+       \code{is.atomic(NULL)} now returns \code{FALSE}, as \code{NULL}
+       is not an atomic vector.  Strict back-compatibility would
+       replace \code{is.atomic(foo)} by \code{(is.null(foo) || 
+is.atomic(foo))}
+       but should happen only sparingly.
+
+I don't know why you didn't see this on the other platforms; maybe they 
+just haven't been rebuilt recently.
+
+Duncan Murdoch
+
+On 13/04/2024 5:35 a.m., Tony Wilkes wrote:
+> Hi everyone,
+> 
+> I am updating my R package (tinycodet), and I have checked my R-package in all operating systems (Linux, Mac, Windows). All examples and tests run correctly for Linux, Mac, and Windows.  Rcmd checks also finds no issues on GitHub (I use rather strict Rcmdcheck workflows on GitHub, so any issues should be found quickly on GitHub; see https://github.com/tony-aw/tinycodet). But on the Win R-devel builder, I get an error. I use a Windows computer myself, and I can see where the error takes place on the win R-devel-builder, but I cannot reproduce the error. The error should not even be there.
+> 
+> The error takes place in the function `strfind(x, p, ..., i, rt)<-`. When the user specifies an incorrect string for the optional argument `rt`, the error message "improper `rt?`given" is called. This is also the error message that occurs in Win R-devel Builder, but it shouldn't be there, since no incorrect string is specified for "rt" there - otherwise, all operating systems would give an error there.
+> Link to win R-devel builder results: https://win-builder.r-project.org/2mG2vk48tri3/
+> 
+> My package has no Operating System specific functionality.
+> 
+> The fact that this error ONLY happens on win R-devel builder, and not when I run it on my windows laptop, nor on any other OS, nor on the many checks on GitHub, implies the issue might be on the Windows R-devel builder. But I don't want to jump to conclusions. Hence my question is:
+> Is there currently an issue in win R-devel-builder? If not, why is the error only on win R-devel-builder, and not anywhere else?
+> 
+> Thanks in advance for your help.
+> 
+> Kind regards,
+> 
+> Tony
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+
