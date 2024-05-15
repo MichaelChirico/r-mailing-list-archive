@@ -1,0 +1,4372 @@
+From t|m@how@rd @end|ng |rom dec@ny@gov  Wed May  1 18:57:18 2024
+From: t|m@how@rd @end|ng |rom dec@ny@gov (Howard, Tim G (DEC))
+Date: Wed, 1 May 2024 16:57:18 +0000
+Subject: [R] De-serialization vulnerability?
+In-Reply-To: <mailman.371269.1.1714125601.27921.r-help@r-project.org>
+References: <mailman.371269.1.1714125601.27921.r-help@r-project.org>
+Message-ID: <PH8PR09MB97902D90C360E90A059B06B3A8192@PH8PR09MB9790.namprd09.prod.outlook.com>
+
+All, 
+There seems to be a hullaboo about a vulnerability in R when deserializing untrusted data:
+
+https://hiddenlayer.com/research/r-bitrary-code-execution
+
+https://nvd.nist.gov/vuln/detail/CVE-2024-27322
+
+https://www.kb.cert.org/vuls/id/238194
+
+
+Apparently a fix was made for R 4.4.0, but I see no mention of it in the changes report:
+
+https://cloud.r-project.org/bin/windows/base/NEWS.R-4.4.0.html
+
+Is this real?  Were there changes in R 4.4.0 that aren't reported?
+
+Of course, we should *always* update to the most recent version, but I was confused why it wasn't mentioned in the release info. 
+
+Thanks,
+Tim
+
+
+From |kry|ov @end|ng |rom d|@root@org  Wed May  1 19:19:59 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Wed, 1 May 2024 20:19:59 +0300
+Subject: [R] De-serialization vulnerability?
+In-Reply-To: <PH8PR09MB97902D90C360E90A059B06B3A8192@PH8PR09MB9790.namprd09.prod.outlook.com>
+References: <mailman.371269.1.1714125601.27921.r-help@r-project.org>
+ <PH8PR09MB97902D90C360E90A059B06B3A8192@PH8PR09MB9790.namprd09.prod.outlook.com>
+Message-ID: <20240501201959.0b1c65bc@Tarkus>
+
+? Wed, 1 May 2024 16:57:18 +0000
+"Howard, Tim G \(DEC\) via R-help" <r-help at r-project.org> ?????:
+
+> Is this real?
+
+Yes, but with a giant elephant in the room that many are overlooking.
+It has actually always been much worse.
+
+Until R-4.4.0, there used to be a way for readRDS() to return an
+unevaluated "promise object". When you access the returned value, the
+code attached to the promise object is evaluated. Starting with
+R-4.4.0, this particular ability is now forbidden. One particular
+attack is now prevented, but the whole class of attacks is still
+fundamentally impossible to avoid. The resulting increase in safety is
+very small.
+
+The R data files, both those produced by save() and opened by load(),
+and those produced by saveRDS() and readRDS(), contain _internal_
+object state. The code processing those objects trusts the internal
+object state, because it has no other alternative, no other source of
+state. This is true of all of base R, CRAN and BioConductor.
+
+Many R objects contain executable code. For example, many saved models
+contain -- as part of this internal state that gets stored inside *.rds
+and *.RData files -- executable expressions that produce model matrices
+from data frames. It is trivial for any aspiring attacker to take such
+an object and replace the model expression with one that would take over
+your system. When you perform ordinary R operations on the doctored
+object, the attacker-provided "model expression" instead does whatever
+the attacker wants.
+
+The above was just one example of "trusting the internal state". An
+attacker can come up with similar attacks for ALTREP objects, 'glue'
+strings and a lot of other features of R, without ever touching
+promises (the topic of CVE-2024-27322) or exploiting parser
+vulnerabilities.
+
+One safe way to move forward is to set aside a strict subset of R Data
+Serialization format that cannot be used to create any executable code
+or touch potentially vulnerable state (such as ALTREP, I think) and
+reject all other features of RDS. Yes, this abandons the ability to
+save model objects and many other great features of R serialization,
+including those that make 'parallel' clusters possible. (But we trust
+our clusters and should use regular serialize() with them.) I've been
+working on this today; it's very raw, not even a package yet, and it
+doesn't even read some of my data correctly, but I believe it's a
+secure way forward: https://codeberg.org/aitap/unserializeData
+
+-- 
+Best regards,
+Ivan
+
+
+From ce||ocgw @end|ng |rom gm@||@com  Wed May  1 17:32:32 2024
+From: ce||ocgw @end|ng |rom gm@||@com (Carl Witthoft)
+Date: Wed, 1 May 2024 11:32:32 -0400
+Subject: [R] strange behavior in base::as.double
+Message-ID: <CANkkNcijFELy3Ajagu6G5S+KzoKxRknFr0y+7=Xm3Up6MjbWmA@mail.gmail.com>
+
+Hello.
+I'm running R 4.4.0 on an iMac Venture 13.5.2 .   There appears to be a bug
+in as.double().
+
+Create a string with a numeric digits followed by a single letter a thru f
+(as tho' it's base 16).
+
+for  K  in (a,b,c,d, and f ) ,  as.double( '123K') returns NA
+but as.double('123e') returns 123 -- or whatever the first digit is.
+
+Please let me know if there are additional tests I can try .
+
+
+thanks
+Carl Witthoft
+
+	[[alternative HTML version deleted]]
+
+
+From @@r@h@go@|ee @end|ng |rom gm@||@com  Wed May  1 21:29:05 2024
+From: @@r@h@go@|ee @end|ng |rom gm@||@com (Sarah Goslee)
+Date: Wed, 1 May 2024 15:29:05 -0400
+Subject: [R] strange behavior in base::as.double
+In-Reply-To: <CANkkNcijFELy3Ajagu6G5S+KzoKxRknFr0y+7=Xm3Up6MjbWmA@mail.gmail.com>
+References: <CANkkNcijFELy3Ajagu6G5S+KzoKxRknFr0y+7=Xm3Up6MjbWmA@mail.gmail.com>
+Message-ID: <CAM_vjumHr=aKWTnjw2zN3z0d+00v7Xh5XgVxx6Fvx=FqasYozg@mail.gmail.com>
+
+Hi Carl,
+
+Not that strange: R thinks you're using scientific notation. Also not a Mac bug.
+
+> as.double('123e')
+[1] 123
+> as.double('123e+0')
+[1] 123
+> as.double('123e+1')
+[1] 1230
+> as.double('123e-1')
+[1] 12.3
+
+Can you explain what you're trying to accomplish?
+
+Sarah
+
+On Wed, May 1, 2024 at 3:24?PM Carl Witthoft <cellocgw at gmail.com> wrote:
+>
+> Hello.
+> I'm running R 4.4.0 on an iMac Venture 13.5.2 .   There appears to be a bug
+> in as.double().
+>
+> Create a string with a numeric digits followed by a single letter a thru f
+> (as tho' it's base 16).
+>
+> for  K  in (a,b,c,d, and f ) ,  as.double( '123K') returns NA
+> but as.double('123e') returns 123 -- or whatever the first digit is.
+>
+> Please let me know if there are additional tests I can try .
+>
+>
+> thanks
+> Carl Witthoft
+>
+>         [[alternative HTML version deleted]]
+>
+> ______________________________________________
+> R-help at r-project.org mailing list -- To UNSUBSCRIBE and more, see
+> https://stat.ethz.ch/mailman/listinfo/r-help
+> PLEASE do read the posting guide http://www.R-project.org/posting-guide.html
+> and provide commented, minimal, self-contained, reproducible code.
+
+
+
+-- 
+Sarah Goslee (she/her)
+http://www.numberwright.com
+
+
+From |kw@|mmo @end|ng |rom gm@||@com  Wed May  1 21:32:35 2024
+From: |kw@|mmo @end|ng |rom gm@||@com (Iris Simmons)
+Date: Wed, 1 May 2024 15:32:35 -0400
+Subject: [R] strange behavior in base::as.double
+In-Reply-To: <CANkkNcijFELy3Ajagu6G5S+KzoKxRknFr0y+7=Xm3Up6MjbWmA@mail.gmail.com>
+References: <CANkkNcijFELy3Ajagu6G5S+KzoKxRknFr0y+7=Xm3Up6MjbWmA@mail.gmail.com>
+Message-ID: <CADNULg9jX9oEdc4UYRAg_Qx_7A_PpnC5DsveT9TtwsfS3YT6_A@mail.gmail.com>
+
+This happens because "123e" looks like exponential form. This string has no
+exponent, so it gets treated as 0 exponent.
+
+If you're interested in converting hex numbers, append 0x:
+
+as.numeric("0x123a")
+
+or use strtoi:
+
+strtoi("123a", 16)
+
+On Wed, May 1, 2024, 15:24 Carl Witthoft <cellocgw at gmail.com> wrote:
+
+> Hello.
+> I'm running R 4.4.0 on an iMac Venture 13.5.2 .   There appears to be a bug
+> in as.double().
+>
+> Create a string with a numeric digits followed by a single letter a thru f
+> (as tho' it's base 16).
+>
+> for  K  in (a,b,c,d, and f ) ,  as.double( '123K') returns NA
+> but as.double('123e') returns 123 -- or whatever the first digit is.
+>
+> Please let me know if there are additional tests I can try .
+>
+>
+> thanks
+> Carl Witthoft
+>
+>         [[alternative HTML version deleted]]
+>
+> ______________________________________________
+> R-help at r-project.org mailing list -- To UNSUBSCRIBE and more, see
+> https://stat.ethz.ch/mailman/listinfo/r-help
+> PLEASE do read the posting guide
+> http://www.R-project.org/posting-guide.html
+> and provide commented, minimal, self-contained, reproducible code.
+>
+
+	[[alternative HTML version deleted]]
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Wed May  1 21:33:19 2024
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Wed, 1 May 2024 15:33:19 -0400
+Subject: [R] strange behavior in base::as.double
+In-Reply-To: <CANkkNcijFELy3Ajagu6G5S+KzoKxRknFr0y+7=Xm3Up6MjbWmA@mail.gmail.com>
+References: <CANkkNcijFELy3Ajagu6G5S+KzoKxRknFr0y+7=Xm3Up6MjbWmA@mail.gmail.com>
+Message-ID: <311baecb-10ae-4ad4-9d86-b2e5ebd2707d@gmail.com>
+
+On 01/05/2024 11:32 a.m., Carl Witthoft wrote:
+> Hello.
+> I'm running R 4.4.0 on an iMac Venture 13.5.2 .   There appears to be a bug
+> in as.double().
+> 
+> Create a string with a numeric digits followed by a single letter a thru f
+> (as tho' it's base 16).
+> 
+> for  K  in (a,b,c,d, and f ) ,  as.double( '123K') returns NA
+> but as.double('123e') returns 123 -- or whatever the first digit is.
+> 
+> Please let me know if there are additional tests I can try .
+
+This has been mentioned in the news recently.  123e was taken as 
+scientific format, with an implied 0 at the end, i.e. 123e0.  That is no 
+longer true after the recent fix; I'm not sure if it is in R 
+4.4.0-patched yet.
+
+Duncan Murdoch
+
+
+From |kry|ov @end|ng |rom d|@root@org  Wed May  1 21:48:44 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Wed, 1 May 2024 22:48:44 +0300
+Subject: [R] strange behavior in base::as.double
+In-Reply-To: <CANkkNcijFELy3Ajagu6G5S+KzoKxRknFr0y+7=Xm3Up6MjbWmA@mail.gmail.com>
+References: <CANkkNcijFELy3Ajagu6G5S+KzoKxRknFr0y+7=Xm3Up6MjbWmA@mail.gmail.com>
+Message-ID: <20240501224844.14da6394@Tarkus>
+
+? Wed, 1 May 2024 11:32:32 -0400
+Carl Witthoft <cellocgw at gmail.com> ?????:
+
+> but as.double('123e') returns 123 -- or whatever the first digit is.
+
+Nicely spotted problem!
+
+Prof. Brian D. Ripley has fixed it in R-devel revision 86436 [*]. Now
+as.double('123e') will also return NA. I think that the fix will become
+part of R-4.4.1 when it's released.
+
+-- 
+Best regards,
+Ivan
+
+[*]
+https://github.com/r-devel/r-svn/commit/9069a729f5bf69de8250a4c91dd482fcf64e1154
+
+
+From pd@|gd @end|ng |rom gm@||@com  Thu May  2 11:31:43 2024
+From: pd@|gd @end|ng |rom gm@||@com (peter dalgaard)
+Date: Thu, 2 May 2024 11:31:43 +0200
+Subject: [R] De-serialization vulnerability?
+In-Reply-To: <PH8PR09MB97902D90C360E90A059B06B3A8192@PH8PR09MB9790.namprd09.prod.outlook.com>
+References: <mailman.371269.1.1714125601.27921.r-help@r-project.org>
+ <PH8PR09MB97902D90C360E90A059B06B3A8192@PH8PR09MB9790.namprd09.prod.outlook.com>
+Message-ID: <4E6EDAB7-070D-4F93-9C5D-4EDDF3F2823A@gmail.com>
+
+As a general matter, security holes are usually not advertised by detailing them in the NEWS file. 
+
+The disclosure of such things goes on a different schedule, typically _after_ binaries are out, at which point editing the NEWS file is too late. 
+
+There are other things that do not go into NEWS: Documentation fixups, etc. What does go in is end-user visible functional changes and items that have an explicit PR# against them. 
+
+- Peter D. 
+
+
+
+> On 1 May 2024, at 18:57 , Howard, Tim G (DEC) via R-help <r-help at r-project.org> wrote:
+> 
+> All, 
+> There seems to be a hullaboo about a vulnerability in R when deserializing untrusted data:
+> 
+> https://hiddenlayer.com/research/r-bitrary-code-execution
+> 
+> https://nvd.nist.gov/vuln/detail/CVE-2024-27322
+> 
+> https://www.kb.cert.org/vuls/id/238194
+> 
+> 
+> Apparently a fix was made for R 4.4.0, but I see no mention of it in the changes report:
+> 
+> https://cloud.r-project.org/bin/windows/base/NEWS.R-4.4.0.html
+> 
+> Is this real?  Were there changes in R 4.4.0 that aren't reported?
+> 
+> Of course, we should *always* update to the most recent version, but I was confused why it wasn't mentioned in the release info. 
+> 
+> Thanks,
+> Tim
+> 
+> ______________________________________________
+> R-help at r-project.org mailing list -- To UNSUBSCRIBE and more, see
+> https://stat.ethz.ch/mailman/listinfo/r-help
+> PLEASE do read the posting guide http://www.R-project.org/posting-guide.html
+> and provide commented, minimal, self-contained, reproducible code.
+
+-- 
+Peter Dalgaard, Professor,
+Center for Statistics, Copenhagen Business School
+Solbjerg Plads 3, 2000 Frederiksberg, Denmark
+Phone: (+45)38153501
+Office: A 4.23
+Email: pd.mes at cbs.dk  Priv: PDalgd at gmail.com
+
+
+From e@tev@@m @end|ng |rom weh|@edu@@u  Fri May  3 02:42:43 2024
+From: e@tev@@m @end|ng |rom weh|@edu@@u (Miguel Esteva)
+Date: Fri, 3 May 2024 00:42:43 +0000
+Subject: [R] grDevices segfault when building R4.4.0 on RHEL 9.1.
+Message-ID: <MEYP282MB23414408289F6E94466AFDCFDA1F2@MEYP282MB2341.AUSP282.PROD.OUTLOOK.COM>
+
+Hi all,
+
+I seem to be getting segfaults when attempting to build R 4.4.0 on RHEL 9.1 (5.14.0-162.23.1.el9_1.x86_64). Interestingly, it seems to build ok on Rocky 9.1 and 9.3. This is the trace:
+
+
+make[3]: Entering directory '/home/esteva.m/R/R-4.4.0/src/library/grDevices'
+
+building package 'grDevices'
+
+make[4]: Entering directory '/home/esteva.m/R/R-4.4.0/src/library/grDevices'
+
+all.R is unchanged
+
+make[4]: Leaving directory '/home/esteva.m/R/R-4.4.0/src/library/grDevices'
+
+make[4]: Entering directory '/home/esteva.m/R/R-4.4.0/src/library/grDevices'
+
+make[5]: Entering directory '/home/esteva.m/R/R-4.4.0/src/library/grDevices/src'
+
+make[6]: Entering directory '/home/esteva.m/R/R-4.4.0/src/library/grDevices/src'
+
+../../../../library/grDevices/libs/grDevices.so is unchanged
+
+make[7]: Entering directory '/home/esteva.m/R/R-4.4.0/src/library/grDevices/src/cairo'
+
+make[8]: Entering directory '/home/esteva.m/R/R-4.4.0/src/library/grDevices/src/cairo'
+
+make[9]: Entering directory '/home/esteva.m/R/R-4.4.0/src/library/grDevices/src/cairo'
+
+make[9]: 'cairo.so' is up to date.
+
+make[9]: Leaving directory '/home/esteva.m/R/R-4.4.0/src/library/grDevices/src/cairo'
+
+make[8]: Leaving directory '/home/esteva.m/R/R-4.4.0/src/library/grDevices/src/cairo'
+
+make[7]: Leaving directory '/home/esteva.m/R/R-4.4.0/src/library/grDevices/src/cairo'
+
+make[6]: Leaving directory '/home/esteva.m/R/R-4.4.0/src/library/grDevices/src'
+
+make[5]: Leaving directory '/home/esteva.m/R/R-4.4.0/src/library/grDevices/src'
+
+make[4]: Leaving directory '/home/esteva.m/R/R-4.4.0/src/library/grDevices'
+
+make[4]: Entering directory '/home/esteva.m/R/R-4.4.0/src/library/grDevices'
+byte-compiling package 'grDevices'
+
+
+ *** caught segfault ***
+
+address 0x1801fa8f70, cause 'memory not mapped'
+
+
+Traceback:
+
+ 1: solve.default(rgb)
+
+ 2: solve(rgb)
+
+ 3: drop(whitexyz %*% solve(rgb))
+
+ 4: make.rgb(red = c(0.625, 0.34), green = c(0.28, 0.595), blue = c(0.155,     0.07), gamma = 1.8, white = "D65", name = "Apple RGB")
+
+ 5: eval(exprs[i], envir)
+
+ 6: eval(exprs[i], envir)
+
+ 7: sys.source(codeFile, env, keep.source = keep.source, keep.parse.data = keep.parse.data)
+
+ 8: doTryCatch(return(expr), name, parentenv, handler)
+
+ 9: tryCatchOne(expr, names, parentenv, handlers[[1L]])
+
+10: tryCatchList(expr, classes, parentenv, handlers)
+
+11: tryCatch(expr, error = function(e) {    call <- conditionCall(e)    if (!is.null(call)) {        if (identical(call[[1L]], quote(doTryCatch)))             call <- sys.call(-4L)        dcall <- deparse(call, nlines = 1L)        prefix <- paste("Error in", dcall, ": ")        LONG <- 75L        sm <- strsplit(conditionMessage(e), "\n")[[1L]]        w <- 14L + nchar(dcall, type = "w") + nchar(sm[1L], type = "w")        if (is.na(w))             w <- 14L + nchar(dcall, type = "b") + nchar(sm[1L],                 type = "b")        if (w > LONG)             prefix <- paste0(prefix, "\n  ")    }    else prefix <- "Error : "    msg <- paste0(prefix, conditionMessage(e), "\n")    .Internal(seterrmessage(msg[1L]))    if (!silent && isTRUE(getOption("show.error.messages"))) {        cat(msg, file = outFile)        .Internal(printDeferredWarnings())    }    invisible(structure(msg, class = "try-error", condition = e))})
+
+12: try(sys.source(codeFile, env, keep.source = keep.source, keep.parse.data = keep.parse.data))
+
+13: loadNamespace(package = package, lib.loc = lib.loc, keep.source = keep.source,     keep.parse.data = keep.parse.data, partial = TRUE)
+
+14: withCallingHandlers(expr, packageStartupMessage = function(c) tryInvokeRestart("muffleMessage"))
+
+15: suppressPackageStartupMessages(loadNamespace(package = package,     lib.loc = lib.loc, keep.source = keep.source, keep.parse.data = keep.parse.data,     partial = TRUE))
+
+16: code2LazyLoadDB(package, lib.loc = lib.loc, keep.source = keep.source,     keep.parse.data = keep.parse.data, compress = compress, set.install.dir = set.install.dir)
+
+17: tools:::makeLazyLoading("grDevices")
+
+An irrecoverable exception occurred. R is aborting now ...
+
+make[4]: *** [../../../share/make/lazycomp.mk:9: ../../../library/grDevices/R/grDevices.rdb] Error 139
+
+make[4]: Leaving directory '/home/esteva.m/R/R-4.4.0/src/library/grDevices'
+
+make[3]: *** [Makefile:28: all] Error 2
+
+make[3]: Leaving directory '/home/esteva.m/R/R-4.4.0/src/library/grDevices'
+
+make[2]: *** [Makefile:39: R] Error 1
+
+make[2]: Leaving directory '/home/esteva.m/R/R-4.4.0/src/library'
+
+make[1]: *** [Makefile:28: R] Error 1
+
+make[1]: Leaving directory '/home/esteva.m/R/R-4.4.0/src'
+
+make: *** [Makefile:62: R] Error 1
+
+
+Has anyone run into this?
+
+cairo-1.17.4-7.el9.x86_64
+cairo-gobject-1.17.4-7.el9.x86_64
+cairo-devel-1.17.4-7.el9.x86_64
+cairo-gobject-devel-1.17.4-7.el9.x86_64
+pango-1.48.7-3.el9.x86_64
+pango-devel-1.48.7-3.el9.x86_64
+
+Cheers,
+
+
+Miguel Esteva
+
+
+[WEHI Logo]
+
+
+Walter and Eliza Hall Institute of Medical Research
+1G Royal Parade Parkville Victoria 3052 Australia
+
+www.wehi.edu.au<https://wehi.edu.au>
+
+Twitter<https://twitter.com/WEHI_research>  |  Facebook<https://www.facebook.com/WEHIresearch/>  |  Instagram<https://www.instagram.com/wehi_research>  |  Youtube<https://www.youtube.com/user/WEHImovies>  |  LinkedIn<https://www.linkedin.com/company/wehi_research>
+
+
+WEHI acknowledges the Wurundjeri people of the Kulin Nation as the traditional owners of the land where our campuses are located and the continuing connection to country and community.
+
+Private and confidential
+The content of this e-mail and any attachments may be private and confidential, intended only for use of the individual or entity named. If you are not the intended recipient of this message you must not read, forward, print, copy, disclose, use or store in any way the information this e-mail or any attachment contains. If you are not the intended recipient, please notify the sender immediately and delete or destroy all copies of this e-mail and any attachment.
+
+	[[alternative HTML version deleted]]
+
+
+From |kry|ov @end|ng |rom d|@root@org  Fri May  3 13:40:59 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Fri, 3 May 2024 14:40:59 +0300
+Subject: [R] grDevices segfault when building R4.4.0 on RHEL 9.1.
+In-Reply-To: <MEYP282MB23414408289F6E94466AFDCFDA1F2@MEYP282MB2341.AUSP282.PROD.OUTLOOK.COM>
+References: <MEYP282MB23414408289F6E94466AFDCFDA1F2@MEYP282MB2341.AUSP282.PROD.OUTLOOK.COM>
+Message-ID: <20240503144059.58281559@arachnoid>
+
+Dear Miguel Esteva,
+
+I couldn't get a Red Hat "ubi9" container to install enough
+dependencies to build R. Is there a way to reproduce your setup on a
+virtual machine somewhere?
+
+On Fri, 3 May 2024 00:42:43 +0000
+Miguel Esteva via R-help <r-help at r-project.org> wrote:
+
+>  *** caught segfault ***
+> 
+> address 0x1801fa8f70, cause 'memory not mapped'
+> 
+> 
+> Traceback:
+> 
+>  1: solve.default(rgb)
+
+This seems to crash inside the BLAS. Which BLAS are you using? Any
+custom ./configure arguments? Which compilers are you running?
+
+To find out more information about the crash, try to follow it with a
+debugger. Change directory to src/library/grDevices and run:
+
+_R_COMPILE_PKGS_=1 R_COMPILER_SUPPRESS_ALL=1 \
+ R_DEFAULT_PACKAGES=NULL LC_ALL=C \
+../../../bin/R -d gdb --vanilla --no-echo -e \
+ 'tools:::makeLazyLoading("grDevices")'
+
+(This assumes building straight from the source directory. Adjust the
+paths if you're using a separate build directory.)
+
+Use the "run" command to start the process. One you see a crash, use
+"backtrace" to see the state of the call stack at the place of the
+crash, or "backtrace full" to include the contents of local variables.
+The first few entries are probably the most important ones.
+
+Not sure what to do with this information yet, but it might provide
+more clues.
+
+-- 
+Best regards,
+Ivan
+
+
+From tb|e|@kov@ @end|ng |rom @tudent@ethz@ch  Fri May  3 13:29:19 2024
+From: tb|e|@kov@ @end|ng |rom @tudent@ethz@ch (Bielakova  Tatiana)
+Date: Fri, 3 May 2024 11:29:19 +0000
+Subject: [R] Using intervals() function for nlme model - Statistics Lab ETHZ
+Message-ID: <9a74d1234c254b40b9a7d5cd119ba08a@student.ethz.ch>
+
+Dear members of the R-Help Team,
+
+
+we are reaching out to you with a question regarding using intervals()<https://www.rdocumentation.org/packages/nlme/versions/3.1-163/topics/intervals> to create inference for nlme()<https://www.rdocumentation.org/packages/nlme/versions/3.1-164/topics/nlme> function.
+
+The maintainer for the nlme package is listed as the R-Core Team and we were advised by moderators of R-Core to write to R-Help to receive help in this case.
+
+
+We are students of Statistics at ETH Zurich currently collaborating with ETH Crop Science lab on a project focused on soybean growth. We are modelling the growth using the nlme function and are facing the issue of creating a valid inference for the nlme model (we are especially interested in confidence intervals for the fixed effects).
+
+
+Based on the documentation of nlme package, the function interval is supported for gls, lme, and lmList classes. Although nlme is not mentioned, we still receive intervals without any errors or warnings.
+
+
+We would be therefore very grateful if you could offer your insights on the following questions:
+
+  *   Is the intervals() function appropriate for nlme to create confidence intervals?
+
+  *   If not, what do the outputted values represent?
+
+  *   Do you have any other recommendations/ ideas on how should we proceed to calculate intervals in R (e.g. more suitable packages)?
+
+
+Your help is greatly appreciated.
+
+
+We are looking forward to hearing back from you!
+
+
+
+Yours sincerely,
+
+Tatiana, Marvin & Paul
+
+from
+
+Statistics Lab
+
+
+	[[alternative HTML version deleted]]
+
+
+From dynvec @end|ng |rom gm@||@com  Fri May  3 14:47:27 2024
+From: dynvec @end|ng |rom gm@||@com (DynV Montrealer)
+Date: Fri, 3 May 2024 08:47:27 -0400
+Subject: [R] Get a copy of a matrix only for TRUE entries of a matching size
+ boolean matrix?
+Message-ID: <CAGYhDoM=Y2Wn4LbigoJYEdALQTR3rMw4UriP0oPXJqvtCLmNDQ@mail.gmail.com>
+
+Is there a way to get a copy of a matrix only for TRUE entries of a
+matching size boolean matrix? For *example*:
+> mat_letters <- matrix(data=c('A', 'B', 'C', 'D'), ncol=2, byrow=TRUE)
+> mat_letters
+     [,1] [,2]
+[1,] "A"  "B"
+[2,] "C"  "D"
+> mat_bools <- matrix(data=c(FALSE, TRUE, TRUE, FALSE), ncol=2, byrow=TRUE)
+> mat_bools
+      [,1]  [,2]
+[1,] FALSE  TRUE
+[2,]  TRUE FALSE
+*Reminder:* The following is only an example ; the solution might look very
+different.
+some_command(mat_letters, mat_bools, false=empty)
+     [,1] [,2]
+[1,] ""  "B"
+[2,] "C"  ""
+some_command(mat_letters, mat_bools, false=na)
+     [,1] [,2]
+[1,] NA  "B"
+[2,] "C"  NA
+
+Thank you kindly
+
+	[[alternative HTML version deleted]]
+
+
+From bbo|ker @end|ng |rom gm@||@com  Fri May  3 16:24:15 2024
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Fri, 3 May 2024 10:24:15 -0400
+Subject: [R] 
+ Get a copy of a matrix only for TRUE entries of a matching size
+ boolean matrix?
+In-Reply-To: <CAGYhDoM=Y2Wn4LbigoJYEdALQTR3rMw4UriP0oPXJqvtCLmNDQ@mail.gmail.com>
+References: <CAGYhDoM=Y2Wn4LbigoJYEdALQTR3rMw4UriP0oPXJqvtCLmNDQ@mail.gmail.com>
+Message-ID: <d1e0fd9d-906f-4718-a726-896731bee87d@gmail.com>
+
+   In two steps:
+
+result <- matrix(NA_character_,
+    nrow=nrow(mat_letters), ncol =ncol(mat_letters))
+result[mat_bools] <- mat_letters[mat_bools]
+
+On 2024-05-03 8:47 a.m., DynV Montrealer wrote:
+> Is there a way to get a copy of a matrix only for TRUE entries of a
+> matching size boolean matrix? For *example*:
+>> mat_letters <- matrix(data=c('A', 'B', 'C', 'D'), ncol=2, byrow=TRUE)
+>> mat_letters
+>       [,1] [,2]
+> [1,] "A"  "B"
+> [2,] "C"  "D"
+>> mat_bools <- matrix(data=c(FALSE, TRUE, TRUE, FALSE), ncol=2, byrow=TRUE)
+>> mat_bools
+>        [,1]  [,2]
+> [1,] FALSE  TRUE
+> [2,]  TRUE FALSE
+> *Reminder:* The following is only an example ; the solution might look very
+> different.
+> some_command(mat_letters, mat_bools, false=empty)
+>       [,1] [,2]
+> [1,] ""  "B"
+> [2,] "C"  ""
+> some_command(mat_letters, mat_bools, false=na)
+>       [,1] [,2]
+> [1,] NA  "B"
+> [2,] "C"  NA
+> 
+> Thank you kindly
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> ______________________________________________
+> R-help at r-project.org mailing list -- To UNSUBSCRIBE and more, see
+> https://stat.ethz.ch/mailman/listinfo/r-help
+> PLEASE do read the posting guide http://www.R-project.org/posting-guide.html
+> and provide commented, minimal, self-contained, reproducible code.
+
+
+From m@rc_grt @end|ng |rom y@hoo@|r  Fri May  3 16:28:26 2024
+From: m@rc_grt @end|ng |rom y@hoo@|r (Marc Girondot)
+Date: Fri, 3 May 2024 16:28:26 +0200
+Subject: [R] 
+ Get a copy of a matrix only for TRUE entries of a matching size
+ boolean matrix?
+In-Reply-To: <CAGYhDoM=Y2Wn4LbigoJYEdALQTR3rMw4UriP0oPXJqvtCLmNDQ@mail.gmail.com>
+References: <CAGYhDoM=Y2Wn4LbigoJYEdALQTR3rMw4UriP0oPXJqvtCLmNDQ@mail.gmail.com>
+Message-ID: <1fea204c-b71c-4a92-ae13-1dfcf6874357@yahoo.fr>
+
+Is it what you want ?
+mat_letters <- matrix(data=c('A', 'B', 'C', 'D'), ncol=2, byrow=TRUE)
+mat_bools <- matrix(data=c(FALSE, TRUE, TRUE, FALSE), ncol=2, byrow=TRUE)
+
+ifelse(mat_bools, mat_letters, "")
+ifelse(mat_bools, mat_letters, NA)
+
+ > ifelse(mat_bools, mat_letters, "")
+ ???? [,1] [,2]
+[1,] ""?? "B"
+[2,] "C"? ""
+ > ifelse(mat_bools, mat_letters, NA)
+ ???? [,1] [,2]
+[1,] NA?? "B"
+[2,] "C"? NA
+
+Marc
+
+
+
+Le 03/05/2024 ? 14:47, DynV Montrealer a ?crit?:
+> Is there a way to get a copy of a matrix only for TRUE entries of a
+> matching size boolean matrix? For*example*:
+>> mat_letters <- matrix(data=c('A', 'B', 'C', 'D'), ncol=2, byrow=TRUE)
+>> mat_letters
+>       [,1] [,2]
+> [1,] "A"  "B"
+> [2,] "C"  "D"
+>> mat_bools <- matrix(data=c(FALSE, TRUE, TRUE, FALSE), ncol=2, byrow=TRUE)
+>> mat_bools
+>        [,1]  [,2]
+> [1,] FALSE  TRUE
+> [2,]  TRUE FALSE
+> *Reminder:* The following is only an example ; the solution might look very
+> different.
+> some_command(mat_letters, mat_bools, false=empty)
+>       [,1] [,2]
+> [1,] ""  "B"
+> [2,] "C"  ""
+> some_command(mat_letters, mat_bools, false=na)
+>       [,1] [,2]
+> [1,] NA  "B"
+> [2,] "C"  NA
+
+
+	[[alternative HTML version deleted]]
+
+
+From dynvec @end|ng |rom gm@||@com  Fri May  3 16:39:10 2024
+From: dynvec @end|ng |rom gm@||@com (DynV Montrealer)
+Date: Fri, 3 May 2024 10:39:10 -0400
+Subject: [R] 
+ Get a copy of a matrix only for TRUE entries of a matching size
+ boolean matrix?
+In-Reply-To: <1fea204c-b71c-4a92-ae13-1dfcf6874357@yahoo.fr>
+References: <CAGYhDoM=Y2Wn4LbigoJYEdALQTR3rMw4UriP0oPXJqvtCLmNDQ@mail.gmail.com>
+ <1fea204c-b71c-4a92-ae13-1dfcf6874357@yahoo.fr>
+Message-ID: <CAGYhDoN66pmeMj88LvATmn+jN-VowSH4+mJfgi5kLXJGGThGmg@mail.gmail.com>
+
+It's exactly what I was looking for, thanks.  I'm replying to the whole
+list so others can skip this question, to not waste time on it.
+
+Bonne fin de journ?e de Montr?al (nous sommes le matin ici)
+
+On Fri, May 3, 2024 at 10:30?AM Marc Girondot <marc_grt at yahoo.fr> wrote:
+
+> Is it what you want ?
+> mat_letters <- matrix(data=c('A', 'B', 'C', 'D'), ncol=2, byrow=TRUE)
+> mat_bools <- matrix(data=c(FALSE, TRUE, TRUE, FALSE), ncol=2, byrow=TRUE)
+>
+> ifelse(mat_bools, mat_letters, "")
+> ifelse(mat_bools, mat_letters, NA)
+>
+> > ifelse(mat_bools, mat_letters, "")
+>      [,1] [,2]
+> [1,] ""   "B"
+> [2,] "C"  ""
+> > ifelse(mat_bools, mat_letters, NA)
+>      [,1] [,2]
+> [1,] NA   "B"
+> [2,] "C"  NA
+>
+> Marc
+>
+>
+>
+> Le 03/05/2024 ? 14:47, DynV Montrealer a ?crit :
+>
+> Is there a way to get a copy of a matrix only for TRUE entries of a
+> matching size boolean matrix? For **example**:
+>
+> mat_letters <- matrix(data=c('A', 'B', 'C', 'D'), ncol=2, byrow=TRUE)
+> mat_letters
+>
+>      [,1] [,2]
+> [1,] "A"  "B"
+> [2,] "C"  "D"
+>
+> mat_bools <- matrix(data=c(FALSE, TRUE, TRUE, FALSE), ncol=2, byrow=TRUE)
+> mat_bools
+>
+>       [,1]  [,2]
+> [1,] FALSE  TRUE
+> [2,]  TRUE FALSE
+> *Reminder:* The following is only an example ; the solution might look very
+> different.
+> some_command(mat_letters, mat_bools, false=empty)
+>      [,1] [,2]
+> [1,] ""  "B"
+> [2,] "C"  ""
+> some_command(mat_letters, mat_bools, false=na)
+>      [,1] [,2]
+> [1,] NA  "B"
+> [2,] "C"  NA
+>
+>
+>
+
+	[[alternative HTML version deleted]]
+
+
+From Ro@@@Boy|@n @end|ng |rom uc@|@edu  Fri May  3 21:45:08 2024
+From: Ro@@@Boy|@n @end|ng |rom uc@|@edu (Boylan, Ross)
+Date: Fri, 3 May 2024 19:45:08 +0000
+Subject: [R] R CMD check vs RStudio check
+Message-ID: <BY3PR05MB811689B81D4EAFBEC54F3ED5871F2@BY3PR05MB8116.namprd05.prod.outlook.com>
+
+I am trying to figure out why checking my package is deleting my inst/doc/ directory when I do it in RStudio.  Along the way I've hit another puzzle.
+In RStudio the check runs and is mostly OK, aside from the deletion.  But when I try with vanilla R, the check fails almost immediately:
+-------------------------powershell---------------------------
+PS C:\Users\rdboylan\Documents\BP\pimex> & $R CMD check .
+* using log directory 'C:/Users/rdboylan/Documents/BP/pimex/..Rcheck'
+* using R version 4.3.3 (2024-02-29 ucrt)
+* using platform: x86_64-w64-mingw32 (64-bit)
+* R was compiled by
+    gcc.exe (GCC) 12.3.0
+    GNU Fortran (GCC) 12.3.0
+* running under: Windows Server 2019 x64 (build 17763)
+* using session charset: ISO8859-1
+* checking for file './DESCRIPTION' ... ERROR
+Required fields missing or empty:
+  'Author' 'Maintainer'
+* DONE
+
+Status: 1 ERROR
+See
+  'C:/Users/rdboylan/Documents/BP/pimex/..Rcheck/00check.log'
+for details.
+
+PS C:\Users\rdboylan\Documents\BP\pimex> $R
+C:\Program Files\R\R-4.3.3\bin\R.exe
+---------------------------------------------------------------
+
+The DESCRIPTION file includes
+Authors at R: 
+    utils::person("Ross", "Boylan",
+    email = "ross.boylan at ucsf.edu",
+    role = c("aut", "cre", "cph")
+    )
+but no separate Author or Maintainer field.
+
+RStudio is using devtools::check; I don't know if it is doing anything extra beyond that.
+
+I expected that the various ways of running check would be similar, or at least approve of the same DESCRIPTION file.  Can anyone help me understand what is going on, and how I can isolate the source of my problem?
+
+Initially the problem with the directory deletion appeared running check in RStudio; I believe RStudio calls devtools::check, which I assume ultimately does the equivalent of R CMD check. The build invokes a bootstrap.R script I wrote, which in turn runs LyX. And I'm not sure which of these is responsible for deleting the directory.  When I invoke bootstrap.R directly from RStudio LyX runs and nothing is deleted.
+
+R 4.3.3; RStudio 2023.12.1+402; Windows Server 2019 Standard v1809.
+
+P.S. What's with the "..Rcheck" log directory, which appears literally with the 2 dots?  Is this just MS-Windows getting confused and not interpreting .. as the parent directory?
+
+
+From |kry|ov @end|ng |rom d|@root@org  Fri May  3 21:52:26 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Fri, 3 May 2024 22:52:26 +0300
+Subject: [R] R CMD check vs RStudio check
+In-Reply-To: <BY3PR05MB811689B81D4EAFBEC54F3ED5871F2@BY3PR05MB8116.namprd05.prod.outlook.com>
+References: <BY3PR05MB811689B81D4EAFBEC54F3ED5871F2@BY3PR05MB8116.namprd05.prod.outlook.com>
+Message-ID: <20240503225226.3c45e047@Tarkus>
+
+? Fri, 3 May 2024 19:45:08 +0000
+"Boylan, Ross via R-help" <r-help at r-project.org> ?????:
+
+> & $R CMD check .
+
+> * checking for file './DESCRIPTION' ... ERROR
+> Required fields missing or empty:
+>   'Author' 'Maintainer'
+
+You're checking a source package directory. This could work, but it's
+much easier and more reliable to (1) build a source tarball using R CMD
+build and (2) check the tarball. This is probably part of what
+devtools::check() does. (It can also do a lot of other things pre-R CMD
+build.)
+
+The reason checking the source directory is failing is because it's R
+CMD build that creates the necessary 'Author' and 'Maintainer' fields
+from Authors at R in your DESCRIPTION.
+
+> P.S. What's with the "..Rcheck" log directory, which appears
+> literally with the 2 dots?  Is this just MS-Windows getting confused
+> and not interpreting .. as the parent directory?
+
+"..Rcheck" is built from the argument of R CMD check . followed by
+".Rcheck".
+
+-- 
+Best regards,
+Ivan
+
+
+From th|erry@onke||nx @end|ng |rom |nbo@be  Mon May  6 08:45:57 2024
+From: th|erry@onke||nx @end|ng |rom |nbo@be (Thierry Onkelinx)
+Date: Mon, 6 May 2024 08:45:57 +0200
+Subject: [R] [R-sig-ME] lmer error: number of observations <= number of
+ random effects
+In-Reply-To: <CAMvZauqY=naWQtSgfp+JtX73vB5+Sm3pO=iv6P6ujNGQHcg5WQ@mail.gmail.com>
+References: <CAMvZauqY=naWQtSgfp+JtX73vB5+Sm3pO=iv6P6ujNGQHcg5WQ@mail.gmail.com>
+Message-ID: <CAJuCY5ysmodQ=Jt8UGSuimNyz66WS9MAxdxWv4fttrM6O1Tw5A@mail.gmail.com>
+
+Dear Srinidhi,
+
+You are trying to fit 1 random intercept and 2 random slopes per
+individual, while you have at most 3 observations per individual. You
+simply don't have enough data to fit the random slopes. Reduce the random
+part to (1|ID).
+
+Best regards,
+
+Thierry
+
+ir. Thierry Onkelinx
+Statisticus / Statistician
+
+Vlaamse Overheid / Government of Flanders
+INSTITUUT VOOR NATUUR- EN BOSONDERZOEK / RESEARCH INSTITUTE FOR NATURE AND
+FOREST
+Team Biometrie & Kwaliteitszorg / Team Biometrics & Quality Assurance
+thierry.onkelinx at inbo.be
+Havenlaan 88 bus 73, 1000 Brussel
+*Postadres:* Koning Albert II-laan 15 bus 186, 1210 Brussel
+*Poststukken die naar dit adres worden gestuurd, worden ingescand en
+digitaal aan de geadresseerde bezorgd. Zo kan de Vlaamse overheid haar
+dossiers volledig digitaal behandelen. Poststukken met de vermelding
+?vertrouwelijk? worden niet ingescand, maar ongeopend aan de geadresseerde
+bezorgd.*
+www.inbo.be
+
+///////////////////////////////////////////////////////////////////////////////////////////
+To call in the statistician after the experiment is done may be no more
+than asking him to perform a post-mortem examination: he may be able to say
+what the experiment died of. ~ Sir Ronald Aylmer Fisher
+The plural of anecdote is not data. ~ Roger Brinner
+The combination of some data and an aching desire for an answer does not
+ensure that a reasonable answer can be extracted from a given body of data.
+~ John Tukey
+///////////////////////////////////////////////////////////////////////////////////////////
+
+<https://www.inbo.be>
+
+
+Op ma 6 mei 2024 om 01:59 schreef Srinidhi Jayakumar via R-sig-mixed-models
+<r-sig-mixed-models at r-project.org>:
+
+> I am running a multilevel growth curve model to examine predictors of
+> social anhedonia (SA) trajectory through ages 12, 15 and 18. SA is a
+> continuous numeric variable. The age variable (Index1) has been coded as 0
+> for age 12, 1 for age 15 and 2 for age 18. I am currently using a time
+> varying predictor, stress (LSI), which was measured at ages 12, 15 and 18,
+> to examine whether trajectory/variation in LSI predicts difference in SA
+> trajectory. LSI is a continuous numeric variable and was grand-mean
+> centered before using in the models. The data has been converted to long
+> format with SA in 1 column, LSI in the other, ID in another, and age in
+> another column. I used the code below to run my model using lmer. However,
+> I get the following error. Please let me know how I can solve this error.
+> Please note that I have 50% missing data in SA at age 12.
+> modelLSI_maineff_RE <- lmer(SA ~ Index1* LSI+ (1 + Index1+LSI |ID), data =
+> LSIDATA, control = lmerControl(optimizer ="bobyqa"), REML=TRUE)
+> summary(modelLSI_maineff_RE)
+> Error: number of observations (=1080) <= number of random effects (=1479)
+> for term (1 + Index1 + LSI | ID); the random-effects parameters and the
+> residual variance (or scale parameter) are probably unidentifiable
+>
+> I did test the within-person variance for the LSI variable and the
+> within-person variance is significant from the Greenhouse-Geisser,
+> Hyunh-Feidt tests.
+>
+> I also tried control = lmerControl(check.nobs.vs.nRE = "ignore") which gave
+> me the following output. modelLSI_maineff_RE <- lmer(SA ~ Index1* LSI+ (1 +
+> Index1+LSI |ID), data = LSIDATA, control = lmerControl(check.nobs.vs.nRE =
+> "ignore", optimizer ="bobyqa", check.conv.singular = .makeCC(action =
+> "ignore", tol = 1e-4)), REML=TRUE)
+>
+> summary(modelLSI_maineff_RE)
+> Linear mixed model fit by REML. t-tests use Satterthwaite's method
+> ['lmerModLmerTest']
+> Formula: SA ~ Index1 * LSI + (1 + Index1 + LSI | ID)
+> Data: LSIDATA
+> Control: lmerControl(check.nobs.vs.nRE = "ignore", optimizer = "bobyqa",
+> check.conv.singular = .makeCC(action = "ignore", tol = 1e-04))
+>
+> REML criterion at convergence: 7299.6
+>
+> Scaled residuals:
+> Min 1Q Median 3Q Max
+> -2.7289 -0.4832 -0.1449 0.3604 4.5715
+>
+> Random effects:
+> Groups Name Variance Std.Dev. Corr
+> ID (Intercept) 30.2919 5.5038
+> Index1 2.4765 1.5737 -0.15
+> LSI 0.1669 0.4085 -0.23 0.70
+> Residual 24.1793 4.9172
+> Number of obs: 1080, groups: ID, 493
+>
+> Fixed effects:
+> Estimate Std. Error df t value Pr(>|t|)
+> (Intercept) 24.68016 0.39722 313.43436 62.133 < 2e-16 ***
+> Index1 0.98495 0.23626 362.75018 4.169 3.83e-05 ***
+> LSI -0.05197 0.06226 273.85575 -0.835 0.4046
+> Index1:LSI 0.09797 0.04506 426.01185 2.174 0.0302 *
+> Signif. codes: 0 ?? 0.001 ?? 0.01 ?? 0.05 ?.? 0.1 ? ? 1
+>
+> Correlation of Fixed Effects:
+> (Intr) Index1 LSI
+> Index1 -0.645
+> LSI -0.032 0.057
+> Index1:LSI 0.015 0.037 -0.695
+>
+> I am a little vary of the output still as the error states that I have
+> equal observations as the number of random effects (i.e., 3 observations
+> per ID and 3 random effects). Hence, I am wondering whether I can simplify
+> the model as either of the below models and choose the one with the
+> best-fit statistics:
+>
+>  modelLSI2 <- lmer(SA ~ Index1* LSI+ (1 |ID)+ (Index1+LSI -1|ID),data =
+> LSIDATA, control = lmerControl(optimizer ="bobyqa"), REML=TRUE) *OR*
+>
+> modelLSI3 <- lmer(SA ~ Index1* LSI+ (1+LSI |ID),data = LSIDATA, control =
+> lmerControl(optimizer ="bobyqa"), REML=TRUE) [image: example of dataset]
+> <https://i.sstatic.net/JcRKS2C9.png>
+>
+>         [[alternative HTML version deleted]]
+>
+> _______________________________________________
+> R-sig-mixed-models at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+>
+
+	[[alternative HTML version deleted]]
+
+
+From @r|n|dh|@j@y@kum@r @end|ng |rom @tonybrook@edu  Mon May  6 01:58:35 2024
+From: @r|n|dh|@j@y@kum@r @end|ng |rom @tonybrook@edu (Srinidhi Jayakumar)
+Date: Sun, 5 May 2024 19:58:35 -0400
+Subject: [R] lmer error: number of observations <= number of random effects
+Message-ID: <CAMvZauqY=naWQtSgfp+JtX73vB5+Sm3pO=iv6P6ujNGQHcg5WQ@mail.gmail.com>
+
+I am running a multilevel growth curve model to examine predictors of
+social anhedonia (SA) trajectory through ages 12, 15 and 18. SA is a
+continuous numeric variable. The age variable (Index1) has been coded as 0
+for age 12, 1 for age 15 and 2 for age 18. I am currently using a time
+varying predictor, stress (LSI), which was measured at ages 12, 15 and 18,
+to examine whether trajectory/variation in LSI predicts difference in SA
+trajectory. LSI is a continuous numeric variable and was grand-mean
+centered before using in the models. The data has been converted to long
+format with SA in 1 column, LSI in the other, ID in another, and age in
+another column. I used the code below to run my model using lmer. However,
+I get the following error. Please let me know how I can solve this error.
+Please note that I have 50% missing data in SA at age 12.
+modelLSI_maineff_RE <- lmer(SA ~ Index1* LSI+ (1 + Index1+LSI |ID), data =
+LSIDATA, control = lmerControl(optimizer ="bobyqa"), REML=TRUE)
+summary(modelLSI_maineff_RE)
+Error: number of observations (=1080) <= number of random effects (=1479)
+for term (1 + Index1 + LSI | ID); the random-effects parameters and the
+residual variance (or scale parameter) are probably unidentifiable
+
+I did test the within-person variance for the LSI variable and the
+within-person variance is significant from the Greenhouse-Geisser,
+Hyunh-Feidt tests.
+
+I also tried control = lmerControl(check.nobs.vs.nRE = "ignore") which gave
+me the following output. modelLSI_maineff_RE <- lmer(SA ~ Index1* LSI+ (1 +
+Index1+LSI |ID), data = LSIDATA, control = lmerControl(check.nobs.vs.nRE =
+"ignore", optimizer ="bobyqa", check.conv.singular = .makeCC(action =
+"ignore", tol = 1e-4)), REML=TRUE)
+
+summary(modelLSI_maineff_RE)
+Linear mixed model fit by REML. t-tests use Satterthwaite's method
+['lmerModLmerTest']
+Formula: SA ~ Index1 * LSI + (1 + Index1 + LSI | ID)
+Data: LSIDATA
+Control: lmerControl(check.nobs.vs.nRE = "ignore", optimizer = "bobyqa",
+check.conv.singular = .makeCC(action = "ignore", tol = 1e-04))
+
+REML criterion at convergence: 7299.6
+
+Scaled residuals:
+Min 1Q Median 3Q Max
+-2.7289 -0.4832 -0.1449 0.3604 4.5715
+
+Random effects:
+Groups Name Variance Std.Dev. Corr
+ID (Intercept) 30.2919 5.5038
+Index1 2.4765 1.5737 -0.15
+LSI 0.1669 0.4085 -0.23 0.70
+Residual 24.1793 4.9172
+Number of obs: 1080, groups: ID, 493
+
+Fixed effects:
+Estimate Std. Error df t value Pr(>|t|)
+(Intercept) 24.68016 0.39722 313.43436 62.133 < 2e-16 ***
+Index1 0.98495 0.23626 362.75018 4.169 3.83e-05 ***
+LSI -0.05197 0.06226 273.85575 -0.835 0.4046
+Index1:LSI 0.09797 0.04506 426.01185 2.174 0.0302 *
+Signif. codes: 0 ?? 0.001 ?? 0.01 ?? 0.05 ?.? 0.1 ? ? 1
+
+Correlation of Fixed Effects:
+(Intr) Index1 LSI
+Index1 -0.645
+LSI -0.032 0.057
+Index1:LSI 0.015 0.037 -0.695
+
+I am a little vary of the output still as the error states that I have
+equal observations as the number of random effects (i.e., 3 observations
+per ID and 3 random effects). Hence, I am wondering whether I can simplify
+the model as either of the below models and choose the one with the
+best-fit statistics:
+
+ modelLSI2 <- lmer(SA ~ Index1* LSI+ (1 |ID)+ (Index1+LSI -1|ID),data =
+LSIDATA, control = lmerControl(optimizer ="bobyqa"), REML=TRUE) *OR*
+
+modelLSI3 <- lmer(SA ~ Index1* LSI+ (1+LSI |ID),data = LSIDATA, control =
+lmerControl(optimizer ="bobyqa"), REML=TRUE) [image: example of dataset]
+<https://i.sstatic.net/JcRKS2C9.png>
+
+	[[alternative HTML version deleted]]
+
+
+From tr@@h|@ket @end|ng |rom gm@||@com  Mon May  6 09:11:15 2024
+From: tr@@h|@ket @end|ng |rom gm@||@com (TT FF)
+Date: Mon, 6 May 2024 08:11:15 +0100
+Subject: [R] [R-sig-ME] lmer error: number of observations <= number of
+ random effects
+In-Reply-To: <CAJuCY5ysmodQ=Jt8UGSuimNyz66WS9MAxdxWv4fttrM6O1Tw5A@mail.gmail.com>
+References: <CAMvZauqY=naWQtSgfp+JtX73vB5+Sm3pO=iv6P6ujNGQHcg5WQ@mail.gmail.com>
+ <CAJuCY5ysmodQ=Jt8UGSuimNyz66WS9MAxdxWv4fttrM6O1Tw5A@mail.gmail.com>
+Message-ID: <CF887C5A-1262-4EEE-BA5D-D28899A84A50@gmail.com>
+
+See if this paper may help If it helps reducing the model when you have few observations. the (1|ID) may increase the type 1 error.
+https://journals.sagepub.com/doi/10.1177/25152459231214454 <https://journals.sagepub.com/doi/10.1177/25152459231214454>
+
+Best
+
+> On 6 May 2024, at 07:45, Thierry Onkelinx via R-sig-mixed-models <r-sig-mixed-models at r-project.org> wrote:
+> 
+> Dear Srinidhi,
+> 
+> You are trying to fit 1 random intercept and 2 random slopes per
+> individual, while you have at most 3 observations per individual. You
+> simply don't have enough data to fit the random slopes. Reduce the random
+> part to (1|ID).
+> 
+> Best regards,
+> 
+> Thierry
+> 
+> ir. Thierry Onkelinx
+> Statisticus / Statistician
+> 
+> Vlaamse Overheid / Government of Flanders
+> INSTITUUT VOOR NATUUR- EN BOSONDERZOEK / RESEARCH INSTITUTE FOR NATURE AND
+> FOREST
+> Team Biometrie & Kwaliteitszorg / Team Biometrics & Quality Assurance
+> thierry.onkelinx at inbo.be
+> Havenlaan 88 bus 73, 1000 Brussel
+> *Postadres:* Koning Albert II-laan 15 bus 186, 1210 Brussel
+> *Poststukken die naar dit adres worden gestuurd, worden ingescand en
+> digitaal aan de geadresseerde bezorgd. Zo kan de Vlaamse overheid haar
+> dossiers volledig digitaal behandelen. Poststukken met de vermelding
+> ?vertrouwelijk? worden niet ingescand, maar ongeopend aan de geadresseerde
+> bezorgd.*
+> www.inbo.be
+> 
+> ///////////////////////////////////////////////////////////////////////////////////////////
+> To call in the statistician after the experiment is done may be no more
+> than asking him to perform a post-mortem examination: he may be able to say
+> what the experiment died of. ~ Sir Ronald Aylmer Fisher
+> The plural of anecdote is not data. ~ Roger Brinner
+> The combination of some data and an aching desire for an answer does not
+> ensure that a reasonable answer can be extracted from a given body of data.
+> ~ John Tukey
+> ///////////////////////////////////////////////////////////////////////////////////////////
+> 
+> <https://www.inbo.be>
+> 
+> 
+> Op ma 6 mei 2024 om 01:59 schreef Srinidhi Jayakumar via R-sig-mixed-models
+> <r-sig-mixed-models at r-project.org>:
+> 
+>> I am running a multilevel growth curve model to examine predictors of
+>> social anhedonia (SA) trajectory through ages 12, 15 and 18. SA is a
+>> continuous numeric variable. The age variable (Index1) has been coded as 0
+>> for age 12, 1 for age 15 and 2 for age 18. I am currently using a time
+>> varying predictor, stress (LSI), which was measured at ages 12, 15 and 18,
+>> to examine whether trajectory/variation in LSI predicts difference in SA
+>> trajectory. LSI is a continuous numeric variable and was grand-mean
+>> centered before using in the models. The data has been converted to long
+>> format with SA in 1 column, LSI in the other, ID in another, and age in
+>> another column. I used the code below to run my model using lmer. However,
+>> I get the following error. Please let me know how I can solve this error.
+>> Please note that I have 50% missing data in SA at age 12.
+>> modelLSI_maineff_RE <- lmer(SA ~ Index1* LSI+ (1 + Index1+LSI |ID), data =
+>> LSIDATA, control = lmerControl(optimizer ="bobyqa"), REML=TRUE)
+>> summary(modelLSI_maineff_RE)
+>> Error: number of observations (=1080) <= number of random effects (=1479)
+>> for term (1 + Index1 + LSI | ID); the random-effects parameters and the
+>> residual variance (or scale parameter) are probably unidentifiable
+>> 
+>> I did test the within-person variance for the LSI variable and the
+>> within-person variance is significant from the Greenhouse-Geisser,
+>> Hyunh-Feidt tests.
+>> 
+>> I also tried control = lmerControl(check.nobs.vs.nRE = "ignore") which gave
+>> me the following output. modelLSI_maineff_RE <- lmer(SA ~ Index1* LSI+ (1 +
+>> Index1+LSI |ID), data = LSIDATA, control = lmerControl(check.nobs.vs.nRE =
+>> "ignore", optimizer ="bobyqa", check.conv.singular = .makeCC(action =
+>> "ignore", tol = 1e-4)), REML=TRUE)
+>> 
+>> summary(modelLSI_maineff_RE)
+>> Linear mixed model fit by REML. t-tests use Satterthwaite's method
+>> ['lmerModLmerTest']
+>> Formula: SA ~ Index1 * LSI + (1 + Index1 + LSI | ID)
+>> Data: LSIDATA
+>> Control: lmerControl(check.nobs.vs.nRE = "ignore", optimizer = "bobyqa",
+>> check.conv.singular = .makeCC(action = "ignore", tol = 1e-04))
+>> 
+>> REML criterion at convergence: 7299.6
+>> 
+>> Scaled residuals:
+>> Min 1Q Median 3Q Max
+>> -2.7289 -0.4832 -0.1449 0.3604 4.5715
+>> 
+>> Random effects:
+>> Groups Name Variance Std.Dev. Corr
+>> ID (Intercept) 30.2919 5.5038
+>> Index1 2.4765 1.5737 -0.15
+>> LSI 0.1669 0.4085 -0.23 0.70
+>> Residual 24.1793 4.9172
+>> Number of obs: 1080, groups: ID, 493
+>> 
+>> Fixed effects:
+>> Estimate Std. Error df t value Pr(>|t|)
+>> (Intercept) 24.68016 0.39722 313.43436 62.133 < 2e-16 ***
+>> Index1 0.98495 0.23626 362.75018 4.169 3.83e-05 ***
+>> LSI -0.05197 0.06226 273.85575 -0.835 0.4046
+>> Index1:LSI 0.09797 0.04506 426.01185 2.174 0.0302 *
+>> Signif. codes: 0 ?? 0.001 ?? 0.01 ?? 0.05 ?.? 0.1 ? ? 1
+>> 
+>> Correlation of Fixed Effects:
+>> (Intr) Index1 LSI
+>> Index1 -0.645
+>> LSI -0.032 0.057
+>> Index1:LSI 0.015 0.037 -0.695
+>> 
+>> I am a little vary of the output still as the error states that I have
+>> equal observations as the number of random effects (i.e., 3 observations
+>> per ID and 3 random effects). Hence, I am wondering whether I can simplify
+>> the model as either of the below models and choose the one with the
+>> best-fit statistics:
+>> 
+>> modelLSI2 <- lmer(SA ~ Index1* LSI+ (1 |ID)+ (Index1+LSI -1|ID),data =
+>> LSIDATA, control = lmerControl(optimizer ="bobyqa"), REML=TRUE) *OR*
+>> 
+>> modelLSI3 <- lmer(SA ~ Index1* LSI+ (1+LSI |ID),data = LSIDATA, control =
+>> lmerControl(optimizer ="bobyqa"), REML=TRUE) [image: example of dataset]
+>> <https://i.sstatic.net/JcRKS2C9.png>
+>> 
+>>        [[alternative HTML version deleted]]
+>> 
+>> _______________________________________________
+>> R-sig-mixed-models at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+>> 
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> _______________________________________________
+> R-sig-mixed-models at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+
+
+	[[alternative HTML version deleted]]
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Mon May  6 11:10:15 2024
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Mon, 6 May 2024 11:10:15 +0200
+Subject: [R] 
+ Get a copy of a matrix only for TRUE entries of a matching size
+ boolean matrix?
+In-Reply-To: <CAGYhDoN66pmeMj88LvATmn+jN-VowSH4+mJfgi5kLXJGGThGmg@mail.gmail.com>
+References: <CAGYhDoM=Y2Wn4LbigoJYEdALQTR3rMw4UriP0oPXJqvtCLmNDQ@mail.gmail.com>
+ <1fea204c-b71c-4a92-ae13-1dfcf6874357@yahoo.fr>
+ <CAGYhDoN66pmeMj88LvATmn+jN-VowSH4+mJfgi5kLXJGGThGmg@mail.gmail.com>
+Message-ID: <26168.40567.226121.869791@stat.math.ethz.ch>
+
+>>>>> DynV Montrealer 
+>>>>>     on Fri, 3 May 2024 10:39:10 -0400 writes:
+
+    > It's exactly what I was looking for, thanks.  I'm replying
+    > to the whole list so others can skip this question, to not
+    > waste time on it.
+
+good.
+
+    > Bonne fin de journ?e de Montr?al (nous sommes le matin ici)
+
+Note that the answer  Ben Bolker gave you (using "indexing")
+is  much more efficient than the ifelse() answer below.
+
+ifelse() may be convenient .. but is almost always suboptimal,
+where as "indexing" is typically very often more efficient,
+although often requiring a bit more thought than ifelse()
+[so, if overall efficience is almost entirely your own human
+ time, then using ifelse() may still be a good idea... ]
+
+Martin
+
+    > On Fri, May 3, 2024 at 10:30?AM Marc Girondot <marc_grt at yahoo.fr> wrote:
+
+    >> Is it what you want ?
+    >> mat_letters <- matrix(data=c('A', 'B', 'C', 'D'), ncol=2, byrow=TRUE)
+    >> mat_bools <- matrix(data=c(FALSE, TRUE, TRUE, FALSE), ncol=2, byrow=TRUE)
+    >> 
+    >> ifelse(mat_bools, mat_letters, "")
+    >> ifelse(mat_bools, mat_letters, NA)
+    >> 
+    >> > ifelse(mat_bools, mat_letters, "")
+    >> [,1] [,2]
+    >> [1,] ""   "B"
+    >> [2,] "C"  ""
+    >> > ifelse(mat_bools, mat_letters, NA)
+    >> [,1] [,2]
+    >> [1,] NA   "B"
+    >> [2,] "C"  NA
+    >> 
+    >> Marc
+    >> 
+    >> 
+    >> 
+    >> Le 03/05/2024 ? 14:47, DynV Montrealer a ?crit :
+    >> 
+    >> Is there a way to get a copy of a matrix only for TRUE entries of a
+    >> matching size boolean matrix? For **example**:
+    >> 
+    >> mat_letters <- matrix(data=c('A', 'B', 'C', 'D'), ncol=2, byrow=TRUE)
+    >> mat_letters
+    >> 
+    >> [,1] [,2]
+    >> [1,] "A"  "B"
+    >> [2,] "C"  "D"
+    >> 
+    >> mat_bools <- matrix(data=c(FALSE, TRUE, TRUE, FALSE), ncol=2, byrow=TRUE)
+    >> mat_bools
+    >> 
+    >> [,1]  [,2]
+    >> [1,] FALSE  TRUE
+    >> [2,]  TRUE FALSE
+    >> *Reminder:* The following is only an example ; the solution might look very
+    >> different.
+    >> some_command(mat_letters, mat_bools, false=empty)
+    >> [,1] [,2]
+    >> [1,] ""  "B"
+    >> [2,] "C"  ""
+    >> some_command(mat_letters, mat_bools, false=na)
+    >> [,1] [,2]
+    >> [1,] NA  "B"
+    >> [2,] "C"  NA
+    >> 
+    >> 
+    >> 
+
+    > [[alternative HTML version deleted]]
+
+    > ______________________________________________
+    > R-help at r-project.org mailing list -- To UNSUBSCRIBE and more, see
+    > https://stat.ethz.ch/mailman/listinfo/r-help
+    > PLEASE do read the posting guide http://www.R-project.org/posting-guide.html
+    > and provide commented, minimal, self-contained, reproducible code.
+
+
+From |kry|ov @end|ng |rom d|@root@org  Mon May  6 16:24:25 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Mon, 6 May 2024 17:24:25 +0300
+Subject: [R] 
+ Using intervals() function for nlme model - Statistics Lab ETHZ
+In-Reply-To: <9a74d1234c254b40b9a7d5cd119ba08a@student.ethz.ch>
+References: <9a74d1234c254b40b9a7d5cd119ba08a@student.ethz.ch>
+Message-ID: <20240506172425.7a569ed1@arachnoid>
+
+Dear Tatiana, Marvin & Paul,
+
+If you don't get a better answer here, try
+r-sig-mixed-models at r-project.org.
+
+On Fri, 3 May 2024 11:29:19 +0000
+"Bielakova  Tatiana" <tbielakova at student.ethz.ch> wrote:
+
+> Based on the documentation of nlme package, the function interval is
+> supported for gls, lme, and lmList classes. Although nlme is not
+> mentioned, we still receive intervals without any errors or warnings.
+
+You're right to question this. Programming-language-level inheritance
+ends up being backwards for statistical methods:
+<https://notstatschat.rbind.io/2023/06/07/blank-cheque-inheritance-and-statistical-objects/>.
+Linear mixed-effect models are a subset of the more general mixed-effect
+models, but in R, "nlme" objects inherit from "lme", not the other way
+around.
+
+>   *   Do you have any other recommendations/ ideas on how should we
+> proceed to calculate intervals in R (e.g. more suitable packages)?
+
+Here's a vignette from the nlraa package where bootstrap is used to get
+a confidence interval for an implicit parameter:
+https://cran.r-project.org/package=nlraa/vignettes/Bootstrapping.html
+
+The author seems to be using intervals() on an nlme model without any
+problems. It may help to see if the intervals() output agrees with the
+bootstrap results from nlraa::boot_nlme().
+
+-- 
+Best regards,
+Ivan
+
+
+From |@go@g|ne @end|ng |rom @jd@e@  Tue May  7 11:51:55 2024
+From: |@go@g|ne @end|ng |rom @jd@e@ (=?iso-8859-1?Q?Iago_Gin=E9_V=E1zquez?=)
+Date: Tue, 7 May 2024 09:51:55 +0000
+Subject: [R] Is there some way to customize colours for the View output?
+Message-ID: <AM6PR02MB4423181B246EC91BEA61412294E42@AM6PR02MB4423.eurprd02.prod.outlook.com>
+
+Hi all,
+
+As the email subject tells, I write to ask if there is the chance to customize the colours (and in particular the background) of the `View` output window.
+
+
+In the View help, it is told that:
+
+    On Windows, the initial size of the data viewer window is taken from the default dimensions of a pager (see Rconsole), but adjusted downwards to show a whole number of rows and columns.
+
+So if it works for the sizes, it could work for the colours. But after modifying
+
+## Colours for console and pager(s)
+# (see rwxxxx/etc/rgb.txt for the known colours).
+background = gray9
+normaltext = yellow
+usertext = YellowGreen
+highlight = golderod
+
+I did not have success.
+
+On the other hand, in the data.entry it is told that
+
+    The data entry window responds to X resources of class R_dataentry. Resources foreground, background and geometry are utilized.
+
+But I do not know if this is related and how to modify those resources.
+
+Can someone help me?
+
+If this is not possible, is there any chance of making a feature request of this to R-devel? (I mean, I could write to R-devel list, but do you think there would be any interest in developing this?)
+
+Thanks!
+Best regards,
+
+Iago
+
+	[[alternative HTML version deleted]]
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Tue May  7 12:24:01 2024
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Tue, 7 May 2024 06:24:01 -0400
+Subject: [R] Is there some way to customize colours for the View output?
+In-Reply-To: <AM6PR02MB4423181B246EC91BEA61412294E42@AM6PR02MB4423.eurprd02.prod.outlook.com>
+References: <AM6PR02MB4423181B246EC91BEA61412294E42@AM6PR02MB4423.eurprd02.prod.outlook.com>
+Message-ID: <6fd81bdd-4e7e-4736-b71d-f71c402d5cfa@gmail.com>
+
+If you are using X11, then the paragraph on X resources is relevant. 
+Create a file named .Xresources in your home directory, and put a line like
+
+R_dataentry.background: green
+
+in it.  On my Mac, this has to be in place before Xquartz is started. 
+There is probably a similar restriction on other platforms.
+
+Colour names (used for foreground and background) can be words or hex 
+colors like #ffffff .  I don't know the format for "geometry", but I'd 
+guess it's like the -geometry argument to X11 apps, e.g. 1000x1000+0+0.
+
+If you are on Windows, none of this is relevant.
+
+Duncan Murdoch
+
+On 07/05/2024 5:51 a.m., Iago Gin? V?zquez wrote:
+> Hi all,
+> 
+> As the email subject tells, I write to ask if there is the chance to customize the colours (and in particular the background) of the `View` output window.
+> 
+> 
+> In the View help, it is told that:
+> 
+>      On Windows, the initial size of the data viewer window is taken from the default dimensions of a pager (see Rconsole), but adjusted downwards to show a whole number of rows and columns.
+> 
+> So if it works for the sizes, it could work for the colours. But after modifying
+> 
+> ## Colours for console and pager(s)
+> # (see rwxxxx/etc/rgb.txt for the known colours).
+> background = gray9
+> normaltext = yellow
+> usertext = YellowGreen
+> highlight = golderod
+> 
+> I did not have success.
+> 
+> On the other hand, in the data.entry it is told that
+> 
+>      The data entry window responds to X resources of class R_dataentry. Resources foreground, background and geometry are utilized.
+> 
+> But I do not know if this is related and how to modify those resources.
+> 
+> Can someone help me?
+> 
+> If this is not possible, is there any chance of making a feature request of this to R-devel? (I mean, I could write to R-devel list, but do you think there would be any interest in developing this?)
+> 
+> Thanks!
+> Best regards,
+> 
+> Iago
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> ______________________________________________
+> R-help at r-project.org mailing list -- To UNSUBSCRIBE and more, see
+> https://stat.ethz.ch/mailman/listinfo/r-help
+> PLEASE do read the posting guide http://www.R-project.org/posting-guide.html
+> and provide commented, minimal, self-contained, reproducible code.
+
+
+From |@go@g|ne @end|ng |rom @jd@e@  Tue May  7 12:31:08 2024
+From: |@go@g|ne @end|ng |rom @jd@e@ (=?iso-8859-1?Q?Iago_Gin=E9_V=E1zquez?=)
+Date: Tue, 7 May 2024 10:31:08 +0000
+Subject: [R] Is there some way to customize colours for the View output?
+In-Reply-To: <6fd81bdd-4e7e-4736-b71d-f71c402d5cfa@gmail.com>
+References: <AM6PR02MB4423181B246EC91BEA61412294E42@AM6PR02MB4423.eurprd02.prod.outlook.com>
+ <6fd81bdd-4e7e-4736-b71d-f71c402d5cfa@gmail.com>
+Message-ID: <AM6PR02MB4423E2D236D742E90FC6603494E42@AM6PR02MB4423.eurprd02.prod.outlook.com>
+
+Thanks Duncan.
+
+I am currently on Windows. Is there any solution for it?
+
+Best regards,
+Iago
+
+
+________________________________
+De: Duncan Murdoch <murdoch.duncan at gmail.com>
+Enviat el: dimarts, 7 de maig de 2024 12:24
+Per a: Iago Gin? V?zquez <iago.gine at sjd.es>; r-help at r-project.org <r-help at r-project.org>
+Tema: Re: [R] Is there some way to customize colours for the View output?
+
+If you are using X11, then the paragraph on X resources is relevant.
+Create a file named .Xresources in your home directory, and put a line like
+
+R_dataentry.background: green
+
+in it.  On my Mac, this has to be in place before Xquartz is started.
+There is probably a similar restriction on other platforms.
+
+Colour names (used for foreground and background) can be words or hex
+colors like #ffffff .  I don't know the format for "geometry", but I'd
+guess it's like the -geometry argument to X11 apps, e.g. 1000x1000+0+0.
+
+If you are on Windows, none of this is relevant.
+
+Duncan Murdoch
+
+On 07/05/2024 5:51 a.m., Iago Gin? V?zquez wrote:
+> Hi all,
+>
+> As the email subject tells, I write to ask if there is the chance to customize the colours (and in particular the background) of the `View` output window.
+>
+>
+> In the View help, it is told that:
+>
+>      On Windows, the initial size of the data viewer window is taken from the default dimensions of a pager (see Rconsole), but adjusted downwards to show a whole number of rows and columns.
+>
+> So if it works for the sizes, it could work for the colours. But after modifying
+>
+> ## Colours for console and pager(s)
+> # (see rwxxxx/etc/rgb.txt for the known colours).
+> background = gray9
+> normaltext = yellow
+> usertext = YellowGreen
+> highlight = golderod
+>
+> I did not have success.
+>
+> On the other hand, in the data.entry it is told that
+>
+>      The data entry window responds to X resources of class R_dataentry. Resources foreground, background and geometry are utilized.
+>
+> But I do not know if this is related and how to modify those resources.
+>
+> Can someone help me?
+>
+> If this is not possible, is there any chance of making a feature request of this to R-devel? (I mean, I could write to R-devel list, but do you think there would be any interest in developing this?)
+>
+> Thanks!
+> Best regards,
+>
+> Iago
+>
+>        [[alternative HTML version deleted]]
+>
+> ______________________________________________
+> R-help at r-project.org mailing list -- To UNSUBSCRIBE and more, see
+> https://stat.ethz.ch/mailman/listinfo/r-help
+> PLEASE do read the posting guide http://www.R-project.org/posting-guide.html
+> and provide commented, minimal, self-contained, reproducible code.
+
+
+	[[alternative HTML version deleted]]
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Tue May  7 12:34:50 2024
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Tue, 7 May 2024 06:34:50 -0400
+Subject: [R] Is there some way to customize colours for the View output?
+In-Reply-To: <AM6PR02MB4423E2D236D742E90FC6603494E42@AM6PR02MB4423.eurprd02.prod.outlook.com>
+References: <AM6PR02MB4423181B246EC91BEA61412294E42@AM6PR02MB4423.eurprd02.prod.outlook.com>
+ <6fd81bdd-4e7e-4736-b71d-f71c402d5cfa@gmail.com>
+ <AM6PR02MB4423E2D236D742E90FC6603494E42@AM6PR02MB4423.eurprd02.prod.outlook.com>
+Message-ID: <1fd3aba6-1da9-4d6a-804b-13a70cb9f096@gmail.com>
+
+On 07/05/2024 6:31 a.m., Iago Gin? V?zquez wrote:
+> Thanks Duncan.
+> 
+> I am currently on Windows. Is there any solution for it?
+
+Switch to Linux or MacOS?
+
+Duncan Murdoch
+
+> 
+> Best regards,
+> Iago
+> 
+> 
+> ------------------------------------------------------------------------
+> *De:* Duncan Murdoch <murdoch.duncan at gmail.com>
+> *Enviat el:* dimarts, 7 de maig de 2024 12:24
+> *Per a:* Iago Gin? V?zquez <iago.gine at sjd.es>; r-help at r-project.org 
+> <r-help at r-project.org>
+> *Tema:* Re: [R] Is there some way to customize colours for the View output?
+> If you are using X11, then the paragraph on X resources is relevant.
+> Create a file named .Xresources in your home directory, and put a line like
+> 
+> R_dataentry.background: green
+> 
+> in it.? On my Mac, this has to be in place before Xquartz is started.
+> There is probably a similar restriction on other platforms.
+> 
+> Colour names (used for foreground and background) can be words or hex
+> colors like #ffffff .? I don't know the format for "geometry", but I'd
+> guess it's like the -geometry argument to X11 apps, e.g. 1000x1000+0+0.
+> 
+> If you are on Windows, none of this is relevant.
+> 
+> Duncan Murdoch
+> 
+> On 07/05/2024 5:51 a.m., Iago Gin? V?zquez wrote:
+>> Hi all,
+>> 
+>> As the email subject tells, I write to ask if there is the chance to customize the colours (and in particular the background) of the `View` output window.
+>> 
+>> 
+>> In the View help, it is told that:
+>> 
+>>????? On Windows, the initial size of the data viewer window is taken from the default dimensions of a pager (see Rconsole), but adjusted downwards to show a whole number of rows and columns.
+>> 
+>> So if it works for the sizes, it could work for the colours. But after modifying
+>> 
+>> ## Colours for console and pager(s)
+>> # (see rwxxxx/etc/rgb.txt for the known colours).
+>> background = gray9
+>> normaltext = yellow
+>> usertext = YellowGreen
+>> highlight = golderod
+>> 
+>> I did not have success.
+>> 
+>> On the other hand, in the data.entry it is told that
+>> 
+>>????? The data entry window responds to X resources of class R_dataentry. Resources foreground, background and geometry are utilized.
+>> 
+>> But I do not know if this is related and how to modify those resources.
+>> 
+>> Can someone help me?
+>> 
+>> If this is not possible, is there any chance of making a feature request of this to R-devel? (I mean, I could write to R-devel list, but do you think there would be any interest in developing this?)
+>> 
+>> Thanks!
+>> Best regards,
+>> 
+>> Iago
+>> 
+>>??????? [[alternative HTML version deleted]]
+>> 
+>> ______________________________________________
+>> R-help at r-project.org mailing list -- To UNSUBSCRIBE and more, see
+>> https://stat.ethz.ch/mailman/listinfo/r-help 
+> <https://stat.ethz.ch/mailman/listinfo/r-help>
+>> PLEASE do read the posting guide http://www.R-project.org/posting-guide.html 
+> <http://www.R-project.org/posting-guide.html>
+>> and provide commented, minimal, self-contained, reproducible code.
+>
+
+
+From |kry|ov @end|ng |rom d|@root@org  Tue May  7 13:56:02 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Tue, 7 May 2024 14:56:02 +0300
+Subject: [R] Is there some way to customize colours for the View output?
+In-Reply-To: <AM6PR02MB4423181B246EC91BEA61412294E42@AM6PR02MB4423.eurprd02.prod.outlook.com>
+References: <AM6PR02MB4423181B246EC91BEA61412294E42@AM6PR02MB4423.eurprd02.prod.outlook.com>
+Message-ID: <20240507145602.14dd1e01@arachnoid>
+
+? Tue, 7 May 2024 09:51:55 +0000
+Iago Gin? V?zquez <iago.gine at sjd.es> ?????:
+
+> In the View help, it is told that:
+> 
+>     On Windows, the initial size of the data viewer window is taken
+> from the default dimensions of a pager (see Rconsole), but adjusted
+> downwards to show a whole number of rows and columns.
+
+The Windows data editor lives in
+src/library/utils/src/windows/dataentry.c [1]. There are references to
+the array guiColors and indices dataeditbg, dataedituser, dataeditbg,
+dataeditfg. I was able to find the colours with these names in the GUI
+preferences, edit them and see an effect on the edit() window.
+
+-- 
+Best regards,
+Ivan
+
+[1]
+https://svn.r-project.org/R/trunk/src/library/utils/src/windows/dataentry.c
+
+
+From gdu|ey @end|ng |rom gm@||@com  Tue May  7 16:57:14 2024
+From: gdu|ey @end|ng |rom gm@||@com (gavin duley)
+Date: Tue, 7 May 2024 16:57:14 +0200
+Subject: [R] Problem with creating a PCA graph in a loop
+Message-ID: <CAEXL4LWrKw0qL3e-3HVdwodYfcZD3zdDApmfSG+juYGUJwusLw@mail.gmail.com>
+
+Hi all,
+
+I am having enormous problems with a loop that iterates over different
+levels in the factor wine.data$Time (levels T06, T09, and T12) and
+creates a PCA and graph for individuals at that time only. These
+graphs need to be accessible outside the loop, so I can combine them
+using ggpubr::ggarrange to produce a figure for a paper.
+
+The difficulty I am having is with the labels produced by
+ggrepel::geom_label_repel. Since the loop uses the variable i to set
+the level of wine.data$Time, when used outside the loop the labels
+produced by geom_label_repel are always for T12 (i.e., the last level
+run by the loop).
+
+Oddly, this only affects the labels: the title, set using
+ggtitle(paste0("PCA of wine.data observations at Time ", print(i))),
+shows the correct time, and the datapoints are for the correct time.
+
+Is there some way to get geom_label_repel to read current_rownames and
+store the values in the ggplot object, rather than to reload them
+every time I display or save the ggplot graph?
+
+Thanks!
+gavin,
+
+Code for reference. I can provide a sample dataset for reproducibility
+if needed.
+
+for(i in levels(wine.data$Time)){
+  print(i)
+  wine.data.filt <- filter(wine.data,Time == i)
+  current_rownames <- rownames(wine.data.filt)
+  wine.data.filt.pca <- dudi.pca(wine.data.filt[3:11],
+                               nf=6,
+                               scannf=F)
+  wine.data_quanti_sup <- wine.data.filt[,12, drop = FALSE]
+  head(wine.data_quanti_sup)
+
+  # Colour by Treatment
+  assign(paste0("individ_", i),
+         fviz_pca_ind(wine.data.filt.pca,
+                      geom.ind = "point",
+                      mean.point=F,
+                      col.ind = wine.data.filt$Treatment,
+                      ellipse.type = "confidence",
+                      legend.title = "Groups"
+         )+ggtitle(paste0("PCA of wine.data observations at Time ", print(i)))
+         +
+           scale_colour_manual(
+             values = c(
+               "Control" = "#00A087FF",
+               "Low" = "#3C5488FF",
+               "High" = "#E64B35FF")
+           ) + geom_label_repel(position =
+ggpp::position_nudge_center(0.2, 0.1, 0, 0),
+                                box.padding = 0.5,
+                                max.overlaps = Inf,
+                                aes(label=current_rownames,
+                                    colour=wine.data.filt$Treatment
+                                )
+           ) +
+           scale_fill_manual(
+             values = c(
+               "Control" = "#00A087FF",
+               "Low" = "#3C5488FF",
+               "High" = "#E64B35FF")
+           ))
+}
+
+
+From @r|n|dh|@j@y@kum@r @end|ng |rom @tonybrook@edu  Mon May  6 15:53:30 2024
+From: @r|n|dh|@j@y@kum@r @end|ng |rom @tonybrook@edu (Srinidhi Jayakumar)
+Date: Mon, 6 May 2024 09:53:30 -0400
+Subject: [R] [R-sig-ME] lmer error: number of observations <= number of
+ random effects
+In-Reply-To: <CF887C5A-1262-4EEE-BA5D-D28899A84A50@gmail.com>
+References: <CAMvZauqY=naWQtSgfp+JtX73vB5+Sm3pO=iv6P6ujNGQHcg5WQ@mail.gmail.com>
+ <CAJuCY5ysmodQ=Jt8UGSuimNyz66WS9MAxdxWv4fttrM6O1Tw5A@mail.gmail.com>
+ <CF887C5A-1262-4EEE-BA5D-D28899A84A50@gmail.com>
+Message-ID: <CAMvZauoywbby6FWwKQcdbH10rRREEh6iSgYnQwaR=WMcAuhPjQ@mail.gmail.com>
+
+Thank you very  much for your responses!
+
+What if I reduce the model to
+ modelLSI3 <- lmer(SA ~ Index1* LSI+ (1+LSI |ID),data = LSIDATA, control =
+lmerControl(optimizer ="bobyqa"), REML=TRUE).
+This would allow me to see the random effects of LSI and I can drop the
+random effect of age (Index1) since I can see that in the unconditional
+model [model0 <- lmer(SA ~ Index1+ (1+Index1|ID),data = LSIDATA, control =
+lmerControl(optimizer ="bobyqa"), REML=TRUE)]. Would the modelLSI3 also
+have a type 1 error?
+
+Thank you,
+Srinidhi
+
+
+
+
+On Mon, 6 May 2024, 03:11 TT FF, <trashfaket at gmail.com> wrote:
+
+> See if this paper may help If it helps reducing the model when you have
+> few observations. the (1|ID) may increase the type 1 error.
+> https://journals.sagepub.com/doi/10.1177/25152459231214454
+>
+> Best
+>
+> On 6 May 2024, at 07:45, Thierry Onkelinx via R-sig-mixed-models <
+> r-sig-mixed-models at r-project.org> wrote:
+>
+> Dear Srinidhi,
+>
+> You are trying to fit 1 random intercept and 2 random slopes per
+> individual, while you have at most 3 observations per individual. You
+> simply don't have enough data to fit the random slopes. Reduce the random
+> part to (1|ID).
+>
+> Best regards,
+>
+> Thierry
+>
+> ir. Thierry Onkelinx
+> Statisticus / Statistician
+>
+> Vlaamse Overheid / Government of Flanders
+> INSTITUUT VOOR NATUUR- EN BOSONDERZOEK / RESEARCH INSTITUTE FOR NATURE AND
+> FOREST
+> Team Biometrie & Kwaliteitszorg / Team Biometrics & Quality Assurance
+> thierry.onkelinx at inbo.be
+> Havenlaan 88 bus 73, 1000 Brussel
+> *Postadres:* Koning Albert II-laan 15 bus 186, 1210 Brussel
+> *Poststukken die naar dit adres worden gestuurd, worden ingescand en
+> digitaal aan de geadresseerde bezorgd. Zo kan de Vlaamse overheid haar
+> dossiers volledig digitaal behandelen. Poststukken met de vermelding
+> ?vertrouwelijk? worden niet ingescand, maar ongeopend aan de geadresseerde
+> bezorgd.*
+> www.inbo.be
+>
+>
+> ///////////////////////////////////////////////////////////////////////////////////////////
+> To call in the statistician after the experiment is done may be no more
+> than asking him to perform a post-mortem examination: he may be able to say
+> what the experiment died of. ~ Sir Ronald Aylmer Fisher
+> The plural of anecdote is not data. ~ Roger Brinner
+> The combination of some data and an aching desire for an answer does not
+> ensure that a reasonable answer can be extracted from a given body of data.
+> ~ John Tukey
+>
+> ///////////////////////////////////////////////////////////////////////////////////////////
+>
+> <https://www.inbo.be>
+>
+>
+> Op ma 6 mei 2024 om 01:59 schreef Srinidhi Jayakumar via R-sig-mixed-models
+> <r-sig-mixed-models at r-project.org>:
+>
+> I am running a multilevel growth curve model to examine predictors of
+> social anhedonia (SA) trajectory through ages 12, 15 and 18. SA is a
+> continuous numeric variable. The age variable (Index1) has been coded as 0
+> for age 12, 1 for age 15 and 2 for age 18. I am currently using a time
+> varying predictor, stress (LSI), which was measured at ages 12, 15 and 18,
+> to examine whether trajectory/variation in LSI predicts difference in SA
+> trajectory. LSI is a continuous numeric variable and was grand-mean
+> centered before using in the models. The data has been converted to long
+> format with SA in 1 column, LSI in the other, ID in another, and age in
+> another column. I used the code below to run my model using lmer. However,
+> I get the following error. Please let me know how I can solve this error.
+> Please note that I have 50% missing data in SA at age 12.
+> modelLSI_maineff_RE <- lmer(SA ~ Index1* LSI+ (1 + Index1+LSI |ID), data =
+> LSIDATA, control = lmerControl(optimizer ="bobyqa"), REML=TRUE)
+> summary(modelLSI_maineff_RE)
+> Error: number of observations (=1080) <= number of random effects (=1479)
+> for term (1 + Index1 + LSI | ID); the random-effects parameters and the
+> residual variance (or scale parameter) are probably unidentifiable
+>
+> I did test the within-person variance for the LSI variable and the
+> within-person variance is significant from the Greenhouse-Geisser,
+> Hyunh-Feidt tests.
+>
+> I also tried control = lmerControl(check.nobs.vs.nRE = "ignore") which gave
+> me the following output. modelLSI_maineff_RE <- lmer(SA ~ Index1* LSI+ (1 +
+> Index1+LSI |ID), data = LSIDATA, control = lmerControl(check.nobs.vs.nRE =
+> "ignore", optimizer ="bobyqa", check.conv.singular = .makeCC(action =
+> "ignore", tol = 1e-4)), REML=TRUE)
+>
+> summary(modelLSI_maineff_RE)
+> Linear mixed model fit by REML. t-tests use Satterthwaite's method
+> ['lmerModLmerTest']
+> Formula: SA ~ Index1 * LSI + (1 + Index1 + LSI | ID)
+> Data: LSIDATA
+> Control: lmerControl(check.nobs.vs.nRE = "ignore", optimizer = "bobyqa",
+> check.conv.singular = .makeCC(action = "ignore", tol = 1e-04))
+>
+> REML criterion at convergence: 7299.6
+>
+> Scaled residuals:
+> Min 1Q Median 3Q Max
+> -2.7289 -0.4832 -0.1449 0.3604 4.5715
+>
+> Random effects:
+> Groups Name Variance Std.Dev. Corr
+> ID (Intercept) 30.2919 5.5038
+> Index1 2.4765 1.5737 -0.15
+> LSI 0.1669 0.4085 -0.23 0.70
+> Residual 24.1793 4.9172
+> Number of obs: 1080, groups: ID, 493
+>
+> Fixed effects:
+> Estimate Std. Error df t value Pr(>|t|)
+> (Intercept) 24.68016 0.39722 313.43436 62.133 < 2e-16 ***
+> Index1 0.98495 0.23626 362.75018 4.169 3.83e-05 ***
+> LSI -0.05197 0.06226 273.85575 -0.835 0.4046
+> Index1:LSI 0.09797 0.04506 426.01185 2.174 0.0302 *
+> Signif. codes: 0 ?? 0.001 ?? 0.01 ?? 0.05 ?.? 0.1 ? ? 1
+>
+> Correlation of Fixed Effects:
+> (Intr) Index1 LSI
+> Index1 -0.645
+> LSI -0.032 0.057
+> Index1:LSI 0.015 0.037 -0.695
+>
+> I am a little vary of the output still as the error states that I have
+> equal observations as the number of random effects (i.e., 3 observations
+> per ID and 3 random effects). Hence, I am wondering whether I can simplify
+> the model as either of the below models and choose the one with the
+> best-fit statistics:
+>
+> modelLSI2 <- lmer(SA ~ Index1* LSI+ (1 |ID)+ (Index1+LSI -1|ID),data =
+> LSIDATA, control = lmerControl(optimizer ="bobyqa"), REML=TRUE) *OR*
+>
+> modelLSI3 <- lmer(SA ~ Index1* LSI+ (1+LSI |ID),data = LSIDATA, control =
+> lmerControl(optimizer ="bobyqa"), REML=TRUE) [image: example of dataset]
+> <https://i.sstatic.net/JcRKS2C9.png>
+>
+>        [[alternative HTML version deleted]]
+>
+> _______________________________________________
+> R-sig-mixed-models at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+>
+>
+> [[alternative HTML version deleted]]
+>
+> _______________________________________________
+> R-sig-mixed-models at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+>
+>
+>
+
+	[[alternative HTML version deleted]]
+
+
+From bgunter@4567 @end|ng |rom gm@||@com  Tue May  7 19:23:48 2024
+From: bgunter@4567 @end|ng |rom gm@||@com (Bert Gunter)
+Date: Tue, 7 May 2024 10:23:48 -0700
+Subject: [R] [R-sig-ME] lmer error: number of observations <= number of
+ random effects
+In-Reply-To: <CAMvZauoywbby6FWwKQcdbH10rRREEh6iSgYnQwaR=WMcAuhPjQ@mail.gmail.com>
+References: <CAMvZauqY=naWQtSgfp+JtX73vB5+Sm3pO=iv6P6ujNGQHcg5WQ@mail.gmail.com>
+ <CAJuCY5ysmodQ=Jt8UGSuimNyz66WS9MAxdxWv4fttrM6O1Tw5A@mail.gmail.com>
+ <CF887C5A-1262-4EEE-BA5D-D28899A84A50@gmail.com>
+ <CAMvZauoywbby6FWwKQcdbH10rRREEh6iSgYnQwaR=WMcAuhPjQ@mail.gmail.com>
+Message-ID: <CAGxFJbS4pDkj-q2Ooe-2uiHY77=5rVRcB+6WzJUiT+K2Xrr2Sg@mail.gmail.com>
+
+I think you should seek out a local statistician with whom to consult if at
+all possible, as the details of your research goals and the nature of the
+data you have to meet those goals matter and cannot be effectively
+discussed in a remote forum like this. That is, to be blunt, you seem to be
+risk of producing junk. Just my opinion, which you are of course free to
+ignore. Certainly, no response needed, and I will not say anything further.
+
+Cheers,
+Bert
+
+On Tue, May 7, 2024 at 9:12?AM Srinidhi Jayakumar via R-help <
+r-help at r-project.org> wrote:
+
+> Thank you very  much for your responses!
+>
+> What if I reduce the model to
+>  modelLSI3 <- lmer(SA ~ Index1* LSI+ (1+LSI |ID),data = LSIDATA, control =
+> lmerControl(optimizer ="bobyqa"), REML=TRUE).
+> This would allow me to see the random effects of LSI and I can drop the
+> random effect of age (Index1) since I can see that in the unconditional
+> model [model0 <- lmer(SA ~ Index1+ (1+Index1|ID),data = LSIDATA, control =
+> lmerControl(optimizer ="bobyqa"), REML=TRUE)]. Would the modelLSI3 also
+> have a type 1 error?
+>
+> Thank you,
+> Srinidhi
+>
+>
+>
+>
+> On Mon, 6 May 2024, 03:11 TT FF, <trashfaket at gmail.com> wrote:
+>
+> > See if this paper may help If it helps reducing the model when you have
+> > few observations. the (1|ID) may increase the type 1 error.
+> > https://journals.sagepub.com/doi/10.1177/25152459231214454
+> >
+> > Best
+> >
+> > On 6 May 2024, at 07:45, Thierry Onkelinx via R-sig-mixed-models <
+> > r-sig-mixed-models at r-project.org> wrote:
+> >
+> > Dear Srinidhi,
+> >
+> > You are trying to fit 1 random intercept and 2 random slopes per
+> > individual, while you have at most 3 observations per individual. You
+> > simply don't have enough data to fit the random slopes. Reduce the random
+> > part to (1|ID).
+> >
+> > Best regards,
+> >
+> > Thierry
+> >
+> > ir. Thierry Onkelinx
+> > Statisticus / Statistician
+> >
+> > Vlaamse Overheid / Government of Flanders
+> > INSTITUUT VOOR NATUUR- EN BOSONDERZOEK / RESEARCH INSTITUTE FOR NATURE
+> AND
+> > FOREST
+> > Team Biometrie & Kwaliteitszorg / Team Biometrics & Quality Assurance
+> > thierry.onkelinx at inbo.be
+> > Havenlaan 88 bus 73, 1000 Brussel
+> > *Postadres:* Koning Albert II-laan 15 bus 186, 1210 Brussel
+> > *Poststukken die naar dit adres worden gestuurd, worden ingescand en
+> > digitaal aan de geadresseerde bezorgd. Zo kan de Vlaamse overheid haar
+> > dossiers volledig digitaal behandelen. Poststukken met de vermelding
+> > ?vertrouwelijk? worden niet ingescand, maar ongeopend aan de
+> geadresseerde
+> > bezorgd.*
+> > www.inbo.be
+> >
+> >
+> >
+> ///////////////////////////////////////////////////////////////////////////////////////////
+> > To call in the statistician after the experiment is done may be no more
+> > than asking him to perform a post-mortem examination: he may be able to
+> say
+> > what the experiment died of. ~ Sir Ronald Aylmer Fisher
+> > The plural of anecdote is not data. ~ Roger Brinner
+> > The combination of some data and an aching desire for an answer does not
+> > ensure that a reasonable answer can be extracted from a given body of
+> data.
+> > ~ John Tukey
+> >
+> >
+> ///////////////////////////////////////////////////////////////////////////////////////////
+> >
+> > <https://www.inbo.be>
+> >
+> >
+> > Op ma 6 mei 2024 om 01:59 schreef Srinidhi Jayakumar via
+> R-sig-mixed-models
+> > <r-sig-mixed-models at r-project.org>:
+> >
+> > I am running a multilevel growth curve model to examine predictors of
+> > social anhedonia (SA) trajectory through ages 12, 15 and 18. SA is a
+> > continuous numeric variable. The age variable (Index1) has been coded as
+> 0
+> > for age 12, 1 for age 15 and 2 for age 18. I am currently using a time
+> > varying predictor, stress (LSI), which was measured at ages 12, 15 and
+> 18,
+> > to examine whether trajectory/variation in LSI predicts difference in SA
+> > trajectory. LSI is a continuous numeric variable and was grand-mean
+> > centered before using in the models. The data has been converted to long
+> > format with SA in 1 column, LSI in the other, ID in another, and age in
+> > another column. I used the code below to run my model using lmer.
+> However,
+> > I get the following error. Please let me know how I can solve this error.
+> > Please note that I have 50% missing data in SA at age 12.
+> > modelLSI_maineff_RE <- lmer(SA ~ Index1* LSI+ (1 + Index1+LSI |ID), data
+> =
+> > LSIDATA, control = lmerControl(optimizer ="bobyqa"), REML=TRUE)
+> > summary(modelLSI_maineff_RE)
+> > Error: number of observations (=1080) <= number of random effects (=1479)
+> > for term (1 + Index1 + LSI | ID); the random-effects parameters and the
+> > residual variance (or scale parameter) are probably unidentifiable
+> >
+> > I did test the within-person variance for the LSI variable and the
+> > within-person variance is significant from the Greenhouse-Geisser,
+> > Hyunh-Feidt tests.
+> >
+> > I also tried control = lmerControl(check.nobs.vs.nRE = "ignore") which
+> gave
+> > me the following output. modelLSI_maineff_RE <- lmer(SA ~ Index1* LSI+
+> (1 +
+> > Index1+LSI |ID), data = LSIDATA, control = lmerControl(check.nobs.vs.nRE
+> =
+> > "ignore", optimizer ="bobyqa", check.conv.singular = .makeCC(action =
+> > "ignore", tol = 1e-4)), REML=TRUE)
+> >
+> > summary(modelLSI_maineff_RE)
+> > Linear mixed model fit by REML. t-tests use Satterthwaite's method
+> > ['lmerModLmerTest']
+> > Formula: SA ~ Index1 * LSI + (1 + Index1 + LSI | ID)
+> > Data: LSIDATA
+> > Control: lmerControl(check.nobs.vs.nRE = "ignore", optimizer = "bobyqa",
+> > check.conv.singular = .makeCC(action = "ignore", tol = 1e-04))
+> >
+> > REML criterion at convergence: 7299.6
+> >
+> > Scaled residuals:
+> > Min 1Q Median 3Q Max
+> > -2.7289 -0.4832 -0.1449 0.3604 4.5715
+> >
+> > Random effects:
+> > Groups Name Variance Std.Dev. Corr
+> > ID (Intercept) 30.2919 5.5038
+> > Index1 2.4765 1.5737 -0.15
+> > LSI 0.1669 0.4085 -0.23 0.70
+> > Residual 24.1793 4.9172
+> > Number of obs: 1080, groups: ID, 493
+> >
+> > Fixed effects:
+> > Estimate Std. Error df t value Pr(>|t|)
+> > (Intercept) 24.68016 0.39722 313.43436 62.133 < 2e-16 ***
+> > Index1 0.98495 0.23626 362.75018 4.169 3.83e-05 ***
+> > LSI -0.05197 0.06226 273.85575 -0.835 0.4046
+> > Index1:LSI 0.09797 0.04506 426.01185 2.174 0.0302 *
+> > Signif. codes: 0 ?? 0.001 ?? 0.01 ?? 0.05 ?.? 0.1 ? ? 1
+> >
+> > Correlation of Fixed Effects:
+> > (Intr) Index1 LSI
+> > Index1 -0.645
+> > LSI -0.032 0.057
+> > Index1:LSI 0.015 0.037 -0.695
+> >
+> > I am a little vary of the output still as the error states that I have
+> > equal observations as the number of random effects (i.e., 3 observations
+> > per ID and 3 random effects). Hence, I am wondering whether I can
+> simplify
+> > the model as either of the below models and choose the one with the
+> > best-fit statistics:
+> >
+> > modelLSI2 <- lmer(SA ~ Index1* LSI+ (1 |ID)+ (Index1+LSI -1|ID),data =
+> > LSIDATA, control = lmerControl(optimizer ="bobyqa"), REML=TRUE) *OR*
+> >
+> > modelLSI3 <- lmer(SA ~ Index1* LSI+ (1+LSI |ID),data = LSIDATA, control =
+> > lmerControl(optimizer ="bobyqa"), REML=TRUE) [image: example of dataset]
+> > <https://i.sstatic.net/JcRKS2C9.png>
+> >
+> >        [[alternative HTML version deleted]]
+> >
+> > _______________________________________________
+> > R-sig-mixed-models at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+> >
+> >
+> > [[alternative HTML version deleted]]
+> >
+> > _______________________________________________
+> > R-sig-mixed-models at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+> >
+> >
+> >
+>
+>         [[alternative HTML version deleted]]
+>
+> ______________________________________________
+> R-help at r-project.org mailing list -- To UNSUBSCRIBE and more, see
+> https://stat.ethz.ch/mailman/listinfo/r-help
+> PLEASE do read the posting guide
+> http://www.R-project.org/posting-guide.html
+> and provide commented, minimal, self-contained, reproducible code.
+>
+
+	[[alternative HTML version deleted]]
+
+
+From ro||turner @end|ng |rom po@teo@net  Tue May  7 23:58:32 2024
+From: ro||turner @end|ng |rom po@teo@net (Rolf Turner)
+Date: Tue,  7 May 2024 21:58:32 +0000
+Subject: [R] Is there some way to customize colours for the View output?
+In-Reply-To: <1fd3aba6-1da9-4d6a-804b-13a70cb9f096@gmail.com>
+References: <AM6PR02MB4423181B246EC91BEA61412294E42@AM6PR02MB4423.eurprd02.prod.outlook.com>
+ <6fd81bdd-4e7e-4736-b71d-f71c402d5cfa@gmail.com>
+ <AM6PR02MB4423E2D236D742E90FC6603494E42@AM6PR02MB4423.eurprd02.prod.outlook.com>
+ <1fd3aba6-1da9-4d6a-804b-13a70cb9f096@gmail.com>
+Message-ID: <20240508095832.7886e41c@rolf-Latitude-E7470>
+
+
+On Tue, 7 May 2024 06:34:50 -0400
+Duncan Murdoch <murdoch.duncan at gmail.com> wrote:
+
+> On 07/05/2024 6:31 a.m., Iago Gin? V?zquez wrote:
+> > Thanks Duncan.
+> > 
+> > I am currently on Windows. Is there any solution for it?
+> 
+> Switch to Linux or MacOS?
+
+
+Fortune nomination!
+
+cheers,
+
+Rolf Turner
+
+-- 
+Honorary Research Fellow
+Department of Statistics
+University of Auckland
+Stats. Dep't. (secretaries) phone:
+         +64-9-373-7599 ext. 89622
+Home phone: +64-9-480-4619
+
+
+From |kry|ov @end|ng |rom d|@root@org  Wed May  8 09:16:38 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Wed, 8 May 2024 10:16:38 +0300
+Subject: [R] Problem with creating a PCA graph in a loop
+In-Reply-To: <CAEXL4LWrKw0qL3e-3HVdwodYfcZD3zdDApmfSG+juYGUJwusLw@mail.gmail.com>
+References: <CAEXL4LWrKw0qL3e-3HVdwodYfcZD3zdDApmfSG+juYGUJwusLw@mail.gmail.com>
+Message-ID: <20240508101638.630564b1@Tarkus>
+
+? Tue, 7 May 2024 16:57:14 +0200
+gavin duley <gduley at gmail.com> ?????:
+
+> aes(label=current_rownames,
+>     colour=wine.data.filt$Treatment
+> )
+
+As you've noticed, aes() remembers variables by their name and
+environment, not by value:
+
+str(ggplot2::aes(label = foo))
+# List of 1
+#  $ label: language ~foo # <-- variable name recorded here
+                               # and here is the environment
+#   ..- attr(*, ".Environment")=<environment: R_GlobalEnv> 
+#  - attr(*, "class")= chr "uneval"
+
+One way to get around the problem is to ensure that the variables live
+in different environments. Instead of making it a for loop, write a
+function that would accept `i` and return a plot instead of assigning
+it by name:
+
+makeplot <- function(i) {
+  print(i)
+  wine.data.filt <- filter(wine.data,Time == i)
+  current_rownames <- rownames(wine.data.filt)
+  wine.data.filt.pca <- dudi.pca(wine.data.filt[3:11],
+                                 nf=6,
+                                 scannf=F)
+  wine.data_quanti_sup <- wine.data.filt[,12, drop = FALSE]
+  return(fviz_pca_ind(wine.data.filt.pca,
+   # <the rest of the plot expression is omitted>
+  )
+}
+
+individs <- lapply(levels(wine.data$Time), makeplot)
+individs[[1]]
+
+(In many languages, trying to use a variable as a variable name, while
+possible, usually means you need to consider some kind of nested data
+structure:
+https://perldoc.perl.org/perlfaq7#How-can-I-use-a-variable-as-a-variable-name?
+In R, this structure is a list.)
+
+Why does this work? Calling a function creates a new environment every
+time. The plots will all refer to the variable named current_rownames,
+but the environments will be different:
+
+attr((function() ggplot2::aes(label = foo))()$label, '.Environment')
+# <environment: 0x5650ffc2bfd8>
+attr((function() ggplot2::aes(label = foo))()$label, '.Environment')
+# <environment: 0x5650ffc5c128>
+attr((function() ggplot2::aes(label = foo))()$label, '.Environment')
+# <environment: 0x5650ffc8a3d8>
+
+Alternatively, supply a data= argument to geom_label_repel() and make
+your mapping = aes(...) reference variables from the data (which will
+be remembered), ignoring the environment (which is only referenced).
+Something like the following should work, untested:
+
+geom_label_repel(
+ mapping = aes(label = current_rownames, colour = Treatment),
+ data = data.frame(
+  current_rownames = current_rownames,
+  Treatment = wine.data.filt$Treatment
+ ),
+ # more arguments here
+)
+
+-- 
+Best regards,
+Ivan
+
+
+From v|to@muggeo @end|ng |rom un|p@@|t  Wed May  8 13:47:28 2024
+From: v|to@muggeo @end|ng |rom un|p@@|t (Vito Muggeo)
+Date: Wed, 8 May 2024 13:47:28 +0200
+Subject: [R] losing variable attributes when subsetting model.frame
+Message-ID: <2577c082-7240-4ce5-a082-43030d54992c@unipa.it>
+
+dear all,
+I have a simple function f() which, when included in model.frame() via 
+the formula, returns the variable itself with some attributes.
+However when I specify the subset argument, the attributes get lost, 
+apparently.
+
+I would like to extract the attributes also when specifying the subset 
+argument. Of course, I can build the whole dataframe without subsetting, 
+taking the attributes and then build again the dataframe with 'subset', 
+but I am wondering if a more direct (and elegant) solution exists.
+
+Any suggestion?
+Thank you very much,
+best,
+Vito
+
+
+#=============================
+Here a simple example..
+
+f<- function(x){
+	attr(x,"vi")<-length(x)
+	x
+}
+
+x<- 1:5
+z<-runif(5)
+y<-rnorm(5)
+
+mf<- model.frame(y~f(z))
+attr(mf[,2],"vi") #it works
+
+
+mf <- model.frame(y~f(z), subset=x>=3)
+attr(mf[,2],"vi") #it does not work
+
+
+
+
+-- 
+=================================================
+Vito M.R. Muggeo, PhD
+Professor of Statistics
+Dip.to Sc Econom, Az e Statistiche
+Universit? di Palermo
+viale delle Scienze, edificio 13
+90128 Palermo - ITALY
+tel: 091 23895240; fax: 091 485726
+http://www.unipa.it/persone/docenti/m/vito.muggeo
+Assoc Editor: Statist Modelling
+past chair, Statistical Modelling Society
+coordinator, PhD Program in Econ, Businss, Statist
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Wed May  8 14:06:06 2024
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Wed, 8 May 2024 08:06:06 -0400
+Subject: [R] losing variable attributes when subsetting model.frame
+In-Reply-To: <2577c082-7240-4ce5-a082-43030d54992c@unipa.it>
+References: <2577c082-7240-4ce5-a082-43030d54992c@unipa.it>
+Message-ID: <900af347-30a6-4f1c-8b32-f56feb09cd27@gmail.com>
+
+On 08/05/2024 7:47 a.m., Vito Muggeo via R-help wrote:
+> dear all,
+> I have a simple function f() which, when included in model.frame() via
+> the formula, returns the variable itself with some attributes.
+> However when I specify the subset argument, the attributes get lost,
+> apparently.
+> 
+> I would like to extract the attributes also when specifying the subset
+> argument. Of course, I can build the whole dataframe without subsetting,
+> taking the attributes and then build again the dataframe with 'subset',
+> but I am wondering if a more direct (and elegant) solution exists.
+> 
+> Any suggestion?
+> Thank you very much,
+> best,
+> Vito
+> 
+> 
+> #=============================
+> Here a simple example..
+> 
+> f<- function(x){
+> 	attr(x,"vi")<-length(x)
+> 	x
+> }
+> 
+> x<- 1:5
+> z<-runif(5)
+> y<-rnorm(5)
+> 
+> mf<- model.frame(y~f(z))
+> attr(mf[,2],"vi") #it works
+> 
+> 
+> mf <- model.frame(y~f(z), subset=x>=3)
+> attr(mf[,2],"vi") #it does not work
+> 
+
+I would guess that subsetting uses [] indexing on each column, with a 
+logical argument.  If that is true, then one solution (which is less 
+direct, but maybe someone would call it elegant) is to put a class on 
+the result of `f()`, and define a `[` method for that class that 
+preserves the attributes you want to preserve.
+
+In your example:
+
+f <- function(x) {
+   attr(x, "vi") <- length(x)
+   class(x) <- c("withAttributes", class(x))
+   x
+}
+
+`[.withAttributes` <- function(x, i) {
+   subset <- NextMethod()
+   attr(subset, "vi") <- attr(x, "vi")
+   subset
+}
+
+
+x<- 1:5
+z<-runif(5)
+y<-rnorm(5)
+
+mf <- model.frame(y~f(z), subset=x>=3)
+attr(mf[,2],"vi") #it works
+#> [1] 5
+
+Duncan Murdoch
+
+
+From v|to@muggeo @end|ng |rom un|p@@|t  Wed May  8 14:57:54 2024
+From: v|to@muggeo @end|ng |rom un|p@@|t (Vito Muggeo)
+Date: Wed, 8 May 2024 14:57:54 +0200
+Subject: [R] losing variable attributes when subsetting model.frame
+In-Reply-To: <900af347-30a6-4f1c-8b32-f56feb09cd27@gmail.com>
+References: <2577c082-7240-4ce5-a082-43030d54992c@unipa.it>
+ <900af347-30a6-4f1c-8b32-f56feb09cd27@gmail.com>
+Message-ID: <439561a0-3454-4cae-9bfc-c6aa66d132fa@unipa.it>
+
+dear Duncan,
+Thank you very much for your quick reply. Very useful and also very 
+elegant, I would add.
+
+Thanks again,
+kind regards,
+
+Vito
+
+
+Il 08/05/2024 14:06, Duncan Murdoch ha scritto:
+> I would guess that subsetting uses [] indexing on each column, with a 
+> logical argument.? If that is true, then one solution (which is less 
+> direct, but maybe someone would call it elegant) is to put a class on 
+> the result of `f()`, and define a `[` method for that class that 
+> preserves the attributes you want to preserve.
+> 
+> In your example:
+> 
+> f <- function(x) {
+>  ? attr(x, "vi") <- length(x)
+>  ? class(x) <- c("withAttributes", class(x))
+>  ? x
+> }
+> 
+> `[.withAttributes` <- function(x, i) {
+>  ? subset <- NextMethod()
+>  ? attr(subset, "vi") <- attr(x, "vi")
+>  ? subset
+> }
+> 
+> 
+> x<- 1:5
+> z<-runif(5)
+> y<-rnorm(5)
+> 
+> mf <- model.frame(y~f(z), subset=x>=3)
+> attr(mf[,2],"vi") #it works
+> #> [1] 5
+
+-- 
+=================================================
+Vito M.R. Muggeo, PhD
+Professor of Statistics
+Dip.to Sc Econom, Az e Statistiche
+Universit? di Palermo
+viale delle Scienze, edificio 13
+90128 Palermo - ITALY
+tel: 091 23895240; fax: 091 485726
+http://www.unipa.it/persone/docenti/m/vito.muggeo
+Assoc Editor: Statist Modelling, Statist Meth Appl
+past chair, Statistical Modelling Society
+coordinator, PhD Program in Econ, Businss, Statist
+
+
+From @|mon@@ndrew@ @end|ng |rom b@br@h@m@@c@uk  Wed May  8 12:17:41 2024
+From: @|mon@@ndrew@ @end|ng |rom b@br@h@m@@c@uk (Simon Andrews)
+Date: Wed, 8 May 2024 10:17:41 +0000
+Subject: [R] Compilation problems with R4.4.0
+Message-ID: <CWXP123MB61901F91AC2CEA17094C5A25D0E52@CWXP123MB6190.GBRP123.PROD.OUTLOOK.COM>
+
+I'm having a strange problem compiling R4.4.0 on an AlmaLinux9 box.  I've compiled previous versions OK on the same hardware/software (last was R4.3.2) but 4.4.0 is repeatedly failing.
+
+Configuration works OK.
+
+./configure --prefix=/bi/apps/R/4.4.0 --enable-R-shlib
+
+R is now configured for x86_64-pc-linux-gnu
+
+  Source directory:            .
+  Installation directory:      /bi/apps/R/4.4.0
+
+  C compiler:                  gcc  -g -O2
+  Fortran fixed-form compiler: gfortran  -g -O2
+
+  Default C++ compiler:        g++ -std=gnu++17  -g -O2
+  C++11 compiler:              g++ -std=gnu++11  -g -O2
+  C++14 compiler:              g++ -std=gnu++14  -g -O2
+  C++17 compiler:              g++ -std=gnu++17  -g -O2
+  C++20 compiler:              g++ -std=gnu++20  -g -O2
+  C++23 compiler:              g++ -std=gnu++23  -g -O2
+  Fortran free-form compiler:  gfortran  -g -O2
+  Obj-C compiler:
+
+  Interfaces supported:        X11
+  External libraries:          pcre2, readline, LAPACK(generic), curl
+  Additional capabilities:     PNG, JPEG, TIFF, NLS, cairo, ICU
+  Options enabled:             shared R library, shared BLAS, R profiling
+
+  Capabilities skipped:
+  Options not enabled:         memory profiling
+
+  Recommended packages:        yes
+
+configure: WARNING: neither inconsolata.sty nor zi4.sty found: PDF vignettes and package manuals will not be rendered optimally
+configure: WARNING: I could not determine a browser
+configure: WARNING: I could not determine a PDF viewer
+
+..but after running make it gets though most of it then dies with:
+
+make[4]: Entering directory '/bi/apps/R/R-4.4.0/src/library/grDevices'
+byte-compiling package 'grDevices'
+
+*** caught segfault ***
+address 0x18017a8110, cause 'memory not mapped'
+
+Traceback:
+1: solve.default(rgb)
+2: solve(rgb)
+3: drop(whitexyz %*% solve(rgb))
+4: make.rgb(red = c(0.625, 0.34), green = c(0.28, 0.595), blue = c(0.155,     0.07), gamma = 1.8, white = "D65", name = "Apple RGB")
+5: eval(exprs[i], envir)
+6: eval(exprs[i], envir)
+7: sys.source(codeFile, env, keep.source = keep.source, keep.parse.data = keep.parse.data)
+8: doTryCatch(return(expr), name, parentenv, handler)
+9: tryCatchOne(expr, names, parentenv, handlers[[1L]])
+10: tryCatchList(expr, classes, parentenv, handlers)
+11: tryCatch(expr, error = function(e) {    call <- conditionCall(e)    if (!is.null(call)) {        if (identical(call[[1L]], quote(doTryCatch)))             call <- sys.call(-4L)        dcall <- deparse(call, nlines = 1L)        prefix <- paste("Error in", dcall, ": ")        LONG <- 75L        sm <- strsplit(conditionMessage(e), "\n")[[1L]]        w <- 14L + nchar(dcall, type = "w") + nchar(sm[1L], type = "w")        if (is.na(w))             w <- 14L + nchar(dcall, type = "b") + nchar(sm[1L],                 type = "b")        if (w > LONG)             prefix <- paste0(prefix, "\n  ")    }    else prefix <- "Error : "    msg <- paste0(prefix, conditionMessage(e), "\n")    .Internal(seterrmessage(msg[1L]))    if (!silent && isTRUE(getOption("show.error.messages"))) {        cat(msg, file = outFile)        .Internal(printDeferredWarnings())    }    invisible(structure(msg, class = "try-error", condition = e))})
+12: try(sys.source(codeFile, env, keep.source = keep.source, keep.parse.data = keep.parse.data))
+13: loadNamespace(package = package, lib.loc = lib.loc, keep.source = keep.source,     keep.parse.data = keep.parse.data, partial = TRUE)
+14: withCallingHandlers(expr, packageStartupMessage = function(c) tryInvokeRestart("muffleMessage"))
+15: suppressPackageStartupMessages(loadNamespace(package = package,     lib.loc = lib.loc, keep.source = keep.source, keep.parse.data = keep.parse.data,     partial = TRUE))
+16: code2LazyLoadDB(package, lib.loc = lib.loc, keep.source = keep.source,     keep.parse.data = keep.parse.data, compress = compress, set.install.dir = set.install.dir)
+17: tools:::makeLazyLoading("grDevices")
+An irrecoverable exception occurred. R is aborting now ...
+make[4]: *** [../../../share/make/lazycomp.mk:9: ../../../library/grDevices/R/grDevices.rdb] Error 139
+
+I can reproduce the error directly by running make in /bi/apps/R/R-4.4.0/src/library/grDevices.  Nothing strange is in my environment, I'm using the stock version of make and gcc
+
+$ which make
+/usr/bin/make
+$ which gcc
+/usr/bin/gcc
+
+$ make --version
+GNU Make 4.3
+Built for x86_64-redhat-linux-gnu
+
+$ gcc --version
+gcc (GCC) 11.4.1 20230605 (Red Hat 11.4.1-2)
+
+
+I can't find any other instances of others hitting the same problem.
+
+Any suggestions for what this could be?
+
+Thanks
+
+Simon.
+
+
+
+
+	[[alternative HTML version deleted]]
+
+
+From |kry|ov @end|ng |rom d|@root@org  Wed May  8 16:12:28 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Wed, 8 May 2024 17:12:28 +0300
+Subject: [R] Compilation problems with R4.4.0
+In-Reply-To: <CWXP123MB61901F91AC2CEA17094C5A25D0E52@CWXP123MB6190.GBRP123.PROD.OUTLOOK.COM>
+References: <CWXP123MB61901F91AC2CEA17094C5A25D0E52@CWXP123MB6190.GBRP123.PROD.OUTLOOK.COM>
+Message-ID: <20240508171228.0b2d930e@arachnoid>
+
+Dear Simon,
+
+? Wed, 8 May 2024 10:17:41 +0000
+Simon Andrews via R-help <r-help at r-project.org> ?????:
+
+> I'm having a strange problem compiling R4.4.0 on an AlmaLinux9 box.
+
+> make[4]: Entering directory '/bi/apps/R/R-4.4.0/src/library/grDevices'
+> byte-compiling package 'grDevices'
+> 
+> *** caught segfault ***
+> address 0x18017a8110, cause 'memory not mapped'
+> 
+> Traceback:
+> 1: solve.default(rgb)
+
+Miguel Esteva has recently complained about the same problem on RHEL9,
+but didn't provide enough details, nor was I able to reproduce it
+myself: https://stat.ethz.ch/pipermail/r-help/2024-May/479288.html
+
+Thanks for letting us know it's reproducible on AlmaLinux and telling
+us your compiler version!
+
+Unfortunately, I wasn't able to reproduce the crash, neither with
+gcc-toolset-13, nor with the ordinary gcc & gfortran 11.4.1 20231218
+(Red Hat 11.4.1-3) from the repository. I see that your compiler version
+is slightly different (11.4.1-2). I'm running `podman run -it --rm
+almalinux:9`. Would an upgrade help?
+
+Can you run R under the debugger and obtain a backtrace? Something like
+the following, in the src/library/grDevices subdirectory:
+
+_R_COMPILE_PKGS_=1 R_COMPILER_SUPPRESS_ALL=1 \
+ R_DEFAULT_PACKAGES=NULL LC_ALL=C \
+../../../bin/R -d gdb --vanilla --no-echo -e \
+ 'tools:::makeLazyLoading("grDevices")'
+
+-- 
+Best regards,
+Ivan
+
+
+From @|mon@@ndrew@ @end|ng |rom b@br@h@m@@c@uk  Wed May  8 16:25:08 2024
+From: @|mon@@ndrew@ @end|ng |rom b@br@h@m@@c@uk (Simon Andrews)
+Date: Wed, 8 May 2024 14:25:08 +0000
+Subject: [R] Compilation problems with R4.4.0
+In-Reply-To: <20240508171228.0b2d930e@arachnoid>
+References: <CWXP123MB61901F91AC2CEA17094C5A25D0E52@CWXP123MB6190.GBRP123.PROD.OUTLOOK.COM>
+ <20240508171228.0b2d930e@arachnoid>
+Message-ID: <CWXP123MB619048117E425C610309F925D0E52@CWXP123MB6190.GBRP123.PROD.OUTLOOK.COM>
+
+Hi Ivan,
+
+Thanks for getting back to me and very happy to hear I'm not the only one who's seen this.
+
+I've run the command under the debugger and the backtrace is below.  It's complaining about missing debuginfo packages, but I definitely installed them so I'm not sure why they're not being seen.
+
+$ ./debug.sh
+GNU gdb (GDB) Red Hat Enterprise Linux 10.2-11.el9
+Copyright (C) 2021 Free Software Foundation, Inc.
+License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+Type "show copying" and "show warranty" for details.
+This GDB was configured as "x86_64-redhat-linux-gnu".
+Type "show configuration" for configuration details.
+For bug reporting instructions, please see:
+<https://www.gnu.org/software/gdb/bugs/>.
+Find the GDB manual and other documentation resources online at:
+    <http://www.gnu.org/software/gdb/documentation/>.
+
+For help, type "help".
+Type "apropos word" to search for commands related to "word"...
+Reading symbols from /bi/apps/R/R-4.4.0/bin/exec/R...
+(gdb) run
+Starting program: /bi/apps/R/R-4.4.0/bin/exec/R --vanilla --no-echo -e tools:::makeLazyLoading\(\"grDevices\"\)
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib64/libthread_db.so.1".
+[Detaching after vfork from child process 2621570]
+[Detaching after vfork from child process 2621572]
+
+Program received signal SIGSEGV, Segmentation fault.
+dlaswp (n=<optimized out>, a=<error reading variable: value has been optimized out>, lda=<optimized out>, k1=<optimized out>, k2=<optimized out>, ipiv=...,
+    incx=1) at /usr/src/debug/lapack-3.9.0-10.el9.x86_64/SRC/dlaswp.f:180
+180                       TEMP = A( I, K )
+Missing separate debuginfos, use: dnf debuginfo-install glibc-2.34-83.el9_3.7.x86_64 libgcc-11.4.1-2.1.el9.alma.x86_64 libgfortran-11.4.1-2.1.el9.alma.x86_64 libgomp-11.4.1-2.1.el9.alma.x86_64 libquadmath-11.4.1-2.1.el9.alma.x86_64 libstdc++-11.4.1-2.1.el9.alma.x86_64 pcre2-10.40-2.el9.x86_64
+(gdb) bt
+#0  dlaswp (n=<optimized out>, a=<error reading variable: value has been optimized out>, lda=<optimized out>, k1=<optimized out>, k2=<optimized out>,
+    ipiv=..., incx=1) at /usr/src/debug/lapack-3.9.0-10.el9.x86_64/SRC/dlaswp.f:180
+#1  0x00007ffff3f9474a in dgetrf2 (m=12884901891, n=<optimized out>, a=<error reading variable: value has been optimized out>, lda=12884901891, ipiv=...,
+    info=0) at /usr/src/debug/lapack-3.9.0-10.el9.x86_64/SRC/dgetrf2.f:238
+#2  0x00007ffff3f946dc in dgetrf2 (m=12884901891, n=4, a=<error reading variable: value has been optimized out>, lda=12884901891, ipiv=..., info=0)
+    at /usr/src/debug/lapack-3.9.0-10.el9.x86_64/SRC/dgetrf2.f:229
+#3  0x00007ffff3f946dc in dgetrf2 (m=12884901891, n=8, a=<error reading variable: value has been optimized out>, lda=12884901891, ipiv=..., info=0)
+    at /usr/src/debug/lapack-3.9.0-10.el9.x86_64/SRC/dgetrf2.f:229
+#4  0x00007ffff3f946dc in dgetrf2 (m=12884901891, n=16, a=<error reading variable: value has been optimized out>, lda=12884901891, ipiv=..., info=0)
+    at /usr/src/debug/lapack-3.9.0-10.el9.x86_64/SRC/dgetrf2.f:229
+#5  0x00007ffff3f946dc in dgetrf2 (m=12884901891, n=32, a=<error reading variable: value has been optimized out>, lda=12884901891, ipiv=..., info=0)
+    at /usr/src/debug/lapack-3.9.0-10.el9.x86_64/SRC/dgetrf2.f:229
+#6  0x00007ffff3f946dc in dgetrf2 (m=12884901891, n=64, a=<error reading variable: value has been optimized out>, lda=12884901891, ipiv=..., info=0)
+    at /usr/src/debug/lapack-3.9.0-10.el9.x86_64/SRC/dgetrf2.f:229
+#7  0x00007ffff3f94cb4 in dgetrf (m=12884901891, n=12884901891, a=<error reading variable: value has been optimized out>, lda=12884901891, ipiv=..., info=0)
+    at /usr/src/debug/lapack-3.9.0-10.el9.x86_64/SRC/dgetrf.f:183
+#8  0x00007ffff3f87c0b in dgesv (n=12884901891, nrhs=4294967299, a=<error reading variable: value has been optimized out>, lda=12884901891, ipiv=...,
+    b=<error reading variable: value has been optimized out>, ldb=12884901891, info=0) at /usr/src/debug/lapack-3.9.0-10.el9.x86_64/SRC/dgesv.f:167
+#9  0x00007ffff50b2a17 in La_solve (tolin=<optimized out>, Bin=<optimized out>, A=0x18f2f68) at Lapack.c:1246
+#10 mod_do_lapack (call=<optimized out>, op=<optimized out>, args=<optimized out>, env=<optimized out>) at Lapack.c:1483
+#11 0x00007ffff7c95668 in bcEval_loop (ploc=<optimized out>) at eval.c:8141
+#12 0x00007ffff7cb0f4d in bcEval (rho=0x19027c8, body=0x18fc7a0) at eval.c:7524
+#13 bcEval (body=0x18fc7a0, rho=0x19027c8) at eval.c:7509
+#14 0x00007ffff7cb127b in Rf_eval (e=e at entry=0x18fc7a0, rho=rho at entry=0x19027c8) at eval.c:1167
+#15 0x00007ffff7cb330f in R_execClosure (call=call at entry=0x1902918, newrho=newrho at entry=0x19027c8, sysparent=<optimized out>, rho=rho at entry=0x18f8508,
+    arglist=arglist at entry=0x18f85e8, op=op at entry=0x18fcae8) at eval.c:2398
+#16 0x00007ffff7cb40f7 in applyClosure_core (call=0x1902918, op=0x18fcae8, arglist=0x18f85e8, rho=0x18f8508, suppliedvars=<optimized out>,
+    unpromise=unpromise at entry=FALSE) at eval.c:2311
+#17 0x00007ffff7cb4b19 in Rf_applyClosure (call=<optimized out>, op=<optimized out>, arglist=<optimized out>, rho=<optimized out>,
+    suppliedvars=<optimized out>, unpromise=unpromise at entry=FALSE) at eval.c:2333
+#18 0x00007ffff7cf6cce in applyMethod (call=call at entry=0x1902918, op=op at entry=0x18fcae8, args=<optimized out>, rho=rho at entry=0x18f8508,
+    newvars=newvars at entry=0x1902988) at objects.c:120
+#19 0x00007ffff7cf7e44 in dispatchMethod (op=op at entry=0x18f8818, sxp=0x18fcae8, dotClass=<optimized out>, cptr=cptr at entry=0x7fffffff5bc0,
+    method=method at entry=0x524110, generic=generic at entry=0x4c9080 "solve", rho=<optimized out>, callrho=<optimized out>, defrho=<optimized out>)
+    at objects.c:472
+#20 0x00007ffff7cf8457 in Rf_usemethod (generic=0x4c9080 "solve", obj=obj at entry=0x18f2f68, call=call at entry=0x18f8700, args=args at entry=0x423210,
+    rho=rho at entry=0x18f8508, callrho=0x18f74c8, defrho=0x45a470, ans=0x7fffffff3ea8) at objects.c:522
+#21 0x00007ffff7cf882b in do_usemethod (call=0x18f8700, op=<optimized out>, args=<optimized out>, env=0x18f8508) at objects.c:578
+#22 0x00007ffff7c9548f in bcEval_loop (ploc=<optimized out>) at eval.c:7172
+#23 0x00007ffff7cb0f4d in bcEval (rho=0x18f8508, body=0x18f8738) at eval.c:7524
+#24 bcEval (body=0x18f8738, rho=0x18f8508) at eval.c:7509
+#25 0x00007ffff7cb127b in Rf_eval (e=e at entry=0x18f8738, rho=rho at entry=0x18f8508) at eval.c:1167
+#26 0x00007ffff7cb330f in R_execClosure (call=call at entry=0x1625058, newrho=newrho at entry=0x18f8508, sysparent=<optimized out>, rho=rho at entry=0x18f74c8,
+    arglist=arglist at entry=0x18f85e8, op=op at entry=0x18f8818) at eval.c:2398
+#27 0x00007ffff7cb40f7 in applyClosure_core (call=call at entry=0x1625058, op=op at entry=0x18f8818, arglist=0x18f85e8, rho=rho at entry=0x18f74c8,
+    suppliedvars=<optimized out>, unpromise=unpromise at entry=TRUE) at eval.c:2311
+#28 0x00007ffff7cb13ac in Rf_applyClosure (unpromise=TRUE, suppliedvars=<optimized out>, rho=0x18f74c8, arglist=<optimized out>, op=0x18f8818, call=0x1625058)
+    at eval.c:2333
+#29 Rf_eval (e=0x1625058, rho=rho at entry=0x18f74c8) at eval.c:1285
+#30 0x00007ffff7cb649f in Rf_evalList (el=0x1625020, rho=rho at entry=0x18f74c8, call=call at entry=0x1624fb0, n=<optimized out>, n at entry=0) at eval.c:3680
+#31 0x00007ffff7cb17aa in Rf_eval (e=0x1624fb0, rho=0x18f74c8) at eval.c:1256
+#32 0x00007ffff7cb1c55 in forcePromise (e=0x18f8a48) at eval.c:976
+--Type <RET> for more, q to quit, c to continue without paging--
+#33 forcePromise (e=0x18f8a48) at eval.c:954
+#34 0x00007ffff7cb1ed0 in getvar (symbol=0x48b050, rho=0x18f89a0, dd=<optimized out>, keepmiss=FALSE, vcache=<optimized out>, sidx=<optimized out>)
+    at eval.c:5857
+#35 0x00007ffff7c9dc4e in bcEval_loop (ploc=<optimized out>) at eval.c:7871
+#36 0x00007ffff7cb0f4d in bcEval (rho=0x18f89a0, body=0x18f8bd0) at eval.c:7524
+#37 bcEval (body=0x18f8bd0, rho=0x18f89a0) at eval.c:7509
+#38 0x00007ffff7cb127b in Rf_eval (e=e at entry=0x18f8bd0, rho=rho at entry=0x18f89a0) at eval.c:1167
+#39 0x00007ffff7cb330f in R_execClosure (call=call at entry=0x1624e98, newrho=newrho at entry=0x18f89a0, sysparent=<optimized out>, rho=rho at entry=0x18f74c8,
+    arglist=arglist at entry=0x18f8a10, op=op at entry=0x18f8c40) at eval.c:2398
+#40 0x00007ffff7cb40f7 in applyClosure_core (call=call at entry=0x1624e98, op=op at entry=0x18f8c40, arglist=0x18f8a10, rho=rho at entry=0x18f74c8,
+    suppliedvars=<optimized out>, unpromise=unpromise at entry=TRUE) at eval.c:2311
+#41 0x00007ffff7cb13ac in Rf_applyClosure (unpromise=TRUE, suppliedvars=<optimized out>, rho=0x18f74c8, arglist=<optimized out>, op=0x18f8c40, call=0x1624e98)
+    at eval.c:2333
+#42 Rf_eval (e=0x1624e98, rho=rho at entry=0x18f74c8) at eval.c:1285
+#43 0x00007ffff7cb6322 in do_set (call=0x1624df0, op=0x421338, args=0x1624e28, rho=0x18f74c8) at ../../src/include/Rinlinedfuns.h:90
+#44 0x00007ffff7cb16b6 in Rf_eval (e=0x1624df0, rho=rho at entry=0x18f74c8) at eval.c:1237
+#45 0x00007ffff7cb4e68 in do_begin (call=0x1621a78, op=0x42c4a0, args=0x1624db8, rho=0x18f74c8) at ../../src/include/Rinlinedfuns.h:90
+#46 0x00007ffff7cb16b6 in Rf_eval (e=e at entry=0x1621a78, rho=rho at entry=0x18f74c8) at eval.c:1237
+#47 0x00007ffff7cb330f in R_execClosure (call=call at entry=0x1631a40, newrho=newrho at entry=0x18f74c8, sysparent=<optimized out>, rho=rho at entry=0x15a65c8,
+    arglist=arglist at entry=0x18f7880, op=op at entry=0x18d38d8) at eval.c:2398
+#48 0x00007ffff7cb40f7 in applyClosure_core (call=call at entry=0x1631a40, op=op at entry=0x18d38d8, arglist=0x18f7880, rho=rho at entry=0x15a65c8,
+    suppliedvars=<optimized out>, unpromise=unpromise at entry=TRUE) at eval.c:2311
+#49 0x00007ffff7cb13ac in Rf_applyClosure (unpromise=TRUE, suppliedvars=<optimized out>, rho=0x15a65c8, arglist=<optimized out>, op=0x18d38d8, call=0x1631a40)
+    at eval.c:2333
+#50 Rf_eval (e=0x1631a40, rho=rho at entry=0x15a65c8) at eval.c:1285
+#51 0x00007ffff7cb649f in Rf_evalList (el=0x1631928, rho=rho at entry=0x15a65c8, call=call at entry=0x16497a0, n=<optimized out>, n at entry=0) at eval.c:3680
+#52 0x00007ffff7cb17aa in Rf_eval (e=0x16497a0, rho=rho at entry=0x15a65c8) at eval.c:1256
+#53 0x00007ffff7cb6322 in do_set (call=0x16496f8, op=0x421338, args=0x1649730, rho=0x15a65c8) at ../../src/include/Rinlinedfuns.h:90
+#54 0x00007ffff7cb16b6 in Rf_eval (e=0x16496f8, rho=rho at entry=0x15a65c8) at eval.c:1237
+#55 0x00007ffff7cb7b46 in do_eval (call=<optimized out>, op=<optimized out>, args=<optimized out>, rho=0x18d5d70) at eval.c:3974
+#56 0x00007ffff7c95668 in bcEval_loop (ploc=<optimized out>) at eval.c:8141
+#57 0x00007ffff7cb0f4d in bcEval (rho=0x1517590, body=0x7e06a0) at eval.c:7524
+#58 bcEval (body=0x7e06a0, rho=0x1517590) at eval.c:7509
+#59 0x00007ffff7cb127b in Rf_eval (e=e at entry=0x7e06a0, rho=rho at entry=0x1517590) at eval.c:1167
+#60 0x00007ffff7cb330f in R_execClosure (call=call at entry=0x78a960, newrho=newrho at entry=0x1517590, sysparent=<optimized out>, rho=rho at entry=0x8eb288,
+    arglist=arglist at entry=0x1517910, op=op at entry=0x7e0b70) at eval.c:2398
+#61 0x00007ffff7cb40f7 in applyClosure_core (call=call at entry=0x78a960, op=op at entry=0x7e0b70, arglist=0x1517910, rho=rho at entry=0x8eb288,
+    suppliedvars=<optimized out>, unpromise=unpromise at entry=TRUE) at eval.c:2311
+#62 0x00007ffff7cb13ac in Rf_applyClosure (unpromise=TRUE, suppliedvars=<optimized out>, rho=0x8eb288, arglist=<optimized out>, op=0x7e0b70, call=0x78a960)
+    at eval.c:2333
+#63 Rf_eval (e=0x78a960, rho=rho at entry=0x8eb288) at eval.c:1285
+#64 0x00007ffff7cb6322 in do_set (call=0x78a8b8, op=0x421338, args=0x78a8f0, rho=0x8eb288) at ../../src/include/Rinlinedfuns.h:90
+#65 0x00007ffff7cb16b6 in Rf_eval (e=0x78a8b8, rho=rho at entry=0x8eb288) at eval.c:1237
+#66 0x00007ffff7cb4e68 in do_begin (call=0x78a880, op=0x42c4a0, args=0x78a848, rho=0x8eb288) at ../../src/include/Rinlinedfuns.h:90
+#67 0x00007ffff7cb16b6 in Rf_eval (e=e at entry=0x78a880, rho=rho at entry=0x8eb288) at eval.c:1237
+#68 0x00007ffff7cb92ac in do_for (call=<optimized out>, op=<optimized out>, args=<optimized out>, rho=<optimized out>) at eval.c:2892
+#69 0x00007ffff7cb16b6 in Rf_eval (e=0x78a068, rho=rho at entry=0x8eb288) at eval.c:1237
+#70 0x00007ffff7cb4e68 in do_begin (call=0x78a030, op=0x42c4a0, args=0x789ff8, rho=0x8eb288) at ../../src/include/Rinlinedfuns.h:90
+#71 0x00007ffff7cb16b6 in Rf_eval (e=e at entry=0x78a030, rho=rho at entry=0x8eb288) at eval.c:1237
+#72 0x00007ffff7cb330f in R_execClosure (call=call at entry=0x8eb330, newrho=newrho at entry=0x8eb288, sysparent=<optimized out>, rho=rho at entry=0x45a518,
+    arglist=arglist at entry=0x423210, op=op at entry=0x789e38) at eval.c:2398
+#73 0x00007ffff7cb40f7 in applyClosure_core (call=call at entry=0x8eb330, op=op at entry=0x789e38, arglist=0x423210, rho=rho at entry=0x45a518,
+--Type <RET> for more, q to quit, c to continue without paging--
+    suppliedvars=<optimized out>, unpromise=unpromise at entry=TRUE) at eval.c:2311
+#74 0x00007ffff7cb13ac in Rf_applyClosure (unpromise=TRUE, suppliedvars=<optimized out>, rho=0x45a518, arglist=<optimized out>, op=0x789e38, call=0x8eb330)
+    at eval.c:2333
+#75 Rf_eval (e=0x8eb330, rho=0x45a518) at eval.c:1285
+#76 0x00007ffff7ce5a57 in setup_Rmainloop () at main.c:1166
+#77 0x00007ffff7ce6ae9 in Rf_mainloop () at main.c:1222
+#78 0x000000000040106b in main (ac=<optimized out>, av=<optimized out>) at Rmain.c:29
+
+
+
+-----Original Message-----
+From: Ivan Krylov <ikrylov at disroot.org> 
+Sent: 08 May 2024 15:12
+To: Simon Andrews via R-help <r-help at r-project.org>
+Cc: Simon Andrews <simon.andrews at babraham.ac.uk>; Miguel Esteva <esteva.m at wehi.edu.au>
+Subject: Re: [R] Compilation problems with R4.4.0
+
+Dear Simon,
+
+? Wed, 8 May 2024 10:17:41 +0000
+Simon Andrews via R-help <r-help at r-project.org> ?????:
+
+> I'm having a strange problem compiling R4.4.0 on an AlmaLinux9 box.
+
+> make[4]: Entering directory '/bi/apps/R/R-4.4.0/src/library/grDevices'
+> byte-compiling package 'grDevices'
+> 
+> *** caught segfault ***
+> address 0x18017a8110, cause 'memory not mapped'
+> 
+> Traceback:
+> 1: solve.default(rgb)
+
+Miguel Esteva has recently complained about the same problem on RHEL9, but didn't provide enough details, nor was I able to reproduce it
+myself: https://stat.ethz.ch/pipermail/r-help/2024-May/479288.html
+
+Thanks for letting us know it's reproducible on AlmaLinux and telling us your compiler version!
+
+Unfortunately, I wasn't able to reproduce the crash, neither with gcc-toolset-13, nor with the ordinary gcc & gfortran 11.4.1 20231218 (Red Hat 11.4.1-3) from the repository. I see that your compiler version is slightly different (11.4.1-2). I'm running `podman run -it --rm almalinux:9`. Would an upgrade help?
+
+Can you run R under the debugger and obtain a backtrace? Something like the following, in the src/library/grDevices subdirectory:
+
+_R_COMPILE_PKGS_=1 R_COMPILER_SUPPRESS_ALL=1 \  R_DEFAULT_PACKAGES=NULL LC_ALL=C \ ../../../bin/R -d gdb --vanilla --no-echo -e \  'tools:::makeLazyLoading("grDevices")'
+
+--
+Best regards,
+Ivan
+
+------------------------------------
+This email has been scanned for spam & viruses. If you believe this email should have been stopped by our filters, click the following link to report it (https://portal-uk.mailanyone.net/index.html#/outer/reportspam?token=dXNlcj1zaW1vbi5hbmRyZXdzQGJhYnJhaGFtLmFjLnVrO3RzPTE3MTUxNzc1NTg7dXVpZD02NjNCODg1NTEyNjcyMzlDMjY5RkMwQTY5MUE2RDg5Njt0b2tlbj0zZjFiOWNmMGM5NTY3NjU3YjM0YmZhY2QwMTEzM2E3YmRlMDUxY2IwOw%3D%3D).
+
+
+From |kry|ov @end|ng |rom d|@root@org  Wed May  8 17:09:12 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Wed, 8 May 2024 18:09:12 +0300
+Subject: [R] Compilation problems with R4.4.0
+In-Reply-To: <CWXP123MB619048117E425C610309F925D0E52@CWXP123MB6190.GBRP123.PROD.OUTLOOK.COM>
+References: <CWXP123MB61901F91AC2CEA17094C5A25D0E52@CWXP123MB6190.GBRP123.PROD.OUTLOOK.COM>
+ <20240508171228.0b2d930e@arachnoid>
+ <CWXP123MB619048117E425C610309F925D0E52@CWXP123MB6190.GBRP123.PROD.OUTLOOK.COM>
+Message-ID: <20240508180912.109a9868@arachnoid>
+
+? Wed, 8 May 2024 14:25:08 +0000
+Simon Andrews <simon.andrews at babraham.ac.uk> ?????:
+
+> #8  0x00007ffff3f87c0b in dgesv (
+>  n=12884901891, nrhs=4294967299,
+>  a=<error reading variable: value has been optimized out>,
+>  lda=12884901891, ipiv=...,
+>  b=<error reading variable: value has been optimized out>,
+>  ldb=12884901891, info=0
+> ) at /usr/src/debug/lapack-3.9.0-10.el9.x86_64/SRC/dgesv.f:167
+> #9 0x00007ffff50b2a17 in La_solve (
+>  tolin=<optimized out>, Bin=<optimized out>, A=0x18f2f68
+> ) at Lapack.c:1246
+> #10 mod_do_lapack (
+>  call=<optimized out>, op=<optimized out>, args=<optimized out>,
+>  env=<optimized out>
+> ) at Lapack.c:1483
+
+It looks like this R build is linked to a LAPACK. I now also notice
+LAPACK(generic) in the list of external libraries in your ./configure
+output. I've tried to link R to AlmaLinux's builds of reference BLAS
+and LAPACK using --with-blas='-l:libblas.so.3'
+--with-lapack='-l:liblapack.so.3' (where do I get libblas.so on
+AlmaLinux?), but that doesn't crash either.
+
+What does the config.log currently say about your BLAS and LAPACK
+situation? It's a number of lines between
+
+configure:47012: checking whether 'struct tm' includes tm_gmtoff
+
+and
+
+configure:48858: checking for iconv.h.
+
+If you'd like to link your R to custom BLAS and LAPACK, try specifying
+the necessary linker flags explicitly with --with-blas=-lwhatever,
+--with-lapack=-lwhatever. If you're fine with reference BLAS & LAPACK
+that come with R, try ./configure --without-blas --without-lapack.
+Normally, R's ./configure tries to prevent linking to an external
+LAPACK without linking to an external BLAS; I'm not sure how it got you
+LAPACK(generic) without BLAS(generic).
+
+-- 
+Best regards,
+Ivan
+
+
+From @|mon@@ndrew@ @end|ng |rom b@br@h@m@@c@uk  Wed May  8 18:59:25 2024
+From: @|mon@@ndrew@ @end|ng |rom b@br@h@m@@c@uk (Simon Andrews)
+Date: Wed, 8 May 2024 16:59:25 +0000
+Subject: [R] Compilation problems with R4.4.0
+In-Reply-To: <20240508180912.109a9868@arachnoid>
+References: <CWXP123MB61901F91AC2CEA17094C5A25D0E52@CWXP123MB6190.GBRP123.PROD.OUTLOOK.COM>
+ <20240508171228.0b2d930e@arachnoid>
+ <CWXP123MB619048117E425C610309F925D0E52@CWXP123MB6190.GBRP123.PROD.OUTLOOK.COM>
+ <20240508180912.109a9868@arachnoid>
+Message-ID: <CWXP123MB6190B4F3225BF3CB144DDA35D0E52@CWXP123MB6190.GBRP123.PROD.OUTLOOK.COM>
+
+The lapack parts of the configure are:
+
+checking whether 'struct tm' includes tm_zone... yes
+checking whether 'struct tm' includes tm_gmtoff... yes
+checking for dgemm_ in -llapack... no
+checking for ATLAS routines in liblapack... no
+checking for dpstrf_ in -llapack... yes
+checking for liblapack dependency with both BLAS and LAPACK routines... no
+checking if LAPACK version >= 3.9.0... 3.9.0, so yes
+checking for iconv.h... yes
+checking for iconv... yes
+
+The lapack libraries are:
+
+$ rpm -qa | grep lapack
+lapack-3.9.0-10.el9.x86_64
+lapack64_-3.9.0-10.el9.x86_64
+lapack64-3.9.0-10.el9.x86_64
+lapack-devel-3.9.0-10.el9.x86_64
+
+-----Original Message-----
+From: Ivan Krylov <ikrylov at disroot.org> 
+Sent: 08 May 2024 16:09
+To: Simon Andrews <simon.andrews at babraham.ac.uk>
+Cc: Simon Andrews via R-help <r-help at r-project.org>; Miguel Esteva <esteva.m at wehi.edu.au>
+Subject: Re: [R] Compilation problems with R4.4.0
+
+? Wed, 8 May 2024 14:25:08 +0000
+Simon Andrews <simon.andrews at babraham.ac.uk> ?????:
+
+> #8  0x00007ffff3f87c0b in dgesv (
+>  n=12884901891, nrhs=4294967299,
+>  a=<error reading variable: value has been optimized out>,  
+> lda=12884901891, ipiv=...,  b=<error reading variable: value has been 
+> optimized out>,  ldb=12884901891, info=0
+> ) at /usr/src/debug/lapack-3.9.0-10.el9.x86_64/SRC/dgesv.f:167
+> #9 0x00007ffff50b2a17 in La_solve (
+>  tolin=<optimized out>, Bin=<optimized out>, A=0x18f2f68
+> ) at Lapack.c:1246
+> #10 mod_do_lapack (
+>  call=<optimized out>, op=<optimized out>, args=<optimized out>,  
+> env=<optimized out>
+> ) at Lapack.c:1483
+
+It looks like this R build is linked to a LAPACK. I now also notice
+LAPACK(generic) in the list of external libraries in your ./configure output. I've tried to link R to AlmaLinux's builds of reference BLAS and LAPACK using --with-blas='-l:libblas.so.3'
+--with-lapack='-l:liblapack.so.3' (where do I get libblas.so on AlmaLinux?), but that doesn't crash either.
+
+What does the config.log currently say about your BLAS and LAPACK situation? It's a number of lines between
+
+configure:47012: checking whether 'struct tm' includes tm_gmtoff
+
+and
+
+configure:48858: checking for iconv.h.
+
+If you'd like to link your R to custom BLAS and LAPACK, try specifying the necessary linker flags explicitly with --with-blas=-lwhatever, --with-lapack=-lwhatever. If you're fine with reference BLAS & LAPACK that come with R, try ./configure --without-blas --without-lapack.
+Normally, R's ./configure tries to prevent linking to an external LAPACK without linking to an external BLAS; I'm not sure how it got you
+LAPACK(generic) without BLAS(generic).
+
+--
+Best regards,
+Ivan
+
+------------------------------------
+This email has been scanned for spam & viruses. If you believe this email should have been stopped by our filters, click the following link to report it (https://portal-uk.mailanyone.net/index.html#/outer/reportspam?token=dXNlcj1zaW1vbi5hbmRyZXdzQGJhYnJhaGFtLmFjLnVrO3RzPTE3MTUxODA5NjA7dXVpZD02NjNCOTVBMDY0RkEzNzNCMDM5QTkwQkZCQzJDRUJERjt0b2tlbj0yOTE5M2Q0NjFkZjQzYzhlMzk0ZDgxMTRkNjgyYTUwZjU3OWZlODgxOw%3D%3D).
+
+
+From @|mon@@ndrew@ @end|ng |rom b@br@h@m@@c@uk  Wed May  8 19:02:24 2024
+From: @|mon@@ndrew@ @end|ng |rom b@br@h@m@@c@uk (Simon Andrews)
+Date: Wed, 8 May 2024 17:02:24 +0000
+Subject: [R] Compilation problems with R4.4.0
+In-Reply-To: <20240508180912.109a9868@arachnoid>
+References: <CWXP123MB61901F91AC2CEA17094C5A25D0E52@CWXP123MB6190.GBRP123.PROD.OUTLOOK.COM>
+ <20240508171228.0b2d930e@arachnoid>
+ <CWXP123MB619048117E425C610309F925D0E52@CWXP123MB6190.GBRP123.PROD.OUTLOOK.COM>
+ <20240508180912.109a9868@arachnoid>
+Message-ID: <CWXP123MB6190BACD663DFB8B9D0A3FF7D0E52@CWXP123MB6190.GBRP123.PROD.OUTLOOK.COM>
+
+Also just did a full errata update and retried the compilation.  It failed exactly as before.
+
+-----Original Message-----
+From: Ivan Krylov <ikrylov at disroot.org> 
+Sent: 08 May 2024 16:09
+To: Simon Andrews <simon.andrews at babraham.ac.uk>
+Cc: Simon Andrews via R-help <r-help at r-project.org>; Miguel Esteva <esteva.m at wehi.edu.au>
+Subject: Re: [R] Compilation problems with R4.4.0
+
+? Wed, 8 May 2024 14:25:08 +0000
+Simon Andrews <simon.andrews at babraham.ac.uk> ?????:
+
+> #8  0x00007ffff3f87c0b in dgesv (
+>  n=12884901891, nrhs=4294967299,
+>  a=<error reading variable: value has been optimized out>,  
+> lda=12884901891, ipiv=...,  b=<error reading variable: value has been 
+> optimized out>,  ldb=12884901891, info=0
+> ) at /usr/src/debug/lapack-3.9.0-10.el9.x86_64/SRC/dgesv.f:167
+> #9 0x00007ffff50b2a17 in La_solve (
+>  tolin=<optimized out>, Bin=<optimized out>, A=0x18f2f68
+> ) at Lapack.c:1246
+> #10 mod_do_lapack (
+>  call=<optimized out>, op=<optimized out>, args=<optimized out>,  
+> env=<optimized out>
+> ) at Lapack.c:1483
+
+It looks like this R build is linked to a LAPACK. I now also notice
+LAPACK(generic) in the list of external libraries in your ./configure output. I've tried to link R to AlmaLinux's builds of reference BLAS and LAPACK using --with-blas='-l:libblas.so.3'
+--with-lapack='-l:liblapack.so.3' (where do I get libblas.so on AlmaLinux?), but that doesn't crash either.
+
+What does the config.log currently say about your BLAS and LAPACK situation? It's a number of lines between
+
+configure:47012: checking whether 'struct tm' includes tm_gmtoff
+
+and
+
+configure:48858: checking for iconv.h.
+
+If you'd like to link your R to custom BLAS and LAPACK, try specifying the necessary linker flags explicitly with --with-blas=-lwhatever, --with-lapack=-lwhatever. If you're fine with reference BLAS & LAPACK that come with R, try ./configure --without-blas --without-lapack.
+Normally, R's ./configure tries to prevent linking to an external LAPACK without linking to an external BLAS; I'm not sure how it got you
+LAPACK(generic) without BLAS(generic).
+
+--
+Best regards,
+Ivan
+
+------------------------------------
+This email has been scanned for spam & viruses. If you believe this email should have been stopped by our filters, click the following link to report it (https://portal-uk.mailanyone.net/index.html#/outer/reportspam?token=dXNlcj1zaW1vbi5hbmRyZXdzQGJhYnJhaGFtLmFjLnVrO3RzPTE3MTUxODA5NjA7dXVpZD02NjNCOTVBMDY0RkEzNzNCMDM5QTkwQkZCQzJDRUJERjt0b2tlbj0yOTE5M2Q0NjFkZjQzYzhlMzk0ZDgxMTRkNjgyYTUwZjU3OWZlODgxOw%3D%3D).
+
+
+From |kry|ov @end|ng |rom d|@root@org  Wed May  8 21:05:15 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Wed, 8 May 2024 22:05:15 +0300
+Subject: [R] Compilation problems with R4.4.0
+In-Reply-To: <CWXP123MB6190B4F3225BF3CB144DDA35D0E52@CWXP123MB6190.GBRP123.PROD.OUTLOOK.COM>
+References: <CWXP123MB61901F91AC2CEA17094C5A25D0E52@CWXP123MB6190.GBRP123.PROD.OUTLOOK.COM>
+ <20240508171228.0b2d930e@arachnoid>
+ <CWXP123MB619048117E425C610309F925D0E52@CWXP123MB6190.GBRP123.PROD.OUTLOOK.COM>
+ <20240508180912.109a9868@arachnoid>
+ <CWXP123MB6190B4F3225BF3CB144DDA35D0E52@CWXP123MB6190.GBRP123.PROD.OUTLOOK.COM>
+Message-ID: <20240508220515.77946bc0@Tarkus>
+
+? Wed, 8 May 2024 16:59:25 +0000
+Simon Andrews <simon.andrews at babraham.ac.uk> ?????:
+
+> The lapack libraries are:
+> 
+> $ rpm -qa | grep lapack
+> lapack-3.9.0-10.el9.x86_64
+> lapack64_-3.9.0-10.el9.x86_64
+> lapack64-3.9.0-10.el9.x86_64
+> lapack-devel-3.9.0-10.el9.x86_64
+
+Thanks for this information! I figured out I needed to enable the
+"PowerTools/CRB" repo, installed lapack-devel from there, and now I get
+the same configure output and the same crash: by linking with R's
+built-in Rblas but and system-provided LAPACK-3.9.0.
+
+If I configure --without-lapack, i.e. use both Rblas and R-provided
+functions from LAPACK up to 3.12.0, the build doesn't crash.
+
+If I try to enable --with-blas=-lblas, here's what happens:
+
+configure:47862: checking whether double complex BLAS can be used
+configure:47946: result: no
+
+The test compares the result of the BLAS function zdotu with the
+manually computed vector norm for a complex vector [*]. In this case,
+the Fortran program thinks that the BLAS returns a zero instead of the
+correct answer, thus failing the test and refusing to compile with
+system BLAS.
+
+I think that you somehow stumbled upon a Fortran ABI incompatibility
+regarding passing complex numbers between the Fortran code compiled
+during R build and the BLAS and LAPACK provided in the PowerTools/CRB
+repo. I don't know what exactly is the problem, but at least
+--without-lapack is an easy workaround without any cost in performance.
+
+In fact, if you install openblas-devel and configure --with-blas (to
+replace Rblas with OpenBLAS), the double complex BLAS test will pass,
+the build won't crash, and you will get even better performance.
+
+-- 
+Best regards,
+Ivan
+
+[*] https://stat.ethz.ch/pipermail/r-devel/2024-March/083302.html
+
+
+From tb|e|@kov@ @end|ng |rom @tudent@ethz@ch  Wed May  8 12:36:32 2024
+From: tb|e|@kov@ @end|ng |rom @tudent@ethz@ch (Bielakova  Tatiana)
+Date: Wed, 8 May 2024 10:36:32 +0000
+Subject: [R] 
+ Using intervals() function for nlme model - Statistics Lab ETHZ
+In-Reply-To: <20240506172425.7a569ed1@arachnoid>
+References: <9a74d1234c254b40b9a7d5cd119ba08a@student.ethz.ch>,
+ <20240506172425.7a569ed1@arachnoid>
+Message-ID: <700cb1b560534796a7027b7f60623859@student.ethz.ch>
+
+Dear Ivan,
+
+thanks for the insights! This points us directly in the direction we need.
+
+Have a lovely day!
+
+Yours sincerely,
+Tatiana, Marvin & Paul
+from
+Statistics Lab
+
+
+
+________________________________
+From: Ivan Krylov <ikrylov at disroot.org>
+Sent: Monday, May 6, 2024 4:24 PM
+To: Bielakova Tatiana
+Cc: R-help at r-project.org; Stephan Paul Andreas Kurt; Lob Marvin
+Subject: Re: [R] Using intervals() function for nlme model - Statistics Lab ETHZ
+
+Dear Tatiana, Marvin & Paul,
+
+If you don't get a better answer here, try
+r-sig-mixed-models at r-project.org.
+
+On Fri, 3 May 2024 11:29:19 +0000
+"Bielakova  Tatiana" <tbielakova at student.ethz.ch> wrote:
+
+> Based on the documentation of nlme package, the function interval is
+> supported for gls, lme, and lmList classes. Although nlme is not
+> mentioned, we still receive intervals without any errors or warnings.
+
+You're right to question this. Programming-language-level inheritance
+ends up being backwards for statistical methods:
+<https://notstatschat.rbind.io/2023/06/07/blank-cheque-inheritance-and-statistical-objects/>.
+Linear mixed-effect models are a subset of the more general mixed-effect
+models, but in R, "nlme" objects inherit from "lme", not the other way
+around.
+
+>   *   Do you have any other recommendations/ ideas on how should we
+> proceed to calculate intervals in R (e.g. more suitable packages)?
+
+Here's a vignette from the nlraa package where bootstrap is used to get
+a confidence interval for an implicit parameter:
+https://cran.r-project.org/package=nlraa/vignettes/Bootstrapping.html
+
+The author seems to be using intervals() on an nlme model without any
+problems. It may help to see if the intervals() output agrees with the
+bootstrap results from nlraa::boot_nlme().
+
+--
+Best regards,
+Ivan
+
+	[[alternative HTML version deleted]]
+
+
+From gdu|ey @end|ng |rom gm@||@com  Wed May  8 22:57:56 2024
+From: gdu|ey @end|ng |rom gm@||@com (Gavin Duley)
+Date: Wed, 8 May 2024 22:57:56 +0200
+Subject: [R] Problem with creating a PCA graph in a loop
+In-Reply-To: <20240508101638.630564b1@Tarkus>
+References: <CAEXL4LWrKw0qL3e-3HVdwodYfcZD3zdDApmfSG+juYGUJwusLw@mail.gmail.com>
+ <20240508101638.630564b1@Tarkus>
+Message-ID: <934E8595-60B8-42AA-B2A6-7F446A4747CE@gmail.com>
+
+> On 8 May 2024, at 09:16, Ivan Krylov <ikrylov at disroot.org> wrote:
+> 
+> ? Tue, 7 May 2024 16:57:14 +0200
+> gavin duley <gduley at gmail.com> ?????:
+> 
+>> aes(label=current_rownames,
+>>    colour=wine.data.filt$Treatment
+>> )
+> 
+> As you've noticed, aes() remembers variables by their name and
+> environment, not by value:
+
+Yes, it was something I wasn?t aware of previously. I thought once I?d created a ggplot object, it was fairly static/unchanging.
+
+That this is limited to aes() explains why the title set using ggtitle isn?t affected in the same way ? thanks!
+
+> One way to get around the problem is to ensure that the variables live
+> in different environments. Instead of making it a for loop, write a
+> function that would accept `i` and return a plot instead of assigning
+> it by name:
+
+Thanks, that does seem like a good option. I?m less familiar with writing functions, but it?s something I?m trying to learn about. I?ll try it and see how it goes.
+
+> (In many languages, trying to use a variable as a variable name, while
+> possible, usually means you need to consider some kind of nested data
+> structure:
+> https://perldoc.perl.org/perlfaq7#How-can-I-use-a-variable-as-a-variable-name?
+> In R, this structure is a list.)
+
+Ok, that?s useful to know, thanks. I don?t really have much programming experience beyond R, so there?s a lot I don?t know.
+
+> Alternatively, supply a data= argument to geom_label_repel() and make
+> your mapping = aes(...) reference variables from the data (which will
+> be remembered), ignoring the environment (which is only referenced).
+> Something like the following should work, untested:
+
+
+Thanks, I?ll try that out too.
+
+Many thanks for giving me a few suggestions. I was completely stuck, but these have given me a few good things to try!
+
+Thanks,
+gavin,
+
+From |kry|ov @end|ng |rom d|@root@org  Thu May  9 11:27:24 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Thu, 9 May 2024 12:27:24 +0300
+Subject: [R] 
+ Using intervals() function for nlme model - Statistics Lab ETHZ
+In-Reply-To: <700cb1b560534796a7027b7f60623859@student.ethz.ch>
+References: <9a74d1234c254b40b9a7d5cd119ba08a@student.ethz.ch>
+ <20240506172425.7a569ed1@arachnoid>
+ <700cb1b560534796a7027b7f60623859@student.ethz.ch>
+Message-ID: <20240509122724.7d0eefd9@trisector>
+
+Just one more thing: when you do find a solution, can you please share
+it with us?
+
+I do trust nlraa::boot_nlme() as it's been deliberately written for
+nonlinear mixed-effects models, but the fact that intervals() is
+inherited from the 'lme' class without any mention of nonlinear models
+in the manual worries me. I don't know if it's intended to work with
+'nlme' models.
+
+-- 
+Best regards,
+Ivan
+
+
+From n@re@h_gurbux@n| @end|ng |rom hotm@||@com  Thu May  9 14:09:03 2024
+From: n@re@h_gurbux@n| @end|ng |rom hotm@||@com (Naresh Gurbuxani)
+Date: Thu, 9 May 2024 08:09:03 -0400
+Subject: [R] Strange variable names in factor regression
+Message-ID: <IA1P223MB049997FB819334C966F152B2FAE62@IA1P223MB0499.NAMP223.PROD.OUTLOOK.COM>
+
+
+On converting character variables to ordered factors, regression result
+has strange names. Is it possible to obtain same variable names with
+and without intercept?
+
+Thanks,
+Naresh
+
+mydf <- data.frame(date = seq.Date(as.Date("2024-01-01"),
+as.Date("2024-03-31"), by = 1))
+mydf[, "wday"] <- weekdays(mydf$date, abbreviate = TRUE)
+mydf.work <- subset(mydf, !(wday %in% c("Sat", "Sun")))
+mydf.weekend <- subset(mydf, wday %in% c("Sat", "Sun"))
+mydf.work[, "volume"] <- round(rnorm(nrow(mydf.work), mean = 20, sd =
+5))
+mydf.weekend[, "volume"] <- round(rnorm(nrow(mydf.weekend), mean = 10,
+sd = 5))
+mydf <- rbind(mydf.work, mydf.weekend)
+
+reg <- lm(volume ~ wday, data = mydf)
+## Variable names as expected
+coef(reg)
+(Intercept) wdayMon wdaySat wdaySun wdayThu wdayTue
+21.3846154 1.3076923 -12.0000000 -12.9230769 -1.9230769 -0.6923077
+wdayWed
+-1.6153846
+
+reg <- lm(volume ~ wday - 1, data = mydf)
+# Variable names as expected
+coef(reg)
+wdayFri wdayMon wdaySat wdaySun wdayThu wdayTue wdayWed
+21.384615 22.692308 9.384615 8.461538 19.461538 20.692308 19.769231
+
+# Ordered factors for weekday sequence
+mydf$wday <- factor(mydf$wday, levels = c("Mon", "Tue", "Wed", "Thu",
+"Fri", "Sat", "Sun"), ordered = TRUE)
+
+reg <- lm(volume ~ wday - 1, data = mydf)
+# Variable names as expected
+coef(reg)
+wdayMon wdayTue wdayWed wdayThu wdayFri wdaySat wdaySun
+22.692308 20.692308 19.769231 19.461538 21.384615 9.384615 8.461538
+
+reg <- lm(volume ~ wday, data = mydf)
+# Strange variable names
+coef(reg)
+(Intercept) wday.L wday.Q wday.C wday^4 wday^5
+17.406593 -12.036715 -4.968654 -1.852819 3.291477 4.263642
+wday^6
+2.591317
+
+
+From @|mon@@ndrew@ @end|ng |rom b@br@h@m@@c@uk  Thu May  9 14:19:49 2024
+From: @|mon@@ndrew@ @end|ng |rom b@br@h@m@@c@uk (Simon Andrews)
+Date: Thu, 9 May 2024 12:19:49 +0000
+Subject: [R] Compilation problems with R4.4.0
+In-Reply-To: <20240508220515.77946bc0@Tarkus>
+References: <CWXP123MB61901F91AC2CEA17094C5A25D0E52@CWXP123MB6190.GBRP123.PROD.OUTLOOK.COM>
+ <20240508171228.0b2d930e@arachnoid>
+ <CWXP123MB619048117E425C610309F925D0E52@CWXP123MB6190.GBRP123.PROD.OUTLOOK.COM>
+ <20240508180912.109a9868@arachnoid>
+ <CWXP123MB6190B4F3225BF3CB144DDA35D0E52@CWXP123MB6190.GBRP123.PROD.OUTLOOK.COM>
+ <20240508220515.77946bc0@Tarkus>
+Message-ID: <CWXP123MB6190DA19029B11E2AB9880BDD0E62@CWXP123MB6190.GBRP123.PROD.OUTLOOK.COM>
+
+Thank you!
+
+Installing openblas and then using ./configure --without-lapack --with-blas --enable-R-shlib
+
+..got everything working.  Does this need reporting upstream as a bug in R or lapack?  I'm good now,  but it might help others to get this fixed.
+
+Simon.
+
+-----Original Message-----
+From: Ivan Krylov <ikrylov at disroot.org> 
+Sent: 08 May 2024 20:05
+To: Simon Andrews <simon.andrews at babraham.ac.uk>
+Cc: Simon Andrews via R-help <r-help at r-project.org>; Miguel Esteva <esteva.m at wehi.edu.au>
+Subject: Re: [R] Compilation problems with R4.4.0
+
+? Wed, 8 May 2024 16:59:25 +0000
+Simon Andrews <simon.andrews at babraham.ac.uk> ?????:
+
+> The lapack libraries are:
+> 
+> $ rpm -qa | grep lapack
+> lapack-3.9.0-10.el9.x86_64
+> lapack64_-3.9.0-10.el9.x86_64
+> lapack64-3.9.0-10.el9.x86_64
+> lapack-devel-3.9.0-10.el9.x86_64
+
+Thanks for this information! I figured out I needed to enable the "PowerTools/CRB" repo, installed lapack-devel from there, and now I get the same configure output and the same crash: by linking with R's built-in Rblas but and system-provided LAPACK-3.9.0.
+
+If I configure --without-lapack, i.e. use both Rblas and R-provided functions from LAPACK up to 3.12.0, the build doesn't crash.
+
+If I try to enable --with-blas=-lblas, here's what happens:
+
+configure:47862: checking whether double complex BLAS can be used
+configure:47946: result: no
+
+The test compares the result of the BLAS function zdotu with the manually computed vector norm for a complex vector [*]. In this case, the Fortran program thinks that the BLAS returns a zero instead of the correct answer, thus failing the test and refusing to compile with system BLAS.
+
+I think that you somehow stumbled upon a Fortran ABI incompatibility regarding passing complex numbers between the Fortran code compiled during R build and the BLAS and LAPACK provided in the PowerTools/CRB repo. I don't know what exactly is the problem, but at least --without-lapack is an easy workaround without any cost in performance.
+
+In fact, if you install openblas-devel and configure --with-blas (to replace Rblas with OpenBLAS), the double complex BLAS test will pass, the build won't crash, and you will get even better performance.
+
+--
+Best regards,
+Ivan
+
+[*] https://stat.ethz.ch/pipermail/r-devel/2024-March/083302.html
+
+------------------------------------
+This email has been scanned for spam & viruses. If you believe this email should have been stopped by our filters, click the following link to report it (https://portal-uk.mailanyone.net/index.html#/outer/reportspam?token=dXNlcj1zaW1vbi5hbmRyZXdzQGJhYnJhaGFtLmFjLnVrO3RzPTE3MTUxOTUxMjQ7dXVpZD02NjNCQ0NGMzA1RDJGMzA3RDhDMjIxQTZCRUE3MEQ3MDt0b2tlbj0yZTdkOWY0ZjNjZmQ2NGQyZGFlMmYwZjQ2MTk5NjdmODk2ZDM3YjQyOw%3D%3D).
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Thu May  9 14:49:39 2024
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Thu, 9 May 2024 08:49:39 -0400
+Subject: [R] Strange variable names in factor regression
+In-Reply-To: <IA1P223MB049997FB819334C966F152B2FAE62@IA1P223MB0499.NAMP223.PROD.OUTLOOK.COM>
+References: <IA1P223MB049997FB819334C966F152B2FAE62@IA1P223MB0499.NAMP223.PROD.OUTLOOK.COM>
+Message-ID: <575b2e56-ee7e-46f6-8ef7-4ceeb5e566c4@gmail.com>
+
+On 09/05/2024 8:09 a.m., Naresh Gurbuxani wrote:
+> 
+> On converting character variables to ordered factors, regression result
+> has strange names. Is it possible to obtain same variable names with
+> and without intercept?
+
+You are getting polynomial contrasts with the ordered factor, because 
+you have the default setting for options("contrasts"), i.e.
+
+         unordered           ordered
+"contr.treatment"      "contr.poly"
+
+If you run
+
+   options(contrasts = c("contr.treatment", "contr.treatment"))
+
+you will get the same coefficient names in both cases.
+
+By the way, the coefficients have different meanings, so it makes sense 
+they will have different names.  It's perhaps a little bit more of a 
+problem that you *don't* get different variable names when an intercept 
+is included or not, because those coefficients also have different meanings.
+
+It may also be a little bit of a surprise that you go back to treatment 
+contrasts when you leave out the intercept with the ordered factor, but 
+then it almost never makes sense to leave out the intercept in a 
+polynomial fit.
+
+Duncan Murdoch
+
+
+> 
+> Thanks,
+> Naresh
+> 
+> mydf <- data.frame(date = seq.Date(as.Date("2024-01-01"),
+> as.Date("2024-03-31"), by = 1))
+> mydf[, "wday"] <- weekdays(mydf$date, abbreviate = TRUE)
+> mydf.work <- subset(mydf, !(wday %in% c("Sat", "Sun")))
+> mydf.weekend <- subset(mydf, wday %in% c("Sat", "Sun"))
+> mydf.work[, "volume"] <- round(rnorm(nrow(mydf.work), mean = 20, sd =
+> 5))
+> mydf.weekend[, "volume"] <- round(rnorm(nrow(mydf.weekend), mean = 10,
+> sd = 5))
+> mydf <- rbind(mydf.work, mydf.weekend)
+> 
+> reg <- lm(volume ~ wday, data = mydf)
+> ## Variable names as expected
+> coef(reg)
+> (Intercept) wdayMon wdaySat wdaySun wdayThu wdayTue
+> 21.3846154 1.3076923 -12.0000000 -12.9230769 -1.9230769 -0.6923077
+> wdayWed
+> -1.6153846
+> 
+> reg <- lm(volume ~ wday - 1, data = mydf)
+> # Variable names as expected
+> coef(reg)
+> wdayFri wdayMon wdaySat wdaySun wdayThu wdayTue wdayWed
+> 21.384615 22.692308 9.384615 8.461538 19.461538 20.692308 19.769231
+> 
+> # Ordered factors for weekday sequence
+> mydf$wday <- factor(mydf$wday, levels = c("Mon", "Tue", "Wed", "Thu",
+> "Fri", "Sat", "Sun"), ordered = TRUE)
+> 
+> reg <- lm(volume ~ wday - 1, data = mydf)
+> # Variable names as expected
+> coef(reg)
+> wdayMon wdayTue wdayWed wdayThu wdayFri wdaySat wdaySun
+> 22.692308 20.692308 19.769231 19.461538 21.384615 9.384615 8.461538
+> 
+> reg <- lm(volume ~ wday, data = mydf)
+> # Strange variable names
+> coef(reg)
+> (Intercept) wday.L wday.Q wday.C wday^4 wday^5
+> 17.406593 -12.036715 -4.968654 -1.852819 3.291477 4.263642
+> wday^6
+> 2.591317
+> 
+> ______________________________________________
+> R-help at r-project.org mailing list -- To UNSUBSCRIBE and more, see
+> https://stat.ethz.ch/mailman/listinfo/r-help
+> PLEASE do read the posting guide http://www.R-project.org/posting-guide.html
+> and provide commented, minimal, self-contained, reproducible code.
+
+
+From ||@t@ @end|ng |rom dewey@myzen@co@uk  Thu May  9 14:49:43 2024
+From: ||@t@ @end|ng |rom dewey@myzen@co@uk (Michael Dewey)
+Date: Thu, 9 May 2024 13:49:43 +0100
+Subject: [R] Strange variable names in factor regression
+In-Reply-To: <IA1P223MB049997FB819334C966F152B2FAE62@IA1P223MB0499.NAMP223.PROD.OUTLOOK.COM>
+References: <IA1P223MB049997FB819334C966F152B2FAE62@IA1P223MB0499.NAMP223.PROD.OUTLOOK.COM>
+Message-ID: <0527f881-b75c-64aa-9965-6488c532936a@dewey.myzen.co.uk>
+
+Comment in in-line below
+
+On 09/05/2024 13:09, Naresh Gurbuxani wrote:
+> 
+> On converting character variables to ordered factors, regression result
+> has strange names. Is it possible to obtain same variable names with
+> and without intercept?
+> 
+> Thanks,
+> Naresh
+> 
+> mydf <- data.frame(date = seq.Date(as.Date("2024-01-01"),
+> as.Date("2024-03-31"), by = 1))
+> mydf[, "wday"] <- weekdays(mydf$date, abbreviate = TRUE)
+> mydf.work <- subset(mydf, !(wday %in% c("Sat", "Sun")))
+> mydf.weekend <- subset(mydf, wday %in% c("Sat", "Sun"))
+> mydf.work[, "volume"] <- round(rnorm(nrow(mydf.work), mean = 20, sd =
+> 5))
+> mydf.weekend[, "volume"] <- round(rnorm(nrow(mydf.weekend), mean = 10,
+> sd = 5))
+> mydf <- rbind(mydf.work, mydf.weekend)
+> 
+> reg <- lm(volume ~ wday, data = mydf)
+> ## Variable names as expected
+> coef(reg)
+> (Intercept) wdayMon wdaySat wdaySun wdayThu wdayTue
+> 21.3846154 1.3076923 -12.0000000 -12.9230769 -1.9230769 -0.6923077
+> wdayWed
+> -1.6153846
+> 
+> reg <- lm(volume ~ wday - 1, data = mydf)
+> # Variable names as expected
+> coef(reg)
+> wdayFri wdayMon wdaySat wdaySun wdayThu wdayTue wdayWed
+> 21.384615 22.692308 9.384615 8.461538 19.461538 20.692308 19.769231
+> 
+> # Ordered factors for weekday sequence
+> mydf$wday <- factor(mydf$wday, levels = c("Mon", "Tue", "Wed", "Thu",
+> "Fri", "Sat", "Sun"), ordered = TRUE)
+> 
+> reg <- lm(volume ~ wday - 1, data = mydf)
+> # Variable names as expected
+> coef(reg)
+> wdayMon wdayTue wdayWed wdayThu wdayFri wdaySat wdaySun
+> 22.692308 20.692308 19.769231 19.461538 21.384615 9.384615 8.461538
+> 
+> reg <- lm(volume ~ wday, data = mydf)
+> # Strange variable names
+> coef(reg)
+> (Intercept) wday.L wday.Q wday.C wday^4 wday^5
+> 17.406593 -12.036715 -4.968654 -1.852819 3.291477 4.263642
+> wday^6
+> 2.591317
+
+
+Yes, that is what ordered is supposed to do, fit polynomial contrasts.
+When you remove the intercept that breaks it so you get a different fit, 
+in fact the same as you got when it was not ordered.
+
+Michael
+
+> 
+> ______________________________________________
+> R-help at r-project.org mailing list -- To UNSUBSCRIBE and more, see
+> https://stat.ethz.ch/mailman/listinfo/r-help
+> PLEASE do read the posting guide 
+> http://www.R-project.org/posting-guide.html
+> and provide commented, minimal, self-contained, reproducible code.
+> 
+
+-- 
+Michael
+
+
+From |kry|ov @end|ng |rom d|@root@org  Thu May  9 16:52:10 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Thu, 9 May 2024 17:52:10 +0300
+Subject: [R] Compilation problems with R4.4.0
+In-Reply-To: <CWXP123MB6190DA19029B11E2AB9880BDD0E62@CWXP123MB6190.GBRP123.PROD.OUTLOOK.COM>
+References: <CWXP123MB61901F91AC2CEA17094C5A25D0E52@CWXP123MB6190.GBRP123.PROD.OUTLOOK.COM>
+ <20240508171228.0b2d930e@arachnoid>
+ <CWXP123MB619048117E425C610309F925D0E52@CWXP123MB6190.GBRP123.PROD.OUTLOOK.COM>
+ <20240508180912.109a9868@arachnoid>
+ <CWXP123MB6190B4F3225BF3CB144DDA35D0E52@CWXP123MB6190.GBRP123.PROD.OUTLOOK.COM>
+ <20240508220515.77946bc0@Tarkus>
+ <CWXP123MB6190DA19029B11E2AB9880BDD0E62@CWXP123MB6190.GBRP123.PROD.OUTLOOK.COM>
+Message-ID: <20240509175210.366b4efc@Tarkus>
+
+Glad you got R working!
+
+? Thu, 9 May 2024 12:19:49 +0000
+Simon Andrews <simon.andrews at babraham.ac.uk> ?????:
+
+> Does this need reporting upstream as a bug in R or lapack?
+
+Maybe in AlmaLinux (and I think RHEL9 too, but that's up to Miguel
+Esteva). Best case scenario, they somehow built the reference BLAS and
+LAPACK packages with the wrong Fortran compiler version or flags, which
+is why gfortran-11 gets a zero instead of the return value from DOUBLE
+COMPLEX zdotu(...) and crashes when calling dgesv(...) from
+lapack-3.9.0-10.el9.x86_64. Worst case scenario, the zdotu() problem
+and the crash have two completely different causes elsewhere.
+
+-- 
+Best regards,
+Ivan
+
+
+From j@ork|n @end|ng |rom @om@um@ry|@nd@edu  Fri May 10 01:58:32 2024
+From: j@ork|n @end|ng |rom @om@um@ry|@nd@edu (Sorkin, John)
+Date: Thu, 9 May 2024 23:58:32 +0000
+Subject: [R] Print date on y axis with month, day, and year
+Message-ID: <DM6PR03MB5049C13025A5B36EDCD3CCB0E2E62@DM6PR03MB5049.namprd03.prod.outlook.com>
+
+I am trying to use ggplot to plot the data, and R code, below. The dates (jdate) are printing as Mar 01, Mar 15, etc. I want to have the date printed as MMM DD YYYY (or any other way that will show month, date, and year, e.g. mm/dd/yy). How can I accomplish this?
+
+yyy  <- structure(list(
+  jdate = structure(c(19052, 19053, 19054, 19055, 
+                      19058, 19059, 19060, 19061, 19062, 19063, 19065, 19066, 19067, 
+                      19068, 19069, 19072, 19073, 19074, 19075, 19076, 19077, 19083, 
+                      19086, 19087, 19088, 19089, 19090, 19093, 19094, 19095), class = "Date"), 
+    Sum = c ( 1,  3,  9, 11, 13, 16, 18, 22, 26, 27, 30, 32, 35, 39,  41, 
+             43, 48, 51, 56, 58, 59, 63, 73, 79, 81, 88, 91, 93, 96, 103)), 
+    row.names = c(NA, 30L), class = "data.frame")
+yyy
+class(yyy$jdate)
+ggplot(data=yyy[1:30,],aes(as.Date(jdate,format="%m-%d-%Y"),Sum)) +geom_point()
+
+
+Thank you 
+John
+
+
+
+John David Sorkin M.D., Ph.D.
+Professor of Medicine, University of Maryland School of Medicine;
+Associate Director for Biostatistics and Informatics, Baltimore VA Medical Center Geriatrics Research, Education, and Clinical Center;?
+PI?Biostatistics and Informatics Core, University of Maryland School of Medicine Claude D. Pepper Older Americans Independence Center;
+Senior Statistician University of Maryland Center for Vascular Research;
+
+Division of Gerontology and Paliative Care,
+10 North Greene Street
+GRECC (BT/18/GR)
+Baltimore, MD 21201-1524
+Cell phone 443-418-5382
+
+
+
+
+From bbo|ker @end|ng |rom gm@||@com  Fri May 10 02:13:36 2024
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Thu, 9 May 2024 20:13:36 -0400
+Subject: [R] Print date on y axis with month, day, and year
+In-Reply-To: <DM6PR03MB5049C13025A5B36EDCD3CCB0E2E62@DM6PR03MB5049.namprd03.prod.outlook.com>
+References: <DM6PR03MB5049C13025A5B36EDCD3CCB0E2E62@DM6PR03MB5049.namprd03.prod.outlook.com>
+Message-ID: <0be8f9f1-c7c6-4f67-b7b8-38546bbefa6f@gmail.com>
+
+gg0 <- ggplot(data=yyy[1:30,],aes(as.Date(jdate,format="%m-%d-%Y"),Sum)) 
++geom_point()
+gg0 + scale_x_date(date_labels = "%m/%d/%Y")
+
+
+On 2024-05-09 7:58 p.m., Sorkin, John wrote:
+> I am trying to use ggplot to plot the data, and R code, below. The dates (jdate) are printing as Mar 01, Mar 15, etc. I want to have the date printed as MMM DD YYYY (or any other way that will show month, date, and year, e.g. mm/dd/yy). How can I accomplish this?
+> 
+> yyy  <- structure(list(
+>    jdate = structure(c(19052, 19053, 19054, 19055,
+>                        19058, 19059, 19060, 19061, 19062, 19063, 19065, 19066, 19067,
+>                        19068, 19069, 19072, 19073, 19074, 19075, 19076, 19077, 19083,
+>                        19086, 19087, 19088, 19089, 19090, 19093, 19094, 19095), class = "Date"),
+>      Sum = c ( 1,  3,  9, 11, 13, 16, 18, 22, 26, 27, 30, 32, 35, 39,  41,
+>               43, 48, 51, 56, 58, 59, 63, 73, 79, 81, 88, 91, 93, 96, 103)),
+>      row.names = c(NA, 30L), class = "data.frame")
+> yyy
+> class(yyy$jdate)
+> ggplot(data=yyy[1:30,],aes(as.Date(jdate,format="%m-%d-%Y"),Sum)) +geom_point()
+> 
+> 
+> Thank you
+> John
+> 
+> 
+> 
+> John David Sorkin M.D., Ph.D.
+> Professor of Medicine, University of Maryland School of Medicine;
+> Associate Director for Biostatistics and Informatics, Baltimore VA Medical Center Geriatrics Research, Education, and Clinical Center;
+> PI?Biostatistics and Informatics Core, University of Maryland School of Medicine Claude D. Pepper Older Americans Independence Center;
+> Senior Statistician University of Maryland Center for Vascular Research;
+> 
+> Division of Gerontology and Paliative Care,
+> 10 North Greene Street
+> GRECC (BT/18/GR)
+> Baltimore, MD 21201-1524
+> Cell phone 443-418-5382
+> 
+> 
+> 
+> ______________________________________________
+> R-help at r-project.org mailing list -- To UNSUBSCRIBE and more, see
+> https://stat.ethz.ch/mailman/listinfo/r-help
+> PLEASE do read the posting guide http://www.R-project.org/posting-guide.html
+> and provide commented, minimal, self-contained, reproducible code.
+
+
+From Ro@@@Boy|@n @end|ng |rom uc@|@edu  Fri May 10 05:46:54 2024
+From: Ro@@@Boy|@n @end|ng |rom uc@|@edu (Boylan, Ross)
+Date: Fri, 10 May 2024 03:46:54 +0000
+Subject: [R] R CMD check vs RStudio check
+In-Reply-To: <20240503225226.3c45e047@Tarkus>
+References: <BY3PR05MB811689B81D4EAFBEC54F3ED5871F2@BY3PR05MB8116.namprd05.prod.outlook.com>
+ <20240503225226.3c45e047@Tarkus>
+Message-ID: <BY3PR05MB811623802D557E68A900ECC987E72@BY3PR05MB8116.namprd05.prod.outlook.com>
+
+Ivan, thank you for the tips; they allowed me to move on to the next problems.
+By building the tar file first and checking it later, and fixing several other problems I got
+R CMD check to work.  It does *not* delete inst/doc.  It also does not run boostrap.R,
+as far as I can tell, presumably because only devtools does.
+
+Check within RStudio continues to delete inst/doc, so this behavior is probably coming from
+RStudio, devtools, or one the packages it invokes.  The devtools::check() documentation
+mentions it invoke pkgbuild::build() and rcmdcheck::rcmdcheck().  Since I'm guessing my command
+line build and check invoked those last 2, or at least operated similarly, they seem less likely suspects.
+
+As I think I already mentioned, bootstrap.R when run outside of a check, but inside RStudio, also does not delete inst/doc.
+
+Anyway, there a lot of moving parts.  Does anybody have any ideas?  Deleting the directory just seems weird and so it's hard
+to know where to look.
+
+Thanks.
+Ross
+
+-----Original Message-----
+From: Ivan Krylov <ikrylov at disroot.org> 
+Sent: Friday, May 3, 2024 12:52 PM
+To: Boylan, Ross via R-help <r-help at r-project.org>
+Cc: Boylan, Ross <Ross.Boylan at ucsf.edu>
+Subject: Re: [R] R CMD check vs RStudio check
+
+? Fri, 3 May 2024 19:45:08 +0000
+"Boylan, Ross via R-help" <r-help at r-project.org> ?????:
+
+> & $R CMD check .
+
+> * checking for file './DESCRIPTION' ... ERROR Required fields missing 
+> or empty:
+>   'Author' 'Maintainer'
+
+You're checking a source package directory. This could work, but it's much easier and more reliable to (1) build a source tarball using R CMD build and (2) check the tarball. This is probably part of what
+devtools::check() does. (It can also do a lot of other things pre-R CMD
+build.)
+
+The reason checking the source directory is failing is because it's R CMD build that creates the necessary 'Author' and 'Maintainer' fields from Authors at R in your DESCRIPTION.
+
+> P.S. What's with the "..Rcheck" log directory, which appears literally 
+> with the 2 dots?  Is this just MS-Windows getting confused and not 
+> interpreting .. as the parent directory?
+
+"..Rcheck" is built from the argument of R CMD check . followed by ".Rcheck".
+
+--
+Best regards,
+Ivan
+
+From ru|pb@rr@d@@ @end|ng |rom @@po@pt  Fri May 10 12:12:30 2024
+From: ru|pb@rr@d@@ @end|ng |rom @@po@pt (Rui Barradas)
+Date: Fri, 10 May 2024 11:12:30 +0100
+Subject: [R] Print date on y axis with month, day, and year
+In-Reply-To: <DM6PR03MB5049C13025A5B36EDCD3CCB0E2E62@DM6PR03MB5049.namprd03.prod.outlook.com>
+References: <DM6PR03MB5049C13025A5B36EDCD3CCB0E2E62@DM6PR03MB5049.namprd03.prod.outlook.com>
+Message-ID: <f93a26dc-8c06-4f18-a673-bcc8cba1827c@sapo.pt>
+
+?s 00:58 de 10/05/2024, Sorkin, John escreveu:
+> I am trying to use ggplot to plot the data, and R code, below. The dates (jdate) are printing as Mar 01, Mar 15, etc. I want to have the date printed as MMM DD YYYY (or any other way that will show month, date, and year, e.g. mm/dd/yy). How can I accomplish this?
+> 
+> yyy  <- structure(list(
+>    jdate = structure(c(19052, 19053, 19054, 19055,
+>                        19058, 19059, 19060, 19061, 19062, 19063, 19065, 19066, 19067,
+>                        19068, 19069, 19072, 19073, 19074, 19075, 19076, 19077, 19083,
+>                        19086, 19087, 19088, 19089, 19090, 19093, 19094, 19095), class = "Date"),
+>      Sum = c ( 1,  3,  9, 11, 13, 16, 18, 22, 26, 27, 30, 32, 35, 39,  41,
+>               43, 48, 51, 56, 58, 59, 63, 73, 79, 81, 88, 91, 93, 96, 103)),
+>      row.names = c(NA, 30L), class = "data.frame")
+> yyy
+> class(yyy$jdate)
+> ggplot(data=yyy[1:30,],aes(as.Date(jdate,format="%m-%d-%Y"),Sum)) +geom_point()
+> 
+> 
+> Thank you
+> John
+> 
+> 
+> 
+> John David Sorkin M.D., Ph.D.
+> Professor of Medicine, University of Maryland School of Medicine;
+> Associate Director for Biostatistics and Informatics, Baltimore VA Medical Center Geriatrics Research, Education, and Clinical Center;
+> PI?Biostatistics and Informatics Core, University of Maryland School of Medicine Claude D. Pepper Older Americans Independence Center;
+> Senior Statistician University of Maryland Center for Vascular Research;
+> 
+> Division of Gerontology and Paliative Care,
+> 10 North Greene Street
+> GRECC (BT/18/GR)
+> Baltimore, MD 21201-1524
+> Cell phone 443-418-5382
+> 
+> 
+> 
+> ______________________________________________
+> R-help at r-project.org mailing list -- To UNSUBSCRIBE and more, see
+> https://stat.ethz.ch/mailman/listinfo/r-help
+> PLEASE do read the posting guide http://www.R-project.org/posting-guide.html
+> and provide commented, minimal, self-contained, reproducible code.
+Hello,
+
+Since class(yyy$jdate) returns "Date", you have a real date and 
+scale_x_date can handle the printed formats, there is no need for an 
+extra as.Date in aes(). And get rid of the format = "%m-%d-%Y" argument.
+
+Let scale_x_date take care of formating the date as you want it 
+displayed. Any of the two below is a valid date format.
+
+
+
+ggplot(data = yyy[1:30,], aes(jdate, Sum)) +
+    geom_point() +
+    # scale_x_date(date_labels = "%b %d, %Y")
+    scale_x_date(date_labels = "%m/%d/%Y")
+
+
+
+Hope this helps,
+
+Rui Barradas
+
+
+
+-- 
+Este e-mail foi analisado pelo software antiv?rus AVG para verificar a presen?a de v?rus.
+www.avg.com
+
+
+From |kry|ov @end|ng |rom d|@root@org  Fri May 10 17:45:03 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Fri, 10 May 2024 18:45:03 +0300
+Subject: [R] R CMD check vs RStudio check
+In-Reply-To: <BY3PR05MB811623802D557E68A900ECC987E72@BY3PR05MB8116.namprd05.prod.outlook.com>
+References: <BY3PR05MB811689B81D4EAFBEC54F3ED5871F2@BY3PR05MB8116.namprd05.prod.outlook.com>
+ <20240503225226.3c45e047@Tarkus>
+ <BY3PR05MB811623802D557E68A900ECC987E72@BY3PR05MB8116.namprd05.prod.outlook.com>
+Message-ID: <20240510184503.3ed802e5@Tarkus>
+
+? Fri, 10 May 2024 03:46:54 +0000
+"Boylan, Ross" <Ross.Boylan at ucsf.edu> ?????:
+
+> The devtools::check() documentation mentions it invoke
+> pkgbuild::build() and rcmdcheck::rcmdcheck(). Since I'm guessing my
+> command line build and check invoked those last 2, or at least
+> operated similarly, they seem less likely suspects.
+
+You are correct, it's part of what pkgbuild::build() does:
+
+https://search.r-project.org/CRAN/refmans/pkgbuild/html/build.html#clean_doc
+
+>> DESCRIPTION entries
+>>
+>> Config/build/clean-inst-doc can be set to FALSE to avoid cleaning
+>> up inst/doc when building a source package. Set it to TRUE to force
+>> a cleanup. See the clean_doc argument.
+
+(I didn't know that either, just searched their source code for
+"inst.*doc".)
+
+-- 
+Best regards,
+Ivan
+
+
+From |kry|ov @end|ng |rom d|@root@org  Sun May 12 17:54:33 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Sun, 12 May 2024 18:54:33 +0300
+Subject: [R] duplicated() on zero-column data frames returns empty
+In-Reply-To: <BL0PR01MB44344C7BE5F045434E49B7E9DC002@BL0PR01MB4434.prod.exchangelabs.com>
+References: <mailman.371154.1.1712570401.39107.r-help@r-project.org>
+ <BL0PR01MB44344C7BE5F045434E49B7E9DC002@BL0PR01MB4434.prod.exchangelabs.com>
+Message-ID: <20240512185433.7039789b@Tarkus>
+
+(Sorry for only getting back to this more than a month later.)
+
+? Mon, 8 Apr 2024 17:03:00 +0000
+Jorgen Harmse <JHarmse at roku.com> ?????:
+
+> What is the policy for changing something that is wrong? There is a
+> trade-off between breaking old code that worked around a problem and
+> breaking new code written by people who make reasonable assumptions.
+
+First of all, quantify the breakage. Does the proposed change break
+`make check-devel`? Does it break CRAN and BioConductor? (This one is
+hard to measure properly: someone will have to run >20000 R CMD checks
+times two, for "before the change" and "after the change".) Given a
+persuasive case, breaking changes can still be made, but will require a
+deprecation period to let the packages adjust.
+
+If you would like to try your hand at developing a patch and make a
+case for it at R-devel or the Bugzilla, the resources at
+<https://contributor.r-project.org/> can be helpful.
+
+-- 
+Best regards,
+Ivan
+
+
+From |@go@g|ne @end|ng |rom @jd@e@  Mon May 13 10:50:29 2024
+From: |@go@g|ne @end|ng |rom @jd@e@ (=?iso-8859-1?Q?Iago_Gin=E9_V=E1zquez?=)
+Date: Mon, 13 May 2024 08:50:29 +0000
+Subject: [R] Is there some way to customize colours for the View output?
+In-Reply-To: <20240508095832.7886e41c@rolf-Latitude-E7470>
+References: <AM6PR02MB4423181B246EC91BEA61412294E42@AM6PR02MB4423.eurprd02.prod.outlook.com>
+ <6fd81bdd-4e7e-4736-b71d-f71c402d5cfa@gmail.com>
+ <AM6PR02MB4423E2D236D742E90FC6603494E42@AM6PR02MB4423.eurprd02.prod.outlook.com>
+ <1fd3aba6-1da9-4d6a-804b-13a70cb9f096@gmail.com>
+ <20240508095832.7886e41c@rolf-Latitude-E7470>
+Message-ID: <AM6PR02MB4423D3D9A3934F4489338FC894E22@AM6PR02MB4423.eurprd02.prod.outlook.com>
+
+Hi all,
+
+I've just could test your suggestions on using dataedit... entries now, and indeed they work... partially. See, please, the next screenshot:
+https://ibb.co/Dkn2pVs
+
+
+dataedituser modifies the red borders
+dataedittext the yellow text
+dataeditfg... I do not know, specified to green the output of View(mtcars) does not change from that of the screenshot
+dataeditbg is the (almost) black background...., but in the column and row names.
+
+I tried the modifying the different colours through the GUI preferences, and the background colour for column and row names did not change. May this be a bug?
+
+
+Thank you for your help.
+
+Best regards,
+
+Iago
+________________________________
+De: Rolf Turner <rolfturner at posteo.net>
+Enviat el: dimarts, 7 de maig de 2024 23:58
+Per a: Duncan Murdoch <murdoch.duncan at gmail.com>
+A/c: Iago Gin? V?zquez <iago.gine at sjd.es>; r-help at r-project.org <r-help at r-project.org>; Achim Zeileis <Achim.Zeileis at uibk.ac.at>
+Tema: Re: [R] Is there some way to customize colours for the View output?
+
+
+On Tue, 7 May 2024 06:34:50 -0400
+Duncan Murdoch <murdoch.duncan at gmail.com> wrote:
+
+> On 07/05/2024 6:31 a.m., Iago Gin? V?zquez wrote:
+> > Thanks Duncan.
+> >
+> > I am currently on Windows. Is there any solution for it?
+>
+> Switch to Linux or MacOS?
+
+
+Fortune nomination!
+
+cheers,
+
+Rolf Turner
+
+--
+Honorary Research Fellow
+Department of Statistics
+University of Auckland
+Stats. Dep't. (secretaries) phone:
+         +64-9-373-7599 ext. 89622
+Home phone: +64-9-480-4619
+
+
+	[[alternative HTML version deleted]]
+
+
+From m@rkweb@ter204 @end|ng |rom y@hoo@co@uk  Mon May 13 11:06:46 2024
+From: m@rkweb@ter204 @end|ng |rom y@hoo@co@uk (Mark Webster)
+Date: Mon, 13 May 2024 09:06:46 +0000 (UTC)
+Subject: [R] duplicated() on zero-column data frames returns empty
+In-Reply-To: <20240512185433.7039789b@Tarkus>
+References: <mailman.371154.1.1712570401.39107.r-help@r-project.org>
+ <BL0PR01MB44344C7BE5F045434E49B7E9DC002@BL0PR01MB4434.prod.exchangelabs.com>
+ <20240512185433.7039789b@Tarkus>
+Message-ID: <164355257.2291177.1715591206553@mail.yahoo.com>
+
+ >?If you would like to try your hand at developing a patch and make a
+> case for it at R-devel or the Bugzilla, the resources at
+> <https://contributor.r-project.org/> can be helpful.
+I am attempting to get admitted onto the Bugzilla at the moment for the data frame cases, fingers crossed!
+Best Regards,Mark Webster  
+	[[alternative HTML version deleted]]
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Mon May 13 12:08:22 2024
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Mon, 13 May 2024 06:08:22 -0400
+Subject: [R] Is there some way to customize colours for the View output?
+In-Reply-To: <AM6PR02MB4423D3D9A3934F4489338FC894E22@AM6PR02MB4423.eurprd02.prod.outlook.com>
+References: <AM6PR02MB4423181B246EC91BEA61412294E42@AM6PR02MB4423.eurprd02.prod.outlook.com>
+ <6fd81bdd-4e7e-4736-b71d-f71c402d5cfa@gmail.com>
+ <AM6PR02MB4423E2D236D742E90FC6603494E42@AM6PR02MB4423.eurprd02.prod.outlook.com>
+ <1fd3aba6-1da9-4d6a-804b-13a70cb9f096@gmail.com>
+ <20240508095832.7886e41c@rolf-Latitude-E7470>
+ <AM6PR02MB4423D3D9A3934F4489338FC894E22@AM6PR02MB4423.eurprd02.prod.outlook.com>
+Message-ID: <cd6eee8a-a70d-40b8-b4ad-ba4a2e929c26@gmail.com>
+
+I just tried it on an old Windows computer.  I don't see dataeditfg in 
+the preferences menu; I think it is the internal variable name used for 
+"dataedittext".
+
+The row and column names don't appear to be controllable from that menu, 
+they seem (on my machine) to be displayed in the same colour as the 
+background of a dialog box, i.e. some kind of gray.  I don't think R 
+tries to control that colour, but perhaps some Windows setting would 
+change it.
+
+Duncan Murdoch
+
+On 2024-05-13 4:50 a.m., Iago Gin? V?zquez wrote:
+> Hi all,
+> 
+> I've just could test your suggestions on using dataedit... entries now, 
+> and indeed they work... partially. See, please, the next screenshot:
+> https://ibb.co/Dkn2pVs <https://ibb.co/Dkn2pVs>
+> 
+> 
+> dataedituser modifies the red borders
+> dataedittext the yellow text
+> dataeditfg... I do not know, specified to green the output of 
+> View(mtcars) does not change from that of the screenshot
+> dataeditbg is the (almost) black background...., but in the column and 
+> row names.
+> 
+> I tried the modifying the different colours through the GUI preferences, 
+> and the background colour for column and row names did not change. May 
+> this be a bug?
+> 
+> 
+> Thank you for your help.
+> 
+> Best regards,
+> 
+> Iago
+> ------------------------------------------------------------------------
+> *De:* Rolf Turner <rolfturner at posteo.net>
+> *Enviat el:* dimarts, 7 de maig de 2024 23:58
+> *Per a:* Duncan Murdoch <murdoch.duncan at gmail.com>
+> *A/c:* Iago Gin? V?zquez <iago.gine at sjd.es>; r-help at r-project.org 
+> <r-help at r-project.org>; Achim Zeileis <Achim.Zeileis at uibk.ac.at>
+> *Tema:* Re: [R] Is there some way to customize colours for the View output?
+> 
+> On Tue, 7 May 2024 06:34:50 -0400
+> Duncan Murdoch <murdoch.duncan at gmail.com> wrote:
+> 
+>> On 07/05/2024 6:31 a.m., Iago Gin? V?zquez wrote:
+>> > Thanks Duncan.
+>> > 
+>> > I am currently on Windows. Is there any solution for it?
+>> 
+>> Switch to Linux or MacOS?
+> 
+> 
+> Fortune nomination!
+> 
+> cheers,
+> 
+> Rolf Turner
+> 
+> -- 
+> Honorary Research Fellow
+> Department of Statistics
+> University of Auckland
+> Stats. Dep't. (secretaries) phone:
+>  ???????? +64-9-373-7599 ext. 89622
+> Home phone: +64-9-480-4619
+>
+
+
+From |kry|ov @end|ng |rom d|@root@org  Mon May 13 14:34:35 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Mon, 13 May 2024 15:34:35 +0300
+Subject: [R] Is there some way to customize colours for the View output?
+In-Reply-To: <cd6eee8a-a70d-40b8-b4ad-ba4a2e929c26@gmail.com>
+References: <AM6PR02MB4423181B246EC91BEA61412294E42@AM6PR02MB4423.eurprd02.prod.outlook.com>
+ <6fd81bdd-4e7e-4736-b71d-f71c402d5cfa@gmail.com>
+ <AM6PR02MB4423E2D236D742E90FC6603494E42@AM6PR02MB4423.eurprd02.prod.outlook.com>
+ <1fd3aba6-1da9-4d6a-804b-13a70cb9f096@gmail.com>
+ <20240508095832.7886e41c@rolf-Latitude-E7470>
+ <AM6PR02MB4423D3D9A3934F4489338FC894E22@AM6PR02MB4423.eurprd02.prod.outlook.com>
+ <cd6eee8a-a70d-40b8-b4ad-ba4a2e929c26@gmail.com>
+Message-ID: <20240513153435.2a735f2c@arachnoid>
+
+? Mon, 13 May 2024 06:08:22 -0400
+Duncan Murdoch <murdoch.duncan at gmail.com> ?????:
+
+> The row and column names don't appear to be controllable from that
+> menu, they seem (on my machine) to be displayed in the same colour as
+> the background of a dialog box, i.e. some kind of gray.  I don't
+> think R tries to control that colour, but perhaps some Windows
+> setting would change it.
+
+This is entirely correct: the dialog uses the colour returned by
+dialog_bg(), which is GetSysColor(COLOR_BTNFACE).
+
+I think it could be a reasonable feature request to use an adjustable
+colour for the row and column headers.
+
+-- 
+Best regards,
+Ivan
+
+
+From r|k|v|||@|b@ @end|ng |rom gm@||@com  Mon May 13 16:37:57 2024
+From: r|k|v|||@|b@ @end|ng |rom gm@||@com (Ricardo Villalba)
+Date: Mon, 13 May 2024 11:37:57 -0300
+Subject: [R] Description of error is untranslated when R_XLEN_T_MAX is
+ exceeded by only 1 element.
+Message-ID: <CAEUCyyW4QdEMRieLtGP_+eeaWfSOY2TEtaznKTQOCVNSZ0fKWA@mail.gmail.com>
+
+Hello everyone
+When asking to create sequence longer than 2^48 (which is forbidden) the
+same error message appears translated and untranslated depending on whether
+R_XLEN_T_MAX is reached or exceeded
+while not an error o problem beyond that of the untranslated text, i find
+this weird. ?could it be fixed in any manner?
+
+R_XLEN_T_MAX <- 4503599627370496
+
+> length(1:(R_XLEN_T_MAX - 1))
+[1] 4.5036e+15
+> length(1:(R_XLEN_T_MAX + 0))
+Error: result would be too long a vector
+> length(1:(R_XLEN_T_MAX + 1))
+Error en 1:(R_XLEN_T_MAX + 1): el resultado seria un vector muy largo
+
+The last is the same as the second, but translated into spanish.
+
+I track the messages to be coded here:
+https://github.com/r-devel/r-svn/blob/abe625945c4402cd2bb97b5a64e7469db3e904f0/src/main/altclasses.c#L580
+and
+here
+https://github.com/r-devel/r-svn/blob/abe625945c4402cd2bb97b5a64e7469db3e904f0/src/main/seq.c#L102
+
+--
+?DV!
+
+	[[alternative HTML version deleted]]
+
+
+From r|k|v|||@|b@ @end|ng |rom gm@||@com  Mon May 13 16:39:11 2024
+From: r|k|v|||@|b@ @end|ng |rom gm@||@com (Ricardo Villalba)
+Date: Mon, 13 May 2024 11:39:11 -0300
+Subject: [R] Description of error is untranslated when R_XLEN_T_MAX is
+ exceeded by only 1 element.
+In-Reply-To: <CAEUCyyW4QdEMRieLtGP_+eeaWfSOY2TEtaznKTQOCVNSZ0fKWA@mail.gmail.com>
+References: <CAEUCyyW4QdEMRieLtGP_+eeaWfSOY2TEtaznKTQOCVNSZ0fKWA@mail.gmail.com>
+Message-ID: <CAEUCyyU93-8QHNcJUJtF-eUOpbYN_Ucki4ZGR9Y5_Ed=hxe_dQ@mail.gmail.com>
+
+Typo: *2^48  should be 2^52
+
+El lun, 13 may 2024 a las 11:37, Ricardo Villalba (<rikivillalba at gmail.com>)
+escribi?:
+
+> Hello everyone
+> When asking to create sequence longer than 2^48 (which is forbidden) the
+> same error message appears translated and untranslated depending on whether
+> R_XLEN_T_MAX is reached or exceeded
+> while not an error o problem beyond that of the untranslated text, i find
+> this weird. ?could it be fixed in any manner?
+>
+> R_XLEN_T_MAX <- 4503599627370496
+>
+> > length(1:(R_XLEN_T_MAX - 1))
+> [1] 4.5036e+15
+> > length(1:(R_XLEN_T_MAX + 0))
+> Error: result would be too long a vector
+> > length(1:(R_XLEN_T_MAX + 1))
+> Error en 1:(R_XLEN_T_MAX + 1): el resultado seria un vector muy largo
+>
+> The last is the same as the second, but translated into spanish.
+>
+> I track the messages to be coded here:
+> https://github.com/r-devel/r-svn/blob/abe625945c4402cd2bb97b5a64e7469db3e904f0/src/main/altclasses.c#L580 and
+> here
+> https://github.com/r-devel/r-svn/blob/abe625945c4402cd2bb97b5a64e7469db3e904f0/src/main/seq.c#L102
+>
+> --
+> ?DV!
+>
+
+
+-- 
+?DV!
+
+	[[alternative HTML version deleted]]
+
+
+From JH@rm@e @end|ng |rom roku@com  Mon May 13 22:13:49 2024
+From: JH@rm@e @end|ng |rom roku@com (Jorgen Harmse)
+Date: Mon, 13 May 2024 20:13:49 +0000
+Subject: [R] 
+ [EXTERNAL] Re: duplicated() on zero-column data frames returns empty
+In-Reply-To: <164355257.2291177.1715591206553@mail.yahoo.com>
+References: <mailman.371154.1.1712570401.39107.r-help@r-project.org>
+ <BL0PR01MB44344C7BE5F045434E49B7E9DC002@BL0PR01MB4434.prod.exchangelabs.com>
+ <20240512185433.7039789b@Tarkus>
+ <164355257.2291177.1715591206553@mail.yahoo.com>
+Message-ID: <BL0PR01MB443406BFFB7F557F94032989DCE22@BL0PR01MB4434.prod.exchangelabs.com>
+
+Good luck! It looks like a significant effort for someone not already on the team.
+
+Regards,
+Jorgen Harmse.
+
+From: Mark Webster <markwebster204 at yahoo.co.uk>
+Date: Monday, May 13, 2024 at 04:07
+To: Jorgen Harmse <JHarmse at roku.com>, Ivan Krylov <ikrylov at disroot.org>
+Cc: r-help at r-project.org <r-help at r-project.org>
+Subject: [EXTERNAL] Re: duplicated() on zero-column data frames returns empty
+> If you would like to try your hand at developing a patch and make a
+> case for it at R-devel or the Bugzilla, the resources at
+> <https://contributor.r-project.org/> can be helpful.
+
+I am attempting to get admitted onto the Bugzilla at the moment for the data frame cases, fingers crossed!
+
+Best Regards,
+Mark Webster
+
+	[[alternative HTML version deleted]]
+
+
+From ju@t|ne@@|||g@nd @end|ng |rom @tudent@un|-@|egen@de  Mon May 13 18:24:25 2024
+From: ju@t|ne@@|||g@nd @end|ng |rom @tudent@un|-@|egen@de (Alligand, Justine)
+Date: Mon, 13 May 2024 16:24:25 +0000
+Subject: [R] test2r.mengz1(X)
+Message-ID: <8234a274c2674b478d7646b6bc82c070@student.uni-siegen.de>
+
+Dear participants and subscribers of the R-help mailing list,
+
+I would like to compare two dependent correlations with one overlapping variable. The Meng Z1 method seemed suitable for this purpose. I found out that the "cocor" package is required for this instrument. I checked several times whether the package was installed and activated and both were the case. I have also tried the "psych" package, but I get the same error in both cases:
+> library(cocor)
+> library(psych)
+> test2r.mengz1(corAVOBMI, corAVVBMI, corAVOAVV, 39)
+Error in test2r.mengz1(corAVOBMI, corAVVBMI, corAVOAVV, 39) :
+  could not find function "test2r.mengz1" (Translated from German)
+Do I not have the right package? Or can you recognize another error?
+Many thanks in advance.
+
+Yours faithfully
+Justine Alligand
+
+
+	[[alternative HTML version deleted]]
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Mon May 13 22:53:49 2024
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Mon, 13 May 2024 16:53:49 -0400
+Subject: [R] test2r.mengz1(X)
+In-Reply-To: <8234a274c2674b478d7646b6bc82c070@student.uni-siegen.de>
+References: <8234a274c2674b478d7646b6bc82c070@student.uni-siegen.de>
+Message-ID: <c11c248a-0134-4100-8b5b-31ec50b73cb0@gmail.com>
+
+Google says that function is in the bcdstats package, which isn't on 
+CRAN.  It appears to be a private package for a course, kept on Github.
+
+Duncan Murdoch
+
+On 2024-05-13 12:24 p.m., Alligand, Justine wrote:
+> Dear participants and subscribers of the R-help mailing list,
+> 
+> I would like to compare two dependent correlations with one overlapping variable. The Meng Z1 method seemed suitable for this purpose. I found out that the "cocor" package is required for this instrument. I checked several times whether the package was installed and activated and both were the case. I have also tried the "psych" package, but I get the same error in both cases:
+>> library(cocor)
+>> library(psych)
+>> test2r.mengz1(corAVOBMI, corAVVBMI, corAVOAVV, 39)
+> Error in test2r.mengz1(corAVOBMI, corAVVBMI, corAVOAVV, 39) :
+>    could not find function "test2r.mengz1" (Translated from German)
+> Do I not have the right package? Or can you recognize another error?
+> Many thanks in advance.
+> 
+> Yours faithfully
+> Justine Alligand
+> 
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> ______________________________________________
+> R-help at r-project.org mailing list -- To UNSUBSCRIBE and more, see
+> https://stat.ethz.ch/mailman/listinfo/r-help
+> PLEASE do read the posting guide http://www.R-project.org/posting-guide.html
+> and provide commented, minimal, self-contained, reproducible code.
+
+
+From bgunter@4567 @end|ng |rom gm@||@com  Mon May 13 23:00:30 2024
+From: bgunter@4567 @end|ng |rom gm@||@com (Bert Gunter)
+Date: Mon, 13 May 2024 14:00:30 -0700
+Subject: [R] test2r.mengz1(X)
+In-Reply-To: <c11c248a-0134-4100-8b5b-31ec50b73cb0@gmail.com>
+References: <8234a274c2674b478d7646b6bc82c070@student.uni-siegen.de>
+ <c11c248a-0134-4100-8b5b-31ec50b73cb0@gmail.com>
+Message-ID: <CAGxFJbRQfnudde2WRQ5r6B32RLCcw7sAv85ai0FTZD0i7N1x6g@mail.gmail.com>
+
+... but maybe cocor() in the cocor package will do do what you want.
+
+-- Bert
+
+
+On Mon, May 13, 2024 at 1:57?PM Duncan Murdoch <murdoch.duncan at gmail.com> wrote:
+>
+> Google says that function is in the bcdstats package, which isn't on
+> CRAN.  It appears to be a private package for a course, kept on Github.
+>
+> Duncan Murdoch
+>
+> On 2024-05-13 12:24 p.m., Alligand, Justine wrote:
+> > Dear participants and subscribers of the R-help mailing list,
+> >
+> > I would like to compare two dependent correlations with one overlapping variable. The Meng Z1 method seemed suitable for this purpose. I found out that the "cocor" package is required for this instrument. I checked several times whether the package was installed and activated and both were the case. I have also tried the "psych" package, but I get the same error in both cases:
+> >> library(cocor)
+> >> library(psych)
+> >> test2r.mengz1(corAVOBMI, corAVVBMI, corAVOAVV, 39)
+> > Error in test2r.mengz1(corAVOBMI, corAVVBMI, corAVOAVV, 39) :
+> >    could not find function "test2r.mengz1" (Translated from German)
+> > Do I not have the right package? Or can you recognize another error?
+> > Many thanks in advance.
+> >
+> > Yours faithfully
+> > Justine Alligand
+> >
+> >
+> >       [[alternative HTML version deleted]]
+> >
+> > ______________________________________________
+> > R-help at r-project.org mailing list -- To UNSUBSCRIBE and more, see
+> > https://stat.ethz.ch/mailman/listinfo/r-help
+> > PLEASE do read the posting guide http://www.R-project.org/posting-guide.html
+> > and provide commented, minimal, self-contained, reproducible code.
+>
+> ______________________________________________
+> R-help at r-project.org mailing list -- To UNSUBSCRIBE and more, see
+> https://stat.ethz.ch/mailman/listinfo/r-help
+> PLEASE do read the posting guide http://www.R-project.org/posting-guide.html
+> and provide commented, minimal, self-contained, reproducible code.
+
+
