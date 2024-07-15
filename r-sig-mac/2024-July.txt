@@ -1,0 +1,1673 @@
+From b@|@mut2 @end|ng |rom ||||no|@@edu  Thu Jul  4 22:30:27 2024
+From: b@|@mut2 @end|ng |rom ||||no|@@edu (Balamuta, James)
+Date: Thu, 4 Jul 2024 20:30:27 +0000
+Subject: [R-SIG-Mac] 
+ procedure to ship libomp.dylib run-time with package
+In-Reply-To: <FC09980F-3E1C-4707-B064-143F30D4325F@R-project.org>
+References: <AF8C667D-D717-47A3-B908-8DC752E36F7F@ed.ac.uk>
+ <CO6PR01MB7452D70E5347FF54842A376ECBD52@CO6PR01MB7452.prod.exchangelabs.com>
+ <CAC2h7uv7jfQHJme0DmaVTC=zppKf5b2oRSwUeqPa2eef3_krew@mail.gmail.com>
+ <PAXPR05MB82069E3185AB89DE9BEFD4B9D8D62@PAXPR05MB8206.eurprd05.prod.outlook.com>
+ <IA0PR11MB7813C9C764666FA5DD5024F4EBD62@IA0PR11MB7813.namprd11.prod.outlook.com>
+ <37D8F70E-8835-4938-8D1B-496DC0ABFC7A@R-project.org>
+ <IA0PR11MB78139861AA12ADA102A1E39DEBD72@IA0PR11MB7813.namprd11.prod.outlook.com>
+ <FC09980F-3E1C-4707-B064-143F30D4325F@R-project.org>
+Message-ID: <IA0PR11MB781323FB004CD73F96E34E86EBDE2@IA0PR11MB7813.namprd11.prod.outlook.com>
+
+Simon,
+
+Thanks for the update. I?m aware of the linking instructions [1,2,3,4] and the purpose of configure{.ac} [5]. What I was not aware of was the CRAN macOS build machine were outfitted with the appropriate OpenMP setup [6, 7] in a post R 4.0.0 world. Thus, more than just local configurations that adopted [8] could benefit from OpenMP especially since the top of [8] contains:
+
+> Warning! Everything described on this page is strictly experimental and not officially supported by CRAN, R-core or R Foundation. In may break at any time. The information is provided in the hope of being useful to some tech-savvy people. It is not intended for the regular R user.
+
+Changing focus, I?m interested in re-enabling OpenMP with respect to RcppArmadillo, my questions here are:
+
+
+  1.  When did libomp.dylib start shipping with the CRAN build? R 4.1, 4.2, 4.3, or 4.4?
+     *   This will allow me to petition to have an R version dependency change.
+  2.  If a package only needs to compile code only once, then it?s sufficient to use the usual ` $(SHLIB_OPENMP_CXXFLAGS)` in src/Makevars with the appropriate ifdef pre-processor on including #include <omp.h>?
+     *   This provides improved guidance related to best package development practices.
+  3.  For packages that compile code first on CRAN and, then, dynamically on a user?s computer, what is the best approach to ensuring that instructions in [8] are set?
+     *   This would ensure armadillo-oriented code could take full use of the cores on macOS.
+
+Best regards,
+
+James
+
+[1]: https://stat.ethz.ch/pipermail/r-sig-mac/2020-April/013346.html
+[2]: https://stat.ethz.ch/pipermail/r-sig-mac/2019-May/012987.html
+[3]: https://stat.ethz.ch/pipermail/r-sig-mac/2019-June/012996.html
+[4]: https://stat.ethz.ch/pipermail/r-sig-mac/2020-May/013451.html
+[5]: https://stackoverflow.com/a/42281495/1345455
+[6]: https://github.com/RcppCore/RcppArmadillo/pull/219#issuecomment-383100722
+[7]: https://stat.ethz.ch/pipermail/r-sig-mac/2020-April/013289.html
+[8]: https://mac.r-project.org/openmp/
+
+
+
+From: Simon Urbanek <simon.urbanek at R-project.org>
+Date: Friday, June 28, 2024 at 12:31?AM
+To: Balamuta, James <balamut2 at illinois.edu>
+Cc: Timothy Bates <tim.bates at ed.ac.uk>, Kasper Daniel Hansen <kasperdanielhansen at gmail.com>, Sparapani, Rodney <rsparapa at mcw.edu>, R list <R-SIG-Mac at r-project.org>
+Subject: Re: [R-SIG-Mac] procedure to ship libomp.dylib run-time with package
+
+
+> On 27 Jun 2024, at 23:57, Balamuta, James <balamut2 at illinois.edu> wrote:
+>
+> Simon,
+>  I think there is a communication issue regarding OpenMP for the macOS R community. That said, I?m both thrilled and delighted that I?m wrong in this case! To my knowledge, there was never a public facing note regarding `libomp`  shipping with CRAN?s official R binary for mac, [1]. In fact, the last tracking I have with respect to OpenMP and R on macOS was its abrupt and painful removal that led to the instructions for experimental inclusion of OpenMP on mac within the developer website [2] (gently acknowledge by Prof. Ripley as being not current). This has led to a lot of lobotomization in compiled code regarding macOS that can now hopefully be adjusted for the multi-core world, [3].
+>  With this in mind, I suppose this means that we would need to revisit the `configure.ac` [3]. Potentially, as Prof. Ripley mentioned, we?re looking at including on path/detecting:
+>  `R RHOME`/lib/libomp.dylib/Library/Frameworks/R.framework/Resources/lib/libomp.dylib
+
+
+That's entirely unnecessary - you should not be requiring specific file paths - that's not how linking tests work. All the instructions are on the OpenMP page for years - it is as simple as -lomp (which is standard almost everywhere). The only non-standard requirement compared to other platforms is that instead of -fopemp in C flags the package should also check for -Xclang -fopenmp.
+
+If a package explicitly disables OpenMP for Apple compilers, it is its deliberate choice - it was never necessary. The whole point of configure scripts is to detect functionality by testing it and use it if available.
+
+Cheers,
+Simon
+
+
+>  Thus, the package binary downloaded from CRAN would correctly set and detect cores per:
+>  # install.packages("RcppArmadillo")
+>  # Determine the number of active threads
+> RcppArmadillo::armadillo_get_number_of_omp_threads()
+> [1] 1
+>  # Set number of threads
+> RcppArmadillo::armadillo_set_number_of_omp_threads(3)
+>  # Retrieve OpenMP threads after setting
+> RcppArmadillo::armadillo_get_number_of_omp_threads()
+> [1] 1
+> # This should be 3.
+>  I?m happy to talk more on the list or off the list.  Best,
+>  James
+>  [1]: https://urldefense.com/v3/__https://cran.r-project.org/doc/manuals/r-release/NEWS.html__;!!DZ3fjg!57krJgj2EE5sq_qaDsKls4jb5f99c2iyQaXHoJ_7OBQAbpapE-x_fRkzBh-Fy_cnsu-sUJpdhelgLqI006PhaLiBVYB5MDA$<https://urldefense.com/v3/__https:/cran.r-project.org/doc/manuals/r-release/NEWS.html__;!!DZ3fjg!57krJgj2EE5sq_qaDsKls4jb5f99c2iyQaXHoJ_7OBQAbpapE-x_fRkzBh-Fy_cnsu-sUJpdhelgLqI006PhaLiBVYB5MDA$>
+> [2]: https://urldefense.com/v3/__https://mac.r-project.org/openmp/__;!!DZ3fjg!57krJgj2EE5sq_qaDsKls4jb5f99c2iyQaXHoJ_7OBQAbpapE-x_fRkzBh-Fy_cnsu-sUJpdhelgLqI006PhaLiBmw9UV3o$<https://urldefense.com/v3/__https:/mac.r-project.org/openmp/__;!!DZ3fjg!57krJgj2EE5sq_qaDsKls4jb5f99c2iyQaXHoJ_7OBQAbpapE-x_fRkzBh-Fy_cnsu-sUJpdhelgLqI006PhaLiBmw9UV3o$>
+> [3]: https://urldefense.com/v3/__https://github.com/RcppCore/RcppArmadillo/blob/37461ba36472305c699263afc229919d37daa5e3/configure.ac*L109__;Iw!!DZ3fjg!57krJgj2EE5sq_qaDsKls4jb5f99c2iyQaXHoJ_7OBQAbpapE-x_fRkzBh-Fy_cnsu-sUJpdhelgLqI006PhaLiB8rnPPRw$<https://urldefense.com/v3/__https:/github.com/RcppCore/RcppArmadillo/blob/37461ba36472305c699263afc229919d37daa5e3/configure.ac*L109__;Iw!!DZ3fjg!57krJgj2EE5sq_qaDsKls4jb5f99c2iyQaXHoJ_7OBQAbpapE-x_fRkzBh-Fy_cnsu-sUJpdhelgLqI006PhaLiB8rnPPRw$>
+>   From: Simon Urbanek <simon.urbanek at R-project.org>
+> Date: Thursday, June 27, 2024 at 10:25?AM
+> To: Balamuta, James <balamut2 at illinois.edu>
+> Cc: Timothy Bates <tim.bates at ed.ac.uk>, Kasper Daniel Hansen <kasperdanielhansen at gmail.com>, Sparapani, Rodney <rsparapa at mcw.edu>, R list <R-SIG-Mac at r-project.org>
+> Subject: Re: [R-SIG-Mac] procedure to ship libomp.dylib run-time with package
+> Most of the claims below are false - libomp is shipped with CRAN R for quite some time specifically so that packages which benefit from it significantly can enable OpenMP reasonably easily - they only need to add the flags as noted on the cited page and CRAN takes care of the rest. If there are any problems, please feel free to contact me.
+>
+> Cheers,
+> Simon
+>
+>
+> > On 26 Jun 2024, at 07:41, Balamuta, James <balamut2 at illinois.edu> wrote:
+> >
+> > Tim,
+> >
+> > Unfortunately, there isn't a nice way of including OpenMP for macOS within a package.  One potential avenue would be to use a `configure.ac` file to check for whether OpenMP headers are present on the macOS computer and, then, allow the correct OpenMP compilation flags to be set. However, this requires the user to compile from source instead of using a CRAN binary.
+> >
+> > Unfortunately, there isn't going to be an easier way as OpenMP on macOS with R is experimental by nature.
+> >
+> > Best regards,
+> >
+> > James
+> > ________________________________
+> > From: R-SIG-Mac <r-sig-mac-bounces at r-project.org> on behalf of Timothy Bates <tim.bates at ed.ac.uk>
+> > Sent: Tuesday, June 25, 2024 10:00 PM
+> > To: Kasper Daniel Hansen <kasperdanielhansen at gmail.com>; Sparapani, Rodney <rsparapa at mcw.edu>
+> > Cc: R list <R-SIG-Mac at r-project.org>
+> > Subject: Re: [R-SIG-Mac] procedure to ship libomp.dylib run-time with package
+> >
+> > Thanks Kasper,
+> > I read those lines and had installed the openmp software as instructed. It all works fine for me. But users don?t have my usr/ folder, not can a package write to their usr/ folder.
+> >
+> > so what is confusing is how the user will get this lib. Where should make place libraries like libomp within the package so that if a user merely install.packages() it, the library will be found and loaded?
+> > Best, tim
+> >
+> >
+> > Sent from Outlook for iOS<https://urldefense.com/v3/__https://aka.ms/o0ukef__;!!DZ3fjg!_OUXHENJ_6aGlU-humThmTaUR5okhDKW2EGEY49AjJ4AN8eXBWtZCWE3O01pnyxbRpGQDhCl8MMLThVBbUXDuipI$ >
+> > ________________________________
+> > From: Kasper Daniel Hansen <kasperdanielhansen at gmail.com>
+> > Sent: Tuesday, June 25, 2024 11:34:42 AM
+> > To: Sparapani, Rodney <rsparapa at mcw.edu>
+> > Cc: Timothy Bates <tim.bates at ed.ac.uk>; R list <R-SIG-Mac at r-project.org>
+> > Subject: Re: [R-SIG-Mac] procedure to ship libomp.dylib run-time with package
+> >
+> > This email was sent to you by someone outside the University.
+> > You should only click on links or attachments if you are certain that the email is genuine and the content is safe.
+> > If you read the next couple of sentences on that page, it says
+> >
+> > The following are links to libomp OpenMP run-time built from official LLVM release sources using Xcode compilers. They are signed and support macOS 10.13 (High Sierra) and higher. All tar-balls contain the system tree usr/local/lib and usr/local/include so the recommended installation is to type in Terminal:
+> >
+> >    curl -O https://urldefense.com/v3/__https://mac.r-project.org/openmp/openmp-14.0.6-darwin20-Release.tar.gz__;!!DZ3fjg!_OUXHENJ_6aGlU-humThmTaUR5okhDKW2EGEY49AjJ4AN8eXBWtZCWE3O01pnyxbRpGQDhCl8MMLThVBbWfUKf7B$<https://urldefense.com/v3/__https:/mac.r-project.org/openmp/openmp-14.0.6-darwin20-Release.tar.gz__;!!DZ3fjg!_OUXHENJ_6aGlU-humThmTaUR5okhDKW2EGEY49AjJ4AN8eXBWtZCWE3O01pnyxbRpGQDhCl8MMLThVBbWfUKf7B$>
+> >    sudo tar fvxz openmp-14.0.6-darwin20-Release.tar.gz -C /
+> >
+> >
+> > I think that is pretty clear? Note the -C / as part of the last line, that tells tar where to put it on the system.
+> >
+> > On Tue, Jun 25, 2024 at 8:20?AM Sparapani, Rodney via R-SIG-Mac <r-sig-mac at r-project.org<mailto:r-sig-mac at r-project.org>> wrote:
+> > Hi Tim:
+> >
+> > /usr/local/lib it seems.  See the following page
+> > https://urldefense.com/v3/__https://mac.r-project.org/openmp/__;!!DZ3fjg!_OUXHENJ_6aGlU-humThmTaUR5okhDKW2EGEY49AjJ4AN8eXBWtZCWE3O01pnyxbRpGQDhCl8MMLThVBbaQGheD_$<https://urldefense.com/v3/__https:/mac.r-project.org/openmp/__;!!DZ3fjg!_OUXHENJ_6aGlU-humThmTaUR5okhDKW2EGEY49AjJ4AN8eXBWtZCWE3O01pnyxbRpGQDhCl8MMLThVBbaQGheD_$>
+> >
+> > --
+> > Rodney Sparapani, Associate Professor of Biostatistics, He/Him/His
+> > Vice President, Wisconsin Chapter of the American Statistical Association
+> > Institute for Health and Equity, Division of Biostatistics
+> > Medical College of Wisconsin, Milwaukee Campus
+> >
+> > If this is outside of working hours, then please respond when convenient.
+> >
+> > From: R-SIG-Mac <r-sig-mac-bounces at r-project.org<mailto:r-sig-mac-bounces at r-project.org>> on behalf of Timothy Bates <tim.bates at ed.ac.uk<mailto:tim.bates at ed.ac.uk>>
+> > Date: Monday, June 24, 2024 at 4:00?PM
+> > To: R list <R-SIG-Mac at r-project.org<mailto:R-SIG-Mac at r-project.org>>
+> > Subject: [R-SIG-Mac] procedure to ship libomp.dylib run-time with package
+> > ATTENTION: This email originated from a sender outside of MCW. Use caution when clicking on links or opening attachments.
+> > ________________________________
+> >
+> > At https://urldefense.com/v3/__https://mac.r-project.org/openmp/__;!!H8mHWRdzp34!4HZ0uFxJQ121gF_TnX99OuMlgIXM600pq8wCbWruoLsdLTtaFgRB5_gMopCtxD0N9M4tUOO-7hBGADHx1sk$<https://urldefense.com/v3/__https:/mac.r-project.org/openmp/__;!!H8mHWRdzp34!4HZ0uFxJQ121gF_TnX99OuMlgIXM600pq8wCbWruoLsdLTtaFgRB5_gMopCtxD0N9M4tUOO-7hBGADHx1sk$><https://urldefense.com/v3/__https:/mac.r-project.org/openmp/__;!!H8mHWRdzp34!4HZ0uFxJQ121gF_TnX99OuMlgIXM600pq8wCbWruoLsdLTtaFgRB5_gMopCtxD0N9M4tUOO-7hBGADHx1sk$%3chttps:/urldefense.com/v3/__https:/mac.r-project.org/openmp/__;!!H8mHWRdzp34!4HZ0uFxJQ121gF_TnX99OuMlgIXM600pq8wCbWruoLsdLTtaFgRB5_gMopCtxD0N9M4tUOO-7hBGADHx1sk$%3e>  it  says
+> > "any package you compile against libomp.dylib will need that run-time so you have to ship it with your package or have users install it?
+> >
+> > Are there  any  instructions on what to do/where to put libomp.dylib so it will be found?
+> >
+> > I?ve compiled a package (OpenMx) in which OpenMP is working locally but other users get the error:
+> >
+> > require(OpenMx)
+> > Error: package or namespace load failed for ?OpenMx? in dyn.load(file, DLLpath = DLLpath, ...):
+> > unable to load shared object '/Users/***/Library/R/x86_64/4.4/library/OpenMx/libs/OpenMx.so':
+> >
+> > dlopen(/Users/***/Library/R/x86_64/4.4/library/OpenMx/libs/OpenMx.so, 0x0006): Library not loaded: /Library/Frameworks/R.framework/Versions/4.3-x86_64/Resources/lib/libomp.dylib
+> >
+> >
+> > The University of Edinburgh is a charitable body, registered in Scotland, with registration number SC005336. Is e buidheann carthannais a th? ann an Oilthigh Dh?n ?ideann, cl?raichte an Alba, ?ireamh cl?raidh SC005336.
+> > _______________________________________________
+> > R-SIG-Mac mailing list
+> > R-SIG-Mac at r-project.org<mailto:R-SIG-Mac at r-project.org>
+> > https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-sig-mac__;!!H8mHWRdzp34!4HZ0uFxJQ121gF_TnX99OuMlgIXM600pq8wCbWruoLsdLTtaFgRB5_gMopCtxD0N9M4tUOO-7hBGdICDldE$<https://urldefense.com/v3/__https:/stat.ethz.ch/mailman/listinfo/r-sig-mac__;!!H8mHWRdzp34!4HZ0uFxJQ121gF_TnX99OuMlgIXM600pq8wCbWruoLsdLTtaFgRB5_gMopCtxD0N9M4tUOO-7hBGdICDldE$><https://urldefense.com/v3/__https:/stat.ethz.ch/mailman/listinfo/r-sig-mac__;!!H8mHWRdzp34!4HZ0uFxJQ121gF_TnX99OuMlgIXM600pq8wCbWruoLsdLTtaFgRB5_gMopCtxD0N9M4tUOO-7hBGdICDldE$%3chttps:/urldefense.com/v3/__https:/stat.ethz.ch/mailman/listinfo/r-sig-mac__;!!H8mHWRdzp34!4HZ0uFxJQ121gF_TnX99OuMlgIXM600pq8wCbWruoLsdLTtaFgRB5_gMopCtxD0N9M4tUOO-7hBGdICDldE$%3e>
+> >
+> >        [[alternative HTML version deleted]]
+> >
+> > _______________________________________________
+> > R-SIG-Mac mailing list
+> > R-SIG-Mac at r-project.org<mailto:R-SIG-Mac at r-project.org>
+> > https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-sig-mac__;!!DZ3fjg!_OUXHENJ_6aGlU-humThmTaUR5okhDKW2EGEY49AjJ4AN8eXBWtZCWE3O01pnyxbRpGQDhCl8MMLThVBbYOwLI1d$<https://urldefense.com/v3/__https:/stat.ethz.ch/mailman/listinfo/r-sig-mac__;!!DZ3fjg!_OUXHENJ_6aGlU-humThmTaUR5okhDKW2EGEY49AjJ4AN8eXBWtZCWE3O01pnyxbRpGQDhCl8MMLThVBbYOwLI1d$>
+> >
+> >
+> > --
+> > Best,
+> > Kasper
+> >
+> >        [[alternative HTML version deleted]]
+> >
+> > _______________________________________________
+> > R-SIG-Mac mailing list
+> > R-SIG-Mac at r-project.org
+> > https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-sig-mac__;!!DZ3fjg!_OUXHENJ_6aGlU-humThmTaUR5okhDKW2EGEY49AjJ4AN8eXBWtZCWE3O01pnyxbRpGQDhCl8MMLThVBbYOwLI1d$<https://urldefense.com/v3/__https:/stat.ethz.ch/mailman/listinfo/r-sig-mac__;!!DZ3fjg!_OUXHENJ_6aGlU-humThmTaUR5okhDKW2EGEY49AjJ4AN8eXBWtZCWE3O01pnyxbRpGQDhCl8MMLThVBbYOwLI1d$>
+> >
+> > [[alternative HTML version deleted]]
+> >
+> > _______________________________________________
+> > R-SIG-Mac mailing list
+> > R-SIG-Mac at r-project.org
+> > https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-sig-mac__;!!DZ3fjg!9XPrFiayt1-V0BmNqWv4wn0V_G6ZIC6DgkviDYpRV4s-dmAnj9Qp_QFEHPG5dbO-Sk0IhdfC3lB0qeeJBDE2ann7kz0eS7A$<https://urldefense.com/v3/__https:/stat.ethz.ch/mailman/listinfo/r-sig-mac__;!!DZ3fjg!9XPrFiayt1-V0BmNqWv4wn0V_G6ZIC6DgkviDYpRV4s-dmAnj9Qp_QFEHPG5dbO-Sk0IhdfC3lB0qeeJBDE2ann7kz0eS7A$>
+
+
+	[[alternative HTML version deleted]]
+
+
+From j@g@nmn2 @end|ng |rom gm@||@com  Fri Jul  5 22:53:45 2024
+From: j@g@nmn2 @end|ng |rom gm@||@com (Mikael Jagan)
+Date: Fri, 5 Jul 2024 16:53:45 -0400
+Subject: [R-SIG-Mac] 
+ procedure to ship libomp.dylib run-time with package
+In-Reply-To: <mailman.15227.3145.1720125099.1268.r-sig-mac@r-project.org>
+References: <mailman.15227.3145.1720125099.1268.r-sig-mac@r-project.org>
+Message-ID: <a7a6314b-d4db-45ad-9442-88fe690eb995@gmail.com>
+
+Some thoughts in line below, not "certified" but maybe helpful.  Corrections
+welcome ...
+
+Mikael
+
+> From: "Balamuta, James" <balamut2 at illinois.edu>
+> To: Simon Urbanek <simon.urbanek at R-project.org>
+> Cc: Timothy Bates <tim.bates at ed.ac.uk>, Kasper Daniel Hansen
+> 	<kasperdanielhansen at gmail.com>, "Sparapani, Rodney"
+> 	<rsparapa at mcw.edu>, R list <R-SIG-Mac at r-project.org>
+> Subject: Re: [R-SIG-Mac]  procedure to ship libomp.dylib run-time with
+> 	package
+> Message-ID:
+> 	<IA0PR11MB781323FB004CD73F96E34E86EBDE2 at IA0PR11MB7813.namprd11.prod.outlook.com>
+> 	
+> Content-Type: text/plain; charset="utf-8"
+> 
+> Simon,
+> 
+> Thanks for the update. I?m aware of the linking instructions [1,2,3,4] and the purpose of configure{.ac} [5]. What I was not aware of was the CRAN macOS build machine were outfitted with the appropriate OpenMP setup [6, 7] in a post R 4.0.0 world. Thus, more than just local configurations that adopted [8] could benefit from OpenMP especially since the top of [8] contains:
+> 
+>> Warning! Everything described on this page is strictly experimental and not officially supported by CRAN, R-core or R Foundation. In may break at any time. The information is provided in the hope of being useful to some tech-savvy people. It is not intended for the regular R user.
+> 
+> Changing focus, I?m interested in re-enabling OpenMP with respect to RcppArmadillo, my questions here are:
+> 
+> 
+>    1.  When did libomp.dylib start shipping with the CRAN build? R 4.1, 4.2, 4.3, or 4.4?
+>       *   This will allow me to petition to have an R version dependency change.
+
+The binaries are archived, so one can just look "there" ...
+
+     https://cran.r-project.org/bin/macosx/base/
+     https://cran.r-project.org/bin/macosx/big-sur-x86_64/base/
+     https://cran.r-project.org/bin/macosx/big-sur-arm64/base/
+
+I see libomp.dylib in R 4.3.0, but not in R 4.2.3, just inspecting the arm64
+ones ...
+
+     $ lsbom -p f `pkgutil --bom R-4.4.1-arm64.pkg` | grep libomp[.]dylib
+     ./R.framework/Versions/4.4-arm64/Resources/lib/libomp.dylib
+
+But I don't see how that would motivate a dependency on R >= 4.3.  Not everyone
+running R under macOS obtains R from CRAN, and not everyone running CRAN R has
+omp.h in the search path ...
+
+>    2.  If a package only needs to compile code only once, then it?s sufficient to use the usual ` $(SHLIB_OPENMP_CXXFLAGS)` in src/Makevars with the appropriate ifdef pre-processor on including #include <omp.h>?
+>       *   This provides improved guidance related to best package development practices.
+
+CRAN configures R with empty SHLIB_OPENMP_*FLAGS, which you can verify by
+looking at any CRAN R installation's etc/Makeconf.
+
+     $ grep SHLIB_OPENMP `R RHOME`/etc/Makeconf
+     SHLIB_OPENMP_CFLAGS =
+     SHLIB_OPENMP_CXXFLAGS =
+     SHLIB_OPENMP_FFLAGS =
+
+So, AFAICT, _automatic_ OpenMP support [1] still requires _regular_ users [2]
+to install OpenMP-using packages from sources and still requires OpenMP-using
+packages to have a src/Makevars containing
+
+     PKG_CPPFLAGS = @THISPACKAGE_CPPFLAGS@
+     PKG_LIBS = @THISPACKAGE_LIBS@
+
+and a configure.ac arranging for those macros to be substituted with
+
+     THISPACKAGE_CPPFLAGS=[-Xclang ]-fopenmp
+     THISPACKAGE_LIBS=-lomp
+
+conditional on a proper configure test (one that attempts to compile a program
+including omp.h and calling (say) omp_get_num_threads()).  On macOS, you'd try
+compiling twice, first with -fopenmp and again with -Xclang -fopenmp if -fopenmp
+alone was not enough.  Simon has said this already ...
+
+Even if CRAN did configure R with nonempty SHLIB_OPENMP_*FLAGS, it does not
+(yet) bundle omp.h with R.
+
+     $ lsbom -p f `pkgutil --bom R-4.4.1-arm64.pkg` | grep omp[.]h
+
+The user would in many cases still need to arrange for omp.h to be found on the
+search path, notably as R-exts says:
+
+     For portability, any C/C++ code using the omp_* functions should
+     include the omp.h header: some compilers (but not all) include it
+     when OpenMP mode is switched on (e.g. via flag -fopenmp).
+
+But maybe CRAN would consider shipping omp.h in addition to libomp.dylib
+in the future ... ?
+
+----
+
+     [1] "automatic" in the sense of _not_ requiring the user to pass flags to
+         R CMD INSTALL on the command line or through their personal Makevars
+     [2] "regular" meaning that they obtained R from CRAN rather than, say,
+         configuring R themselves with SHLIB_OPENMP_*FLAGS set
+
+>    3.  For packages that compile code first on CRAN and, then, dynamically on a user?s computer, what is the best approach to ensuring that instructions in [8] are set?
+>       *   This would ensure armadillo-oriented code could take full use of the cores on macOS.
+> 
+
+As Simon has emphasized already, the only robust test for OpenMP support is
+to attempt to compile a program with suitable flags.  Testing for a specific
+user configuration (such as that described in mac.r-project.org/openmp/) is
+fragile and restrictive for no reason.
+
+If your package has an R function that invokes R CMD SHLIB, then that function
+could perform a configure step, adjusting flags depending on the test result.
+
+> Best regards,
+> 
+> James
+> 
+> [1]: https://stat.ethz.ch/pipermail/r-sig-mac/2020-April/013346.html
+> [2]: https://stat.ethz.ch/pipermail/r-sig-mac/2019-May/012987.html
+> [3]: https://stat.ethz.ch/pipermail/r-sig-mac/2019-June/012996.html
+> [4]: https://stat.ethz.ch/pipermail/r-sig-mac/2020-May/013451.html
+> [5]: https://stackoverflow.com/a/42281495/1345455
+> [6]: https://github.com/RcppCore/RcppArmadillo/pull/219#issuecomment-383100722
+> [7]: https://stat.ethz.ch/pipermail/r-sig-mac/2020-April/013289.html
+> [8]: https://mac.r-project.org/openmp/
+> 
+> 
+> 
+> From: Simon Urbanek <simon.urbanek at R-project.org>
+> Date: Friday, June 28, 2024 at 12:31?AM
+> To: Balamuta, James <balamut2 at illinois.edu>
+> Cc: Timothy Bates <tim.bates at ed.ac.uk>, Kasper Daniel Hansen <kasperdanielhansen at gmail.com>, Sparapani, Rodney <rsparapa at mcw.edu>, R list <R-SIG-Mac at r-project.org>
+> Subject: Re: [R-SIG-Mac] procedure to ship libomp.dylib run-time with package
+> 
+> 
+>> On 27 Jun 2024, at 23:57, Balamuta, James <balamut2 at illinois.edu> wrote:
+>>
+>> Simon,
+>>   I think there is a communication issue regarding OpenMP for the macOS R community. That said, I?m both thrilled and delighted that I?m wrong in this case! To my knowledge, there was never a public facing note regarding `libomp`  shipping with CRAN?s official R binary for mac, [1]. In fact, the last tracking I have with respect to OpenMP and R on macOS was its abrupt and painful removal that led to the instructions for experimental inclusion of OpenMP on mac within the developer website [2] (gently acknowledge by Prof. Ripley as being not current). This has led to a lot of lobotomization in compiled code regarding macOS that can now hopefully be adjusted for the multi-core world, [3].
+>>   With this in mind, I suppose this means that we would need to revisit the `configure.ac` [3]. Potentially, as Prof. Ripley mentioned, we?re looking at including on path/detecting:
+>>   `R RHOME`/lib/libomp.dylib/Library/Frameworks/R.framework/Resources/lib/libomp.dylib
+> 
+> 
+> That's entirely unnecessary - you should not be requiring specific file paths - that's not how linking tests work. All the instructions are on the OpenMP page for years - it is as simple as -lomp (which is standard almost everywhere). The only non-standard requirement compared to other platforms is that instead of -fopemp in C flags the package should also check for -Xclang -fopenmp.
+> 
+> If a package explicitly disables OpenMP for Apple compilers, it is its deliberate choice - it was never necessary. The whole point of configure scripts is to detect functionality by testing it and use it if available.
+> 
+> Cheers,
+> Simon
+> 
+> 
+>>   Thus, the package binary downloaded from CRAN would correctly set and detect cores per:
+>>   # install.packages("RcppArmadillo")
+>>   # Determine the number of active threads
+>> RcppArmadillo::armadillo_get_number_of_omp_threads()
+>> [1] 1
+>>   # Set number of threads
+>> RcppArmadillo::armadillo_set_number_of_omp_threads(3)
+>>   # Retrieve OpenMP threads after setting
+>> RcppArmadillo::armadillo_get_number_of_omp_threads()
+>> [1] 1
+>> # This should be 3.
+>>   I?m happy to talk more on the list or off the list.  Best,
+>>   James
+>>   [1]: https://urldefense.com/v3/__https://cran.r-project.org/doc/manuals/r-release/NEWS.html__;!!DZ3fjg!57krJgj2EE5sq_qaDsKls4jb5f99c2iyQaXHoJ_7OBQAbpapE-x_fRkzBh-Fy_cnsu-sUJpdhelgLqI006PhaLiBVYB5MDA$<https://urldefense.com/v3/__https:/cran.r-project.org/doc/manuals/r-release/NEWS.html__;!!DZ3fjg!57krJgj2EE5sq_qaDsKls4jb5f99c2iyQaXHoJ_7OBQAbpapE-x_fRkzBh-Fy_cnsu-sUJpdhelgLqI006PhaLiBVYB5MDA$>
+>> [2]: https://urldefense.com/v3/__https://mac.r-project.org/openmp/__;!!DZ3fjg!57krJgj2EE5sq_qaDsKls4jb5f99c2iyQaXHoJ_7OBQAbpapE-x_fRkzBh-Fy_cnsu-sUJpdhelgLqI006PhaLiBmw9UV3o$<https://urldefense.com/v3/__https:/mac.r-project.org/openmp/__;!!DZ3fjg!57krJgj2EE5sq_qaDsKls4jb5f99c2iyQaXHoJ_7OBQAbpapE-x_fRkzBh-Fy_cnsu-sUJpdhelgLqI006PhaLiBmw9UV3o$>
+>> [3]: https://urldefense.com/v3/__https://github.com/RcppCore/RcppArmadillo/blob/37461ba36472305c699263afc229919d37daa5e3/configure.ac*L109__;Iw!!DZ3fjg!57krJgj2EE5sq_qaDsKls4jb5f99c2iyQaXHoJ_7OBQAbpapE-x_fRkzBh-Fy_cnsu-sUJpdhelgLqI006PhaLiB8rnPPRw$<https://urldefense.com/v3/__https:/github.com/RcppCore/RcppArmadillo/blob/37461ba36472305c699263afc229919d37daa5e3/configure.ac*L109__;Iw!!DZ3fjg!57krJgj2EE5sq_qaDsKls4jb5f99c2iyQaXHoJ_7OBQAbpapE-x_fRkzBh-Fy_cnsu-sUJpdhelgLqI006PhaLiB8rnPPRw$>
+>>    From: Simon Urbanek <simon.urbanek at R-project.org>
+>> Date: Thursday, June 27, 2024 at 10:25?AM
+>> To: Balamuta, James <balamut2 at illinois.edu>
+>> Cc: Timothy Bates <tim.bates at ed.ac.uk>, Kasper Daniel Hansen <kasperdanielhansen at gmail.com>, Sparapani, Rodney <rsparapa at mcw.edu>, R list <R-SIG-Mac at r-project.org>
+>> Subject: Re: [R-SIG-Mac] procedure to ship libomp.dylib run-time with package
+>> Most of the claims below are false - libomp is shipped with CRAN R for quite some time specifically so that packages which benefit from it significantly can enable OpenMP reasonably easily - they only need to add the flags as noted on the cited page and CRAN takes care of the rest. If there are any problems, please feel free to contact me.
+>>
+>> Cheers,
+>> Simon
+>>
+>>
+>>> On 26 Jun 2024, at 07:41, Balamuta, James <balamut2 at illinois.edu> wrote:
+>>>
+>>> Tim,
+>>>
+>>> Unfortunately, there isn't a nice way of including OpenMP for macOS within a package.  One potential avenue would be to use a `configure.ac` file to check for whether OpenMP headers are present on the macOS computer and, then, allow the correct OpenMP compilation flags to be set. However, this requires the user to compile from source instead of using a CRAN binary.
+>>>
+>>> Unfortunately, there isn't going to be an easier way as OpenMP on macOS with R is experimental by nature.
+>>>
+>>> Best regards,
+>>>
+>>> James
+>>> ________________________________
+>>> From: R-SIG-Mac <r-sig-mac-bounces at r-project.org> on behalf of Timothy Bates <tim.bates at ed.ac.uk>
+>>> Sent: Tuesday, June 25, 2024 10:00 PM
+>>> To: Kasper Daniel Hansen <kasperdanielhansen at gmail.com>; Sparapani, Rodney <rsparapa at mcw.edu>
+>>> Cc: R list <R-SIG-Mac at r-project.org>
+>>> Subject: Re: [R-SIG-Mac] procedure to ship libomp.dylib run-time with package
+>>>
+>>> Thanks Kasper,
+>>> I read those lines and had installed the openmp software as instructed. It all works fine for me. But users don?t have my usr/ folder, not can a package write to their usr/ folder.
+>>>
+>>> so what is confusing is how the user will get this lib. Where should make place libraries like libomp within the package so that if a user merely install.packages() it, the library will be found and loaded?
+>>> Best, tim
+>>>
+>>>
+>>> Sent from Outlook for iOS<https://urldefense.com/v3/__https://aka.ms/o0ukef__;!!DZ3fjg!_OUXHENJ_6aGlU-humThmTaUR5okhDKW2EGEY49AjJ4AN8eXBWtZCWE3O01pnyxbRpGQDhCl8MMLThVBbUXDuipI$ >
+>>> ________________________________
+>>> From: Kasper Daniel Hansen <kasperdanielhansen at gmail.com>
+>>> Sent: Tuesday, June 25, 2024 11:34:42 AM
+>>> To: Sparapani, Rodney <rsparapa at mcw.edu>
+>>> Cc: Timothy Bates <tim.bates at ed.ac.uk>; R list <R-SIG-Mac at r-project.org>
+>>> Subject: Re: [R-SIG-Mac] procedure to ship libomp.dylib run-time with package
+>>>
+>>> This email was sent to you by someone outside the University.
+>>> You should only click on links or attachments if you are certain that the email is genuine and the content is safe.
+>>> If you read the next couple of sentences on that page, it says
+>>>
+>>> The following are links to libomp OpenMP run-time built from official LLVM release sources using Xcode compilers. They are signed and support macOS 10.13 (High Sierra) and higher. All tar-balls contain the system tree usr/local/lib and usr/local/include so the recommended installation is to type in Terminal:
+>>>
+>>>     curl -O https://urldefense.com/v3/__https://mac.r-project.org/openmp/openmp-14.0.6-darwin20-Release.tar.gz__;!!DZ3fjg!_OUXHENJ_6aGlU-humThmTaUR5okhDKW2EGEY49AjJ4AN8eXBWtZCWE3O01pnyxbRpGQDhCl8MMLThVBbWfUKf7B$<https://urldefense.com/v3/__https:/mac.r-project.org/openmp/openmp-14.0.6-darwin20-Release.tar.gz__;!!DZ3fjg!_OUXHENJ_6aGlU-humThmTaUR5okhDKW2EGEY49AjJ4AN8eXBWtZCWE3O01pnyxbRpGQDhCl8MMLThVBbWfUKf7B$>
+>>>     sudo tar fvxz openmp-14.0.6-darwin20-Release.tar.gz -C /
+>>>
+>>>
+>>> I think that is pretty clear? Note the -C / as part of the last line, that tells tar where to put it on the system.
+>>>
+>>> On Tue, Jun 25, 2024 at 8:20?AM Sparapani, Rodney via R-SIG-Mac <r-sig-mac at r-project.org<mailto:r-sig-mac at r-project.org>> wrote:
+>>> Hi Tim:
+>>>
+>>> /usr/local/lib it seems.  See the following page
+>>> https://urldefense.com/v3/__https://mac.r-project.org/openmp/__;!!DZ3fjg!_OUXHENJ_6aGlU-humThmTaUR5okhDKW2EGEY49AjJ4AN8eXBWtZCWE3O01pnyxbRpGQDhCl8MMLThVBbaQGheD_$<https://urldefense.com/v3/__https:/mac.r-project.org/openmp/__;!!DZ3fjg!_OUXHENJ_6aGlU-humThmTaUR5okhDKW2EGEY49AjJ4AN8eXBWtZCWE3O01pnyxbRpGQDhCl8MMLThVBbaQGheD_$>
+>>>
+>>> --
+>>> Rodney Sparapani, Associate Professor of Biostatistics, He/Him/His
+>>> Vice President, Wisconsin Chapter of the American Statistical Association
+>>> Institute for Health and Equity, Division of Biostatistics
+>>> Medical College of Wisconsin, Milwaukee Campus
+>>>
+>>> If this is outside of working hours, then please respond when convenient.
+>>>
+>>> From: R-SIG-Mac <r-sig-mac-bounces at r-project.org<mailto:r-sig-mac-bounces at r-project.org>> on behalf of Timothy Bates <tim.bates at ed.ac.uk<mailto:tim.bates at ed.ac.uk>>
+>>> Date: Monday, June 24, 2024 at 4:00?PM
+>>> To: R list <R-SIG-Mac at r-project.org<mailto:R-SIG-Mac at r-project.org>>
+>>> Subject: [R-SIG-Mac] procedure to ship libomp.dylib run-time with package
+>>> ATTENTION: This email originated from a sender outside of MCW. Use caution when clicking on links or opening attachments.
+>>> ________________________________
+>>>
+>>> At https://urldefense.com/v3/__https://mac.r-project.org/openmp/__;!!H8mHWRdzp34!4HZ0uFxJQ121gF_TnX99OuMlgIXM600pq8wCbWruoLsdLTtaFgRB5_gMopCtxD0N9M4tUOO-7hBGADHx1sk$<https://urldefense.com/v3/__https:/mac.r-project.org/openmp/__;!!H8mHWRdzp34!4HZ0uFxJQ121gF_TnX99OuMlgIXM600pq8wCbWruoLsdLTtaFgRB5_gMopCtxD0N9M4tUOO-7hBGADHx1sk$><https://urldefense.com/v3/__https:/mac.r-project.org/openmp/__;!!H8mHWRdzp34!4HZ0uFxJQ121gF_TnX99OuMlgIXM600pq8wCbWruoLsdLTtaFgRB5_gMopCtxD0N9M4tUOO-7hBGADHx1sk$%3chttps:/urldefense.com/v3/__https:/mac.r-project.org/openmp/__;!!H8mHWRdzp34!4HZ0uFxJQ121gF_TnX99OuMlgIXM600pq8wCbWruoLsdLTtaFgRB5_gMopCtxD0N9M4tUOO-7hBGADHx1sk$%3e>  it  says
+>>> "any package you compile against libomp.dylib will need that run-time so you have to ship it with your package or have users install it?
+>>>
+>>> Are there  any  instructions on what to do/where to put libomp.dylib so it will be found?
+>>>
+>>> I?ve compiled a package (OpenMx) in which OpenMP is working locally but other users get the error:
+>>>
+>>> require(OpenMx)
+>>> Error: package or namespace load failed for ?OpenMx? in dyn.load(file, DLLpath = DLLpath, ...):
+>>> unable to load shared object '/Users/***/Library/R/x86_64/4.4/library/OpenMx/libs/OpenMx.so':
+>>>
+>>> dlopen(/Users/***/Library/R/x86_64/4.4/library/OpenMx/libs/OpenMx.so, 0x0006): Library not loaded: /Library/Frameworks/R.framework/Versions/4.3-x86_64/Resources/lib/libomp.dylib
+>>>
+>>>
+>>> The University of Edinburgh is a charitable body, registered in Scotland, with registration number SC005336. Is e buidheann carthannais a th? ann an Oilthigh Dh?n ?ideann, cl?raichte an Alba, ?ireamh cl?raidh SC005336.
+>>> _______________________________________________
+>>> R-SIG-Mac mailing list
+>>> R-SIG-Mac at r-project.org<mailto:R-SIG-Mac at r-project.org>
+>>> https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-sig-mac__;!!H8mHWRdzp34!4HZ0uFxJQ121gF_TnX99OuMlgIXM600pq8wCbWruoLsdLTtaFgRB5_gMopCtxD0N9M4tUOO-7hBGdICDldE$<https://urldefense.com/v3/__https:/stat.ethz.ch/mailman/listinfo/r-sig-mac__;!!H8mHWRdzp34!4HZ0uFxJQ121gF_TnX99OuMlgIXM600pq8wCbWruoLsdLTtaFgRB5_gMopCtxD0N9M4tUOO-7hBGdICDldE$><https://urldefense.com/v3/__https:/stat.ethz.ch/mailman/listinfo/r-sig-mac__;!!H8mHWRdzp34!4HZ0uFxJQ121gF_TnX99OuMlgIXM600pq8wCbWruoLsdLTtaFgRB5_gMopCtxD0N9M4tUOO-7hBGdICDldE$%3chttps:/urldefense.com/v3/__https:/stat.ethz.ch/mailman/listinfo/r-sig-mac__;!!H8mHWRdzp34!4HZ0uFxJQ121gF_TnX99OuMlgIXM600pq8wCbWruoLsdLTtaFgRB5_gMopCtxD0N9M4tUOO-7hBGdICDldE$%3e>
+>>>
+>>>         [[alternative HTML version deleted]]
+>>>
+>>> _______________________________________________
+>>> R-SIG-Mac mailing list
+>>> R-SIG-Mac at r-project.org<mailto:R-SIG-Mac at r-project.org>
+>>> https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-sig-mac__;!!DZ3fjg!_OUXHENJ_6aGlU-humThmTaUR5okhDKW2EGEY49AjJ4AN8eXBWtZCWE3O01pnyxbRpGQDhCl8MMLThVBbYOwLI1d$<https://urldefense.com/v3/__https:/stat.ethz.ch/mailman/listinfo/r-sig-mac__;!!DZ3fjg!_OUXHENJ_6aGlU-humThmTaUR5okhDKW2EGEY49AjJ4AN8eXBWtZCWE3O01pnyxbRpGQDhCl8MMLThVBbYOwLI1d$>
+>>>
+>>>
+>>> --
+>>> Best,
+>>> Kasper
+>>>
+>>>         [[alternative HTML version deleted]]
+>>>
+>>> _______________________________________________
+>>> R-SIG-Mac mailing list
+>>> R-SIG-Mac at r-project.org
+>>> https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-sig-mac__;!!DZ3fjg!_OUXHENJ_6aGlU-humThmTaUR5okhDKW2EGEY49AjJ4AN8eXBWtZCWE3O01pnyxbRpGQDhCl8MMLThVBbYOwLI1d$<https://urldefense.com/v3/__https:/stat.ethz.ch/mailman/listinfo/r-sig-mac__;!!DZ3fjg!_OUXHENJ_6aGlU-humThmTaUR5okhDKW2EGEY49AjJ4AN8eXBWtZCWE3O01pnyxbRpGQDhCl8MMLThVBbYOwLI1d$>
+>>>
+>>> [[alternative HTML version deleted]]
+>>>
+>>> _______________________________________________
+>>> R-SIG-Mac mailing list
+>>> R-SIG-Mac at r-project.org
+>>> https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-sig-mac__;!!DZ3fjg!9XPrFiayt1-V0BmNqWv4wn0V_G6ZIC6DgkviDYpRV4s-dmAnj9Qp_QFEHPG5dbO-Sk0IhdfC3lB0qeeJBDE2ann7kz0eS7A$<https://urldefense.com/v3/__https:/stat.ethz.ch/mailman/listinfo/r-sig-mac__;!!DZ3fjg!9XPrFiayt1-V0BmNqWv4wn0V_G6ZIC6DgkviDYpRV4s-dmAnj9Qp_QFEHPG5dbO-Sk0IhdfC3lB0qeeJBDE2ann7kz0eS7A$>
+> 
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> 
+> 
+> ------------------------------
+> 
+> Subject: Digest Footer
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+> 
+> 
+> ------------------------------
+>
+
+
+From j@g@nmn2 @end|ng |rom gm@||@com  Sat Jul  6 01:40:30 2024
+From: j@g@nmn2 @end|ng |rom gm@||@com (Mikael Jagan)
+Date: Fri, 5 Jul 2024 19:40:30 -0400
+Subject: [R-SIG-Mac] 
+ procedure to ship libomp.dylib run-time with package
+In-Reply-To: <a7a6314b-d4db-45ad-9442-88fe690eb995@gmail.com>
+References: <mailman.15227.3145.1720125099.1268.r-sig-mac@r-project.org>
+ <a7a6314b-d4db-45ad-9442-88fe690eb995@gmail.com>
+Message-ID: <d1468a23-4f59-4b9b-854b-b1cec74a889a@gmail.com>
+
+Typo below ... not *_CPPFLAGS, but rather *_CFLAGS or *_CXXFLAGS: -fopenmp
+is not a preprocessor option ...
+
+Mikael
+
+On 2024-07-05 4:53 pm, Mikael Jagan wrote:
+> Some thoughts in line below, not "certified" but maybe helpful.  Corrections
+> welcome ...
+> 
+> Mikael
+> 
+>> From: "Balamuta, James" <balamut2 at illinois.edu>
+>> To: Simon Urbanek <simon.urbanek at R-project.org>
+>> Cc: Timothy Bates <tim.bates at ed.ac.uk>, Kasper Daniel Hansen
+>> 	<kasperdanielhansen at gmail.com>, "Sparapani, Rodney"
+>> 	<rsparapa at mcw.edu>, R list <R-SIG-Mac at r-project.org>
+>> Subject: Re: [R-SIG-Mac]  procedure to ship libomp.dylib run-time with
+>> 	package
+>> Message-ID:
+>> 	<IA0PR11MB781323FB004CD73F96E34E86EBDE2 at IA0PR11MB7813.namprd11.prod.outlook.com>
+>> 	
+>> Content-Type: text/plain; charset="utf-8"
+>>
+>> Simon,
+>>
+>> Thanks for the update. I?m aware of the linking instructions [1,2,3,4] and the purpose of configure{.ac} [5]. What I was not aware of was the CRAN macOS build machine were outfitted with the appropriate OpenMP setup [6, 7] in a post R 4.0.0 world. Thus, more than just local configurations that adopted [8] could benefit from OpenMP especially since the top of [8] contains:
+>>
+>>> Warning! Everything described on this page is strictly experimental and not officially supported by CRAN, R-core or R Foundation. In may break at any time. The information is provided in the hope of being useful to some tech-savvy people. It is not intended for the regular R user.
+>>
+>> Changing focus, I?m interested in re-enabling OpenMP with respect to RcppArmadillo, my questions here are:
+>>
+>>
+>>     1.  When did libomp.dylib start shipping with the CRAN build? R 4.1, 4.2, 4.3, or 4.4?
+>>        *   This will allow me to petition to have an R version dependency change.
+> 
+> The binaries are archived, so one can just look "there" ...
+> 
+>       https://cran.r-project.org/bin/macosx/base/
+>       https://cran.r-project.org/bin/macosx/big-sur-x86_64/base/
+>       https://cran.r-project.org/bin/macosx/big-sur-arm64/base/
+> 
+> I see libomp.dylib in R 4.3.0, but not in R 4.2.3, just inspecting the arm64
+> ones ...
+> 
+>       $ lsbom -p f `pkgutil --bom R-4.4.1-arm64.pkg` | grep libomp[.]dylib
+>       ./R.framework/Versions/4.4-arm64/Resources/lib/libomp.dylib
+> 
+> But I don't see how that would motivate a dependency on R >= 4.3.  Not everyone
+> running R under macOS obtains R from CRAN, and not everyone running CRAN R has
+> omp.h in the search path ...
+> 
+>>     2.  If a package only needs to compile code only once, then it?s sufficient to use the usual ` $(SHLIB_OPENMP_CXXFLAGS)` in src/Makevars with the appropriate ifdef pre-processor on including #include <omp.h>?
+>>        *   This provides improved guidance related to best package development practices.
+> 
+> CRAN configures R with empty SHLIB_OPENMP_*FLAGS, which you can verify by
+> looking at any CRAN R installation's etc/Makeconf.
+> 
+>       $ grep SHLIB_OPENMP `R RHOME`/etc/Makeconf
+>       SHLIB_OPENMP_CFLAGS =
+>       SHLIB_OPENMP_CXXFLAGS =
+>       SHLIB_OPENMP_FFLAGS =
+> 
+> So, AFAICT, _automatic_ OpenMP support [1] still requires _regular_ users [2]
+> to install OpenMP-using packages from sources and still requires OpenMP-using
+> packages to have a src/Makevars containing
+> 
+>       PKG_CPPFLAGS = @THISPACKAGE_CPPFLAGS@
+>       PKG_LIBS = @THISPACKAGE_LIBS@
+> 
+> and a configure.ac arranging for those macros to be substituted with
+> 
+>       THISPACKAGE_CPPFLAGS=[-Xclang ]-fopenmp
+>       THISPACKAGE_LIBS=-lomp
+> 
+> conditional on a proper configure test (one that attempts to compile a program
+> including omp.h and calling (say) omp_get_num_threads()).  On macOS, you'd try
+> compiling twice, first with -fopenmp and again with -Xclang -fopenmp if -fopenmp
+> alone was not enough.  Simon has said this already ...
+> 
+> Even if CRAN did configure R with nonempty SHLIB_OPENMP_*FLAGS, it does not
+> (yet) bundle omp.h with R.
+> 
+>       $ lsbom -p f `pkgutil --bom R-4.4.1-arm64.pkg` | grep omp[.]h
+> 
+> The user would in many cases still need to arrange for omp.h to be found on the
+> search path, notably as R-exts says:
+> 
+>       For portability, any C/C++ code using the omp_* functions should
+>       include the omp.h header: some compilers (but not all) include it
+>       when OpenMP mode is switched on (e.g. via flag -fopenmp).
+> 
+> But maybe CRAN would consider shipping omp.h in addition to libomp.dylib
+> in the future ... ?
+> 
+> ----
+> 
+>       [1] "automatic" in the sense of _not_ requiring the user to pass flags to
+>           R CMD INSTALL on the command line or through their personal Makevars
+>       [2] "regular" meaning that they obtained R from CRAN rather than, say,
+>           configuring R themselves with SHLIB_OPENMP_*FLAGS set
+> 
+>>     3.  For packages that compile code first on CRAN and, then, dynamically on a user?s computer, what is the best approach to ensuring that instructions in [8] are set?
+>>        *   This would ensure armadillo-oriented code could take full use of the cores on macOS.
+>>
+> 
+> As Simon has emphasized already, the only robust test for OpenMP support is
+> to attempt to compile a program with suitable flags.  Testing for a specific
+> user configuration (such as that described in mac.r-project.org/openmp/) is
+> fragile and restrictive for no reason.
+> 
+> If your package has an R function that invokes R CMD SHLIB, then that function
+> could perform a configure step, adjusting flags depending on the test result.
+> 
+>> Best regards,
+>>
+>> James
+>>
+>> [1]: https://stat.ethz.ch/pipermail/r-sig-mac/2020-April/013346.html
+>> [2]: https://stat.ethz.ch/pipermail/r-sig-mac/2019-May/012987.html
+>> [3]: https://stat.ethz.ch/pipermail/r-sig-mac/2019-June/012996.html
+>> [4]: https://stat.ethz.ch/pipermail/r-sig-mac/2020-May/013451.html
+>> [5]: https://stackoverflow.com/a/42281495/1345455
+>> [6]: https://github.com/RcppCore/RcppArmadillo/pull/219#issuecomment-383100722
+>> [7]: https://stat.ethz.ch/pipermail/r-sig-mac/2020-April/013289.html
+>> [8]: https://mac.r-project.org/openmp/
+>>
+>>
+>>
+>> From: Simon Urbanek <simon.urbanek at R-project.org>
+>> Date: Friday, June 28, 2024 at 12:31?AM
+>> To: Balamuta, James <balamut2 at illinois.edu>
+>> Cc: Timothy Bates <tim.bates at ed.ac.uk>, Kasper Daniel Hansen <kasperdanielhansen at gmail.com>, Sparapani, Rodney <rsparapa at mcw.edu>, R list <R-SIG-Mac at r-project.org>
+>> Subject: Re: [R-SIG-Mac] procedure to ship libomp.dylib run-time with package
+>>
+>>
+>>> On 27 Jun 2024, at 23:57, Balamuta, James <balamut2 at illinois.edu> wrote:
+>>>
+>>> Simon,
+>>>    I think there is a communication issue regarding OpenMP for the macOS R community. That said, I?m both thrilled and delighted that I?m wrong in this case! To my knowledge, there was never a public facing note regarding `libomp`  shipping with CRAN?s official R binary for mac, [1]. In fact, the last tracking I have with respect to OpenMP and R on macOS was its abrupt and painful removal that led to the instructions for experimental inclusion of OpenMP on mac within the developer website [2] (gently acknowledge by Prof. Ripley as being not current). This has led to a lot of lobotomization in compiled code regarding macOS that can now hopefully be adjusted for the multi-core world, [3].
+>>>    With this in mind, I suppose this means that we would need to revisit the `configure.ac` [3]. Potentially, as Prof. Ripley mentioned, we?re looking at including on path/detecting:
+>>>    `R RHOME`/lib/libomp.dylib/Library/Frameworks/R.framework/Resources/lib/libomp.dylib
+>>
+>>
+>> That's entirely unnecessary - you should not be requiring specific file paths - that's not how linking tests work. All the instructions are on the OpenMP page for years - it is as simple as -lomp (which is standard almost everywhere). The only non-standard requirement compared to other platforms is that instead of -fopemp in C flags the package should also check for -Xclang -fopenmp.
+>>
+>> If a package explicitly disables OpenMP for Apple compilers, it is its deliberate choice - it was never necessary. The whole point of configure scripts is to detect functionality by testing it and use it if available.
+>>
+>> Cheers,
+>> Simon
+>>
+>>
+>>>    Thus, the package binary downloaded from CRAN would correctly set and detect cores per:
+>>>    # install.packages("RcppArmadillo")
+>>>    # Determine the number of active threads
+>>> RcppArmadillo::armadillo_get_number_of_omp_threads()
+>>> [1] 1
+>>>    # Set number of threads
+>>> RcppArmadillo::armadillo_set_number_of_omp_threads(3)
+>>>    # Retrieve OpenMP threads after setting
+>>> RcppArmadillo::armadillo_get_number_of_omp_threads()
+>>> [1] 1
+>>> # This should be 3.
+>>>    I?m happy to talk more on the list or off the list.  Best,
+>>>    James
+>>>    [1]: https://urldefense.com/v3/__https://cran.r-project.org/doc/manuals/r-release/NEWS.html__;!!DZ3fjg!57krJgj2EE5sq_qaDsKls4jb5f99c2iyQaXHoJ_7OBQAbpapE-x_fRkzBh-Fy_cnsu-sUJpdhelgLqI006PhaLiBVYB5MDA$<https://urldefense.com/v3/__https:/cran.r-project.org/doc/manuals/r-release/NEWS.html__;!!DZ3fjg!57krJgj2EE5sq_qaDsKls4jb5f99c2iyQaXHoJ_7OBQAbpapE-x_fRkzBh-Fy_cnsu-sUJpdhelgLqI006PhaLiBVYB5MDA$>
+>>> [2]: https://urldefense.com/v3/__https://mac.r-project.org/openmp/__;!!DZ3fjg!57krJgj2EE5sq_qaDsKls4jb5f99c2iyQaXHoJ_7OBQAbpapE-x_fRkzBh-Fy_cnsu-sUJpdhelgLqI006PhaLiBmw9UV3o$<https://urldefense.com/v3/__https:/mac.r-project.org/openmp/__;!!DZ3fjg!57krJgj2EE5sq_qaDsKls4jb5f99c2iyQaXHoJ_7OBQAbpapE-x_fRkzBh-Fy_cnsu-sUJpdhelgLqI006PhaLiBmw9UV3o$>
+>>> [3]: https://urldefense.com/v3/__https://github.com/RcppCore/RcppArmadillo/blob/37461ba36472305c699263afc229919d37daa5e3/configure.ac*L109__;Iw!!DZ3fjg!57krJgj2EE5sq_qaDsKls4jb5f99c2iyQaXHoJ_7OBQAbpapE-x_fRkzBh-Fy_cnsu-sUJpdhelgLqI006PhaLiB8rnPPRw$<https://urldefense.com/v3/__https:/github.com/RcppCore/RcppArmadillo/blob/37461ba36472305c699263afc229919d37daa5e3/configure.ac*L109__;Iw!!DZ3fjg!57krJgj2EE5sq_qaDsKls4jb5f99c2iyQaXHoJ_7OBQAbpapE-x_fRkzBh-Fy_cnsu-sUJpdhelgLqI006PhaLiB8rnPPRw$>
+>>>     From: Simon Urbanek <simon.urbanek at R-project.org>
+>>> Date: Thursday, June 27, 2024 at 10:25?AM
+>>> To: Balamuta, James <balamut2 at illinois.edu>
+>>> Cc: Timothy Bates <tim.bates at ed.ac.uk>, Kasper Daniel Hansen <kasperdanielhansen at gmail.com>, Sparapani, Rodney <rsparapa at mcw.edu>, R list <R-SIG-Mac at r-project.org>
+>>> Subject: Re: [R-SIG-Mac] procedure to ship libomp.dylib run-time with package
+>>> Most of the claims below are false - libomp is shipped with CRAN R for quite some time specifically so that packages which benefit from it significantly can enable OpenMP reasonably easily - they only need to add the flags as noted on the cited page and CRAN takes care of the rest. If there are any problems, please feel free to contact me.
+>>>
+>>> Cheers,
+>>> Simon
+>>>
+>>>
+>>>> On 26 Jun 2024, at 07:41, Balamuta, James <balamut2 at illinois.edu> wrote:
+>>>>
+>>>> Tim,
+>>>>
+>>>> Unfortunately, there isn't a nice way of including OpenMP for macOS within a package.  One potential avenue would be to use a `configure.ac` file to check for whether OpenMP headers are present on the macOS computer and, then, allow the correct OpenMP compilation flags to be set. However, this requires the user to compile from source instead of using a CRAN binary.
+>>>>
+>>>> Unfortunately, there isn't going to be an easier way as OpenMP on macOS with R is experimental by nature.
+>>>>
+>>>> Best regards,
+>>>>
+>>>> James
+>>>> ________________________________
+>>>> From: R-SIG-Mac <r-sig-mac-bounces at r-project.org> on behalf of Timothy Bates <tim.bates at ed.ac.uk>
+>>>> Sent: Tuesday, June 25, 2024 10:00 PM
+>>>> To: Kasper Daniel Hansen <kasperdanielhansen at gmail.com>; Sparapani, Rodney <rsparapa at mcw.edu>
+>>>> Cc: R list <R-SIG-Mac at r-project.org>
+>>>> Subject: Re: [R-SIG-Mac] procedure to ship libomp.dylib run-time with package
+>>>>
+>>>> Thanks Kasper,
+>>>> I read those lines and had installed the openmp software as instructed. It all works fine for me. But users don?t have my usr/ folder, not can a package write to their usr/ folder.
+>>>>
+>>>> so what is confusing is how the user will get this lib. Where should make place libraries like libomp within the package so that if a user merely install.packages() it, the library will be found and loaded?
+>>>> Best, tim
+>>>>
+>>>>
+>>>> Sent from Outlook for iOS<https://urldefense.com/v3/__https://aka.ms/o0ukef__;!!DZ3fjg!_OUXHENJ_6aGlU-humThmTaUR5okhDKW2EGEY49AjJ4AN8eXBWtZCWE3O01pnyxbRpGQDhCl8MMLThVBbUXDuipI$ >
+>>>> ________________________________
+>>>> From: Kasper Daniel Hansen <kasperdanielhansen at gmail.com>
+>>>> Sent: Tuesday, June 25, 2024 11:34:42 AM
+>>>> To: Sparapani, Rodney <rsparapa at mcw.edu>
+>>>> Cc: Timothy Bates <tim.bates at ed.ac.uk>; R list <R-SIG-Mac at r-project.org>
+>>>> Subject: Re: [R-SIG-Mac] procedure to ship libomp.dylib run-time with package
+>>>>
+>>>> This email was sent to you by someone outside the University.
+>>>> You should only click on links or attachments if you are certain that the email is genuine and the content is safe.
+>>>> If you read the next couple of sentences on that page, it says
+>>>>
+>>>> The following are links to libomp OpenMP run-time built from official LLVM release sources using Xcode compilers. They are signed and support macOS 10.13 (High Sierra) and higher. All tar-balls contain the system tree usr/local/lib and usr/local/include so the recommended installation is to type in Terminal:
+>>>>
+>>>>      curl -O https://urldefense.com/v3/__https://mac.r-project.org/openmp/openmp-14.0.6-darwin20-Release.tar.gz__;!!DZ3fjg!_OUXHENJ_6aGlU-humThmTaUR5okhDKW2EGEY49AjJ4AN8eXBWtZCWE3O01pnyxbRpGQDhCl8MMLThVBbWfUKf7B$<https://urldefense.com/v3/__https:/mac.r-project.org/openmp/openmp-14.0.6-darwin20-Release.tar.gz__;!!DZ3fjg!_OUXHENJ_6aGlU-humThmTaUR5okhDKW2EGEY49AjJ4AN8eXBWtZCWE3O01pnyxbRpGQDhCl8MMLThVBbWfUKf7B$>
+>>>>      sudo tar fvxz openmp-14.0.6-darwin20-Release.tar.gz -C /
+>>>>
+>>>>
+>>>> I think that is pretty clear? Note the -C / as part of the last line, that tells tar where to put it on the system.
+>>>>
+>>>> On Tue, Jun 25, 2024 at 8:20?AM Sparapani, Rodney via R-SIG-Mac <r-sig-mac at r-project.org<mailto:r-sig-mac at r-project.org>> wrote:
+>>>> Hi Tim:
+>>>>
+>>>> /usr/local/lib it seems.  See the following page
+>>>> https://urldefense.com/v3/__https://mac.r-project.org/openmp/__;!!DZ3fjg!_OUXHENJ_6aGlU-humThmTaUR5okhDKW2EGEY49AjJ4AN8eXBWtZCWE3O01pnyxbRpGQDhCl8MMLThVBbaQGheD_$<https://urldefense.com/v3/__https:/mac.r-project.org/openmp/__;!!DZ3fjg!_OUXHENJ_6aGlU-humThmTaUR5okhDKW2EGEY49AjJ4AN8eXBWtZCWE3O01pnyxbRpGQDhCl8MMLThVBbaQGheD_$>
+>>>>
+>>>> --
+>>>> Rodney Sparapani, Associate Professor of Biostatistics, He/Him/His
+>>>> Vice President, Wisconsin Chapter of the American Statistical Association
+>>>> Institute for Health and Equity, Division of Biostatistics
+>>>> Medical College of Wisconsin, Milwaukee Campus
+>>>>
+>>>> If this is outside of working hours, then please respond when convenient.
+>>>>
+>>>> From: R-SIG-Mac <r-sig-mac-bounces at r-project.org<mailto:r-sig-mac-bounces at r-project.org>> on behalf of Timothy Bates <tim.bates at ed.ac.uk<mailto:tim.bates at ed.ac.uk>>
+>>>> Date: Monday, June 24, 2024 at 4:00?PM
+>>>> To: R list <R-SIG-Mac at r-project.org<mailto:R-SIG-Mac at r-project.org>>
+>>>> Subject: [R-SIG-Mac] procedure to ship libomp.dylib run-time with package
+>>>> ATTENTION: This email originated from a sender outside of MCW. Use caution when clicking on links or opening attachments.
+>>>> ________________________________
+>>>>
+>>>> At https://urldefense.com/v3/__https://mac.r-project.org/openmp/__;!!H8mHWRdzp34!4HZ0uFxJQ121gF_TnX99OuMlgIXM600pq8wCbWruoLsdLTtaFgRB5_gMopCtxD0N9M4tUOO-7hBGADHx1sk$<https://urldefense.com/v3/__https:/mac.r-project.org/openmp/__;!!H8mHWRdzp34!4HZ0uFxJQ121gF_TnX99OuMlgIXM600pq8wCbWruoLsdLTtaFgRB5_gMopCtxD0N9M4tUOO-7hBGADHx1sk$><https://urldefense.com/v3/__https:/mac.r-project.org/openmp/__;!!H8mHWRdzp34!4HZ0uFxJQ121gF_TnX99OuMlgIXM600pq8wCbWruoLsdLTtaFgRB5_gMopCtxD0N9M4tUOO-7hBGADHx1sk$%3chttps:/urldefense.com/v3/__https:/mac.r-project.org/openmp/__;!!H8mHWRdzp34!4HZ0uFxJQ121gF_TnX99OuMlgIXM600pq8wCbWruoLsdLTtaFgRB5_gMopCtxD0N9M4tUOO-7hBGADHx1sk$%3e>  it  says
+>>>> "any package you compile against libomp.dylib will need that run-time so you have to ship it with your package or have users install it?
+>>>>
+>>>> Are there  any  instructions on what to do/where to put libomp.dylib so it will be found?
+>>>>
+>>>> I?ve compiled a package (OpenMx) in which OpenMP is working locally but other users get the error:
+>>>>
+>>>> require(OpenMx)
+>>>> Error: package or namespace load failed for ?OpenMx? in dyn.load(file, DLLpath = DLLpath, ...):
+>>>> unable to load shared object '/Users/***/Library/R/x86_64/4.4/library/OpenMx/libs/OpenMx.so':
+>>>>
+>>>> dlopen(/Users/***/Library/R/x86_64/4.4/library/OpenMx/libs/OpenMx.so, 0x0006): Library not loaded: /Library/Frameworks/R.framework/Versions/4.3-x86_64/Resources/lib/libomp.dylib
+>>>>
+>>>>
+>>>> The University of Edinburgh is a charitable body, registered in Scotland, with registration number SC005336. Is e buidheann carthannais a th? ann an Oilthigh Dh?n ?ideann, cl?raichte an Alba, ?ireamh cl?raidh SC005336.
+>>>> _______________________________________________
+>>>> R-SIG-Mac mailing list
+>>>> R-SIG-Mac at r-project.org<mailto:R-SIG-Mac at r-project.org>
+>>>> https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-sig-mac__;!!H8mHWRdzp34!4HZ0uFxJQ121gF_TnX99OuMlgIXM600pq8wCbWruoLsdLTtaFgRB5_gMopCtxD0N9M4tUOO-7hBGdICDldE$<https://urldefense.com/v3/__https:/stat.ethz.ch/mailman/listinfo/r-sig-mac__;!!H8mHWRdzp34!4HZ0uFxJQ121gF_TnX99OuMlgIXM600pq8wCbWruoLsdLTtaFgRB5_gMopCtxD0N9M4tUOO-7hBGdICDldE$><https://urldefense.com/v3/__https:/stat.ethz.ch/mailman/listinfo/r-sig-mac__;!!H8mHWRdzp34!4HZ0uFxJQ121gF_TnX99OuMlgIXM600pq8wCbWruoLsdLTtaFgRB5_gMopCtxD0N9M4tUOO-7hBGdICDldE$%3chttps:/urldefense.com/v3/__https:/stat.ethz.ch/mailman/listinfo/r-sig-mac__;!!H8mHWRdzp34!4HZ0uFxJQ121gF_TnX99OuMlgIXM600pq8wCbWruoLsdLTtaFgRB5_gMopCtxD0N9M4tUOO-7hBGdICDldE$%3e>
+>>>>
+>>>>          [[alternative HTML version deleted]]
+>>>>
+>>>> _______________________________________________
+>>>> R-SIG-Mac mailing list
+>>>> R-SIG-Mac at r-project.org<mailto:R-SIG-Mac at r-project.org>
+>>>> https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-sig-mac__;!!DZ3fjg!_OUXHENJ_6aGlU-humThmTaUR5okhDKW2EGEY49AjJ4AN8eXBWtZCWE3O01pnyxbRpGQDhCl8MMLThVBbYOwLI1d$<https://urldefense.com/v3/__https:/stat.ethz.ch/mailman/listinfo/r-sig-mac__;!!DZ3fjg!_OUXHENJ_6aGlU-humThmTaUR5okhDKW2EGEY49AjJ4AN8eXBWtZCWE3O01pnyxbRpGQDhCl8MMLThVBbYOwLI1d$>
+>>>>
+>>>>
+>>>> --
+>>>> Best,
+>>>> Kasper
+>>>>
+>>>>          [[alternative HTML version deleted]]
+>>>>
+>>>> _______________________________________________
+>>>> R-SIG-Mac mailing list
+>>>> R-SIG-Mac at r-project.org
+>>>> https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-sig-mac__;!!DZ3fjg!_OUXHENJ_6aGlU-humThmTaUR5okhDKW2EGEY49AjJ4AN8eXBWtZCWE3O01pnyxbRpGQDhCl8MMLThVBbYOwLI1d$<https://urldefense.com/v3/__https:/stat.ethz.ch/mailman/listinfo/r-sig-mac__;!!DZ3fjg!_OUXHENJ_6aGlU-humThmTaUR5okhDKW2EGEY49AjJ4AN8eXBWtZCWE3O01pnyxbRpGQDhCl8MMLThVBbYOwLI1d$>
+>>>>
+>>>> [[alternative HTML version deleted]]
+>>>>
+>>>> _______________________________________________
+>>>> R-SIG-Mac mailing list
+>>>> R-SIG-Mac at r-project.org
+>>>> https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-sig-mac__;!!DZ3fjg!9XPrFiayt1-V0BmNqWv4wn0V_G6ZIC6DgkviDYpRV4s-dmAnj9Qp_QFEHPG5dbO-Sk0IhdfC3lB0qeeJBDE2ann7kz0eS7A$<https://urldefense.com/v3/__https:/stat.ethz.ch/mailman/listinfo/r-sig-mac__;!!DZ3fjg!9XPrFiayt1-V0BmNqWv4wn0V_G6ZIC6DgkviDYpRV4s-dmAnj9Qp_QFEHPG5dbO-Sk0IhdfC3lB0qeeJBDE2ann7kz0eS7A$>
+>>
+>>
+>> 	[[alternative HTML version deleted]]
+>>
+>>
+>>
+>> ------------------------------
+>>
+>> Subject: Digest Footer
+>>
+>> _______________________________________________
+>> R-SIG-Mac mailing list
+>> R-SIG-Mac at r-project.org
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>>
+>>
+>> ------------------------------
+>>
+
+
+From @|mon@urb@nek @end|ng |rom R-project@org  Sat Jul  6 15:03:22 2024
+From: @|mon@urb@nek @end|ng |rom R-project@org (Simon Urbanek)
+Date: Sat, 6 Jul 2024 15:03:22 +0200
+Subject: [R-SIG-Mac] 
+ procedure to ship libomp.dylib run-time with package
+In-Reply-To: <d1468a23-4f59-4b9b-854b-b1cec74a889a@gmail.com>
+References: <mailman.15227.3145.1720125099.1268.r-sig-mac@r-project.org>
+ <a7a6314b-d4db-45ad-9442-88fe690eb995@gmail.com>
+ <d1468a23-4f59-4b9b-854b-b1cec74a889a@gmail.com>
+Message-ID: <D6609BEF-8267-49C0-A271-9BCF2B35ED83@R-project.org>
+
+There seems to be some misunderstanding of the processes involved, so I'll try to clarify those.
+
+First, there are two orthogonal uses for OpenMP: OpenMP use by R and OpenMP use by packages. R itself detects OpenMP when it is built (configured to be precise) and may use it when detected. By default, if OpenMP support is detected by R it will also be provided to packages via the SHLIB_OPENMP_*FLAGS. On macOS R does not attempt to use the combination of Apple clang + Intel OpenMP (intentionally) since the benefits are not significant (for R) and thus it is not worth the complexity and risk (of being sure that the combination will work) in general. Therefore R itself will not use OpenMP and will not set SHLIB_OPENMP_*FLAGS when used with Apple clang.
+
+However, if a package deems that it wants to explicitly support such combination if available (e.g., because it is sure that is will lead to significant benefits to the user), it can simply perform the standard OpenMP compilation test with an additional attempt of adding -Xclang -fopenmp to CFLAGS instead of -fopenmp (which is otherwise required on most platforms). That's all - it is that simple (many packages already perform OpenMP tests anyway). The package should not care about R version, CRAN or anything - it's entirely irrelevant - it simply checks whether such functionality is available or not. If it is available, it will work and the package can use it.
+
+In order to simplify distribution, CRAN makes sure that the package build environment includes working OpenMP in the Apple clang + Intel OpenMP combination such that the above test will succeed. As a technical detail, to make that work seamlessly, CRAN provides the Intel OpenMP run-time library libomp.dylib in the R binary framework distribution such that packages don't have to ship it themselves. Thus if a package correctly detects OpenMP it will be available on CRAN with OpenMP support. As explained above, the package should to not do anything special - it only had to perform the simple test for OpenMP functionality as explained above. The CRAN build process makes sure it will "just work".
+
+If a user or developer wants to add the Apple clang + Intel OpenMP support to their macOS system independently, they only need to download and unpack the binary from https://mac.r-project.org/openmp/ - that's how they can check whether the package performs well enough to warrant enabling the support in the package - or for the user to force the package to use OpenMP even if the package does not do so itself.
+
+To sum up: by default packages on macOS will not use OpenMP when Apple clang is used, but if the package author deems that OpenMP is crucial and will test the Apple clang + Intel OpenMP combination to make sure it is beneficial, then the package can enable the support by simply prepending -Xclang to the usual -fopenmp CFLAGS when testing for OpenMP availability and it will work both on CRAN (including distribution) and for any users that provide Intel OpenMP on their machine. As explained, the package should NOT check for specific R version, libraries, path or anything like that - simply just for the availability of the functionality as the details may vary by machine and installation.
+
+I hope this clears up the misconceptions - really, the intention was for this to be as simple as possible.
+
+Cheers,
+Simon
+
+
+
+> On Jul 6, 2024, at 01:40, Mikael Jagan <jaganmn2 at gmail.com> wrote:
+> 
+> Typo below ... not *_CPPFLAGS, but rather *_CFLAGS or *_CXXFLAGS: -fopenmp
+> is not a preprocessor option ...
+> 
+> Mikael
+> 
+> On 2024-07-05 4:53 pm, Mikael Jagan wrote:
+>> Some thoughts in line below, not "certified" but maybe helpful.  Corrections
+>> welcome ...
+>> Mikael
+>>> From: "Balamuta, James" <balamut2 at illinois.edu>
+>>> To: Simon Urbanek <simon.urbanek at R-project.org>
+>>> Cc: Timothy Bates <tim.bates at ed.ac.uk>, Kasper Daniel Hansen
+>>> <kasperdanielhansen at gmail.com>, "Sparapani, Rodney"
+>>> <rsparapa at mcw.edu>, R list <R-SIG-Mac at r-project.org>
+>>> Subject: Re: [R-SIG-Mac]  procedure to ship libomp.dylib run-time with
+>>> package
+>>> Message-ID:
+>>> <IA0PR11MB781323FB004CD73F96E34E86EBDE2 at IA0PR11MB7813.namprd11.prod.outlook.com>
+>>> 
+>>> Content-Type: text/plain; charset="utf-8"
+>>> 
+>>> Simon,
+>>> 
+>>> Thanks for the update. I?m aware of the linking instructions [1,2,3,4] and the purpose of configure{.ac} [5]. What I was not aware of was the CRAN macOS build machine were outfitted with the appropriate OpenMP setup [6, 7] in a post R 4.0.0 world. Thus, more than just local configurations that adopted [8] could benefit from OpenMP especially since the top of [8] contains:
+>>> 
+>>>> Warning! Everything described on this page is strictly experimental and not officially supported by CRAN, R-core or R Foundation. In may break at any time. The information is provided in the hope of being useful to some tech-savvy people. It is not intended for the regular R user.
+>>> 
+>>> Changing focus, I?m interested in re-enabling OpenMP with respect to RcppArmadillo, my questions here are:
+>>> 
+>>> 
+>>>    1.  When did libomp.dylib start shipping with the CRAN build? R 4.1, 4.2, 4.3, or 4.4?
+>>>       *   This will allow me to petition to have an R version dependency change.
+>> The binaries are archived, so one can just look "there" ...
+>>      https://cran.r-project.org/bin/macosx/base/
+>>      https://cran.r-project.org/bin/macosx/big-sur-x86_64/base/
+>>      https://cran.r-project.org/bin/macosx/big-sur-arm64/base/
+>> I see libomp.dylib in R 4.3.0, but not in R 4.2.3, just inspecting the arm64
+>> ones ...
+>>      $ lsbom -p f `pkgutil --bom R-4.4.1-arm64.pkg` | grep libomp[.]dylib
+>>      ./R.framework/Versions/4.4-arm64/Resources/lib/libomp.dylib
+>> But I don't see how that would motivate a dependency on R >= 4.3.  Not everyone
+>> running R under macOS obtains R from CRAN, and not everyone running CRAN R has
+>> omp.h in the search path ...
+>>>    2.  If a package only needs to compile code only once, then it?s sufficient to use the usual ` $(SHLIB_OPENMP_CXXFLAGS)` in src/Makevars with the appropriate ifdef pre-processor on including #include <omp.h>?
+>>>       *   This provides improved guidance related to best package development practices.
+>> CRAN configures R with empty SHLIB_OPENMP_*FLAGS, which you can verify by
+>> looking at any CRAN R installation's etc/Makeconf.
+>>      $ grep SHLIB_OPENMP `R RHOME`/etc/Makeconf
+>>      SHLIB_OPENMP_CFLAGS =
+>>      SHLIB_OPENMP_CXXFLAGS =
+>>      SHLIB_OPENMP_FFLAGS =
+>> So, AFAICT, _automatic_ OpenMP support [1] still requires _regular_ users [2]
+>> to install OpenMP-using packages from sources and still requires OpenMP-using
+>> packages to have a src/Makevars containing
+>>      PKG_CPPFLAGS = @THISPACKAGE_CPPFLAGS@
+>>      PKG_LIBS = @THISPACKAGE_LIBS@
+>> and a configure.ac arranging for those macros to be substituted with
+>>      THISPACKAGE_CPPFLAGS=[-Xclang ]-fopenmp
+>>      THISPACKAGE_LIBS=-lomp
+>> conditional on a proper configure test (one that attempts to compile a program
+>> including omp.h and calling (say) omp_get_num_threads()).  On macOS, you'd try
+>> compiling twice, first with -fopenmp and again with -Xclang -fopenmp if -fopenmp
+>> alone was not enough.  Simon has said this already ...
+>> Even if CRAN did configure R with nonempty SHLIB_OPENMP_*FLAGS, it does not
+>> (yet) bundle omp.h with R.
+>>      $ lsbom -p f `pkgutil --bom R-4.4.1-arm64.pkg` | grep omp[.]h
+>> The user would in many cases still need to arrange for omp.h to be found on the
+>> search path, notably as R-exts says:
+>>      For portability, any C/C++ code using the omp_* functions should
+>>      include the omp.h header: some compilers (but not all) include it
+>>      when OpenMP mode is switched on (e.g. via flag -fopenmp).
+>> But maybe CRAN would consider shipping omp.h in addition to libomp.dylib
+>> in the future ... ?
+>> ----
+>>      [1] "automatic" in the sense of _not_ requiring the user to pass flags to
+>>          R CMD INSTALL on the command line or through their personal Makevars
+>>      [2] "regular" meaning that they obtained R from CRAN rather than, say,
+>>          configuring R themselves with SHLIB_OPENMP_*FLAGS set
+>>>    3.  For packages that compile code first on CRAN and, then, dynamically on a user?s computer, what is the best approach to ensuring that instructions in [8] are set?
+>>>       *   This would ensure armadillo-oriented code could take full use of the cores on macOS.
+>>> 
+>> As Simon has emphasized already, the only robust test for OpenMP support is
+>> to attempt to compile a program with suitable flags.  Testing for a specific
+>> user configuration (such as that described in mac.r-project.org/openmp/) is
+>> fragile and restrictive for no reason.
+>> If your package has an R function that invokes R CMD SHLIB, then that function
+>> could perform a configure step, adjusting flags depending on the test result.
+>>> Best regards,
+>>> 
+>>> James
+>>> 
+>>> [1]: https://stat.ethz.ch/pipermail/r-sig-mac/2020-April/013346.html
+>>> [2]: https://stat.ethz.ch/pipermail/r-sig-mac/2019-May/012987.html
+>>> [3]: https://stat.ethz.ch/pipermail/r-sig-mac/2019-June/012996.html
+>>> [4]: https://stat.ethz.ch/pipermail/r-sig-mac/2020-May/013451.html
+>>> [5]: https://stackoverflow.com/a/42281495/1345455
+>>> [6]: https://github.com/RcppCore/RcppArmadillo/pull/219#issuecomment-383100722
+>>> [7]: https://stat.ethz.ch/pipermail/r-sig-mac/2020-April/013289.html
+>>> [8]: https://mac.r-project.org/openmp/
+>>> 
+>>> 
+>>> 
+>>> From: Simon Urbanek <simon.urbanek at R-project.org>
+>>> Date: Friday, June 28, 2024 at 12:31?AM
+>>> To: Balamuta, James <balamut2 at illinois.edu>
+>>> Cc: Timothy Bates <tim.bates at ed.ac.uk>, Kasper Daniel Hansen <kasperdanielhansen at gmail.com>, Sparapani, Rodney <rsparapa at mcw.edu>, R list <R-SIG-Mac at r-project.org>
+>>> Subject: Re: [R-SIG-Mac] procedure to ship libomp.dylib run-time with package
+>>> 
+>>> 
+>>>> On 27 Jun 2024, at 23:57, Balamuta, James <balamut2 at illinois.edu> wrote:
+>>>> 
+>>>> Simon,
+>>>>   I think there is a communication issue regarding OpenMP for the macOS R community. That said, I?m both thrilled and delighted that I?m wrong in this case! To my knowledge, there was never a public facing note regarding `libomp`  shipping with CRAN?s official R binary for mac, [1]. In fact, the last tracking I have with respect to OpenMP and R on macOS was its abrupt and painful removal that led to the instructions for experimental inclusion of OpenMP on mac within the developer website [2] (gently acknowledge by Prof. Ripley as being not current). This has led to a lot of lobotomization in compiled code regarding macOS that can now hopefully be adjusted for the multi-core world, [3].
+>>>>   With this in mind, I suppose this means that we would need to revisit the `configure.ac` [3]. Potentially, as Prof. Ripley mentioned, we?re looking at including on path/detecting:
+>>>>   `R RHOME`/lib/libomp.dylib/Library/Frameworks/R.framework/Resources/lib/libomp.dylib
+>>> 
+>>> 
+>>> That's entirely unnecessary - you should not be requiring specific file paths - that's not how linking tests work. All the instructions are on the OpenMP page for years - it is as simple as -lomp (which is standard almost everywhere). The only non-standard requirement compared to other platforms is that instead of -fopemp in C flags the package should also check for -Xclang -fopenmp.
+>>> 
+>>> If a package explicitly disables OpenMP for Apple compilers, it is its deliberate choice - it was never necessary. The whole point of configure scripts is to detect functionality by testing it and use it if available.
+>>> 
+>>> Cheers,
+>>> Simon
+>>> 
+>>> 
+>>>>   Thus, the package binary downloaded from CRAN would correctly set and detect cores per:
+>>>>   # install.packages("RcppArmadillo")
+>>>>   # Determine the number of active threads
+>>>> RcppArmadillo::armadillo_get_number_of_omp_threads()
+>>>> [1] 1
+>>>>   # Set number of threads
+>>>> RcppArmadillo::armadillo_set_number_of_omp_threads(3)
+>>>>   # Retrieve OpenMP threads after setting
+>>>> RcppArmadillo::armadillo_get_number_of_omp_threads()
+>>>> [1] 1
+>>>> # This should be 3.
+>>>>   I?m happy to talk more on the list or off the list.  Best,
+>>>>   James
+>>>>   [1]: https://urldefense.com/v3/__https://cran.r-project.org/doc/manuals/r-release/NEWS.html__;!!DZ3fjg!57krJgj2EE5sq_qaDsKls4jb5f99c2iyQaXHoJ_7OBQAbpapE-x_fRkzBh-Fy_cnsu-sUJpdhelgLqI006PhaLiBVYB5MDA$<https://urldefense.com/v3/__https:/cran.r-project.org/doc/manuals/r-release/NEWS.html__;!!DZ3fjg!57krJgj2EE5sq_qaDsKls4jb5f99c2iyQaXHoJ_7OBQAbpapE-x_fRkzBh-Fy_cnsu-sUJpdhelgLqI006PhaLiBVYB5MDA$>
+>>>> [2]: https://urldefense.com/v3/__https://mac.r-project.org/openmp/__;!!DZ3fjg!57krJgj2EE5sq_qaDsKls4jb5f99c2iyQaXHoJ_7OBQAbpapE-x_fRkzBh-Fy_cnsu-sUJpdhelgLqI006PhaLiBmw9UV3o$<https://urldefense.com/v3/__https:/mac.r-project.org/openmp/__;!!DZ3fjg!57krJgj2EE5sq_qaDsKls4jb5f99c2iyQaXHoJ_7OBQAbpapE-x_fRkzBh-Fy_cnsu-sUJpdhelgLqI006PhaLiBmw9UV3o$>
+>>>> [3]: https://urldefense.com/v3/__https://github.com/RcppCore/RcppArmadillo/blob/37461ba36472305c699263afc229919d37daa5e3/configure.ac*L109__;Iw!!DZ3fjg!57krJgj2EE5sq_qaDsKls4jb5f99c2iyQaXHoJ_7OBQAbpapE-x_fRkzBh-Fy_cnsu-sUJpdhelgLqI006PhaLiB8rnPPRw$<https://urldefense.com/v3/__https:/github.com/RcppCore/RcppArmadillo/blob/37461ba36472305c699263afc229919d37daa5e3/configure.ac*L109__;Iw!!DZ3fjg!57krJgj2EE5sq_qaDsKls4jb5f99c2iyQaXHoJ_7OBQAbpapE-x_fRkzBh-Fy_cnsu-sUJpdhelgLqI006PhaLiB8rnPPRw$>
+>>>>    From: Simon Urbanek <simon.urbanek at R-project.org>
+>>>> Date: Thursday, June 27, 2024 at 10:25?AM
+>>>> To: Balamuta, James <balamut2 at illinois.edu>
+>>>> Cc: Timothy Bates <tim.bates at ed.ac.uk>, Kasper Daniel Hansen <kasperdanielhansen at gmail.com>, Sparapani, Rodney <rsparapa at mcw.edu>, R list <R-SIG-Mac at r-project.org>
+>>>> Subject: Re: [R-SIG-Mac] procedure to ship libomp.dylib run-time with package
+>>>> Most of the claims below are false - libomp is shipped with CRAN R for quite some time specifically so that packages which benefit from it significantly can enable OpenMP reasonably easily - they only need to add the flags as noted on the cited page and CRAN takes care of the rest. If there are any problems, please feel free to contact me.
+>>>> 
+>>>> Cheers,
+>>>> Simon
+>>>> 
+>>>> 
+>>>>> On 26 Jun 2024, at 07:41, Balamuta, James <balamut2 at illinois.edu> wrote:
+>>>>> 
+>>>>> Tim,
+>>>>> 
+>>>>> Unfortunately, there isn't a nice way of including OpenMP for macOS within a package.  One potential avenue would be to use a `configure.ac` file to check for whether OpenMP headers are present on the macOS computer and, then, allow the correct OpenMP compilation flags to be set. However, this requires the user to compile from source instead of using a CRAN binary.
+>>>>> 
+>>>>> Unfortunately, there isn't going to be an easier way as OpenMP on macOS with R is experimental by nature.
+>>>>> 
+>>>>> Best regards,
+>>>>> 
+>>>>> James
+>>>>> ________________________________
+>>>>> From: R-SIG-Mac <r-sig-mac-bounces at r-project.org> on behalf of Timothy Bates <tim.bates at ed.ac.uk>
+>>>>> Sent: Tuesday, June 25, 2024 10:00 PM
+>>>>> To: Kasper Daniel Hansen <kasperdanielhansen at gmail.com>; Sparapani, Rodney <rsparapa at mcw.edu>
+>>>>> Cc: R list <R-SIG-Mac at r-project.org>
+>>>>> Subject: Re: [R-SIG-Mac] procedure to ship libomp.dylib run-time with package
+>>>>> 
+>>>>> Thanks Kasper,
+>>>>> I read those lines and had installed the openmp software as instructed. It all works fine for me. But users don?t have my usr/ folder, not can a package write to their usr/ folder.
+>>>>> 
+>>>>> so what is confusing is how the user will get this lib. Where should make place libraries like libomp within the package so that if a user merely install.packages() it, the library will be found and loaded?
+>>>>> Best, tim
+>>>>> 
+>>>>> 
+>>>>> Sent from Outlook for iOS<https://urldefense.com/v3/__https://aka.ms/o0ukef__;!!DZ3fjg!_OUXHENJ_6aGlU-humThmTaUR5okhDKW2EGEY49AjJ4AN8eXBWtZCWE3O01pnyxbRpGQDhCl8MMLThVBbUXDuipI$ >
+>>>>> ________________________________
+>>>>> From: Kasper Daniel Hansen <kasperdanielhansen at gmail.com>
+>>>>> Sent: Tuesday, June 25, 2024 11:34:42 AM
+>>>>> To: Sparapani, Rodney <rsparapa at mcw.edu>
+>>>>> Cc: Timothy Bates <tim.bates at ed.ac.uk>; R list <R-SIG-Mac at r-project.org>
+>>>>> Subject: Re: [R-SIG-Mac] procedure to ship libomp.dylib run-time with package
+>>>>> 
+>>>>> This email was sent to you by someone outside the University.
+>>>>> You should only click on links or attachments if you are certain that the email is genuine and the content is safe.
+>>>>> If you read the next couple of sentences on that page, it says
+>>>>> 
+>>>>> The following are links to libomp OpenMP run-time built from official LLVM release sources using Xcode compilers. They are signed and support macOS 10.13 (High Sierra) and higher. All tar-balls contain the system tree usr/local/lib and usr/local/include so the recommended installation is to type in Terminal:
+>>>>> 
+>>>>>     curl -O https://urldefense.com/v3/__https://mac.r-project.org/openmp/openmp-14.0.6-darwin20-Release.tar.gz__;!!DZ3fjg!_OUXHENJ_6aGlU-humThmTaUR5okhDKW2EGEY49AjJ4AN8eXBWtZCWE3O01pnyxbRpGQDhCl8MMLThVBbWfUKf7B$<https://urldefense.com/v3/__https:/mac.r-project.org/openmp/openmp-14.0.6-darwin20-Release.tar.gz__;!!DZ3fjg!_OUXHENJ_6aGlU-humThmTaUR5okhDKW2EGEY49AjJ4AN8eXBWtZCWE3O01pnyxbRpGQDhCl8MMLThVBbWfUKf7B$>
+>>>>>     sudo tar fvxz openmp-14.0.6-darwin20-Release.tar.gz -C /
+>>>>> 
+>>>>> 
+>>>>> I think that is pretty clear? Note the -C / as part of the last line, that tells tar where to put it on the system.
+>>>>> 
+>>>>> On Tue, Jun 25, 2024 at 8:20?AM Sparapani, Rodney via R-SIG-Mac <r-sig-mac at r-project.org<mailto:r-sig-mac at r-project.org>> wrote:
+>>>>> Hi Tim:
+>>>>> 
+>>>>> /usr/local/lib it seems.  See the following page
+>>>>> https://urldefense.com/v3/__https://mac.r-project.org/openmp/__;!!DZ3fjg!_OUXHENJ_6aGlU-humThmTaUR5okhDKW2EGEY49AjJ4AN8eXBWtZCWE3O01pnyxbRpGQDhCl8MMLThVBbaQGheD_$<https://urldefense.com/v3/__https:/mac.r-project.org/openmp/__;!!DZ3fjg!_OUXHENJ_6aGlU-humThmTaUR5okhDKW2EGEY49AjJ4AN8eXBWtZCWE3O01pnyxbRpGQDhCl8MMLThVBbaQGheD_$>
+>>>>> 
+>>>>> --
+>>>>> Rodney Sparapani, Associate Professor of Biostatistics, He/Him/His
+>>>>> Vice President, Wisconsin Chapter of the American Statistical Association
+>>>>> Institute for Health and Equity, Division of Biostatistics
+>>>>> Medical College of Wisconsin, Milwaukee Campus
+>>>>> 
+>>>>> If this is outside of working hours, then please respond when convenient.
+>>>>> 
+>>>>> From: R-SIG-Mac <r-sig-mac-bounces at r-project.org<mailto:r-sig-mac-bounces at r-project.org>> on behalf of Timothy Bates <tim.bates at ed.ac.uk<mailto:tim.bates at ed.ac.uk>>
+>>>>> Date: Monday, June 24, 2024 at 4:00?PM
+>>>>> To: R list <R-SIG-Mac at r-project.org<mailto:R-SIG-Mac at r-project.org>>
+>>>>> Subject: [R-SIG-Mac] procedure to ship libomp.dylib run-time with package
+>>>>> ATTENTION: This email originated from a sender outside of MCW. Use caution when clicking on links or opening attachments.
+>>>>> ________________________________
+>>>>> 
+>>>>> At https://urldefense.com/v3/__https://mac.r-project.org/openmp/__;!!H8mHWRdzp34!4HZ0uFxJQ121gF_TnX99OuMlgIXM600pq8wCbWruoLsdLTtaFgRB5_gMopCtxD0N9M4tUOO-7hBGADHx1sk$<https://urldefense.com/v3/__https:/mac.r-project.org/openmp/__;!!H8mHWRdzp34!4HZ0uFxJQ121gF_TnX99OuMlgIXM600pq8wCbWruoLsdLTtaFgRB5_gMopCtxD0N9M4tUOO-7hBGADHx1sk$><https://urldefense.com/v3/__https:/mac.r-project.org/openmp/__;!!H8mHWRdzp34!4HZ0uFxJQ121gF_TnX99OuMlgIXM600pq8wCbWruoLsdLTtaFgRB5_gMopCtxD0N9M4tUOO-7hBGADHx1sk$%3chttps:/urldefense.com/v3/__https:/mac.r-project.org/openmp/__;!!H8mHWRdzp34!4HZ0uFxJQ121gF_TnX99OuMlgIXM600pq8wCbWruoLsdLTtaFgRB5_gMopCtxD0N9M4tUOO-7hBGADHx1sk$%3e>  it  says
+>>>>> "any package you compile against libomp.dylib will need that run-time so you have to ship it with your package or have users install it?
+>>>>> 
+>>>>> Are there  any  instructions on what to do/where to put libomp.dylib so it will be found?
+>>>>> 
+>>>>> I?ve compiled a package (OpenMx) in which OpenMP is working locally but other users get the error:
+>>>>> 
+>>>>> require(OpenMx)
+>>>>> Error: package or namespace load failed for ?OpenMx? in dyn.load(file, DLLpath = DLLpath, ...):
+>>>>> unable to load shared object '/Users/***/Library/R/x86_64/4.4/library/OpenMx/libs/OpenMx.so':
+>>>>> 
+>>>>> dlopen(/Users/***/Library/R/x86_64/4.4/library/OpenMx/libs/OpenMx.so, 0x0006): Library not loaded: /Library/Frameworks/R.framework/Versions/4.3-x86_64/Resources/lib/libomp.dylib
+>>>>> 
+>>>>> 
+>>>>> The University of Edinburgh is a charitable body, registered in Scotland, with registration number SC005336. Is e buidheann carthannais a th? ann an Oilthigh Dh?n ?ideann, cl?raichte an Alba, ?ireamh cl?raidh SC005336.
+>>>>> _______________________________________________
+>>>>> R-SIG-Mac mailing list
+>>>>> R-SIG-Mac at r-project.org<mailto:R-SIG-Mac at r-project.org>
+>>>>> https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-sig-mac__;!!H8mHWRdzp34!4HZ0uFxJQ121gF_TnX99OuMlgIXM600pq8wCbWruoLsdLTtaFgRB5_gMopCtxD0N9M4tUOO-7hBGdICDldE$<https://urldefense.com/v3/__https:/stat.ethz.ch/mailman/listinfo/r-sig-mac__;!!H8mHWRdzp34!4HZ0uFxJQ121gF_TnX99OuMlgIXM600pq8wCbWruoLsdLTtaFgRB5_gMopCtxD0N9M4tUOO-7hBGdICDldE$><https://urldefense.com/v3/__https:/stat.ethz.ch/mailman/listinfo/r-sig-mac__;!!H8mHWRdzp34!4HZ0uFxJQ121gF_TnX99OuMlgIXM600pq8wCbWruoLsdLTtaFgRB5_gMopCtxD0N9M4tUOO-7hBGdICDldE$%3chttps:/urldefense.com/v3/__https:/stat.ethz.ch/mailman/listinfo/r-sig-mac__;!!H8mHWRdzp34!4HZ0uFxJQ121gF_TnX99OuMlgIXM600pq8wCbWruoLsdLTtaFgRB5_gMopCtxD0N9M4tUOO-7hBGdICDldE$%3e>
+>>>>> 
+>>>>>         [[alternative HTML version deleted]]
+>>>>> 
+>>>>> _______________________________________________
+>>>>> R-SIG-Mac mailing list
+>>>>> R-SIG-Mac at r-project.org<mailto:R-SIG-Mac at r-project.org>
+>>>>> https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-sig-mac__;!!DZ3fjg!_OUXHENJ_6aGlU-humThmTaUR5okhDKW2EGEY49AjJ4AN8eXBWtZCWE3O01pnyxbRpGQDhCl8MMLThVBbYOwLI1d$<https://urldefense.com/v3/__https:/stat.ethz.ch/mailman/listinfo/r-sig-mac__;!!DZ3fjg!_OUXHENJ_6aGlU-humThmTaUR5okhDKW2EGEY49AjJ4AN8eXBWtZCWE3O01pnyxbRpGQDhCl8MMLThVBbYOwLI1d$>
+>>>>> 
+>>>>> 
+>>>>> --
+>>>>> Best,
+>>>>> Kasper
+>>>>> 
+>>>>>         [[alternative HTML version deleted]]
+>>>>> 
+>>>>> _______________________________________________
+>>>>> R-SIG-Mac mailing list
+>>>>> R-SIG-Mac at r-project.org
+>>>>> https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-sig-mac__;!!DZ3fjg!_OUXHENJ_6aGlU-humThmTaUR5okhDKW2EGEY49AjJ4AN8eXBWtZCWE3O01pnyxbRpGQDhCl8MMLThVBbYOwLI1d$<https://urldefense.com/v3/__https:/stat.ethz.ch/mailman/listinfo/r-sig-mac__;!!DZ3fjg!_OUXHENJ_6aGlU-humThmTaUR5okhDKW2EGEY49AjJ4AN8eXBWtZCWE3O01pnyxbRpGQDhCl8MMLThVBbYOwLI1d$>
+>>>>> 
+>>>>> [[alternative HTML version deleted]]
+>>>>> 
+>>>>> _______________________________________________
+>>>>> R-SIG-Mac mailing list
+>>>>> R-SIG-Mac at r-project.org
+>>>>> https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-sig-mac__;!!DZ3fjg!9XPrFiayt1-V0BmNqWv4wn0V_G6ZIC6DgkviDYpRV4s-dmAnj9Qp_QFEHPG5dbO-Sk0IhdfC3lB0qeeJBDE2ann7kz0eS7A$<https://urldefense.com/v3/__https:/stat.ethz.ch/mailman/listinfo/r-sig-mac__;!!DZ3fjg!9XPrFiayt1-V0BmNqWv4wn0V_G6ZIC6DgkviDYpRV4s-dmAnj9Qp_QFEHPG5dbO-Sk0IhdfC3lB0qeeJBDE2ann7kz0eS7A$>
+>>> 
+>>> 
+>>> [[alternative HTML version deleted]]
+>>> 
+>>> 
+>>> 
+>>> ------------------------------
+>>> 
+>>> Subject: Digest Footer
+>>> 
+>>> _______________________________________________
+>>> R-SIG-Mac mailing list
+>>> R-SIG-Mac at r-project.org
+>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>>> 
+>>> 
+>>> ------------------------------
+>>> 
+> 
+
+
+From jbhow@rd @end|ng |rom m|tre@org  Tue Jul  9 13:56:12 2024
+From: jbhow@rd @end|ng |rom m|tre@org (Jacob Howard Ph.D.)
+Date: Tue, 9 Jul 2024 11:56:12 +0000
+Subject: [R-SIG-Mac] Issue installing units package after updating R to 4.4
+Message-ID: <BLAPR09MB645189327C7EDD6CF5C0AF53C6DD2@BLAPR09MB6451.namprd09.prod.outlook.com>
+
+Hello all, I am running the R 4.4 on an M2 mac chip. Since updating R to 4.4 I have not been able to install the R units package, which is needed to install the sf package. I am hoping someone here can point out something silly I have done to help here. Thanks in advance.
+
+To resolve the issue I have tried:
+
+  *   install.packages(?units?)
+  *   install.packages("units", configure.args = c("--with-udunits2-include=/opt/homebrew/Cellar/udunits/2.2.28/include", "--with-udunits2-lib=/opt/homebrew/Cellar/udunits/2.2.28/lib"))
+  *   reinstalling udunits
+  *   reinstalling r
+  *   running with my normal as well as with a blank MAKEVARS file.
+
+The same error results each time and is copied below:
+
+Installing package into ?/opt/homebrew/lib/R/4.4/site-library?
+(as ?lib? is unspecified)
+* installing *source* package ?units? ...
+** using staged installation
+configure: units: 0.8-5
+checking whether the C++ compiler works... yes
+checking for C++ compiler default output file name... a.out
+checking for suffix of executables...
+checking whether we are cross compiling... no
+checking for suffix of object files... o
+checking whether the compiler supports GNU C++... yes
+checking whether /opt/homebrew/bin/ccache /opt/homebrew/opt/llvm/bin/clang++ accepts -g... yes
+checking for /opt/homebrew/bin/ccache /opt/homebrew/opt/llvm/bin/clang++ option to enable C++11 features... none needed
+checking for stdio.h... yes
+checking for stdlib.h... yes
+checking for string.h... yes
+checking for inttypes.h... yes
+checking for stdint.h... yes
+checking for strings.h... yes
+checking for sys/stat.h... yes
+checking for sys/types.h... yes
+checking for unistd.h... yes
+checking for _Bool... no
+checking for stdbool.h that conforms to C99... yes
+checking for error_at_line... no
+checking for gcc... /opt/homebrew/bin/ccache /opt/homebrew/opt/llvm/bin/clang
+checking whether the compiler supports GNU C... yes
+checking whether /opt/homebrew/bin/ccache /opt/homebrew/opt/llvm/bin/clang accepts -g... yes
+checking for /opt/homebrew/bin/ccache /opt/homebrew/opt/llvm/bin/clang option to enable C11 features... none needed
+checking for XML_ParserCreate in -lexpat... yes
+checking for udunits2.h... yes
+checking for ut_read_xml in -ludunits2... yes
+configure: creating ./config.status
+config.status: creating src/Makevars
+** libs
+using C++ compiler: ?Homebrew clang version 18.1.6?
+using SDK: ?MacOSX14.4.sdk?
+/opt/homebrew/bin/ccache /opt/homebrew/opt/llvm/bin/clang++ -I"/opt/homebrew/Cellar/r/4.4.0_1/lib/R/include" -DNDEBUG -DUDUNITS2_DIR=0   -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -I/opt/homebrew/include -I/opt/homebrew/opt/llvm/include -I/opt/homebrew/opt/openssl/include -I/opt/homebrew/opt/gettext/include -I/opt/homebrew/opt/tcl-tk/include -I'/opt/homebrew/lib/R/4.4/site-library/Rcpp/include' -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -I/opt/homebrew/include -I/opt/homebrew/opt/llvm/include -I/opt/homebrew/opt/openssl/include -I/opt/homebrew/opt/gettext/include -I/opt/homebrew/opt/tcl-tk/include    -fPIC  -g -O3 -Wall -pedantic -mtune=native -pipe  -c RcppExports.cpp -o RcppExports.o
+/opt/homebrew/bin/ccache /opt/homebrew/opt/llvm/bin/clang++ -I"/opt/homebrew/Cellar/r/4.4.0_1/lib/R/include" -DNDEBUG -DUDUNITS2_DIR=0   -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -I/opt/homebrew/include -I/opt/homebrew/opt/llvm/include -I/opt/homebrew/opt/openssl/include -I/opt/homebrew/opt/gettext/include -I/opt/homebrew/opt/tcl-tk/include -I'/opt/homebrew/lib/R/4.4/site-library/Rcpp/include' -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -I/opt/homebrew/include -I/opt/homebrew/opt/llvm/include -I/opt/homebrew/opt/openssl/include -I/opt/homebrew/opt/gettext/include -I/opt/homebrew/opt/tcl-tk/include    -fPIC  -g -O3 -Wall -pedantic -mtune=native -pipe  -c udunits.cpp -o udunits.o
+/opt/homebrew/bin/ccache /opt/homebrew/opt/llvm/bin/clang++ -dynamiclib -Wl,-headerpad_max_install_names -undefined dynamic_lookup -L/opt/homebrew/Cellar/r/4.4.0_1/lib/R/lib -L/opt/homebrew/opt/gettext/lib -L/opt/homebrew/opt/readline/lib -L/opt/homebrew/opt/xz/lib -L/opt/homebrew/lib -L/opt/homebrew/opt/llvm/lib -Wl,-rpath,/opt/homebrew/opt/llvm/lib -o units.so RcppExports.o udunits.o -lexpat -lexpat -ludunits2 -L/opt/homebrew/Cellar/r/4.4.0_1/lib/R/lib -lR -lintl -Wl,-framework -Wl,CoreFoundation
+ld: warning: ignoring duplicate libraries: '-lexpat'
+ld: warning: reexported library with install name '/opt/homebrew/opt/llvm/lib/libunwind.1.dylib' found at '/opt/homebrew/Cellar/llvm/18.1.6/lib/libunwind.1.0.dylib' couldn't be matched with any parent library and will be linked directly
+installing to /opt/homebrew/lib/R/4.4/site-library/00LOCK-units/00new/units/libs
+** R
+** demo
+** inst
+** byte-compile and prepare package for lazy loading
+** help
+*** installing help indices
+** building package indices
+** installing vignettes
+** testing if installed package can be loaded from temporary location
+sh: line 1: 53460 Bus error: 10           R_TESTS= '/opt/homebrew/Cellar/r/4.4.0_1/lib/R/bin/R' --no-save --no-restore --no-echo 2>&1 < '/var/folders/q_/0m_xd5dd1qlcshyjbgnzrw9w0000gp/T//Rtmpu95vVt/filec9f5215fbb15'
+
+*** caught bus error ***
+address 0x0, cause 'invalid alignment'
+
+Traceback:
+1: R_ut_parse(u)
+2: doTryCatch(return(expr), name, parentenv, handler)
+3: tryCatchOne(expr, names, parentenv, handlers[[1L]])
+4: tryCatchList(expr, classes, parentenv, handlers)
+5: tryCatch(expr, error = function(e) {    call <- conditionCall(e)    if (!is.null(call)) {        if (identical(call[[1L]], quote(doTryCatch)))             call <- sys.call(-4L)        dcall <- deparse(call, nlines = 1L)        prefix <- paste("Error in", dcall, ": ")        LONG <- 75L        sm <- strsplit(conditionMessage(e), "\n")[[1L]]        w <- 14L + nchar(dcall, type = "w") + nchar(sm[1L], type = "w")        if (is.na(w))             w <- 14L + nchar(dcall, type = "b") + nchar(sm[1L],                 type = "b")        if (w > LONG)             prefix <- paste0(prefix, "\n  ")    }    else prefix <- "Error : "    msg <- paste0(prefix, conditionMessage(e), "\n")    .Internal(seterrmessage(msg[1L]))    if (!silent && isTRUE(getOption("show.error.messages"))) {        cat(msg, file = outFile)        .Internal(printDeferredWarnings())    }    invisible(structure(msg, class = "try-error", condition = e))})
+6: try(R_ut_parse(u), silent = TRUE)
+7: ud_is_parseable("B")
+8: fun(libname, pkgname)
+9: doTryCatch(return(expr), name, parentenv, handler)
+10: tryCatchOne(expr, names, parentenv, handlers[[1L]])
+11: tryCatchList(expr, classes, parentenv, handlers)
+12: tryCatch(fun(libname, pkgname), error = identity)
+13: runHook(".onLoad", env, package.lib, package)
+14: loadNamespace(package, lib.loc)
+15: doTryCatch(return(expr), name, parentenv, handler)
+16: tryCatchOne(expr, names, parentenv, handlers[[1L]])
+17: tryCatchList(expr, classes, parentenv, handlers)
+18: tryCatch({    attr(package, "LibPath") <- which.lib.loc    ns <- loadNamespace(package, lib.loc)    env <- attachNamespace(ns, pos = pos, deps, exclude, include.only)}, error = function(e) {    P <- if (!is.null(cc <- conditionCall(e)))         paste(" in", deparse(cc)[1L])    else ""    msg <- gettextf("package or namespace load failed for %s%s:\n %s",         sQuote(package), P, conditionMessage(e))    if (logical.return && !quietly)         message(paste("Error:", msg), domain = NA)    else stop(msg, call. = FALSE, domain = NA)})
+19: library(pkg_name, lib.loc = lib, character.only = TRUE, logical.return = TRUE)
+20: withCallingHandlers(expr, packageStartupMessage = function(c) tryInvokeRestart("muffleMessage"))
+21: suppressPackageStartupMessages(library(pkg_name, lib.loc = lib,     character.only = TRUE, logical.return = TRUE))
+22: doTryCatch(return(expr), name, parentenv, handler)
+23: tryCatchOne(expr, names, parentenv, handlers[[1L]])
+24: tryCatchList(expr, classes, parentenv, handlers)
+25: tryCatch(expr, error = function(e) {    call <- conditionCall(e)    if (!is.null(call)) {        if (identical(call[[1L]], quote(doTryCatch)))             call <- sys.call(-4L)        dcall <- deparse(call, nlines = 1L)        prefix <- paste("Error in", dcall, ": ")        LONG <- 75L        sm <- strsplit(conditionMessage(e), "\n")[[1L]]        w <- 14L + nchar(dcall, type = "w") + nchar(sm[1L], type = "w")        if (is.na(w))             w <- 14L + nchar(dcall, type = "b") + nchar(sm[1L],                 type = "b")        if (w > LONG)             prefix <- paste0(prefix, "\n  ")    }    else prefix <- "Error : "    msg <- paste0(prefix, conditionMessage(e), "\n")    .Internal(seterrmessage(msg[1L]))    if (!silent && isTRUE(getOption("show.error.messages"))) {        cat(msg, file = outFile)        .Internal(printDeferredWarnings())    }    invisible(structure(msg, class = "try-error", condition = e))})
+26: try(suppressPackageStartupMessages(library(pkg_name, lib.loc = lib,     character.only = TRUE, logical.return = TRUE)))
+27: tools:::.test_load_package("units", "/opt/homebrew/lib/R/4.4/site-library/00LOCK-units/00new")
+An irrecoverable exception occurred. R is aborting now ...
+ERROR: loading failed
+* removing ?/opt/homebrew/lib/R/4.4/site-library/units?
+
+	[[alternative HTML version deleted]]
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Tue Jul  9 19:12:54 2024
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Tue, 9 Jul 2024 13:12:54 -0400
+Subject: [R-SIG-Mac] 
+ Issue installing units package after updating R to 4.4
+In-Reply-To: <BLAPR09MB645189327C7EDD6CF5C0AF53C6DD2@BLAPR09MB6451.namprd09.prod.outlook.com>
+References: <BLAPR09MB645189327C7EDD6CF5C0AF53C6DD2@BLAPR09MB6451.namprd09.prod.outlook.com>
+Message-ID: <621a369d-c309-469a-9dd8-eccad43075e7@gmail.com>
+
+How did you install R?  You have a lot of homebrew references in the log 
+below.
+
+It appears you installed R from homebrew, so you probably need to 
+install all packages from homebrew (or from source, using homebrew 
+tools).  Note that CRAN doesn't support homebrew installs.
+
+I'd recommend that you install R from CRAN instead, and if necessary 
+follow the instructions on https://mac.r-project.org/bin/ to get extra 
+libs like udunits.
+
+Duncan Murdoch
+
+On 2024-07-09 7:56 a.m., Jacob Howard Ph.D. wrote:
+> Hello all, I am running the R 4.4 on an M2 mac chip. Since updating R to 4.4 I have not been able to install the R units package, which is needed to install the sf package. I am hoping someone here can point out something silly I have done to help here. Thanks in advance.
+> 
+> To resolve the issue I have tried:
+> 
+>    *   install.packages(?units?)
+>    *   install.packages("units", configure.args = c("--with-udunits2-include=/opt/homebrew/Cellar/udunits/2.2.28/include", "--with-udunits2-lib=/opt/homebrew/Cellar/udunits/2.2.28/lib"))
+>    *   reinstalling udunits
+>    *   reinstalling r
+>    *   running with my normal as well as with a blank MAKEVARS file.
+> 
+> The same error results each time and is copied below:
+> 
+> Installing package into ?/opt/homebrew/lib/R/4.4/site-library?
+> (as ?lib? is unspecified)
+> * installing *source* package ?units? ...
+> ** using staged installation
+> configure: units: 0.8-5
+> checking whether the C++ compiler works... yes
+> checking for C++ compiler default output file name... a.out
+> checking for suffix of executables...
+> checking whether we are cross compiling... no
+> checking for suffix of object files... o
+> checking whether the compiler supports GNU C++... yes
+> checking whether /opt/homebrew/bin/ccache /opt/homebrew/opt/llvm/bin/clang++ accepts -g... yes
+> checking for /opt/homebrew/bin/ccache /opt/homebrew/opt/llvm/bin/clang++ option to enable C++11 features... none needed
+> checking for stdio.h... yes
+> checking for stdlib.h... yes
+> checking for string.h... yes
+> checking for inttypes.h... yes
+> checking for stdint.h... yes
+> checking for strings.h... yes
+> checking for sys/stat.h... yes
+> checking for sys/types.h... yes
+> checking for unistd.h... yes
+> checking for _Bool... no
+> checking for stdbool.h that conforms to C99... yes
+> checking for error_at_line... no
+> checking for gcc... /opt/homebrew/bin/ccache /opt/homebrew/opt/llvm/bin/clang
+> checking whether the compiler supports GNU C... yes
+> checking whether /opt/homebrew/bin/ccache /opt/homebrew/opt/llvm/bin/clang accepts -g... yes
+> checking for /opt/homebrew/bin/ccache /opt/homebrew/opt/llvm/bin/clang option to enable C11 features... none needed
+> checking for XML_ParserCreate in -lexpat... yes
+> checking for udunits2.h... yes
+> checking for ut_read_xml in -ludunits2... yes
+> configure: creating ./config.status
+> config.status: creating src/Makevars
+> ** libs
+> using C++ compiler: ?Homebrew clang version 18.1.6?
+> using SDK: ?MacOSX14.4.sdk?
+> /opt/homebrew/bin/ccache /opt/homebrew/opt/llvm/bin/clang++ -I"/opt/homebrew/Cellar/r/4.4.0_1/lib/R/include" -DNDEBUG -DUDUNITS2_DIR=0   -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -I/opt/homebrew/include -I/opt/homebrew/opt/llvm/include -I/opt/homebrew/opt/openssl/include -I/opt/homebrew/opt/gettext/include -I/opt/homebrew/opt/tcl-tk/include -I'/opt/homebrew/lib/R/4.4/site-library/Rcpp/include' -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -I/opt/homebrew/include -I/opt/homebrew/opt/llvm/include -I/opt/homebrew/opt/openssl/include -I/opt/homebrew/opt/gettext/include -I/opt/homebrew/opt/tcl-tk/include    -fPIC  -g -O3 -Wall -pedantic -mtune=native -pipe  -c RcppExports.cpp -o RcppExports.o
+> /opt/homebrew/bin/ccache /opt/homebrew/opt/llvm/bin/clang++ -I"/opt/homebrew/Cellar/r/4.4.0_1/lib/R/include" -DNDEBUG -DUDUNITS2_DIR=0   -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -I/opt/homebrew/include -I/opt/homebrew/opt/llvm/include -I/opt/homebrew/opt/openssl/include -I/opt/homebrew/opt/gettext/include -I/opt/homebrew/opt/tcl-tk/include -I'/opt/homebrew/lib/R/4.4/site-library/Rcpp/include' -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -I/opt/homebrew/include -I/opt/homebrew/opt/llvm/include -I/opt/homebrew/opt/openssl/include -I/opt/homebrew/opt/gettext/include -I/opt/homebrew/opt/tcl-tk/include    -fPIC  -g -O3 -Wall -pedantic -mtune=native -pipe  -c udunits.cpp -o udunits.o
+> /opt/homebrew/bin/ccache /opt/homebrew/opt/llvm/bin/clang++ -dynamiclib -Wl,-headerpad_max_install_names -undefined dynamic_lookup -L/opt/homebrew/Cellar/r/4.4.0_1/lib/R/lib -L/opt/homebrew/opt/gettext/lib -L/opt/homebrew/opt/readline/lib -L/opt/homebrew/opt/xz/lib -L/opt/homebrew/lib -L/opt/homebrew/opt/llvm/lib -Wl,-rpath,/opt/homebrew/opt/llvm/lib -o units.so RcppExports.o udunits.o -lexpat -lexpat -ludunits2 -L/opt/homebrew/Cellar/r/4.4.0_1/lib/R/lib -lR -lintl -Wl,-framework -Wl,CoreFoundation
+> ld: warning: ignoring duplicate libraries: '-lexpat'
+> ld: warning: reexported library with install name '/opt/homebrew/opt/llvm/lib/libunwind.1.dylib' found at '/opt/homebrew/Cellar/llvm/18.1.6/lib/libunwind.1.0.dylib' couldn't be matched with any parent library and will be linked directly
+> installing to /opt/homebrew/lib/R/4.4/site-library/00LOCK-units/00new/units/libs
+> ** R
+> ** demo
+> ** inst
+> ** byte-compile and prepare package for lazy loading
+> ** help
+> *** installing help indices
+> ** building package indices
+> ** installing vignettes
+> ** testing if installed package can be loaded from temporary location
+> sh: line 1: 53460 Bus error: 10           R_TESTS= '/opt/homebrew/Cellar/r/4.4.0_1/lib/R/bin/R' --no-save --no-restore --no-echo 2>&1 < '/var/folders/q_/0m_xd5dd1qlcshyjbgnzrw9w0000gp/T//Rtmpu95vVt/filec9f5215fbb15'
+> 
+> *** caught bus error ***
+> address 0x0, cause 'invalid alignment'
+> 
+> Traceback:
+> 1: R_ut_parse(u)
+> 2: doTryCatch(return(expr), name, parentenv, handler)
+> 3: tryCatchOne(expr, names, parentenv, handlers[[1L]])
+> 4: tryCatchList(expr, classes, parentenv, handlers)
+> 5: tryCatch(expr, error = function(e) {    call <- conditionCall(e)    if (!is.null(call)) {        if (identical(call[[1L]], quote(doTryCatch)))             call <- sys.call(-4L)        dcall <- deparse(call, nlines = 1L)        prefix <- paste("Error in", dcall, ": ")        LONG <- 75L        sm <- strsplit(conditionMessage(e), "\n")[[1L]]        w <- 14L + nchar(dcall, type = "w") + nchar(sm[1L], type = "w")        if (is.na(w))             w <- 14L + nchar(dcall, type = "b") + nchar(sm[1L],                 type = "b")        if (w > LONG)             prefix <- paste0(prefix, "\n  ")    }    else prefix <- "Error : "    msg <- paste0(prefix, conditionMessage(e), "\n")    .Internal(seterrmessage(msg[1L]))    if (!silent && isTRUE(getOption("show.error.messages"))) {        cat(msg, file = outFile)        .Internal(printDeferredWarnings())    }    invisible(structure(msg, class = "try-error", condition = e))})
+> 6: try(R_ut_parse(u), silent = TRUE)
+> 7: ud_is_parseable("B")
+> 8: fun(libname, pkgname)
+> 9: doTryCatch(return(expr), name, parentenv, handler)
+> 10: tryCatchOne(expr, names, parentenv, handlers[[1L]])
+> 11: tryCatchList(expr, classes, parentenv, handlers)
+> 12: tryCatch(fun(libname, pkgname), error = identity)
+> 13: runHook(".onLoad", env, package.lib, package)
+> 14: loadNamespace(package, lib.loc)
+> 15: doTryCatch(return(expr), name, parentenv, handler)
+> 16: tryCatchOne(expr, names, parentenv, handlers[[1L]])
+> 17: tryCatchList(expr, classes, parentenv, handlers)
+> 18: tryCatch({    attr(package, "LibPath") <- which.lib.loc    ns <- loadNamespace(package, lib.loc)    env <- attachNamespace(ns, pos = pos, deps, exclude, include.only)}, error = function(e) {    P <- if (!is.null(cc <- conditionCall(e)))         paste(" in", deparse(cc)[1L])    else ""    msg <- gettextf("package or namespace load failed for %s%s:\n %s",         sQuote(package), P, conditionMessage(e))    if (logical.return && !quietly)         message(paste("Error:", msg), domain = NA)    else stop(msg, call. = FALSE, domain = NA)})
+> 19: library(pkg_name, lib.loc = lib, character.only = TRUE, logical.return = TRUE)
+> 20: withCallingHandlers(expr, packageStartupMessage = function(c) tryInvokeRestart("muffleMessage"))
+> 21: suppressPackageStartupMessages(library(pkg_name, lib.loc = lib,     character.only = TRUE, logical.return = TRUE))
+> 22: doTryCatch(return(expr), name, parentenv, handler)
+> 23: tryCatchOne(expr, names, parentenv, handlers[[1L]])
+> 24: tryCatchList(expr, classes, parentenv, handlers)
+> 25: tryCatch(expr, error = function(e) {    call <- conditionCall(e)    if (!is.null(call)) {        if (identical(call[[1L]], quote(doTryCatch)))             call <- sys.call(-4L)        dcall <- deparse(call, nlines = 1L)        prefix <- paste("Error in", dcall, ": ")        LONG <- 75L        sm <- strsplit(conditionMessage(e), "\n")[[1L]]        w <- 14L + nchar(dcall, type = "w") + nchar(sm[1L], type = "w")        if (is.na(w))             w <- 14L + nchar(dcall, type = "b") + nchar(sm[1L],                 type = "b")        if (w > LONG)             prefix <- paste0(prefix, "\n  ")    }    else prefix <- "Error : "    msg <- paste0(prefix, conditionMessage(e), "\n")    .Internal(seterrmessage(msg[1L]))    if (!silent && isTRUE(getOption("show.error.messages"))) {        cat(msg, file = outFile)        .Internal(printDeferredWarnings())    }    invisible(structure(msg, class = "try-error", condition = e))})
+> 26: try(suppressPackageStartupMessages(library(pkg_name, lib.loc = lib,     character.only = TRUE, logical.return = TRUE)))
+> 27: tools:::.test_load_package("units", "/opt/homebrew/lib/R/4.4/site-library/00LOCK-units/00new")
+> An irrecoverable exception occurred. R is aborting now ...
+> ERROR: loading failed
+> * removing ?/opt/homebrew/lib/R/4.4/site-library/units?
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+
+
+From jbhow@rd @end|ng |rom m|tre@org  Wed Jul 10 14:21:13 2024
+From: jbhow@rd @end|ng |rom m|tre@org (Jacob Howard Ph.D.)
+Date: Wed, 10 Jul 2024 12:21:13 +0000
+Subject: [R-SIG-Mac] 
+ [EXT] Re: Issue installing units package after updating R to 4.4
+In-Reply-To: <621a369d-c309-469a-9dd8-eccad43075e7@gmail.com>
+References: <BLAPR09MB645189327C7EDD6CF5C0AF53C6DD2@BLAPR09MB6451.namprd09.prod.outlook.com>
+ <621a369d-c309-469a-9dd8-eccad43075e7@gmail.com>
+Message-ID: <BLAPR09MB645122C2CAA684E27122C9C6C6A42@BLAPR09MB6451.namprd09.prod.outlook.com>
+
+Duncan, Installing from CRAN resolved the issue.
+Thanks,
+Jacob
+
+From: Duncan Murdoch <murdoch.duncan at gmail.com>
+Date: Tuesday, July 9, 2024 at 1:13?PM
+To: Jacob Howard Ph.D. <jbhoward at mitre.org>, r-sig-mac at r-project.org <r-sig-mac at r-project.org>
+Subject: [EXT] Re: [R-SIG-Mac] Issue installing units package after updating R to 4.4
+How did you install R? You have a lot of homebrew references in the log below. It appears you installed R from homebrew, so you probably need to install all packages from homebrew (or from source, using homebrew tools). Note that CRAN doesn't
+
+
+How did you install R?  You have a lot of homebrew references in the log
+
+below.
+
+
+
+It appears you installed R from homebrew, so you probably need to
+
+install all packages from homebrew (or from source, using homebrew
+
+tools).  Note that CRAN doesn't support homebrew installs.
+
+
+
+I'd recommend that you install R from CRAN instead, and if necessary
+
+follow the instructions on https://mac.r-project.org/bin/ to get extra
+
+libs like udunits.
+
+
+
+Duncan Murdoch
+
+
+
+On 2024-07-09 7:56 a.m., Jacob Howard Ph.D. wrote:
+
+> Hello all, I am running the R 4.4 on an M2 mac chip. Since updating R to 4.4 I have not been able to install the R units package, which is needed to install the sf package. I am hoping someone here can point out something silly I have done to help here. Thanks in advance.
+
+>
+
+> To resolve the issue I have tried:
+
+>
+
+>    *   install.packages(?units?)
+
+>    *   install.packages("units", configure.args = c("--with-udunits2-include=/opt/homebrew/Cellar/udunits/2.2.28/include", "--with-udunits2-lib=/opt/homebrew/Cellar/udunits/2.2.28/lib"))
+
+>    *   reinstalling udunits
+
+>    *   reinstalling r
+
+>    *   running with my normal as well as with a blank MAKEVARS file.
+
+>
+
+> The same error results each time and is copied below:
+
+>
+
+> Installing package into ?/opt/homebrew/lib/R/4.4/site-library?
+
+> (as ?lib? is unspecified)
+
+> * installing *source* package ?units? ...
+
+> ** using staged installation
+
+> configure: units: 0.8-5
+
+> checking whether the C++ compiler works... yes
+
+> checking for C++ compiler default output file name... a.out
+
+> checking for suffix of executables...
+
+> checking whether we are cross compiling... no
+
+> checking for suffix of object files... o
+
+> checking whether the compiler supports GNU C++... yes
+
+> checking whether /opt/homebrew/bin/ccache /opt/homebrew/opt/llvm/bin/clang++ accepts -g... yes
+
+> checking for /opt/homebrew/bin/ccache /opt/homebrew/opt/llvm/bin/clang++ option to enable C++11 features... none needed
+
+> checking for stdio.h... yes
+
+> checking for stdlib.h... yes
+
+> checking for string.h... yes
+
+> checking for inttypes.h... yes
+
+> checking for stdint.h... yes
+
+> checking for strings.h... yes
+
+> checking for sys/stat.h... yes
+
+> checking for sys/types.h... yes
+
+> checking for unistd.h... yes
+
+> checking for _Bool... no
+
+> checking for stdbool.h that conforms to C99... yes
+
+> checking for error_at_line... no
+
+> checking for gcc... /opt/homebrew/bin/ccache /opt/homebrew/opt/llvm/bin/clang
+
+> checking whether the compiler supports GNU C... yes
+
+> checking whether /opt/homebrew/bin/ccache /opt/homebrew/opt/llvm/bin/clang accepts -g... yes
+
+> checking for /opt/homebrew/bin/ccache /opt/homebrew/opt/llvm/bin/clang option to enable C11 features... none needed
+
+> checking for XML_ParserCreate in -lexpat... yes
+
+> checking for udunits2.h... yes
+
+> checking for ut_read_xml in -ludunits2... yes
+
+> configure: creating ./config.status
+
+> config.status: creating src/Makevars
+
+> ** libs
+
+> using C++ compiler: ?Homebrew clang version 18.1.6?
+
+> using SDK: ?MacOSX14.4.sdk?
+
+> /opt/homebrew/bin/ccache /opt/homebrew/opt/llvm/bin/clang++ -I"/opt/homebrew/Cellar/r/4.4.0_1/lib/R/include" -DNDEBUG -DUDUNITS2_DIR=0   -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -I/opt/homebrew/include -I/opt/homebrew/opt/llvm/include -I/opt/homebrew/opt/openssl/include -I/opt/homebrew/opt/gettext/include -I/opt/homebrew/opt/tcl-tk/include -I'/opt/homebrew/lib/R/4.4/site-library/Rcpp/include' -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -I/opt/homebrew/include -I/opt/homebrew/opt/llvm/include -I/opt/homebrew/opt/openssl/include -I/opt/homebrew/opt/gettext/include -I/opt/homebrew/opt/tcl-tk/include    -fPIC  -g -O3 -Wall -pedantic -mtune=native -pipe  -c RcppExports.cpp -o RcppExports.o
+
+> /opt/homebrew/bin/ccache /opt/homebrew/opt/llvm/bin/clang++ -I"/opt/homebrew/Cellar/r/4.4.0_1/lib/R/include" -DNDEBUG -DUDUNITS2_DIR=0   -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -I/opt/homebrew/include -I/opt/homebrew/opt/llvm/include -I/opt/homebrew/opt/openssl/include -I/opt/homebrew/opt/gettext/include -I/opt/homebrew/opt/tcl-tk/include -I'/opt/homebrew/lib/R/4.4/site-library/Rcpp/include' -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -I/opt/homebrew/include -I/opt/homebrew/opt/llvm/include -I/opt/homebrew/opt/openssl/include -I/opt/homebrew/opt/gettext/include -I/opt/homebrew/opt/tcl-tk/include    -fPIC  -g -O3 -Wall -pedantic -mtune=native -pipe  -c udunits.cpp -o udunits.o
+
+> /opt/homebrew/bin/ccache /opt/homebrew/opt/llvm/bin/clang++ -dynamiclib -Wl,-headerpad_max_install_names -undefined dynamic_lookup -L/opt/homebrew/Cellar/r/4.4.0_1/lib/R/lib -L/opt/homebrew/opt/gettext/lib -L/opt/homebrew/opt/readline/lib -L/opt/homebrew/opt/xz/lib -L/opt/homebrew/lib -L/opt/homebrew/opt/llvm/lib -Wl,-rpath,/opt/homebrew/opt/llvm/lib -o units.so RcppExports.o udunits.o -lexpat -lexpat -ludunits2 -L/opt/homebrew/Cellar/r/4.4.0_1/lib/R/lib -lR -lintl -Wl,-framework -Wl,CoreFoundation
+
+> ld: warning: ignoring duplicate libraries: '-lexpat'
+
+> ld: warning: reexported library with install name '/opt/homebrew/opt/llvm/lib/libunwind.1.dylib' found at '/opt/homebrew/Cellar/llvm/18.1.6/lib/libunwind.1.0.dylib' couldn't be matched with any parent library and will be linked directly
+
+> installing to /opt/homebrew/lib/R/4.4/site-library/00LOCK-units/00new/units/libs
+
+> ** R
+
+> ** demo
+
+> ** inst
+
+> ** byte-compile and prepare package for lazy loading
+
+> ** help
+
+> *** installing help indices
+
+> ** building package indices
+
+> ** installing vignettes
+
+> ** testing if installed package can be loaded from temporary location
+
+> sh: line 1: 53460 Bus error: 10           R_TESTS= '/opt/homebrew/Cellar/r/4.4.0_1/lib/R/bin/R' --no-save --no-restore --no-echo 2>&1 < '/var/folders/q_/0m_xd5dd1qlcshyjbgnzrw9w0000gp/T//Rtmpu95vVt/filec9f5215fbb15'
+
+>
+
+> *** caught bus error ***
+
+> address 0x0, cause 'invalid alignment'
+
+>
+
+> Traceback:
+
+> 1: R_ut_parse(u)
+
+> 2: doTryCatch(return(expr), name, parentenv, handler)
+
+> 3: tryCatchOne(expr, names, parentenv, handlers[[1L]])
+
+> 4: tryCatchList(expr, classes, parentenv, handlers)
+
+> 5: tryCatch(expr, error = function(e) {    call <- conditionCall(e)    if (!is.null(call)) {        if (identical(call[[1L]], quote(doTryCatch)))             call <- sys.call(-4L)        dcall <- deparse(call, nlines = 1L)        prefix <- paste("Error in", dcall, ": ")        LONG <- 75L        sm <- strsplit(conditionMessage(e), "\n")[[1L]]        w <- 14L + nchar(dcall, type = "w") + nchar(sm[1L], type = "w")        if (is.na(w))             w <- 14L + nchar(dcall, type = "b") + nchar(sm[1L],                 type = "b")        if (w > LONG)             prefix <- paste0(prefix, "\n  ")    }    else prefix <- "Error : "    msg <- paste0(prefix, conditionMessage(e), "\n")    .Internal(seterrmessage(msg[1L]))    if (!silent && isTRUE(getOption("show.error.messages"))) {        cat(msg, file = outFile)        .Internal(printDeferredWarnings())    }    invisible(structure(msg, class = "try-error", condition = e))})
+
+> 6: try(R_ut_parse(u), silent = TRUE)
+
+> 7: ud_is_parseable("B")
+
+> 8: fun(libname, pkgname)
+
+> 9: doTryCatch(return(expr), name, parentenv, handler)
+
+> 10: tryCatchOne(expr, names, parentenv, handlers[[1L]])
+
+> 11: tryCatchList(expr, classes, parentenv, handlers)
+
+> 12: tryCatch(fun(libname, pkgname), error = identity)
+
+> 13: runHook(".onLoad", env, package.lib, package)
+
+> 14: loadNamespace(package, lib.loc)
+
+> 15: doTryCatch(return(expr), name, parentenv, handler)
+
+> 16: tryCatchOne(expr, names, parentenv, handlers[[1L]])
+
+> 17: tryCatchList(expr, classes, parentenv, handlers)
+
+> 18: tryCatch({    attr(package, "LibPath") <- which.lib.loc    ns <- loadNamespace(package, lib.loc)    env <- attachNamespace(ns, pos = pos, deps, exclude, include.only)}, error = function(e) {    P <- if (!is.null(cc <- conditionCall(e)))         paste(" in", deparse(cc)[1L])    else ""    msg <- gettextf("package or namespace load failed for %s%s:\n %s",         sQuote(package), P, conditionMessage(e))    if (logical.return && !quietly)         message(paste("Error:", msg), domain = NA)    else stop(msg, call. = FALSE, domain = NA)})
+
+> 19: library(pkg_name, lib.loc = lib, character.only = TRUE, logical.return = TRUE)
+
+> 20: withCallingHandlers(expr, packageStartupMessage = function(c) tryInvokeRestart("muffleMessage"))
+
+> 21: suppressPackageStartupMessages(library(pkg_name, lib.loc = lib,     character.only = TRUE, logical.return = TRUE))
+
+> 22: doTryCatch(return(expr), name, parentenv, handler)
+
+> 23: tryCatchOne(expr, names, parentenv, handlers[[1L]])
+
+> 24: tryCatchList(expr, classes, parentenv, handlers)
+
+> 25: tryCatch(expr, error = function(e) {    call <- conditionCall(e)    if (!is.null(call)) {        if (identical(call[[1L]], quote(doTryCatch)))             call <- sys.call(-4L)        dcall <- deparse(call, nlines = 1L)        prefix <- paste("Error in", dcall, ": ")        LONG <- 75L        sm <- strsplit(conditionMessage(e), "\n")[[1L]]        w <- 14L + nchar(dcall, type = "w") + nchar(sm[1L], type = "w")        if (is.na(w))             w <- 14L + nchar(dcall, type = "b") + nchar(sm[1L],                 type = "b")        if (w > LONG)             prefix <- paste0(prefix, "\n  ")    }    else prefix <- "Error : "    msg <- paste0(prefix, conditionMessage(e), "\n")    .Internal(seterrmessage(msg[1L]))    if (!silent && isTRUE(getOption("show.error.messages"))) {        cat(msg, file = outFile)        .Internal(printDeferredWarnings())    }    invisible(structure(msg, class = "try-error", condition = e))})
+
+> 26: try(suppressPackageStartupMessages(library(pkg_name, lib.loc = lib,     character.only = TRUE, logical.return = TRUE)))
+
+> 27: tools:::.test_load_package("units", "/opt/homebrew/lib/R/4.4/site-library/00LOCK-units/00new")
+
+> An irrecoverable exception occurred. R is aborting now ...
+
+> ERROR: loading failed
+
+> * removing ?/opt/homebrew/lib/R/4.4/site-library/units?
+
+>
+
+>             [[alternative HTML version deleted]]
+
+>
+
+>
+
+> _______________________________________________
+
+> R-SIG-Mac mailing list
+
+> R-SIG-Mac at r-project.org
+
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+
+
+
+	[[alternative HTML version deleted]]
+
+

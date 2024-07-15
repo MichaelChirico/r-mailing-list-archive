@@ -1,0 +1,787 @@
+From |kry|ov @end|ng |rom d|@root@org  Tue Jul  2 16:04:44 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Tue, 2 Jul 2024 17:04:44 +0300
+Subject: [Rd] Large vector support in data.frames
+In-Reply-To: <b3c5fa5d-1ef0-4c39-a9a9-a86e198059f9@eoos.dds.nl>
+References: <b3c5fa5d-1ef0-4c39-a9a9-a86e198059f9@eoos.dds.nl>
+Message-ID: <20240702170444.5c43761e@arachnoid>
+
+? Wed, 19 Jun 2024 09:52:20 +0200
+Jan van der Laan <rhelp at eoos.dds.nl> ?????:
+
+> What is the status of supporting long vectors in data.frames (e.g. 
+> data.frames with more than 2^31 records)? Is this something that is 
+> being worked on? Is there a time line for this? Is this something I
+> can contribute to?
+
+Apologies if you've already received a better answer off-list.
+
+From from my limited understanding, the problem with supporting
+larger-than-(2^31-1) dimensions has multiple facets:
+
+ - In many parts of R code, there's the assumption that dim() is
+   of integer type. That wouldn't be a problem by itself, except...
+
+ - R currently lacks a native 64-bit integer type. About a year ago
+   Gabe Becker mentioned that Luke Tierney has been considering
+   improvements in this direction, but it's hard to introduce 64-bit
+   integers without making the user worry even more about data types
+   (numeric != integer != 64-bit integer) or introducing a lot of
+   overhead (64-bit integers being twice as large as 32-bit ones and,
+   depending on the workload, frequently redundant).
+
+ - Two-dimensional objects eventually get transformed into matrices and
+   handed to LAPACK for linear algebra operations. Currently, the
+   interface used by R to talk to BLAS and LAPACK only supports 32-bit
+   signed integers for lengths. 64-bit BLASes and LAPACKs do exist
+   (e.g. OpenBLAS can be compiled with 64-bit lengths), but we haven't
+   taught R to use them.
+
+   (This isn't limited to array dimensions, by the way. If you try to
+   svd() a 40000 by 40000 matrix, it'll try to ask for temporary memory
+   with length that overflows a signed 32-bit integer, get a much
+   shorter allocation instead, promptly overflow the buffer and
+   crash the process.)
+
+As you see, it's interconnected; work on one thing will involve the
+other two.
+
+-- 
+Best regards,
+Ivan
+
+
+From @|mon@urb@nek @end|ng |rom R-project@org  Wed Jul  3 09:22:25 2024
+From: @|mon@urb@nek @end|ng |rom R-project@org (Simon Urbanek)
+Date: Wed, 3 Jul 2024 09:22:25 +0200
+Subject: [Rd] Large vector support in data.frames
+In-Reply-To: <20240702170444.5c43761e@arachnoid>
+References: <b3c5fa5d-1ef0-4c39-a9a9-a86e198059f9@eoos.dds.nl>
+ <20240702170444.5c43761e@arachnoid>
+Message-ID: <289AC72B-2A0B-4087-B2E7-74C9E61BBB34@R-project.org>
+
+The second point is not really an issue - R already uses numerics for larger-than-32-bit indexing at R level and it works just fine for objects up to ca. 72 petabytes.
+
+However, the first one is a bit more relevant than one would think. At one point I have experimented with allowing data frames with more than 2^31 rows, but it breaks in many places - some quite unexpected. Beside dim() there is also the issue with (non-expanded) row names. Overall, it is a lot more work - some would have to be done in R but some would require changes to packages as well.
+
+(In practice I use sharded data frames for large data which removes the limit and allows parallel processing - but requires support from the methods that will be applied to them).
+
+Cheers,
+Simon
+
+
+
+> On Jul 2, 2024, at 16:04, Ivan Krylov via R-devel <r-devel at r-project.org> wrote:
+> 
+> ? Wed, 19 Jun 2024 09:52:20 +0200
+> Jan van der Laan <rhelp at eoos.dds.nl> ?????:
+> 
+>> What is the status of supporting long vectors in data.frames (e.g. 
+>> data.frames with more than 2^31 records)? Is this something that is 
+>> being worked on? Is there a time line for this? Is this something I
+>> can contribute to?
+> 
+> Apologies if you've already received a better answer off-list.
+> 
+> From from my limited understanding, the problem with supporting
+> larger-than-(2^31-1) dimensions has multiple facets:
+> 
+> - In many parts of R code, there's the assumption that dim() is
+>   of integer type. That wouldn't be a problem by itself, except...
+> 
+> - R currently lacks a native 64-bit integer type. About a year ago
+>   Gabe Becker mentioned that Luke Tierney has been considering
+>   improvements in this direction, but it's hard to introduce 64-bit
+>   integers without making the user worry even more about data types
+>   (numeric != integer != 64-bit integer) or introducing a lot of
+>   overhead (64-bit integers being twice as large as 32-bit ones and,
+>   depending on the workload, frequently redundant).
+> 
+> - Two-dimensional objects eventually get transformed into matrices and
+>   handed to LAPACK for linear algebra operations. Currently, the
+>   interface used by R to talk to BLAS and LAPACK only supports 32-bit
+>   signed integers for lengths. 64-bit BLASes and LAPACKs do exist
+>   (e.g. OpenBLAS can be compiled with 64-bit lengths), but we haven't
+>   taught R to use them.
+> 
+>   (This isn't limited to array dimensions, by the way. If you try to
+>   svd() a 40000 by 40000 matrix, it'll try to ask for temporary memory
+>   with length that overflows a signed 32-bit integer, get a much
+>   shorter allocation instead, promptly overflow the buffer and
+>   crash the process.)
+> 
+> As you see, it's interconnected; work on one thing will involve the
+> other two.
+> 
+> -- 
+> Best regards,
+> Ivan
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+> 
+
+
+From rhe|p @end|ng |rom eoo@@dd@@n|  Thu Jul  4 08:38:01 2024
+From: rhe|p @end|ng |rom eoo@@dd@@n| (Jan van der Laan)
+Date: Thu, 4 Jul 2024 08:38:01 +0200
+Subject: [Rd] Large vector support in data.frames
+In-Reply-To: <289AC72B-2A0B-4087-B2E7-74C9E61BBB34@R-project.org>
+References: <b3c5fa5d-1ef0-4c39-a9a9-a86e198059f9@eoos.dds.nl>
+ <20240702170444.5c43761e@arachnoid>
+ <289AC72B-2A0B-4087-B2E7-74C9E61BBB34@R-project.org>
+Message-ID: <628f7453-e37c-484c-aff5-2b72dba8e61d@eoos.dds.nl>
+
+Ivan, Simon,
+
+Thanks for the replies.
+
+I can work around the limitation. I currently either divide the data 
+into shards or use a list with (long) vectors depending on what I am 
+trying to do. But I have to transform between the two representations 
+which takes time and memory and often need more code than I would have 
+if I could have used data.frames.
+
+Being able to create large (> 2^31-1 rows) data.frames and doing some 
+basic things like selecting rows and columns, would already be really 
+nice. That would also allow package maintainers to start supporting 
+these data.frames. I imagine getting large data.frames working in 
+functions like lm, is not trivial and lm might not support this any time 
+soon. However, a package like biglm might.
+
+But from what you are saying, I get the impression that this is not 
+something that is being actively worked on. I must say, my hands a kind 
+of itching to try.
+
+Best,
+Jan
+
+
+
+On 03-07-2024 09:22, Simon Urbanek wrote:
+> The second point is not really an issue - R already uses numerics for larger-than-32-bit indexing at R level and it works just fine for objects up to ca. 72 petabytes.
+> 
+> However, the first one is a bit more relevant than one would think. At one point I have experimented with allowing data frames with more than 2^31 rows, but it breaks in many places - some quite unexpected. Beside dim() there is also the issue with (non-expanded) row names. Overall, it is a lot more work - some would have to be done in R but some would require changes to packages as well.
+> 
+> (In practice I use sharded data frames for large data which removes the limit and allows parallel processing - but requires support from the methods that will be applied to them).
+> 
+> Cheers,
+> Simon
+> 
+> 
+> 
+>> On Jul 2, 2024, at 16:04, Ivan Krylov via R-devel <r-devel at r-project.org> wrote:
+>>
+>> ? Wed, 19 Jun 2024 09:52:20 +0200
+>> Jan van der Laan <rhelp at eoos.dds.nl> ?????:
+>>
+>>> What is the status of supporting long vectors in data.frames (e.g.
+>>> data.frames with more than 2^31 records)? Is this something that is
+>>> being worked on? Is there a time line for this? Is this something I
+>>> can contribute to?
+>>
+>> Apologies if you've already received a better answer off-list.
+>>
+>>  From from my limited understanding, the problem with supporting
+>> larger-than-(2^31-1) dimensions has multiple facets:
+>>
+>> - In many parts of R code, there's the assumption that dim() is
+>>    of integer type. That wouldn't be a problem by itself, except...
+>>
+>> - R currently lacks a native 64-bit integer type. About a year ago
+>>    Gabe Becker mentioned that Luke Tierney has been considering
+>>    improvements in this direction, but it's hard to introduce 64-bit
+>>    integers without making the user worry even more about data types
+>>    (numeric != integer != 64-bit integer) or introducing a lot of
+>>    overhead (64-bit integers being twice as large as 32-bit ones and,
+>>    depending on the workload, frequently redundant).
+>>
+>> - Two-dimensional objects eventually get transformed into matrices and
+>>    handed to LAPACK for linear algebra operations. Currently, the
+>>    interface used by R to talk to BLAS and LAPACK only supports 32-bit
+>>    signed integers for lengths. 64-bit BLASes and LAPACKs do exist
+>>    (e.g. OpenBLAS can be compiled with 64-bit lengths), but we haven't
+>>    taught R to use them.
+>>
+>>    (This isn't limited to array dimensions, by the way. If you try to
+>>    svd() a 40000 by 40000 matrix, it'll try to ask for temporary memory
+>>    with length that overflows a signed 32-bit integer, get a much
+>>    shorter allocation instead, promptly overflow the buffer and
+>>    crash the process.)
+>>
+>> As you see, it's interconnected; work on one thing will involve the
+>> other two.
+>>
+>> -- 
+>> Best regards,
+>> Ivan
+>>
+>> ______________________________________________
+>> R-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-devel
+>>
+>
+
+
+From |kry|ov @end|ng |rom d|@root@org  Thu Jul  4 11:43:06 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Thu, 4 Jul 2024 12:43:06 +0300
+Subject: [Rd] R FAQ 2.6, 7.21
+Message-ID: <20240704124306.41fb029f@trisector>
+
+Hello R-devel,
+
+I would like to suggest a couple of updates for the R FAQ.
+
+https://CRAN.R-project.org/bin/linux/suse is currently empty and the
+directory has mtime from 2012, so it probably doesn't help to reference
+it in FAQ 2.6.
+
+There seems to be increased interest in using variables as variable
+names [1,2], so it might be useful to expand 7.21 a little. Can an R
+FAQ entry link to R-intro section 6.1?
+
+Index: doc/manual/R-FAQ.texi
+===================================================================
+--- doc/manual/R-FAQ.texi	(revision 86871)
++++ doc/manual/R-FAQ.texi	(working copy)
+@@ -503,9 +503,6 @@
+ @abbr{RPM}s for @I{RedHat Enterprise Linux} and compatible distributions (e.g.,
+ @I{Centos}, Scientific Linux, Oracle Linux).
+ 
+-See @url{https://CRAN.R-project.org/bin/linux/suse/README.html} for
+-information about @abbr{RPM}s for openSUSE.
+-
+ No other binary distributions are currently publicly available via
+ @CRAN{}.
+ 
+@@ -2624,8 +2621,31 @@
+ @end example
+ 
+ @noindent
+-without any of this messing about.
++without any of this messing about. This becomes especially true if you
++are finding yourself creating and trying to programmatically access
++groups of related variables such as @code{result1}, @code{result2},
++ at code{result3}, and so on: instead of fighting against the language to
++use
+ 
++ at example
++# 'i'th result <- process('i'th dataset)
++assign(paste0("result", i), process(get(paste0("dataset", i))))
++ at end example
++
++it is much easier to put the related variables in lists and use
++
++ at example
++result[[i]] <- process(dataset[[i]])
++ at end example
++
++and, eventually,
++
++ at example
++result <- lapply(dataset, process)
++ at end example
++
++which is easy to replace with @code{parLapply} for parallel processing.
++
+ @node Why do lattice/trellis graphics not work?
+ @section Why do lattice/trellis graphics not work?
+ 
+
+
+-- 
+Best regards,
+Ivan
+
+
+From |uc@r @end|ng |rom |edor@project@org  Thu Jul  4 11:52:35 2024
+From: |uc@r @end|ng |rom |edor@project@org (=?UTF-8?Q?I=C3=B1aki_Ucar?=)
+Date: Thu, 4 Jul 2024 11:52:35 +0200
+Subject: [Rd] R FAQ 2.6, 7.21
+In-Reply-To: <20240704124306.41fb029f@trisector>
+References: <20240704124306.41fb029f@trisector>
+Message-ID: <CALEXWq3qOGUqkTh2apDR8ZLRmtQH+4MwConcYEs-pqEY=POFrw@mail.gmail.com>
+
+On Thu, 4 Jul 2024 at 11:44, Ivan Krylov via R-devel <r-devel at r-project.org>
+wrote:
+
+> Hello R-devel,
+>
+> I would like to suggest a couple of updates for the R FAQ.
+>
+> https://CRAN.R-project.org/bin/linux/suse is currently empty and the
+> directory has mtime from 2012, so it probably doesn't help to reference
+> it in FAQ 2.6.
+>
+
+And now that we are at it, I would like to suggest also a mention to
+https://cran.r-project.org/bin/linux/fedora/
+
+I?aki
+
+
+> There seems to be increased interest in using variables as variable
+> names [1,2], so it might be useful to expand 7.21 a little. Can an R
+> FAQ entry link to R-intro section 6.1?
+>
+> Index: doc/manual/R-FAQ.texi
+> ===================================================================
+> --- doc/manual/R-FAQ.texi       (revision 86871)
+> +++ doc/manual/R-FAQ.texi       (working copy)
+> @@ -503,9 +503,6 @@
+>  @abbr{RPM}s for @I{RedHat Enterprise Linux} and compatible distributions
+> (e.g.,
+>  @I{Centos}, Scientific Linux, Oracle Linux).
+>
+> -See @url{https://CRAN.R-project.org/bin/linux/suse/README.html} for
+> -information about @abbr{RPM}s for openSUSE.
+> -
+>  No other binary distributions are currently publicly available via
+>  @CRAN{}.
+>
+> @@ -2624,8 +2621,31 @@
+>  @end example
+>
+>  @noindent
+> -without any of this messing about.
+> +without any of this messing about. This becomes especially true if you
+> +are finding yourself creating and trying to programmatically access
+> +groups of related variables such as @code{result1}, @code{result2},
+> + at code{result3}, and so on: instead of fighting against the language to
+> +use
+>
+> + at example
+> +# 'i'th result <- process('i'th dataset)
+> +assign(paste0("result", i), process(get(paste0("dataset", i))))
+> + at end example
+> +
+> +it is much easier to put the related variables in lists and use
+> +
+> + at example
+> +result[[i]] <- process(dataset[[i]])
+> + at end example
+> +
+> +and, eventually,
+> +
+> + at example
+> +result <- lapply(dataset, process)
+> + at end example
+> +
+> +which is easy to replace with @code{parLapply} for parallel processing.
+> +
+>  @node Why do lattice/trellis graphics not work?
+>  @section Why do lattice/trellis graphics not work?
+>
+>
+>
+> --
+> Best regards,
+> Ivan
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+
+
+-- 
+I?aki ?car
+
+	[[alternative HTML version deleted]]
+
+
+From @vi@e@gross m@iii@g oii gm@ii@com  Thu Jul  4 15:35:15 2024
+From: @vi@e@gross m@iii@g oii gm@ii@com (@vi@e@gross m@iii@g oii gm@ii@com)
+Date: Thu, 4 Jul 2024 09:35:15 -0400
+Subject: [Rd] Large vector support in data.frames
+In-Reply-To: <628f7453-e37c-484c-aff5-2b72dba8e61d@eoos.dds.nl>
+References: <b3c5fa5d-1ef0-4c39-a9a9-a86e198059f9@eoos.dds.nl>
+ <20240702170444.5c43761e@arachnoid>
+ <289AC72B-2A0B-4087-B2E7-74C9E61BBB34@R-project.org>
+ <628f7453-e37c-484c-aff5-2b72dba8e61d@eoos.dds.nl>
+Message-ID: <002e01dace17$0141f380$03c5da80$@gmail.com>
+
+Unfortunately, as has been noted, some changes require many parties to change at once and can cause huge problems when an unchanged part is reached. If integers are a fixed size, an implementation can be straightforward and you can patch in libraries and parts already used and tested and in languages like C.
+
+Python is an example where they went another way and the built-in integer type has an indefinite length integer. But that can mess with efficiency so some extensions commonly used for their versions of Dataframe often allow you to specify one of several types of fixed length integer for efficiency.
+
+-----Original Message-----
+From: R-devel <r-devel-bounces at r-project.org> On Behalf Of Jan van der Laan
+Sent: Thursday, July 4, 2024 2:38 AM
+To: r-devel at r-project.org
+Subject: Re: [Rd] Large vector support in data.frames
+
+Ivan, Simon,
+
+Thanks for the replies.
+
+I can work around the limitation. I currently either divide the data 
+into shards or use a list with (long) vectors depending on what I am 
+trying to do. But I have to transform between the two representations 
+which takes time and memory and often need more code than I would have 
+if I could have used data.frames.
+
+Being able to create large (> 2^31-1 rows) data.frames and doing some 
+basic things like selecting rows and columns, would already be really 
+nice. That would also allow package maintainers to start supporting 
+these data.frames. I imagine getting large data.frames working in 
+functions like lm, is not trivial and lm might not support this any time 
+soon. However, a package like biglm might.
+
+But from what you are saying, I get the impression that this is not 
+something that is being actively worked on. I must say, my hands a kind 
+of itching to try.
+
+Best,
+Jan
+
+
+
+On 03-07-2024 09:22, Simon Urbanek wrote:
+> The second point is not really an issue - R already uses numerics for larger-than-32-bit indexing at R level and it works just fine for objects up to ca. 72 petabytes.
+> 
+> However, the first one is a bit more relevant than one would think. At one point I have experimented with allowing data frames with more than 2^31 rows, but it breaks in many places - some quite unexpected. Beside dim() there is also the issue with (non-expanded) row names. Overall, it is a lot more work - some would have to be done in R but some would require changes to packages as well.
+> 
+> (In practice I use sharded data frames for large data which removes the limit and allows parallel processing - but requires support from the methods that will be applied to them).
+> 
+> Cheers,
+> Simon
+> 
+> 
+> 
+>> On Jul 2, 2024, at 16:04, Ivan Krylov via R-devel <r-devel at r-project.org> wrote:
+>>
+>> ? Wed, 19 Jun 2024 09:52:20 +0200
+>> Jan van der Laan <rhelp at eoos.dds.nl> ?????:
+>>
+>>> What is the status of supporting long vectors in data.frames (e.g.
+>>> data.frames with more than 2^31 records)? Is this something that is
+>>> being worked on? Is there a time line for this? Is this something I
+>>> can contribute to?
+>>
+>> Apologies if you've already received a better answer off-list.
+>>
+>>  From from my limited understanding, the problem with supporting
+>> larger-than-(2^31-1) dimensions has multiple facets:
+>>
+>> - In many parts of R code, there's the assumption that dim() is
+>>    of integer type. That wouldn't be a problem by itself, except...
+>>
+>> - R currently lacks a native 64-bit integer type. About a year ago
+>>    Gabe Becker mentioned that Luke Tierney has been considering
+>>    improvements in this direction, but it's hard to introduce 64-bit
+>>    integers without making the user worry even more about data types
+>>    (numeric != integer != 64-bit integer) or introducing a lot of
+>>    overhead (64-bit integers being twice as large as 32-bit ones and,
+>>    depending on the workload, frequently redundant).
+>>
+>> - Two-dimensional objects eventually get transformed into matrices and
+>>    handed to LAPACK for linear algebra operations. Currently, the
+>>    interface used by R to talk to BLAS and LAPACK only supports 32-bit
+>>    signed integers for lengths. 64-bit BLASes and LAPACKs do exist
+>>    (e.g. OpenBLAS can be compiled with 64-bit lengths), but we haven't
+>>    taught R to use them.
+>>
+>>    (This isn't limited to array dimensions, by the way. If you try to
+>>    svd() a 40000 by 40000 matrix, it'll try to ask for temporary memory
+>>    with length that overflows a signed 32-bit integer, get a much
+>>    shorter allocation instead, promptly overflow the buffer and
+>>    crash the process.)
+>>
+>> As you see, it's interconnected; work on one thing will involve the
+>> other two.
+>>
+>> -- 
+>> Best regards,
+>> Ivan
+>>
+>> ______________________________________________
+>> R-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-devel
+>>
+>
+
+______________________________________________
+R-devel at r-project.org mailing list
+https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From kev|nu@hey @end|ng |rom gm@||@com  Fri Jul  5 09:27:50 2024
+From: kev|nu@hey @end|ng |rom gm@||@com (Kevin Ushey)
+Date: Fri, 5 Jul 2024 15:27:50 +0800
+Subject: [Rd] API for converting LANGSXP to LISTSXP?
+Message-ID: <CAJXgQP3+OucVzfX9fHk+-4rW1Ks1=rwpvb7WM=oSv0H8YQex_Q@mail.gmail.com>
+
+Hi,
+
+A common idiom in the R sources is to convert objects between LANGSXP
+and LISTSXP by using SET_TYPEOF. However, this is soon going to be
+disallowed in packages. From what I can see, there isn't currently a
+direct way to convert between these two object types using the
+available API. At the R level, one can convert calls to pairlists
+with:
+
+> as.call(pairlist(as.symbol("rnorm"), 42))
+rnorm(42)
+
+However, the reverse is not possible:
+
+> as.pairlist(call("rnorm", 42))
+Error in as.pairlist(call("rnorm", 42)) :
+  'language' object cannot be coerced to type 'pairlist'
+
+One can do such a conversion via conversion to e.g. an intermediate R
+list (VECSXP), but that seems wasteful. Would it make sense to permit
+this coercion? Or, is there some other relevant API I'm missing?
+
+For completeness, Rf_coerceVector() also emits the same error above
+since it uses the same code path.
+
+Thanks,
+Kevin
+
+
+From neon|r@ @end|ng |rom gm@||@com  Fri Jul  5 16:30:41 2024
+From: neon|r@ @end|ng |rom gm@||@com (neonira Arinoem)
+Date: Fri, 5 Jul 2024 16:30:41 +0200
+Subject: [Rd] quarto list of figures
+Message-ID: <CAN--Dz3Q0VQXAKMbf96=rc2-koYA+EaKWCoGR=TuDjE21vaePw@mail.gmail.com>
+
+I am struggling to get Quarto producing a list of figures from a Quarto
+book.
+
+Where may I find a working sample to get inspiration from?
+
+	[[alternative HTML version deleted]]
+
+
+From m|ch@|2992 @end|ng |rom gm@||@com  Fri Jul  5 16:47:35 2024
+From: m|ch@|2992 @end|ng |rom gm@||@com (=?UTF-8?Q?Micha=C5=82_Bojanowski?=)
+Date: Fri, 5 Jul 2024 16:47:35 +0200
+Subject: [Rd] quarto list of figures
+In-Reply-To: <CAN--Dz3Q0VQXAKMbf96=rc2-koYA+EaKWCoGR=TuDjE21vaePw@mail.gmail.com>
+References: <CAN--Dz3Q0VQXAKMbf96=rc2-koYA+EaKWCoGR=TuDjE21vaePw@mail.gmail.com>
+Message-ID: <CAByPayFmGwnZHkr3gQveetG1pkWEqHioAmoReSjJ2=8MhMY_Lg@mail.gmail.com>
+
+> I am struggling to get Quarto producing a list of figures from a Quarto
+> book.
+>
+> Where may I find a working sample to get inspiration from?
+
+You will have more luck asking at
+https://github.com/quarto-dev/quarto-cli/discussions
+
+
+From |kry|ov @end|ng |rom d|@root@org  Sat Jul  6 14:10:09 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Sat, 6 Jul 2024 15:10:09 +0300
+Subject: [Rd] API for converting LANGSXP to LISTSXP?
+In-Reply-To: <CAJXgQP3+OucVzfX9fHk+-4rW1Ks1=rwpvb7WM=oSv0H8YQex_Q@mail.gmail.com>
+References: <CAJXgQP3+OucVzfX9fHk+-4rW1Ks1=rwpvb7WM=oSv0H8YQex_Q@mail.gmail.com>
+Message-ID: <20240706151009.4071a55b@parabola>
+
+On Fri, 5 Jul 2024 15:27:50 +0800
+Kevin Ushey <kevinushey at gmail.com> wrote:
+
+> A common idiom in the R sources is to convert objects between LANGSXP
+> and LISTSXP by using SET_TYPEOF. However, this is soon going to be
+> disallowed in packages.
+
+Would you mind providing an example where a package needs to take an
+existing LISTSXP and convert it to a LANGSXP (or vice versa)? I think
+that Luke Tierney intended to replace the uses of
+SET_TYPEOF(allocList(...), LANGSXP) with allocLang(...).
+
+At least it's easy to manually convert between the two by replacing the
+head of the list using LCONS(CAR(list), CDR(list)) or CONS(CAR(lang),
+CDR(lang)): in a call, the rest of the arguments are ordinary LISTSXPs.
+
+-- 
+Best regards,
+Ivan
+
+
+From iuke-tier@ey m@iii@g oii uiow@@edu  Sat Jul  6 15:59:11 2024
+From: iuke-tier@ey m@iii@g oii uiow@@edu (iuke-tier@ey m@iii@g oii uiow@@edu)
+Date: Sat, 6 Jul 2024 08:59:11 -0500 (CDT)
+Subject: [Rd] [External]  API for converting LANGSXP to LISTSXP?
+In-Reply-To: <CAJXgQP3+OucVzfX9fHk+-4rW1Ks1=rwpvb7WM=oSv0H8YQex_Q@mail.gmail.com>
+References: <CAJXgQP3+OucVzfX9fHk+-4rW1Ks1=rwpvb7WM=oSv0H8YQex_Q@mail.gmail.com>
+Message-ID: <ba6081a2-4f80-cf8f-f3d9-b925fdc4f117@uiowa.edu>
+
+We have long been discouraging the use of pairlists. So no, we will
+not do anything to facilitate this conversion; if anything the
+opposite. SET_TYPEOF is used more than it should be in the sources.
+It is something I would like us to fix sometime, but isn't high
+priority.
+
+Best,
+
+luke
+
+On Fri, 5 Jul 2024, Kevin Ushey wrote:
+
+> Hi,
+>
+> A common idiom in the R sources is to convert objects between LANGSXP
+> and LISTSXP by using SET_TYPEOF. However, this is soon going to be
+> disallowed in packages. From what I can see, there isn't currently a
+> direct way to convert between these two object types using the
+> available API. At the R level, one can convert calls to pairlists
+> with:
+>
+>> as.call(pairlist(as.symbol("rnorm"), 42))
+> rnorm(42)
+>
+> However, the reverse is not possible:
+>
+>> as.pairlist(call("rnorm", 42))
+> Error in as.pairlist(call("rnorm", 42)) :
+>  'language' object cannot be coerced to type 'pairlist'
+>
+> One can do such a conversion via conversion to e.g. an intermediate R
+> list (VECSXP), but that seems wasteful. Would it make sense to permit
+> this coercion? Or, is there some other relevant API I'm missing?
+>
+> For completeness, Rf_coerceVector() also emits the same error above
+> since it uses the same code path.
+>
+> Thanks,
+> Kevin
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+
+-- 
+Luke Tierney
+Ralph E. Wareham Professor of Mathematical Sciences
+University of Iowa                  Phone:             319-335-3386
+Department of Statistics and        Fax:               319-335-3017
+    Actuarial Science
+241 Schaeffer Hall                  email:   luke-tierney at uiowa.edu
+Iowa City, IA 52242                 WWW:  http://www.stat.uiowa.edu/
+
+
+From kev|nu@hey @end|ng |rom gm@||@com  Sun Jul  7 11:45:19 2024
+From: kev|nu@hey @end|ng |rom gm@||@com (Kevin Ushey)
+Date: Sun, 7 Jul 2024 17:45:19 +0800
+Subject: [Rd] API for converting LANGSXP to LISTSXP?
+In-Reply-To: <20240706151009.4071a55b@parabola>
+References: <CAJXgQP3+OucVzfX9fHk+-4rW1Ks1=rwpvb7WM=oSv0H8YQex_Q@mail.gmail.com>
+ <20240706151009.4071a55b@parabola>
+Message-ID: <CAJXgQP1Mtob6fH6LhL3RS1HxmdhFpwX6iEn83kTG18yUO2qv=A@mail.gmail.com>
+
+In this case, Rcpp was internally converting (already-existing)
+LISTSXPs to LANGSXPs using SET_TYPEOF in some places; the goal was to
+allow Rcpp to continue doing this without using SET_TYPEOF just to
+preserve existing behavior in an API-compliant way. I ended up doing
+exactly what you suggested; thanks.
+
+On Sat, Jul 6, 2024 at 8:09?PM Ivan Krylov <ikrylov at disroot.org> wrote:
+>
+> On Fri, 5 Jul 2024 15:27:50 +0800
+> Kevin Ushey <kevinushey at gmail.com> wrote:
+>
+> > A common idiom in the R sources is to convert objects between LANGSXP
+> > and LISTSXP by using SET_TYPEOF. However, this is soon going to be
+> > disallowed in packages.
+>
+> Would you mind providing an example where a package needs to take an
+> existing LISTSXP and convert it to a LANGSXP (or vice versa)? I think
+> that Luke Tierney intended to replace the uses of
+> SET_TYPEOF(allocList(...), LANGSXP) with allocLang(...).
+>
+> At least it's easy to manually convert between the two by replacing the
+> head of the list using LCONS(CAR(list), CDR(list)) or CONS(CAR(lang),
+> CDR(lang)): in a call, the rest of the arguments are ordinary LISTSXPs.
+>
+> --
+> Best regards,
+> Ivan
+
+
+From h||m@r@berger @end|ng |rom gmx@de  Fri Jul 12 17:35:19 2024
+From: h||m@r@berger @end|ng |rom gmx@de (Hilmar Berger)
+Date: Fri, 12 Jul 2024 17:35:19 +0200
+Subject: [Rd] xftrm is more than 100x slower for AsIs than for character
+ vectors
+Message-ID: <557b02ff-7632-4440-9b0b-8373d40a3c0f@gmx.de>
+
+Good evening,
+
+I recently have observed slow merges when combining multiple data frames
+derived from DataFrame and base::data.frame. I observed that the index
+column of intermediate tables was of class <AsIs> (automatically
+converted from character). The problem occurred mainly when using the
+sorted = T option in base::merge.
+
+This can be traced to xtfrm.AsIs being more than 100 times slower than
+the comparable function for character vectors.
+
+x = paste0("A_", 1:1e5)
+system.time({o <- xtfrm(x)})
+
+#? user? system elapsed
+#? 0.325?? 0.005?? 0.332
+
+x <- I(x)
+system.time({o <- xtfrm(x)}) # this calls xtfrm.AsIs
+
+# user? system elapsed
+# 26.153?? 0.016? 26.388
+
+This can be finally traced to base::rank() (called from xtfrm.default),
+where I found that
+
+"NB: rank is not itself generic but xtfrm is, and rank(xtfrm(x), ....)
+will have the desired result if there is a xtfrm method. Otherwise, rank
+will make use of ==, >, is.na and extraction methods for classed
+objects, possibly rather slowly. "
+
+This *sounds* like the existence of xtfrm.AsIs should already be able to
+accelerate the ranking, but this does not seem to work. xtfrm.AsIs does
+not do anything for my case of class(x) == "AsIs" and just delegates to
+xtfrm.default.
+
+As a quick solution (and if there is no other fix), could we possibly
+add a note to the help page of I() that sorting/ordering/ranking of AsIs
+columns will be rather slow?
+
+Thanks a lot!
+
+Best regards
+
+Hilmar
+
+ > sessionInfo()
+R version 4.4.1 (2024-06-14)
+Platform: x86_64-pc-linux-gnu
+Running under: Ubuntu 20.04.6 LTS
+
+Matrix products: default
+BLAS:?? /usr/lib/x86_64-linux-gnu/openblas-pthread/libblas.so.3
+LAPACK: /usr/lib/x86_64-linux-gnu/openblas-pthread/liblapack.so.3;?
+LAPACK version 3.9.0
+
+locale:
+ ?[1] LC_CTYPE=en_US.UTF-8?????? LC_NUMERIC=C
+ ?[3] LC_TIME=de_DE.UTF-8??????? LC_COLLATE=en_US.UTF-8
+ ?[5] LC_MONETARY=de_DE.UTF-8??? LC_MESSAGES=en_US.UTF-8
+ ?[7] LC_PAPER=de_DE.UTF-8?????? LC_NAME=C
+ ?[9] LC_ADDRESS=C?????????????? LC_TELEPHONE=C
+[11] LC_MEASUREMENT=de_DE.UTF-8 LC_IDENTIFICATION=C
+
+time zone: Europe/Berlin
+tzcode source: system (glibc)
+
+attached base packages:
+[1] stats???? graphics? grDevices utils???? datasets? methods base
+
+loaded via a namespace (and not attached):
+[1] compiler_4.4.1
+
+
