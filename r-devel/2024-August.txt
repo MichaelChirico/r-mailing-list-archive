@@ -1,0 +1,972 @@
+From tom@@@k@||ber@ @end|ng |rom gm@||@com  Thu Aug  1 12:49:57 2024
+From: tom@@@k@||ber@ @end|ng |rom gm@||@com (Tomas Kalibera)
+Date: Thu, 1 Aug 2024 12:49:57 +0200
+Subject: [Rd] Question about regexp edge case
+In-Reply-To: <20240729103757.11201601@Tarkus>
+References: <497933d4-d8f5-4242-99aa-3c335d694ebd@gmail.com>
+ <20240729103757.11201601@Tarkus>
+Message-ID: <48ccdd83-47b0-4f06-b652-3e1e91117abf@gmail.com>
+
+
+On 7/29/24 09:37, Ivan Krylov via R-devel wrote:
+> ? Sun, 28 Jul 2024 20:02:21 -0400
+> Duncan Murdoch <murdoch.duncan at gmail.com> ?????:
+>
+>> gsub("^([0-9]{,5}).*","\\1","123456789")
+>> [1] "123456"
+> This is in TRE itself: for "^([0-9]{,1})" tre_regexecb returns {.rm_so
+> = 0, .rm_eo = 1}, matching "1", but for "^([0-9]{,2})" and above it
+> returns an off-by-one result, {.rm_so = 0, .rm_eo = 3}.
+>
+> Compiling with TRE_DEBUG, I see it parsed correctly:
+>
+> catenation, sub 0, 0 tags
+>    assertions: bol
+>    iteration {-1, 2}, sub -1, 0 tags, greedy
+>      literal (0, 9) (48, 57), pos 0, sub -1, 0 tags
+>
+> ...but after tre_expand_ast I see
+>
+> catenation, sub 0, 1 tags
+>    assertions: bol
+>    catenation, sub -1, 1 tags
+>      tag 0
+>      union, sub -1, 0 tags
+>        literal empty
+>        catenation, sub -1, 0 tags
+>          literal (0, 9) (48, 57), pos 2, sub -1, 0 tags
+>          union, sub -1, 0 tags
+>            literal empty
+>            catenation, sub -1, 0 tags
+>              literal (0, 9) (48, 57), pos 1, sub -1, 0 tags
+>              union, sub -1, 0 tags
+>                literal empty
+>                literal (0, 9) (48, 57), pos 0, sub -1, 0 tags
+>
+> ...which has one too many copies of "literal (0,9)". I think it's due
+> to the expansion loop on line 942 of src/extra/tre/tre-compile.c being
+>
+> for (j = iter->min; j < iter->max; j++)
+>
+> ...where 'min' is -1 to denote no minimum. This is further confirmed by
+> "{0,3}", "{1,3}", "{2,3}", "{3,3}" all working correctly.
+>
+> Neither TRE documentation [1] nor POSIX [2] specify the {,n} syntax:
+> from my reading, it looks like if the upper boundary is specified, the
+> lower boundary must be specified too. But if we do want to fix this, it
+> will have to be a special case for iter->min == -1.
+
+Thanks. It seems that TRE is now maintained again upstream, so it would 
+be best to discuss this with TRE maintainers directly (if not already 
+solved by https://github.com/laurikari/tre/pull/98).
+
+The same applies to any other open TRE issues.
+
+Best Tomas
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Thu Aug  1 20:55:36 2024
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Thu, 1 Aug 2024 14:55:36 -0400
+Subject: [Rd] Question about regexp edge case
+In-Reply-To: <48ccdd83-47b0-4f06-b652-3e1e91117abf@gmail.com>
+References: <497933d4-d8f5-4242-99aa-3c335d694ebd@gmail.com>
+ <20240729103757.11201601@Tarkus>
+ <48ccdd83-47b0-4f06-b652-3e1e91117abf@gmail.com>
+Message-ID: <8cfbc0a2-661a-40db-91e4-84af793c52e1@gmail.com>
+
+Thanks Tomas.  Do note that my original post also mentioned a bug or doc 
+error in the PCRE docs for this regexp:
+
+>   - perl = TRUE does *not* give the documented result on at least one 
+> system (which is "123456789", because "{,5}" is documented to not be a 
+> quantifier, so it should only match the literal string "{,5}").
+
+Duncan
+
+On 2024-08-01 6:49 a.m., Tomas Kalibera wrote:
+> 
+> On 7/29/24 09:37, Ivan Krylov via R-devel wrote:
+>> ? Sun, 28 Jul 2024 20:02:21 -0400
+>> Duncan Murdoch <murdoch.duncan at gmail.com> ?????:
+>>
+>>> gsub("^([0-9]{,5}).*","\\1","123456789")
+>>> [1] "123456"
+>> This is in TRE itself: for "^([0-9]{,1})" tre_regexecb returns {.rm_so
+>> = 0, .rm_eo = 1}, matching "1", but for "^([0-9]{,2})" and above it
+>> returns an off-by-one result, {.rm_so = 0, .rm_eo = 3}.
+>>
+>> Compiling with TRE_DEBUG, I see it parsed correctly:
+>>
+>> catenation, sub 0, 0 tags
+>>     assertions: bol
+>>     iteration {-1, 2}, sub -1, 0 tags, greedy
+>>       literal (0, 9) (48, 57), pos 0, sub -1, 0 tags
+>>
+>> ...but after tre_expand_ast I see
+>>
+>> catenation, sub 0, 1 tags
+>>     assertions: bol
+>>     catenation, sub -1, 1 tags
+>>       tag 0
+>>       union, sub -1, 0 tags
+>>         literal empty
+>>         catenation, sub -1, 0 tags
+>>           literal (0, 9) (48, 57), pos 2, sub -1, 0 tags
+>>           union, sub -1, 0 tags
+>>             literal empty
+>>             catenation, sub -1, 0 tags
+>>               literal (0, 9) (48, 57), pos 1, sub -1, 0 tags
+>>               union, sub -1, 0 tags
+>>                 literal empty
+>>                 literal (0, 9) (48, 57), pos 0, sub -1, 0 tags
+>>
+>> ...which has one too many copies of "literal (0,9)". I think it's due
+>> to the expansion loop on line 942 of src/extra/tre/tre-compile.c being
+>>
+>> for (j = iter->min; j < iter->max; j++)
+>>
+>> ...where 'min' is -1 to denote no minimum. This is further confirmed by
+>> "{0,3}", "{1,3}", "{2,3}", "{3,3}" all working correctly.
+>>
+>> Neither TRE documentation [1] nor POSIX [2] specify the {,n} syntax:
+>> from my reading, it looks like if the upper boundary is specified, the
+>> lower boundary must be specified too. But if we do want to fix this, it
+>> will have to be a special case for iter->min == -1.
+> 
+> Thanks. It seems that TRE is now maintained again upstream, so it would
+> be best to discuss this with TRE maintainers directly (if not already
+> solved by https://github.com/laurikari/tre/pull/98).
+> 
+> The same applies to any other open TRE issues.
+> 
+> Best Tomas
+>
+
+
+From pd@|gd @end|ng |rom gm@||@com  Fri Aug  2 12:21:20 2024
+From: pd@|gd @end|ng |rom gm@||@com (peter dalgaard)
+Date: Fri, 2 Aug 2024 12:21:20 +0200
+Subject: [Rd] R-patched on CRAN is R-4.3.3
+In-Reply-To: <f50fcfef-86df-4ca8-9d83-20d472ed8aaf@gmail.com>
+References: <CA+hbrhWeSLh+RhrC5FgRhbG396SNrCVbdsY0CfL4Ut387t896Q@mail.gmail.com>
+ <f50fcfef-86df-4ca8-9d83-20d472ed8aaf@gmail.com>
+Message-ID: <E09E33E1-D146-41FB-B7DF-6B9C96E631B1@gmail.com>
+
+Apologies for not seeing this until now. The files on CRAN https://cran.r-project.org/src/base-prerelease/ contain R-patched versions that should be up to date. The Zurich R-patched seems to be 4.4.1 patched too now. 
+
+The text in R-admin is a bit out of date (it predates nightly builds of tarballs on the machine that does the final releases), and so is the text on CRAN. We might change them to point to the CRAN directory as the primary source.
+
+(Martin: Are there changes in the situation at Zurich that are relevant to this?) 
+
+- Peter D.
+
+> On 15 Jul 2024, at 09:56 , Tomas Kalibera <tomas.kalibera at gmail.com> wrote:
+> 
+> 
+> On 7/15/24 07:08, Peter Langfelder wrote:
+>> Hi all,
+>> 
+>> apologies if I missed something here. Just downloaded and compiled
+>> R-patched from https://stat.ethz.ch/R/daily/ but it reports as R-4.3.3
+>> (2024-04-09 r86895) -- "Angel Food Cake". The last dated R-patched is
+>> from 2024-04-09, about 3 months old. Are R-patched not updated
+>> anymore, am I looking at a wrong directory or even a wrong server? The
+>> current R Installation and Administration manual
+>> (https://cran.r-project.org/doc/manuals/r-patched/R-admin.html#Getting-patched-and-development-versions)
+>> suggests that the current R-patched should be where I looked for it:
+>> 
+>> A patched version of the current release, ?r-patched?, and the current
+>> development version, ?r-devel?, are available as daily tarballs and
+>> via access to the R Subversion repository. (For the two weeks prior to
+>> the release of a minor (4.x.0) version, ?r-patched? tarballs may refer
+>> to beta/release candidates of the upcoming release, the patched
+>> version of the current release being available via Subversion.)
+>> 
+>> The tarballs are available from https://stat.ethz.ch/R/daily/.
+>> Download R-patched.tar.gz or R-devel.tar.gz (or the .tar.bz2 versions)
+>> and unpack as described in the previous section. They are built in
+>> exactly the same way as distributions of R releases.
+> 
+> Before this gets resolved, you can get the latest version of R-patched from svn:
+> 
+> https://svn.r-project.org/R/branches/R-4-4-branch
+> 
+> (and the current R release from https://cran.r-project.org/src/base/R-4/R-4.4.1.tar.gz)
+> 
+> Tomas
+> 
+>> 
+>> Thanks,
+>> 
+>> Peter
+>> 
+>> ______________________________________________
+>> R-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-devel
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+-- 
+Peter Dalgaard, Professor,
+Center for Statistics, Copenhagen Business School
+Solbjerg Plads 3, 2000 Frederiksberg, Denmark
+Phone: (+45)38153501
+Office: A 4.23
+Email: pd.mes at cbs.dk  Priv: PDalgd at gmail.com
+
+
+From rob@tee|e @end|ng |rom y@hoo@com  Tue Aug  6 16:19:25 2024
+From: rob@tee|e @end|ng |rom y@hoo@com (Rob Steele)
+Date: Tue, 6 Aug 2024 10:19:25 -0400
+Subject: [Rd] Another issue using multi-processing linear algebra libraries
+References: <BE21EBCB-E162-4E1A-BC7A-13779832D311.ref@yahoo.com>
+Message-ID: <BE21EBCB-E162-4E1A-BC7A-13779832D311@yahoo.com>
+
+From the R Installation and Admin manual:
+
+	"There is a tendency for re-distributors of R to use ?enhanced? linear algebra libraries without explaining their downsides.?
+
+There?s a downside not mentioned in the manual that caught and baffled me for a while. I was using all 64 cores of an AWS instance via parallel::mclapply() and doing matrix multiplications in the parallelized function. If the matrices were big enough the linked BLAS or LAPACK would try to use all 64 cores for each multiplication, which meant 64^2 processes or threads in some combination and that was the end of all useful work. I worked around the problem by rewriting the matrix multiply as ?colSums(x * t(y))?. It also worked to build R from source, which I guess uses the built-in BLAS and LAPACK.
+
+Would it make sense to add a parameter somewhere, to mclapply(), say, telling R to not use multiprocessing libraries? Does R even know whether a linked library is doing multi-processing? Does R build its own BLAS and LAPACK if its also linking external ones?
+
+Thanks,
+Rob
+	[[alternative HTML version deleted]]
+
+
+From |kry|ov @end|ng |rom d|@root@org  Tue Aug  6 17:09:05 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Tue, 6 Aug 2024 18:09:05 +0300
+Subject: [Rd] 
+ Another issue using multi-processing linear algebra libraries
+In-Reply-To: <BE21EBCB-E162-4E1A-BC7A-13779832D311@yahoo.com>
+References: <BE21EBCB-E162-4E1A-BC7A-13779832D311.ref@yahoo.com>
+ <BE21EBCB-E162-4E1A-BC7A-13779832D311@yahoo.com>
+Message-ID: <20240806180905.2b4dab31@arachnoid>
+
+? Tue, 6 Aug 2024 10:19:25 -0400
+Rob Steele via R-devel <r-devel at r-project.org> ?????:
+
+> Would it make sense to add a parameter somewhere, to mclapply(), say,
+> telling R to not use multiprocessing libraries?
+
+It would be great if we had a way to limit all kinds of multiprocessing
+(child processes, OpenMP threads, pthreads, forks, MPI, PVM, 'parallel'
+clusters, <insert many more methods here>) in a single setting, but
+there is currently no such setting, and it may be impossible to
+implement. Particularly problematic may be nested parallellism:
+sometimes desirable (e.g. 4-machine cluster, each machine in it using
+OpenMP threads), sometimes undesired (e.g. your case). A single setting
+is probably far from enough.
+
+> Does R even know whether a linked library is doing multi-processing?
+
+Unfortunately, no, there is no standard interface for that. Best I can
+recommend is to link your R installation with FlexiBLAS and then use the
+'flexiblas' CRAN package to talk to it.
+
+> Does R build its own BLAS and LAPACK if its also linking external
+> ones?
+
+I think it doesn't.
+
+-- 
+Best regards,
+Ivan
+
+
+From d|pter|x@w@ng @end|ng |rom gm@||@com  Wed Aug  7 13:47:38 2024
+From: d|pter|x@w@ng @end|ng |rom gm@||@com (Dipterix Wang)
+Date: Wed, 7 Aug 2024 07:47:38 -0400
+Subject: [Rd] 
+ Another issue using multi-processing linear algebra libraries
+In-Reply-To: <mailman.54426.5.1723024802.5780.r-devel@r-project.org>
+References: <mailman.54426.5.1723024802.5780.r-devel@r-project.org>
+Message-ID: <8A410D3E-CE79-4151-99AC-9F7D574B31A4@gmail.com>
+
+I also have this questions for this. I wonder if R initiates a system environment or options to instruct the packages on the number of cores to use?
+
+It doesn't have to be mandatory for now, but at least package maintainers can have shared consensus and start to adopt this humble settings rather than abusing parallel::detectCores() to max out the number of threads by default. 
+
+> On Aug 7, 2024, at 6:00?AM, r-devel-request at r-project.org wrote:
+> 
+>> Would it make sense to add a parameter somewhere, to mclapply(), say,
+>> telling R to not use multiprocessing libraries?
+> 
+> It would be great if we had a way to limit all kinds of multiprocessing
+> (child processes, OpenMP threads, pthreads, forks, MPI, PVM, 'parallel'
+> clusters, <insert many more methods here>) in a single setting, but
+> there is currently no such setting, and it may be impossible to
+> implement. Particularly problematic may be nested parallellism:
+> sometimes desirable (e.g. 4-machine cluster, each machine in it using
+> OpenMP threads), sometimes undesired (e.g. your case). A single setting
+> is probably far from enough.
+> 
+>> Does R even know whether a linked library is doing multi-processing?
+> 
+> Unfortunately, no, there is no standard interface for that. Best I can
+> recommend is to link your R installation with FlexiBLAS and then use the
+> 'flexiblas' CRAN package to talk to it.
+
+
+	[[alternative HTML version deleted]]
+
+
+From merv|n@|@n@|er @end|ng |rom br|c@ku@dk  Thu Aug  8 10:45:40 2024
+From: merv|n@|@n@|er @end|ng |rom br|c@ku@dk (Mervin Milton Fansler Iv)
+Date: Thu, 8 Aug 2024 08:45:40 +0000
+Subject: [Rd] Another issue using multi-processing linear algebra libraries
+Message-ID: <D4ACBE0A-2DF6-4B07-B787-EC1F8FF29965@contoso.com>
+
+> "There?s a downside not mentioned in the manual that caught and baffled me for a while. I was using all 64 cores of an AWS instance via parallel::mclapply() and doing matrix multiplications in the parallelized function. If the matrices were big enough the linked BLAS or LAPACK would try to use all 64 cores for each multiplication, which meant 64^2 processes or threads in some combination and that was the end of all useful work. I worked around the problem by rewriting the matrix multiply as ?colSums(x * t(y))?. It also worked to build R from source, which I guess uses the built-in BLAS and LAPACK."
+
+I believe one can control the number of BLAS threads via the `RhpcBLASctl` package: https://cran.r-project.org/package=RhpcBLASctl I?ve definitely used it in the other direction, when `betareg` was *not* multiprocessing. https://stackoverflow.com/a/66540693/570918
+
+> "Does R build its own BLAS and LAPACK if it's also linking external ones?"
+
+No, it will not. On Conda Forge, there was even some trickery on certain platforms (osx-arm64) where external BLAS/LAPACK were used, but symlinks were used to fill in the typical R delivered ones (Rblas.dylib, Rlapack.dylib) to allow previously built packages using rpath links to support the swap.
+
+BTW, one can easily select the Conda Forge BLAS/LAPACK implementation. It doesn't provide the R-vendored ones, but the reference standard is Netlib, e.g., `conda install 'blas=*=netlib'`. But that's also the slowest by all metrics and on all platforms.
+
+	[[alternative HTML version deleted]]
+
+
+From |kry|ov @end|ng |rom d|@root@org  Thu Aug  8 12:43:08 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Thu, 8 Aug 2024 13:43:08 +0300
+Subject: [Rd] 
+ Another issue using multi-processing linear algebra libraries
+In-Reply-To: <8A410D3E-CE79-4151-99AC-9F7D574B31A4@gmail.com>
+References: <mailman.54426.5.1723024802.5780.r-devel@r-project.org>
+ <8A410D3E-CE79-4151-99AC-9F7D574B31A4@gmail.com>
+Message-ID: <20240808134308.56ca8be5@arachnoid>
+
+? Wed, 7 Aug 2024 07:47:38 -0400
+Dipterix Wang <dipterix.wang at gmail.com> ?????:
+
+> I wonder if R initiates a system environment or options to instruct
+> the packages on the number of cores to use?
+
+A lot of thought and experience with various HPC systems went into
+availableCores(), a function from the zero-dependency 'parallelly'
+package by Henrik Bengtsson:
+https://search.r-project.org/CRAN/refmans/parallelly/html/availableCores.html
+If you cannot accept a pre-created cluster object or 'future' plan or
+'BiocParallel' parameters or the number of OpenMP threads from the
+user, this must be a safer default than parallel::detectCores().
+
+Building such a limiter into R poses a number of problems. Here is a
+summary from a previous discussion on R-pkg-devel [1] with wise
+contributions from Dirk Eddelbuettel, Reed A. Cartwright, Vladimir
+Dergachev, and Andrew Robbins.
+
+ - R is responsible for the BLAS it is linked to and therefore must
+   actively manage the BLAS threads when the user sets the thread
+   limit. This requires writing BLAS-specific code to talk to the
+   libraries, like done in FlexiBLAS and the RhpcBLASctl package. Some
+   BLASes (like ATLAS) only have a compile-time thread limit. R should
+   somehow give all threads to BLAS by default but take them away when
+   some other form of parallelism is requested.
+
+ - Should R be managing the OpenMP thread limit by itself? If not,
+   that's a lot of extra work for every OpenMP-using package developer.
+   If yes, R is now responsible for initialising OpenMP.
+
+ - Managing the BLAS and OpenMP thread limits is already a hard problem
+   because some BLASes may or may not be following the OpenMP thread
+   limits.
+
+ - What if two packages both consult the thread limit and create N^2
+   processes as a result of one calling the other? Dividing a single
+   computer between BLAS threads, OpenMP threads, child processes and
+   their threads needs a very reliable global inter-process semaphore.
+   R would have to grow a jobserver like in GNU Make, a separate
+   process because the main R thread will be blocked waiting for the
+   computation result, especially if we want to automatically recover
+   job slots from crashed processes. That's probably not impossible,
+   but involves a lot of OS-specific code.
+
+ - What happens with the thread limit when starting remote R processes?
+   It's best to avoid having to set it manually. If multiple people
+   unknowingly start R on a shared server, how to avoid the R instances
+   competing for the CPU (or the ownership of the semaphore)?
+
+ - It will take a lot of political power to actually make this scheme
+   work. The limiter can only be cooperative (unless you override the
+   clone() syscall and make it fail? I expect everything to crash after
+   that), so it takes one piece of software to unknowingly ignore the
+   limit and break everything.
+
+-- 
+Best regards,
+Ivan
+
+[1] https://stat.ethz.ch/pipermail/r-package-devel/2023q4/009956.html
+
+
+From c@@rd|@g@bor @end|ng |rom gm@||@com  Fri Aug  9 10:28:19 2024
+From: c@@rd|@g@bor @end|ng |rom gm@||@com (=?UTF-8?B?R8OhYm9yIENzw6FyZGk=?=)
+Date: Fri, 9 Aug 2024 10:28:19 +0200
+Subject: [Rd] R-patched on CRAN is R-4.3.3
+In-Reply-To: <E09E33E1-D146-41FB-B7DF-6B9C96E631B1@gmail.com>
+References: <CA+hbrhWeSLh+RhrC5FgRhbG396SNrCVbdsY0CfL4Ut387t896Q@mail.gmail.com>
+ <f50fcfef-86df-4ca8-9d83-20d472ed8aaf@gmail.com>
+ <E09E33E1-D146-41FB-B7DF-6B9C96E631B1@gmail.com>
+Message-ID: <CABtg=K=JASqeG8RfhHz6bP0KX-UO-DihzL5WWKGKEgkQxXbihw@mail.gmail.com>
+
+Possibly related to this, it seems that
+https://cran.r-project.org/src/base-prerelease/R-latest.tar.gz
+is not available any more.
+
+This file was very convenient, because it pointed to R-RC, R-beta, R-alpha
+or R-patched, as appropriate.
+
+Our nightly "next version of R" builds [1] depend on it. Do you think
+you can still create this file or link?
+
+Thank you,
+Gabor
+
+[1] https://github.com/r-hub/r-builds/actions/runs/10312982067
+
+On Fri, Aug 2, 2024 at 12:21?PM peter dalgaard <pdalgd at gmail.com> wrote:
+>
+> Apologies for not seeing this until now. The files on CRAN https://cran.r-project.org/src/base-prerelease/ contain R-patched versions that should be up to date. The Zurich R-patched seems to be 4.4.1 patched too now.
+>
+> The text in R-admin is a bit out of date (it predates nightly builds of tarballs on the machine that does the final releases), and so is the text on CRAN. We might change them to point to the CRAN directory as the primary source.
+>
+> (Martin: Are there changes in the situation at Zurich that are relevant to this?)
+>
+> - Peter D.
+>
+> > On 15 Jul 2024, at 09:56 , Tomas Kalibera <tomas.kalibera at gmail.com> wrote:
+> >
+> >
+> > On 7/15/24 07:08, Peter Langfelder wrote:
+> >> Hi all,
+> >>
+> >> apologies if I missed something here. Just downloaded and compiled
+> >> R-patched from https://stat.ethz.ch/R/daily/ but it reports as R-4.3.3
+> >> (2024-04-09 r86895) -- "Angel Food Cake". The last dated R-patched is
+> >> from 2024-04-09, about 3 months old. Are R-patched not updated
+> >> anymore, am I looking at a wrong directory or even a wrong server? The
+> >> current R Installation and Administration manual
+> >> (https://cran.r-project.org/doc/manuals/r-patched/R-admin.html#Getting-patched-and-development-versions)
+> >> suggests that the current R-patched should be where I looked for it:
+> >>
+> >> A patched version of the current release, ?r-patched?, and the current
+> >> development version, ?r-devel?, are available as daily tarballs and
+> >> via access to the R Subversion repository. (For the two weeks prior to
+> >> the release of a minor (4.x.0) version, ?r-patched? tarballs may refer
+> >> to beta/release candidates of the upcoming release, the patched
+> >> version of the current release being available via Subversion.)
+> >>
+> >> The tarballs are available from https://stat.ethz.ch/R/daily/.
+> >> Download R-patched.tar.gz or R-devel.tar.gz (or the .tar.bz2 versions)
+> >> and unpack as described in the previous section. They are built in
+> >> exactly the same way as distributions of R releases.
+> >
+> > Before this gets resolved, you can get the latest version of R-patched from svn:
+> >
+> > https://svn.r-project.org/R/branches/R-4-4-branch
+> >
+> > (and the current R release from https://cran.r-project.org/src/base/R-4/R-4.4.1.tar.gz)
+> >
+> > Tomas
+> >
+> >>
+> >> Thanks,
+> >>
+> >> Peter
+> >>
+> >> ______________________________________________
+> >> R-devel at r-project.org mailing list
+> >> https://stat.ethz.ch/mailman/listinfo/r-devel
+> >
+> > ______________________________________________
+> > R-devel at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+> --
+> Peter Dalgaard, Professor,
+> Center for Statistics, Copenhagen Business School
+> Solbjerg Plads 3, 2000 Frederiksberg, Denmark
+> Phone: (+45)38153501
+> Office: A 4.23
+> Email: pd.mes at cbs.dk  Priv: PDalgd at gmail.com
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From |kry|ov @end|ng |rom d|@root@org  Fri Aug  9 10:33:34 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Fri, 9 Aug 2024 11:33:34 +0300
+Subject: [Rd] R-patched on CRAN is R-4.3.3
+In-Reply-To: <CABtg=K=JASqeG8RfhHz6bP0KX-UO-DihzL5WWKGKEgkQxXbihw@mail.gmail.com>
+References: <CA+hbrhWeSLh+RhrC5FgRhbG396SNrCVbdsY0CfL4Ut387t896Q@mail.gmail.com>
+ <f50fcfef-86df-4ca8-9d83-20d472ed8aaf@gmail.com>
+ <E09E33E1-D146-41FB-B7DF-6B9C96E631B1@gmail.com>
+ <CABtg=K=JASqeG8RfhHz6bP0KX-UO-DihzL5WWKGKEgkQxXbihw@mail.gmail.com>
+Message-ID: <20240809113334.58316907@Tarkus>
+
+? Fri, 9 Aug 2024 10:28:19 +0200
+G?bor Cs?rdi <csardi.gabor at gmail.com> ?????:
+
+> Possibly related to this, it seems that
+> https://cran.r-project.org/src/base-prerelease/R-latest.tar.gz
+> is not available any more.
+
+I think it's now R-patched.tar.?z:
+https://github.com/r-devel/r-dev-web/commit/8e146a769206924ec60ae08e2841910ac8e23083
+
+-- 
+Best regards,
+Ivan
+
+
+From pd@|gd @end|ng |rom gm@||@com  Fri Aug  9 10:41:18 2024
+From: pd@|gd @end|ng |rom gm@||@com (peter dalgaard)
+Date: Fri, 9 Aug 2024 10:41:18 +0200
+Subject: [Rd] R-patched on CRAN is R-4.3.3
+In-Reply-To: <20240809113334.58316907@Tarkus>
+References: <CA+hbrhWeSLh+RhrC5FgRhbG396SNrCVbdsY0CfL4Ut387t896Q@mail.gmail.com>
+ <f50fcfef-86df-4ca8-9d83-20d472ed8aaf@gmail.com>
+ <E09E33E1-D146-41FB-B7DF-6B9C96E631B1@gmail.com>
+ <CABtg=K=JASqeG8RfhHz6bP0KX-UO-DihzL5WWKGKEgkQxXbihw@mail.gmail.com>
+ <20240809113334.58316907@Tarkus>
+Message-ID: <D5EA39C5-4254-49B5-94EF-AC11AA0FE91B@gmail.com>
+
+Exactly. I was in the process of getting the CRAN texts to point at base-prerelease, rather than Martin's versions i Zurich and decided that his names were better than mine. "R-latest" makes better sense for the actual releases over in src/base.
+
+-pd 
+
+> On 9 Aug 2024, at 10:33 , Ivan Krylov via R-devel <r-devel at r-project.org> wrote:
+> 
+> ? Fri, 9 Aug 2024 10:28:19 +0200
+> G?bor Cs?rdi <csardi.gabor at gmail.com> ?????:
+> 
+>> Possibly related to this, it seems that
+>> https://cran.r-project.org/src/base-prerelease/R-latest.tar.gz
+>> is not available any more.
+> 
+> I think it's now R-patched.tar.?z:
+> https://github.com/r-devel/r-dev-web/commit/8e146a769206924ec60ae08e2841910ac8e23083
+> 
+> -- 
+> Best regards,
+> Ivan
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+-- 
+Peter Dalgaard, Professor,
+Center for Statistics, Copenhagen Business School
+Solbjerg Plads 3, 2000 Frederiksberg, Denmark
+Phone: (+45)38153501
+Office: A 4.23
+Email: pd.mes at cbs.dk  Priv: PDalgd at gmail.com
+
+
+From c@@rd|@g@bor @end|ng |rom gm@||@com  Fri Aug  9 10:44:31 2024
+From: c@@rd|@g@bor @end|ng |rom gm@||@com (=?UTF-8?B?R8OhYm9yIENzw6FyZGk=?=)
+Date: Fri, 9 Aug 2024 10:44:31 +0200
+Subject: [Rd] R-patched on CRAN is R-4.3.3
+In-Reply-To: <D5EA39C5-4254-49B5-94EF-AC11AA0FE91B@gmail.com>
+References: <CA+hbrhWeSLh+RhrC5FgRhbG396SNrCVbdsY0CfL4Ut387t896Q@mail.gmail.com>
+ <f50fcfef-86df-4ca8-9d83-20d472ed8aaf@gmail.com>
+ <E09E33E1-D146-41FB-B7DF-6B9C96E631B1@gmail.com>
+ <CABtg=K=JASqeG8RfhHz6bP0KX-UO-DihzL5WWKGKEgkQxXbihw@mail.gmail.com>
+ <20240809113334.58316907@Tarkus>
+ <D5EA39C5-4254-49B5-94EF-AC11AA0FE91B@gmail.com>
+Message-ID: <CABtg=Km1p4PTYoAZhQQkREGzwNa0wbeet_Cu=S7_tVBSi+8qPA@mail.gmail.com>
+
+Thanks!
+
+So, to make sure I got this right, when the time of beta, alpha, RC
+comes, they'll also have a link called R-patched.tar.gz?
+
+Thanks again!
+Gabor
+
+On Fri, Aug 9, 2024 at 10:41?AM peter dalgaard <pdalgd at gmail.com> wrote:
+>
+> Exactly. I was in the process of getting the CRAN texts to point at base-prerelease, rather than Martin's versions i Zurich and decided that his names were better than mine. "R-latest" makes better sense for the actual releases over in src/base.
+>
+> -pd
+>
+> > On 9 Aug 2024, at 10:33 , Ivan Krylov via R-devel <r-devel at r-project.org> wrote:
+> >
+> > ? Fri, 9 Aug 2024 10:28:19 +0200
+> > G?bor Cs?rdi <csardi.gabor at gmail.com> ?????:
+> >
+> >> Possibly related to this, it seems that
+> >> https://cran.r-project.org/src/base-prerelease/R-latest.tar.gz
+> >> is not available any more.
+> >
+> > I think it's now R-patched.tar.?z:
+> > https://github.com/r-devel/r-dev-web/commit/8e146a769206924ec60ae08e2841910ac8e23083
+> >
+> > --
+> > Best regards,
+> > Ivan
+> >
+> > ______________________________________________
+> > R-devel at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+> --
+> Peter Dalgaard, Professor,
+> Center for Statistics, Copenhagen Business School
+> Solbjerg Plads 3, 2000 Frederiksberg, Denmark
+> Phone: (+45)38153501
+> Office: A 4.23
+> Email: pd.mes at cbs.dk  Priv: PDalgd at gmail.com
+>
+
+
+From tom@@@k@||ber@ @end|ng |rom gm@||@com  Fri Aug  9 11:01:59 2024
+From: tom@@@k@||ber@ @end|ng |rom gm@||@com (Tomas Kalibera)
+Date: Fri, 9 Aug 2024 11:01:59 +0200
+Subject: [Rd] Question about regexp edge case
+In-Reply-To: <8cfbc0a2-661a-40db-91e4-84af793c52e1@gmail.com>
+References: <497933d4-d8f5-4242-99aa-3c335d694ebd@gmail.com>
+ <20240729103757.11201601@Tarkus>
+ <48ccdd83-47b0-4f06-b652-3e1e91117abf@gmail.com>
+ <8cfbc0a2-661a-40db-91e4-84af793c52e1@gmail.com>
+Message-ID: <aa7749fb-dc8b-4cf4-bfc2-669a42ae57fb@gmail.com>
+
+
+On 8/1/24 20:55, Duncan Murdoch wrote:
+> Thanks Tomas.? Do note that my original post also mentioned a bug or 
+> doc error in the PCRE docs for this regexp:
+>
+>> ? - perl = TRUE does *not* give the documented result on at least one 
+>> system (which is "123456789", because "{,5}" is documented to not be 
+>> a quantifier, so it should only match the literal string "{,5}").
+
+This is a change in documented behavior in PCRE. PCRE2 10.43 
+(share/man/man3/pcre2pattern.3) says:
+
+"If the first number is omitted, the lower limit is taken as zero; in 
+this case the upper limit must be present. X{,4} is interpreted as 
+X{0,4}. In earlier versions such a sequence was not interpreted as a 
+quantifier. Other regular expression engines may behave either way."
+
+And the changelog:
+
+"29. Perl 5.34.0 changed the meaning of (for example) {,3} which did not 
+used to be treated as a quantifier. Now it is interpreted as {0,3} and 
+PCRE2 has changed to match. Note that {,} is still not a quantifier."
+
+Sadly the previous behavior was also documented in pcre2pattern.3:
+
+"For example, {,6} is not a quantifier, but a literal string of four 
+characters"
+
+I've confirmed with R built with PCRE2 10.42, 10.43 and 10.44. In 
+practice, users would most likely see the new behavior on Windows, where 
+Rtools44 has PCRE2 10.43.
+
+The R documentation (?regex) refers to the PCRE2 documentation for 
+"complete details", mentioning how to find out what is the version of 
+PCRE(2) used.? I've now added a warning about that PCRE behavior may 
+change between versions, with the {,m} as an example. I don't think we 
+can do much more - I don't think we should be replicating the PCRE 
+documentation/changelog - but we could add more examples, if any 
+important appear. Also, we don't want to write R programs that depend on 
+concrete versions of PCRE.
+
+It is a good thing that ?regex doesn't document "{,m}", because it 
+cannot be used reliably/portably. One should use some of the documented 
+forms, instead, i.e. "{0,m}". Indeed there is the problem of how to use 
+only the documented subset of behavior (in ?regex), because one also 
+needs to avoid accidentally running into undocumented expressions with 
+special meaning, like in this case. But perhaps still authors could try 
+to defensively avoid risky expressions in literals in patterns, such as 
+those involving "{}" or otherwise similar to documented expressions with 
+a special meaning.
+
+Best
+Tomas
+
+
+>
+> Duncan
+>
+> On 2024-08-01 6:49 a.m., Tomas Kalibera wrote:
+>>
+>> On 7/29/24 09:37, Ivan Krylov via R-devel wrote:
+>>> ? Sun, 28 Jul 2024 20:02:21 -0400
+>>> Duncan Murdoch <murdoch.duncan at gmail.com> ?????:
+>>>
+>>>> gsub("^([0-9]{,5}).*","\\1","123456789")
+>>>> [1] "123456"
+>>> This is in TRE itself: for "^([0-9]{,1})" tre_regexecb returns {.rm_so
+>>> = 0, .rm_eo = 1}, matching "1", but for "^([0-9]{,2})" and above it
+>>> returns an off-by-one result, {.rm_so = 0, .rm_eo = 3}.
+>>>
+>>> Compiling with TRE_DEBUG, I see it parsed correctly:
+>>>
+>>> catenation, sub 0, 0 tags
+>>> ??? assertions: bol
+>>> ??? iteration {-1, 2}, sub -1, 0 tags, greedy
+>>> ????? literal (0, 9) (48, 57), pos 0, sub -1, 0 tags
+>>>
+>>> ...but after tre_expand_ast I see
+>>>
+>>> catenation, sub 0, 1 tags
+>>> ??? assertions: bol
+>>> ??? catenation, sub -1, 1 tags
+>>> ????? tag 0
+>>> ????? union, sub -1, 0 tags
+>>> ??????? literal empty
+>>> ??????? catenation, sub -1, 0 tags
+>>> ????????? literal (0, 9) (48, 57), pos 2, sub -1, 0 tags
+>>> ????????? union, sub -1, 0 tags
+>>> ??????????? literal empty
+>>> ??????????? catenation, sub -1, 0 tags
+>>> ????????????? literal (0, 9) (48, 57), pos 1, sub -1, 0 tags
+>>> ????????????? union, sub -1, 0 tags
+>>> ??????????????? literal empty
+>>> ??????????????? literal (0, 9) (48, 57), pos 0, sub -1, 0 tags
+>>>
+>>> ...which has one too many copies of "literal (0,9)". I think it's due
+>>> to the expansion loop on line 942 of src/extra/tre/tre-compile.c being
+>>>
+>>> for (j = iter->min; j < iter->max; j++)
+>>>
+>>> ...where 'min' is -1 to denote no minimum. This is further confirmed by
+>>> "{0,3}", "{1,3}", "{2,3}", "{3,3}" all working correctly.
+>>>
+>>> Neither TRE documentation [1] nor POSIX [2] specify the {,n} syntax:
+>>> from my reading, it looks like if the upper boundary is specified, the
+>>> lower boundary must be specified too. But if we do want to fix this, it
+>>> will have to be a special case for iter->min == -1.
+>>
+>> Thanks. It seems that TRE is now maintained again upstream, so it would
+>> be best to discuss this with TRE maintainers directly (if not already
+>> solved by https://github.com/laurikari/tre/pull/98).
+>>
+>> The same applies to any other open TRE issues.
+>>
+>> Best Tomas
+>>
+>
+
+
+From pd@|gd @end|ng |rom gm@||@com  Fri Aug  9 11:13:57 2024
+From: pd@|gd @end|ng |rom gm@||@com (peter dalgaard)
+Date: Fri, 9 Aug 2024 11:13:57 +0200
+Subject: [Rd] R-patched on CRAN is R-4.3.3
+In-Reply-To: <CABtg=Km1p4PTYoAZhQQkREGzwNa0wbeet_Cu=S7_tVBSi+8qPA@mail.gmail.com>
+References: <CA+hbrhWeSLh+RhrC5FgRhbG396SNrCVbdsY0CfL4Ut387t896Q@mail.gmail.com>
+ <f50fcfef-86df-4ca8-9d83-20d472ed8aaf@gmail.com>
+ <E09E33E1-D146-41FB-B7DF-6B9C96E631B1@gmail.com>
+ <CABtg=K=JASqeG8RfhHz6bP0KX-UO-DihzL5WWKGKEgkQxXbihw@mail.gmail.com>
+ <20240809113334.58316907@Tarkus>
+ <D5EA39C5-4254-49B5-94EF-AC11AA0FE91B@gmail.com>
+ <CABtg=Km1p4PTYoAZhQQkREGzwNa0wbeet_Cu=S7_tVBSi+8qPA@mail.gmail.com>
+Message-ID: <E4971186-073E-414B-A052-A53BA0D89A83@gmail.com>
+
+Yep. (Perhaps slightly unfortunate, but a varying name would be, um, counterproductive.)
+
+-pd
+
+> On 9 Aug 2024, at 10:44 , G?bor Cs?rdi <csardi.gabor at gmail.com> wrote:
+> 
+> Thanks!
+> 
+> So, to make sure I got this right, when the time of beta, alpha, RC
+> comes, they'll also have a link called R-patched.tar.gz?
+> 
+> Thanks again!
+> Gabor
+> 
+> On Fri, Aug 9, 2024 at 10:41?AM peter dalgaard <pdalgd at gmail.com> wrote:
+>> 
+>> Exactly. I was in the process of getting the CRAN texts to point at base-prerelease, rather than Martin's versions i Zurich and decided that his names were better than mine. "R-latest" makes better sense for the actual releases over in src/base.
+>> 
+>> -pd
+>> 
+>>> On 9 Aug 2024, at 10:33 , Ivan Krylov via R-devel <r-devel at r-project.org> wrote:
+>>> 
+>>> ? Fri, 9 Aug 2024 10:28:19 +0200
+>>> G?bor Cs?rdi <csardi.gabor at gmail.com> ?????:
+>>> 
+>>>> Possibly related to this, it seems that
+>>>> https://cran.r-project.org/src/base-prerelease/R-latest.tar.gz
+>>>> is not available any more.
+>>> 
+>>> I think it's now R-patched.tar.?z:
+>>> https://github.com/r-devel/r-dev-web/commit/8e146a769206924ec60ae08e2841910ac8e23083
+>>> 
+>>> --
+>>> Best regards,
+>>> Ivan
+>>> 
+>>> ______________________________________________
+>>> R-devel at r-project.org mailing list
+>>> https://stat.ethz.ch/mailman/listinfo/r-devel
+>> 
+>> --
+>> Peter Dalgaard, Professor,
+>> Center for Statistics, Copenhagen Business School
+>> Solbjerg Plads 3, 2000 Frederiksberg, Denmark
+>> Phone: (+45)38153501
+>> Office: A 4.23
+>> Email: pd.mes at cbs.dk  Priv: PDalgd at gmail.com
+>> 
+
+-- 
+Peter Dalgaard, Professor,
+Center for Statistics, Copenhagen Business School
+Solbjerg Plads 3, 2000 Frederiksberg, Denmark
+Phone: (+45)38153501
+Office: A 4.23
+Email: pd.mes at cbs.dk  Priv: PDalgd at gmail.com
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Fri Aug  9 11:44:32 2024
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Fri, 9 Aug 2024 05:44:32 -0400
+Subject: [Rd] Question about regexp edge case
+In-Reply-To: <aa7749fb-dc8b-4cf4-bfc2-669a42ae57fb@gmail.com>
+References: <497933d4-d8f5-4242-99aa-3c335d694ebd@gmail.com>
+ <20240729103757.11201601@Tarkus>
+ <48ccdd83-47b0-4f06-b652-3e1e91117abf@gmail.com>
+ <8cfbc0a2-661a-40db-91e4-84af793c52e1@gmail.com>
+ <aa7749fb-dc8b-4cf4-bfc2-669a42ae57fb@gmail.com>
+Message-ID: <606008b1-4969-4d73-80d2-86b7f57d9f81@gmail.com>
+
+Thanks!  I think your suggested additions to the docs are perfect.
+
+Duncan Murdoch
+
+On 2024-08-09 5:01 a.m., Tomas Kalibera wrote:
+> 
+> On 8/1/24 20:55, Duncan Murdoch wrote:
+>> Thanks Tomas.? Do note that my original post also mentioned a bug or
+>> doc error in the PCRE docs for this regexp:
+>>
+>>>  ? - perl = TRUE does *not* give the documented result on at least one
+>>> system (which is "123456789", because "{,5}" is documented to not be
+>>> a quantifier, so it should only match the literal string "{,5}").
+> 
+> This is a change in documented behavior in PCRE. PCRE2 10.43
+> (share/man/man3/pcre2pattern.3) says:
+> 
+> "If the first number is omitted, the lower limit is taken as zero; in
+> this case the upper limit must be present. X{,4} is interpreted as
+> X{0,4}. In earlier versions such a sequence was not interpreted as a
+> quantifier. Other regular expression engines may behave either way."
+> 
+> And the changelog:
+> 
+> "29. Perl 5.34.0 changed the meaning of (for example) {,3} which did not
+> used to be treated as a quantifier. Now it is interpreted as {0,3} and
+> PCRE2 has changed to match. Note that {,} is still not a quantifier."
+> 
+> Sadly the previous behavior was also documented in pcre2pattern.3:
+> 
+> "For example, {,6} is not a quantifier, but a literal string of four
+> characters"
+> 
+> I've confirmed with R built with PCRE2 10.42, 10.43 and 10.44. In
+> practice, users would most likely see the new behavior on Windows, where
+> Rtools44 has PCRE2 10.43.
+> 
+> The R documentation (?regex) refers to the PCRE2 documentation for
+> "complete details", mentioning how to find out what is the version of
+> PCRE(2) used.? I've now added a warning about that PCRE behavior may
+> change between versions, with the {,m} as an example. I don't think we
+> can do much more - I don't think we should be replicating the PCRE
+> documentation/changelog - but we could add more examples, if any
+> important appear. Also, we don't want to write R programs that depend on
+> concrete versions of PCRE.
+> 
+> It is a good thing that ?regex doesn't document "{,m}", because it
+> cannot be used reliably/portably. One should use some of the documented
+> forms, instead, i.e. "{0,m}". Indeed there is the problem of how to use
+> only the documented subset of behavior (in ?regex), because one also
+> needs to avoid accidentally running into undocumented expressions with
+> special meaning, like in this case. But perhaps still authors could try
+> to defensively avoid risky expressions in literals in patterns, such as
+> those involving "{}" or otherwise similar to documented expressions with
+> a special meaning.
+> 
+> Best
+> Tomas
+> 
+> 
+>>
+>> Duncan
+>>
+>> On 2024-08-01 6:49 a.m., Tomas Kalibera wrote:
+>>>
+>>> On 7/29/24 09:37, Ivan Krylov via R-devel wrote:
+>>>> ? Sun, 28 Jul 2024 20:02:21 -0400
+>>>> Duncan Murdoch <murdoch.duncan at gmail.com> ?????:
+>>>>
+>>>>> gsub("^([0-9]{,5}).*","\\1","123456789")
+>>>>> [1] "123456"
+>>>> This is in TRE itself: for "^([0-9]{,1})" tre_regexecb returns {.rm_so
+>>>> = 0, .rm_eo = 1}, matching "1", but for "^([0-9]{,2})" and above it
+>>>> returns an off-by-one result, {.rm_so = 0, .rm_eo = 3}.
+>>>>
+>>>> Compiling with TRE_DEBUG, I see it parsed correctly:
+>>>>
+>>>> catenation, sub 0, 0 tags
+>>>>  ??? assertions: bol
+>>>>  ??? iteration {-1, 2}, sub -1, 0 tags, greedy
+>>>>  ????? literal (0, 9) (48, 57), pos 0, sub -1, 0 tags
+>>>>
+>>>> ...but after tre_expand_ast I see
+>>>>
+>>>> catenation, sub 0, 1 tags
+>>>>  ??? assertions: bol
+>>>>  ??? catenation, sub -1, 1 tags
+>>>>  ????? tag 0
+>>>>  ????? union, sub -1, 0 tags
+>>>>  ??????? literal empty
+>>>>  ??????? catenation, sub -1, 0 tags
+>>>>  ????????? literal (0, 9) (48, 57), pos 2, sub -1, 0 tags
+>>>>  ????????? union, sub -1, 0 tags
+>>>>  ??????????? literal empty
+>>>>  ??????????? catenation, sub -1, 0 tags
+>>>>  ????????????? literal (0, 9) (48, 57), pos 1, sub -1, 0 tags
+>>>>  ????????????? union, sub -1, 0 tags
+>>>>  ??????????????? literal empty
+>>>>  ??????????????? literal (0, 9) (48, 57), pos 0, sub -1, 0 tags
+>>>>
+>>>> ...which has one too many copies of "literal (0,9)". I think it's due
+>>>> to the expansion loop on line 942 of src/extra/tre/tre-compile.c being
+>>>>
+>>>> for (j = iter->min; j < iter->max; j++)
+>>>>
+>>>> ...where 'min' is -1 to denote no minimum. This is further confirmed by
+>>>> "{0,3}", "{1,3}", "{2,3}", "{3,3}" all working correctly.
+>>>>
+>>>> Neither TRE documentation [1] nor POSIX [2] specify the {,n} syntax:
+>>>> from my reading, it looks like if the upper boundary is specified, the
+>>>> lower boundary must be specified too. But if we do want to fix this, it
+>>>> will have to be a special case for iter->min == -1.
+>>>
+>>> Thanks. It seems that TRE is now maintained again upstream, so it would
+>>> be best to discuss this with TRE maintainers directly (if not already
+>>> solved by https://github.com/laurikari/tre/pull/98).
+>>>
+>>> The same applies to any other open TRE issues.
+>>>
+>>> Best Tomas
+>>>
+>>
+
+
