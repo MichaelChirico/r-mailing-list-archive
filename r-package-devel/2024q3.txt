@@ -7122,3 +7122,3885 @@ On Tue, 13/08/2024 10:08, Ivan Krylov via R-package-devel wrote:
 >
 
 
+From @@j5xsj9 m@iii@g oii @iiiy@@ddy@io  Thu Aug 15 20:58:39 2024
+From: @@j5xsj9 m@iii@g oii @iiiy@@ddy@io (@@j5xsj9 m@iii@g oii @iiiy@@ddy@io)
+Date: Thu, 15 Aug 2024 18:58:39 +0000
+Subject: [R-pkg-devel] Build process generated non-portable files
+In-Reply-To: <20240813110814.21a43010@Tarkus>
+References: <3f8d2aec95fb552733dc236aa611130e@nilly.addy.io>
+ <20240813110814.21a43010@Tarkus>
+Message-ID: <5301b8e64edc0ce9e85e272a60cd5535@nilly.addy.io>
+
+This seems like it should work. Unfortunately my rhub github actions is failing to get past the setup deps step which has been occuring inconsistently in the past but right now it's consistently failing to build deps so I can't confirm it work. I was also unable to successfully build R using intel compilers, even when using Rhubs container as template.
+
+> Include the first 'all' target in your Makevars
+
+I was really trying to avoid explicitly creating a target in makevars but this is simple enough.
+
+In case anyone else comes across this, the genmod files end up in `src` even if the original source files are under a subdirectory so the recipe ends up being:
+
+> -rm -f *genmod.f90
+
+> If you manage to find an option for the ifx compiler that disables creation of these files
+
+I installed intel compilers and checked the `ifx` man page. Could not find an option for turning off generation of the genmod files.
+
+> a brief Web search says they are for only the user to read, but most results are from early 2010's
+
+Yeah I checked one of the files again and it does say that it's generated only for reference.
+
+?- David R. Connell
+
+On Tuesday, August 13th, 2024 at 3:08 AM, Ivan Krylov 'ikrylov at disroot.org' wrote:
+
+> ? Mon, 12 Aug 2024 18:24:30 +0000
+> David via R-package-devel r-package-devel at r-project.org ?????:
+> 
+> > in the intel environment (provided by rhub), the intel fortran
+> > compiler generates intermediary files from *.f -> *__genmod.f90. The
+> > R check then complains that the genmod files are not portable. I
+> > include removal of the files in my cleanup file so the files do not
+> > exist in the original package source or in the final source tarball
+> > but it seems the portable files check is done after compilation but
+> > before cleanup.
+> > 
+> > - Is there a way to get around this complaint?
+> 
+> 
+> Include the first 'all' target in your Makevars, make it depend on the
+> package shared library, and make it remove genmod files in the recipe:
+> 
+> all: $(SHLIB)
+> -rm -f arpack/*genmod.f90
+> 
+> A similar trick is mentioned in
+> https://cran.r-project.org/doc/manuals/r-devel/R-exts.html#Using-Makevars.
+> 
+> > - Should this complaint be here in the first place?
+> 
+> 
+> Perhaps not. If you manage to find an option for the ifx compiler that
+> disables creation of these files (a brief Web search says they are for
+> only the user to read, but most results are from early 2010's), post it
+> here. This may be a good argument to make this option recommended for R.
+> 
+> > Shouldn't the portable files check only be performed on the shipped
+> > source code?
+> 
+> 
+> False negatives are possible too, in case the installation stage
+> (configure and/or make) performs a lot of preprocessing, or unpacks
+> extra sources. You could be right; I don't have statistics to back
+> either option as less wasteful of effort.
+> 
+> --
+> Best regards,
+> Ivan
+
+
+From |kry|ov @end|ng |rom d|@root@org  Fri Aug 16 14:58:41 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Fri, 16 Aug 2024 15:58:41 +0300
+Subject: [R-pkg-devel] Build process generated non-portable files
+In-Reply-To: <94db9a3e5dcb79a6629143e1752a2816@nilly.addy.io>
+References: <3f8d2aec95fb552733dc236aa611130e@nilly.addy.io>
+ <20240813110814.21a43010@Tarkus>
+ <94db9a3e5dcb79a6629143e1752a2816@nilly.addy.io>
+Message-ID: <20240816155841.456cfd2f@arachnoid>
+
+? Thu, 15 Aug 2024 18:58:41 +0000
+anj5xsj9 at nilly.addy.io ?????:
+
+> This seems like it should work. Unfortunately my rhub github actions
+> is failing to get past the setup deps step which has been occuring
+> inconsistently in the past but right now it's consistently failing to
+> build deps so I can't confirm it work.
+
+This may be worth reporting to the rhub developers. The error is really
+strange. It looks like the package at
+https://github.com/cran/igraph/releases/download/2.0.3/igraph_2.0.3_b1_R4.5_x86_64-pc-linux-gnu-fedora-38.tar.gz
+(referenced from https://github.com/r-hub/repos) has a binary
+dependency on OpenBLAS:
+
+$ readelf -d igraph/libs/igraph.so | grep openblas
+0x0000000000000001 (NEEDED) Shared library: [libopenblasp.so.0]
+
+...but that's either not noted or not installed correctly.
+
+> I was also unable to successfully build R using intel compilers, even
+> when using Rhubs container as template.
+
+If you'd like to dig deeper, feel free to ask here with details.
+ 
+> In case anyone else comes across this, the genmod files end up in
+> `src` even if the original source files are under a subdirectory so
+> the recipe ends up being:
+> 
+> > -rm -f *genmod.f90  
+
+Thank you for letting us know!
+ 
+> I installed intel compilers and checked the `ifx` man page. Could not
+> find an option for turning off generation of the genmod files.
+
+I experimented with the "ghcr.io/r-hub/containers/intel:latest"
+container and was able to find out that the option -[no]gen-interfaces
+controls the generation of *__genmod* files:
+
+/opt/intel/oneapi/compiler/latest/bin/ifx -O3 -fp-model precise \
+ -warn all,noexternals -c -o arpack/dgetv0.o arpack/dgetv0.f; \
+ ls *genmod*
+#  ...
+# dgetv0__genmod.f90  dgetv0__genmod.mod
+rm -vf *genmod*
+# removed 'dgetv0__genmod.f90'
+# removed 'dgetv0__genmod.mod'
+/opt/intel/oneapi/compiler/latest/bin/ifx -nogen-interfaces -O3 \
+ -fp-model precise -warn all,noexternals -c -o arpack/dgetv0.o \
+ arpack/dgetv0.f; \
+ ls *genmod*
+#  ...
+# ls: cannot access '*genmod*': No such file or directory
+
+This option is already used as part of the "Intel" additional checks
+performed by Prof. Brian D. Ripley, so the *__genmod.* files should not
+be a problem on CRAN:
+https://svn.r-project.org/R-dev-web/trunk/CRAN/QA/BDR/gannet/Intel/config.site
+
+-- 
+Best regards,
+Ivan
+
+
+From kev|n@r@coombe@ @end|ng |rom gm@||@com  Fri Aug 16 19:25:36 2024
+From: kev|n@r@coombe@ @end|ng |rom gm@||@com (Kevin R. Coombes)
+Date: Fri, 16 Aug 2024 13:25:36 -0400
+Subject: [R-pkg-devel] Inherited methods
+Message-ID: <afbd9900-31ac-4a9b-996a-2d27417c5c7f@gmail.com>
+
+Hi,
+
+I seem to have gotten myself confused about inheritance of S4 classes 
+and the dispatch of inherited methods.
+
+The core situation is that
+
+  * The graphics package already defines the function "hist"
+  * My package A creates an S4 generic "hist", using the existing
+    function as the default method.
+  * Package A also defines a class B with its own implementation of the
+    method "hist". It exports both the generic method and the class B
+    specific method.
+  * Now I create a new package C. In that package, I define a new class
+    D that inherits from class B. The implementation of "hist" for class
+    B should do everything I want for class D, so I don't want to have
+    to re-implement it.
+
+My question: what do I have to do to enable users of package D to call 
+"hist(B)" and have it work without complaint? After many go-rounds of 
+changing the code, changing the NAMESPACE, and running "R CMD check" 
+approximately an infinite number of times, I now have
+
+NAMESPACE:
+importMethodFrom("A", "hist")
+exportMethod("hist")
+
+R SCRIPT:
+setClass("D", slots = c(some_extra_stuff), contains = "B")
+
+setMethod("hist", "D", function(x, ...) {
+ ? callNextMethod(x, ...)
+ ? invisible(x)
+})
+
+Do I really need all that? Why do I even need *any* of it? Shouldn't I 
+be able to leave out the implementation that just says "callNextMethod" 
+and have the standard dispatch figure out what to call? Why does it want 
+to call the default function if it knows there is a B-method? (And it 
+must know it, since callNextMethod knows it.)
+
+Confused,
+ ?? Kevin
+
+	[[alternative HTML version deleted]]
+
+
+From kev|n@r@coombe@ @end|ng |rom gm@||@com  Fri Aug 16 19:32:57 2024
+From: kev|n@r@coombe@ @end|ng |rom gm@||@com (Kevin R. Coombes)
+Date: Fri, 16 Aug 2024 13:32:57 -0400
+Subject: [R-pkg-devel] R CMD check options
+Message-ID: <52ea54f5-2a6a-4a6b-bb5d-2309f8c86f1f@gmail.com>
+
+Hi,
+
+I maintain a bunch of packages on CRAN. When updating packages, I often 
+find two sort of NOTES on some of the platforms that CRAN checks that 
+don't show up on my stupid Windows (I know that's redundant; you don't 
+have to tell me) machine at home. The two most common issues are
+
+  * spelling (especially in the DESCRIPTION file), and
+  * links in the documentation with missing package anchors.
+
+How do I enable these checks so that when I run "R CMD check --as-cran" 
+it actually does behave like those CRAN machines do, so I can find and 
+fix the issues before submitting the package?
+
+Thanks,
+ ? Kevin
+
+
+	[[alternative HTML version deleted]]
+
+
+From @@j5xsj9 m@iii@g oii @iiiy@@ddy@io  Fri Aug 16 20:53:49 2024
+From: @@j5xsj9 m@iii@g oii @iiiy@@ddy@io (@@j5xsj9 m@iii@g oii @iiiy@@ddy@io)
+Date: Fri, 16 Aug 2024 18:53:49 +0000
+Subject: [R-pkg-devel] Build process generated non-portable files
+In-Reply-To: <20240816155841.456cfd2f@arachnoid>
+References: <3f8d2aec95fb552733dc236aa611130e@nilly.addy.io>
+ <20240813110814.21a43010@Tarkus>
+ <94db9a3e5dcb79a6629143e1752a2816@nilly.addy.io>
+ <20240816155841.456cfd2f@arachnoid>
+Message-ID: <17411dc6e7509077db21c3a0dfcb1020@nilly.addy.io>
+
+I locally ran the rhub intel docker and that was much easier to set up. So I can now confirm the change to Makevars does work.
+
+> I experimented with the "ghcr.io/r-hub/containers/intel:latest" container and was able to find out that the option -[no]gen-interfaces controls the generation of __genmod files:
+
+You are right. I temporarily removed the changes to Makevar and added the `-nogen-interfaces` flag to FFLAGS and that also prevented the warning. I can open an issue at rhub and suggest adding that as a default for the intel compilers.
+
+> This may be worth reporting to the rhub developers. The error is really strange. It looks like the package at https://github.com/cran/igraph/releases/download/2.0.3/igraph_2.0.3_b1_R4.5_x86_64-pc-linux-gnu-fedora-38.tar.gz
+
+The strange thing is the intel container on github actions has succeeded in the past but now is consistently failing to build `targets`:
+
+> ? Failed to build targets 1.7.1 (2.1s)
+> Error: 
+> ! error in pak subprocess
+> Caused by error in `stop_task_build(state, worker)`:
+> ! Failed to build source package targets.
+> Full installation output:
+> * installing *source* package ?targets? ...
+> ** package ?targets? successfully unpacked and MD5 sums checked
+> staged installation is only possible with locking
+> ** using non-staged installation
+> ** R
+> ** inst
+> ** byte-compile and prepare package for lazy loading
+> Error in dyn.load(file, DLLpath = DLLpath, ...) : 
+>   unable to load shared object '/github/home/R/x86_64-pc-linux-gnu-library/4.5/igraph/libs/igraph.so':
+>   libopenblasp.so.0: cannot open shared object file: No such file or directory
+> Calls: <Anonymous> ... asNamespace -> loadNamespace -> library.dynam -> dyn.load
+> Execution halted
+> ERROR: lazy loading failed for package ?targets?
+> * removing ?/tmp/RtmpLpWRX0/pkg-lib3c3299c227c/targets?
+
+Which is related to the igraph issue you mentioned. Checking the packages installed in a previous successful intel action, targets was not listed. I don't know why it's being installed now but not previously, I haven't changed dependencies.
+
+In the past other packages have failed to build and not only on the intel container see "https://github.com/SpeakEasy-2/speakeasyR/actions/runs/10202337528/job/28226219457" where several containers failed at the setup-deps step. There is overlap in which package fails (i.e. protGenerics and sparseArray fail in multiple containers but succeed in others while in one container ExperimentHub fails). It seems the only packages failing are from Bioconductor. Assume this is a bioconductor or pak issue.
+
+The issue with igraph is interesting though since I do use the igraph package for some examples and inside the intel container, R CMD build has no problem running igraph. Inspecting the resulting tarball shows the html version of my vignette contains results that depends on running igraph code and my test using igraph succeeds with R CMD check. Yet when I run R inside the container and try to load the igraph library or run code via `igraph::` I get an error
+
+> > igraph::sample_pref(10)
+> Error in dyn.load(file, DLLpath = DLLpath, ...) :
+>  unable to load shared object '/root/R/x86_64-pc-linux-gnu-library/4.5/igraph/libs/igraph.so':
+>  libopenblasp.so.0: cannot open shared object file: No such file or directory
+
+I.e. the same error with building targets. I can raise an issue on rigraph as well.
+
+?- David R. Connell
+
+On Friday, August 16th, 2024 at 7:58 AM, Ivan Krylov 'ikrylov at disroot.org' wrote:
+
+> ? Thu, 15 Aug 2024 18:58:41 +0000
+> anj5xsj9 at nilly.addy.io ?????:
+> 
+> > This seems like it should work. Unfortunately my rhub github actions
+> > is failing to get past the setup deps step which has been occuring
+> > inconsistently in the past but right now it's consistently failing to
+> > build deps so I can't confirm it work.
+> 
+> 
+> This may be worth reporting to the rhub developers. The error is really
+> strange. It looks like the package at
+> https://github.com/cran/igraph/releases/download/2.0.3/igraph_2.0.3_b1_R4.5_x86_64-pc-linux-gnu-fedora-38.tar.gz
+> (referenced from https://github.com/r-hub/repos) has a binary
+> dependency on OpenBLAS:
+> 
+> $ readelf -d igraph/libs/igraph.so | grep openblas
+> 0x0000000000000001 (NEEDED) Shared library: [libopenblasp.so.0]
+> 
+> ...but that's either not noted or not installed correctly.
+> 
+> > I was also unable to successfully build R using intel compilers, even
+> > when using Rhubs container as template.
+> 
+> 
+> If you'd like to dig deeper, feel free to ask here with details.
+> 
+> > In case anyone else comes across this, the genmod files end up in
+> > `src` even if the original source files are under a subdirectory so
+> > the recipe ends up being:
+> > 
+> > > -rm -f *genmod.f90
+> 
+> 
+> Thank you for letting us know!
+> 
+> > I installed intel compilers and checked the `ifx` man page. Could not
+> > find an option for turning off generation of the genmod files.
+> 
+> 
+> I experimented with the "ghcr.io/r-hub/containers/intel:latest"
+> container and was able to find out that the option -[no]gen-interfaces
+> controls the generation of __genmod files:
+> 
+> /opt/intel/oneapi/compiler/latest/bin/ifx -O3 -fp-model precise \
+> -warn all,noexternals -c -o arpack/dgetv0.o arpack/dgetv0.f; \
+> ls genmod
+> # ...
+> # dgetv0__genmod.f90 dgetv0__genmod.mod
+> rm -vf genmod
+> # removed 'dgetv0__genmod.f90'
+> # removed 'dgetv0__genmod.mod'
+> /opt/intel/oneapi/compiler/latest/bin/ifx -nogen-interfaces -O3 \
+> -fp-model precise -warn all,noexternals -c -o arpack/dgetv0.o \
+> arpack/dgetv0.f; \
+> ls genmod
+> # ...
+> # ls: cannot access 'genmod': No such file or directory
+> 
+> This option is already used as part of the "Intel" additional checks
+> performed by Prof. Brian D. Ripley, so the __genmod. files should not
+> be a problem on CRAN:
+> https://svn.r-project.org/R-dev-web/trunk/CRAN/QA/BDR/gannet/Intel/config.site
+> 
+> --
+> Best regards,
+> Ivan
+
+
+From georg|@bo@hn@kov @end|ng |rom m@nche@ter@@c@uk  Sat Aug 17 11:05:52 2024
+From: georg|@bo@hn@kov @end|ng |rom m@nche@ter@@c@uk (Georgi Boshnakov)
+Date: Sat, 17 Aug 2024 09:05:52 +0000
+Subject: [R-pkg-devel] R CMD check options
+In-Reply-To: <52ea54f5-2a6a-4a6b-bb5d-2309f8c86f1f@gmail.com>
+References: <52ea54f5-2a6a-4a6b-bb5d-2309f8c86f1f@gmail.com>
+Message-ID: <LO0P265MB6325F7552088F7CB5C642014AE822@LO0P265MB6325.GBRP265.PROD.OUTLOOK.COM>
+
+In most cases, installing a recent version of R-devel will do (here, the check with it will show the notes about missing package anchors).
+
+Georgi Boshnakov 
+
+________________________________________
+From: R-package-devel <r-package-devel-bounces at r-project.org> on behalf of Kevin R. Coombes <kevin.r.coombes at gmail.com>
+Sent: 16 August 2024 18:32
+To: r-package-devel at r-project.org
+Subject: [R-pkg-devel] R CMD check options
+
+Hi, I maintain a bunch of packages on CRAN. When updating packages, I often find two sort of NOTES on some of the platforms that CRAN checks that don't show up on my stupid Windows (I know that's redundant; you don't have to tell me) machine
+ZjQcmQRYFpfptBannerStart
+This Message Is From a New External Sender
+You have not previously corresponded with this sender. Please exercise caution when opening links or attachments included in this message.
+
+ZjQcmQRYFpfptBannerEnd
+
+Hi,
+
+I maintain a bunch of packages on CRAN. When updating packages, I often
+find two sort of NOTES on some of the platforms that CRAN checks that
+don't show up on my stupid Windows (I know that's redundant; you don't
+have to tell me) machine at home. The two most common issues are
+
+  * spelling (especially in the DESCRIPTION file), and
+  * links in the documentation with missing package anchors.
+
+How do I enable these checks so that when I run "R CMD check --as-cran"
+it actually does behave like those CRAN machines do, so I can find and
+fix the issues before submitting the package?
+
+Thanks,
+   Kevin
+
+
+        [[alternative HTML version deleted]]
+
+______________________________________________
+R-package-devel at r-project.org mailing list
+https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-package-devel__;!!PDiH4ENfjr2_Jw!E2Ma-V8bhj8k-YfGsRWAQHNJSG51USXTaeHl8IHyVh3CnziYF9t3isoCoR3Lzs13rfjPktwG-mm5LBdm2sWKZVxnV7PDLaqoBMEpMJI$[stat[.]ethz[.]ch]
+
+
+
+From ||@t@ @end|ng |rom dewey@myzen@co@uk  Sat Aug 17 14:45:15 2024
+From: ||@t@ @end|ng |rom dewey@myzen@co@uk (Michael Dewey)
+Date: Sat, 17 Aug 2024 13:45:15 +0100
+Subject: [R-pkg-devel] R CMD check options
+In-Reply-To: <LO0P265MB6325F7552088F7CB5C642014AE822@LO0P265MB6325.GBRP265.PROD.OUTLOOK.COM>
+References: <52ea54f5-2a6a-4a6b-bb5d-2309f8c86f1f@gmail.com>
+ <LO0P265MB6325F7552088F7CB5C642014AE822@LO0P265MB6325.GBRP265.PROD.OUTLOOK.COM>
+Message-ID: <6ac7a7fe-a549-7551-a02f-af63258a19ae@dewey.myzen.co.uk>
+
+And if all else fails submit to Winbuilder using the R-devel branch.
+
+Michael
+
+On 17/08/2024 10:05, Georgi Boshnakov wrote:
+> In most cases, installing a recent version of R-devel will do (here, the check with it will show the notes about missing package anchors).
+> 
+> Georgi Boshnakov
+> 
+> ________________________________________
+> From: R-package-devel <r-package-devel-bounces at r-project.org> on behalf of Kevin R. Coombes <kevin.r.coombes at gmail.com>
+> Sent: 16 August 2024 18:32
+> To: r-package-devel at r-project.org
+> Subject: [R-pkg-devel] R CMD check options
+> 
+> Hi, I maintain a bunch of packages on CRAN. When updating packages, I often find two sort of NOTES on some of the platforms that CRAN checks that don't show up on my stupid Windows (I know that's redundant; you don't have to tell me) machine
+> ZjQcmQRYFpfptBannerStart
+> This Message Is From a New External Sender
+> You have not previously corresponded with this sender. Please exercise caution when opening links or attachments included in this message.
+> 
+> ZjQcmQRYFpfptBannerEnd
+> 
+> Hi,
+> 
+> I maintain a bunch of packages on CRAN. When updating packages, I often
+> find two sort of NOTES on some of the platforms that CRAN checks that
+> don't show up on my stupid Windows (I know that's redundant; you don't
+> have to tell me) machine at home. The two most common issues are
+> 
+>    * spelling (especially in the DESCRIPTION file), and
+>    * links in the documentation with missing package anchors.
+> 
+> How do I enable these checks so that when I run "R CMD check --as-cran"
+> it actually does behave like those CRAN machines do, so I can find and
+> fix the issues before submitting the package?
+> 
+> Thanks,
+>     Kevin
+> 
+> 
+>          [[alternative HTML version deleted]]
+> 
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-package-devel__;!!PDiH4ENfjr2_Jw!E2Ma-V8bhj8k-YfGsRWAQHNJSG51USXTaeHl8IHyVh3CnziYF9t3isoCoR3Lzs13rfjPktwG-mm5LBdm2sWKZVxnV7PDLaqoBMEpMJI$[stat[.]ethz[.]ch]
+> 
+> 
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+> 
+
+-- 
+Michael
+
+
+From bbo|ker @end|ng |rom gm@||@com  Sat Aug 17 15:17:40 2024
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Sat, 17 Aug 2024 09:17:40 -0400
+Subject: [R-pkg-devel] R CMD check options
+In-Reply-To: <6ac7a7fe-a549-7551-a02f-af63258a19ae@dewey.myzen.co.uk>
+References: <52ea54f5-2a6a-4a6b-bb5d-2309f8c86f1f@gmail.com>
+ <LO0P265MB6325F7552088F7CB5C642014AE822@LO0P265MB6325.GBRP265.PROD.OUTLOOK.COM>
+ <6ac7a7fe-a549-7551-a02f-af63258a19ae@dewey.myzen.co.uk>
+Message-ID: <CABghstQQ2+z5i0o04vrDxGt8WjtGTHetYrqiic55OAGgLXpWZg@mail.gmail.com>
+
+Slight thread hijacking: does there exist/has someone compiled a list of
+the environment variables that determine R CMD check's behaviour?
+
+On Sat, Aug 17, 2024, 9:03 AM Michael Dewey <lists at dewey.myzen.co.uk> wrote:
+
+> And if all else fails submit to Winbuilder using the R-devel branch.
+>
+> Michael
+>
+> On 17/08/2024 10:05, Georgi Boshnakov wrote:
+> > In most cases, installing a recent version of R-devel will do (here, the
+> check with it will show the notes about missing package anchors).
+> >
+> > Georgi Boshnakov
+> >
+> > ________________________________________
+> > From: R-package-devel <r-package-devel-bounces at r-project.org> on behalf
+> of Kevin R. Coombes <kevin.r.coombes at gmail.com>
+> > Sent: 16 August 2024 18:32
+> > To: r-package-devel at r-project.org
+> > Subject: [R-pkg-devel] R CMD check options
+> >
+> > Hi, I maintain a bunch of packages on CRAN. When updating packages, I
+> often find two sort of NOTES on some of the platforms that CRAN checks that
+> don't show up on my stupid Windows (I know that's redundant; you don't have
+> to tell me) machine
+> > ZjQcmQRYFpfptBannerStart
+> > This Message Is From a New External Sender
+> > You have not previously corresponded with this sender. Please exercise
+> caution when opening links or attachments included in this message.
+> >
+> > ZjQcmQRYFpfptBannerEnd
+> >
+> > Hi,
+> >
+> > I maintain a bunch of packages on CRAN. When updating packages, I often
+> > find two sort of NOTES on some of the platforms that CRAN checks that
+> > don't show up on my stupid Windows (I know that's redundant; you don't
+> > have to tell me) machine at home. The two most common issues are
+> >
+> >    * spelling (especially in the DESCRIPTION file), and
+> >    * links in the documentation with missing package anchors.
+> >
+> > How do I enable these checks so that when I run "R CMD check --as-cran"
+> > it actually does behave like those CRAN machines do, so I can find and
+> > fix the issues before submitting the package?
+> >
+> > Thanks,
+> >     Kevin
+> >
+> >
+> >          [[alternative HTML version deleted]]
+> >
+> > ______________________________________________
+> > R-package-devel at r-project.org mailing list
+> >
+> https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-package-devel__;!!PDiH4ENfjr2_Jw!E2Ma-V8bhj8k-YfGsRWAQHNJSG51USXTaeHl8IHyVh3CnziYF9t3isoCoR3Lzs13rfjPktwG-mm5LBdm2sWKZVxnV7PDLaqoBMEpMJI$[stat[.]ethz[.]ch]
+> >
+> >
+> > ______________________________________________
+> > R-package-devel at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-package-devel
+> >
+>
+> --
+> Michael
+>
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+
+	[[alternative HTML version deleted]]
+
+
+From |kry|ov @end|ng |rom d|@root@org  Sat Aug 17 15:24:31 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Sat, 17 Aug 2024 16:24:31 +0300
+Subject: [R-pkg-devel] R CMD check options
+In-Reply-To: <CABghstQQ2+z5i0o04vrDxGt8WjtGTHetYrqiic55OAGgLXpWZg@mail.gmail.com>
+References: <52ea54f5-2a6a-4a6b-bb5d-2309f8c86f1f@gmail.com>
+ <LO0P265MB6325F7552088F7CB5C642014AE822@LO0P265MB6325.GBRP265.PROD.OUTLOOK.COM>
+ <6ac7a7fe-a549-7551-a02f-af63258a19ae@dewey.myzen.co.uk>
+ <CABghstQQ2+z5i0o04vrDxGt8WjtGTHetYrqiic55OAGgLXpWZg@mail.gmail.com>
+Message-ID: <20240817162431.3a7727da@trisector>
+
+? Sat, 17 Aug 2024 09:17:40 -0400
+Ben Bolker <bbolker at gmail.com> ?????:
+
+> does there exist/has someone compiled a list of
+> the environment variables that determine R CMD check's behaviour?
+
+https://cran.r-project.org/doc/manuals/R-ints.html#Tools
+
+But the _R_CHECK_CRAN_INCOMING_USE_ASPELL_ variable that Kevin would
+need to set to "TRUE" in order to enable the spell checks is not
+documented there.
+
+-- 
+Best regards,
+Ivan
+
+
+From |kry|ov @end|ng |rom d|@root@org  Sat Aug 17 16:22:32 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Sat, 17 Aug 2024 17:22:32 +0300
+Subject: [R-pkg-devel] Build process generated non-portable files
+In-Reply-To: <32c21f19cb644375bc4790dce67725fa@nilly.addy.io>
+References: <3f8d2aec95fb552733dc236aa611130e@nilly.addy.io>
+ <20240813110814.21a43010@Tarkus>
+ <94db9a3e5dcb79a6629143e1752a2816@nilly.addy.io>
+ <20240816155841.456cfd2f@arachnoid>
+ <32c21f19cb644375bc4790dce67725fa@nilly.addy.io>
+Message-ID: <20240817172232.03f94a10@trisector>
+
+? Fri, 16 Aug 2024 18:53:55 +0000
+anj5xsj9 at nilly.addy.io ?????:
+
+> In the past other packages have failed to build and not only on the
+> intel container see
+> "https://github.com/SpeakEasy-2/speakeasyR/actions/runs/10202337528/job/28226219457"
+> where several containers failed at the setup-deps step. There is
+> overlap in which package fails (i.e. protGenerics and sparseArray
+> fail in multiple containers but succeed in others while in one
+> container ExperimentHub fails). It seems the only packages failing
+> are from Bioconductor. Assume this is a bioconductor or pak issue.
+
+Could also be an rhub issue, although unlike the igraph problem below,
+I have no idea where to start diagnosing it.
+
+> > > igraph::sample_pref(10)  
+> > Error in dyn.load(file, DLLpath = DLLpath, ...) :
+> >  unable to load shared object
+> > '/root/R/x86_64-pc-linux-gnu-library/4.5/igraph/libs/igraph.so':
+> > libopenblasp.so.0: cannot open shared object file: No such file or
+> > directory  
+> 
+> I.e. the same error with building targets. I can raise an issue on
+> rigraph as well.
+
+This is a problem with the binary package used by rhub. If you
+reinstall the source package from CRAN instead of
+https://github.com/r-hub/repos and
+https://github.com/cran/igraph/releases/, it will work, but take much
+more time compiling the package:
+
+options(repos = getOption('repos')['CRAN'])
+install.packages('igraph')
+
+-- 
+Best regards,
+Ivan
+
+
+From edd @end|ng |rom deb|@n@org  Sat Aug 17 16:33:24 2024
+From: edd @end|ng |rom deb|@n@org (Dirk Eddelbuettel)
+Date: Sat, 17 Aug 2024 09:33:24 -0500
+Subject: [R-pkg-devel] Build process generated non-portable files
+In-Reply-To: <20240817172232.03f94a10@trisector>
+References: <3f8d2aec95fb552733dc236aa611130e@nilly.addy.io>
+ <20240813110814.21a43010@Tarkus>
+ <94db9a3e5dcb79a6629143e1752a2816@nilly.addy.io>
+ <20240816155841.456cfd2f@arachnoid>
+ <32c21f19cb644375bc4790dce67725fa@nilly.addy.io>
+ <20240817172232.03f94a10@trisector>
+Message-ID: <26304.46260.827467.518754@rob.eddelbuettel.com>
+
+
+On 17 August 2024 at 17:22, Ivan Krylov via R-package-devel wrote:
+| ? Fri, 16 Aug 2024 18:53:55 +0000
+| anj5xsj9 at nilly.addy.io ?????:
+| 
+| > In the past other packages have failed to build and not only on the
+| > intel container see
+| > "https://github.com/SpeakEasy-2/speakeasyR/actions/runs/10202337528/job/28226219457"
+| > where several containers failed at the setup-deps step. There is
+| > overlap in which package fails (i.e. protGenerics and sparseArray
+| > fail in multiple containers but succeed in others while in one
+| > container ExperimentHub fails). It seems the only packages failing
+| > are from Bioconductor. Assume this is a bioconductor or pak issue.
+| 
+| Could also be an rhub issue, although unlike the igraph problem below,
+| I have no idea where to start diagnosing it.
+| 
+| > > > igraph::sample_pref(10)  
+| > > Error in dyn.load(file, DLLpath = DLLpath, ...) :
+| > >  unable to load shared object
+| > > '/root/R/x86_64-pc-linux-gnu-library/4.5/igraph/libs/igraph.so':
+| > > libopenblasp.so.0: cannot open shared object file: No such file or
+| > > directory  
+| > 
+| > I.e. the same error with building targets. I can raise an issue on
+| > rigraph as well.
+| 
+| This is a problem with the binary package used by rhub. If you
+| reinstall the source package from CRAN instead of
+| https://github.com/r-hub/repos and
+| https://github.com/cran/igraph/releases/, it will work, but take much
+| more time compiling the package:
+| 
+| options(repos = getOption('repos')['CRAN'])
+| install.packages('igraph')
+
+The r2u binaries can offer help here for running on Ubuntu. They are a
+'superset' of the same p3m binaries but aim to (and generally manage to)
+provide working binaries. I just validated via a Docker container running it:
+
+edd at rob:~$ docker run --rm -ti rocker/r2u:jammy bash
+root at 64a8b23a9bc7:/# install.r igraph    # install.packages() works too
+[ ... log of installation of 14 binaries omitted here ... ]
+root at 64a8b23a9bc7:/# R
+
+R version 4.4.1 (2024-06-14) -- "Race for Your Life"
+Copyright (C) 2024 The R Foundation for Statistical Computing
+Platform: x86_64-pc-linux-gnu
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+  Natural language support but running in an English locale
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+> library(igraph)
+
+Attaching package: ?igraph?
+
+The following objects are masked from ?package:stats?:
+
+    decompose, spectrum
+
+The following object is masked from ?package:base?:
+
+    union
+
+> 
+
+
+Best, Dirk
+
+-- 
+dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From kev|n@r@coombe@ @end|ng |rom gm@||@com  Sat Aug 17 16:58:16 2024
+From: kev|n@r@coombe@ @end|ng |rom gm@||@com (Kevin R. Coombes)
+Date: Sat, 17 Aug 2024 10:58:16 -0400
+Subject: [R-pkg-devel] R CMD check options
+In-Reply-To: <20240817162431.3a7727da@trisector>
+References: <52ea54f5-2a6a-4a6b-bb5d-2309f8c86f1f@gmail.com>
+ <LO0P265MB6325F7552088F7CB5C642014AE822@LO0P265MB6325.GBRP265.PROD.OUTLOOK.COM>
+ <6ac7a7fe-a549-7551-a02f-af63258a19ae@dewey.myzen.co.uk>
+ <CABghstQQ2+z5i0o04vrDxGt8WjtGTHetYrqiic55OAGgLXpWZg@mail.gmail.com>
+ <20240817162431.3a7727da@trisector>
+Message-ID: <9d390252-f6b9-4fa8-9f45-740544dd4db6@gmail.com>
+
+Thank you!
+
+On 8/17/2024 9:24 AM, Ivan Krylov wrote:
+> ? Sat, 17 Aug 2024 09:17:40 -0400
+> Ben Bolker <bbolker at gmail.com> ?????:
+>
+>> does there exist/has someone compiled a list of
+>> the environment variables that determine R CMD check's behaviour?
+> https://cran.r-project.org/doc/manuals/R-ints.html#Tools
+>
+> But the _R_CHECK_CRAN_INCOMING_USE_ASPELL_ variable that Kevin would
+> need to set to "TRUE" in order to enable the spell checks is not
+> documented there.
+>
+
+
+From edd @end|ng |rom deb|@n@org  Mon Aug 19 14:54:22 2024
+From: edd @end|ng |rom deb|@n@org (Dirk Eddelbuettel)
+Date: Mon, 19 Aug 2024 07:54:22 -0500
+Subject: [R-pkg-devel] ORCID ID finder via tools::CRAN_package_db() ?
+Message-ID: <26307.16510.300799.974636@rob.eddelbuettel.com>
+
+
+Has anybody written a quick helper function that extracts the Authors at R field
+from tools::CRAN_package_db() and 'stems' it into 'Name, Firstname, ORCID'
+which one could use to look up ORCID IDs at CRAN? The lookup at orcid.org
+sometimes gives us 'private entries' that make it harder / impossible to
+confirm a match. Having a normalised matrix or data.frame (or ...) would also
+make it easier to generate Authors at R.
+
+Cheers, Dirk
+
+-- 
+dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From th|erry@onke||nx @end|ng |rom |nbo@be  Mon Aug 19 15:15:22 2024
+From: th|erry@onke||nx @end|ng |rom |nbo@be (Thierry Onkelinx)
+Date: Mon, 19 Aug 2024 15:15:22 +0200
+Subject: [R-pkg-devel] ORCID ID finder via tools::CRAN_package_db() ?
+In-Reply-To: <26307.16510.300799.974636@rob.eddelbuettel.com>
+References: <26307.16510.300799.974636@rob.eddelbuettel.com>
+Message-ID: <CAJuCY5ycWMGu9RpVknkuwWLHKjsiBe+J1cQxwoF=B+MT-vc29g@mail.gmail.com>
+
+Dear Dirk,
+
+Maybe checklist:::author2df() might be useful. It is an unexported function
+from my checklist package. It converts a person() object to a dataframe.
+https://github.com/inbo/checklist/blob/5649985b58693acb88337873ae14a7d5bc018d96/R/store_authors.R#L38
+
+df <- tools::CRAN_package_db()
+lapply(
+  df$`Authors at R`[df$Package  %in% c("git2rdata", "qrcode")],
+  function(x) {
+    parse(text = x) |>
+      eval() |>
+      vapply(checklist:::author2df, vector(mode = "list", 1)) |>
+      do.call(what = rbind)
+  }
+)
+
+[[1]]
+    given       family                       email               orcid
+affiliation usage
+1 Thierry     Onkelinx    thierry.onkelinx at inbo.be 0000-0001-8804-4216
+       <NA>     1
+2  Floris Vanderhaeghe floris.vanderhaeghe at inbo.be 0000-0002-6378-6229
+       <NA>     1
+3   Peter       Desmet        peter.desmet at inbo.be 0000-0002-8442-8025
+       <NA>     1
+4     Els     Lommelen        els.lommelen at inbo.be 0000-0002-3481-5684
+       <NA>     1
+
+[[2]]
+    given   family                 email               orcid affiliation usage
+1 Thierry Onkelinx qrcode at muscardinus.be 0000-0001-8804-4216        <NA>     1
+2  Victor      Teh   victorteh at gmail.com
+
+
+ir. Thierry Onkelinx
+Statisticus / Statistician
+
+Vlaamse Overheid / Government of Flanders
+INSTITUUT VOOR NATUUR- EN BOSONDERZOEK / RESEARCH INSTITUTE FOR NATURE AND
+FOREST
+Team Biometrie & Kwaliteitszorg / Team Biometrics & Quality Assurance
+thierry.onkelinx at inbo.be
+Havenlaan 88 bus 73, 1000 Brussel
+*Postadres:* Koning Albert II-laan 15 bus 186, 1210 Brussel
+*Poststukken die naar dit adres worden gestuurd, worden ingescand en
+digitaal aan de geadresseerde bezorgd. Zo kan de Vlaamse overheid haar
+dossiers volledig digitaal behandelen. Poststukken met de vermelding
+?vertrouwelijk? worden niet ingescand, maar ongeopend aan de geadresseerde
+bezorgd.*
+www.inbo.be
+
+///////////////////////////////////////////////////////////////////////////////////////////
+To call in the statistician after the experiment is done may be no more
+than asking him to perform a post-mortem examination: he may be able to say
+what the experiment died of. ~ Sir Ronald Aylmer Fisher
+The plural of anecdote is not data. ~ Roger Brinner
+The combination of some data and an aching desire for an answer does not
+ensure that a reasonable answer can be extracted from a given body of data.
+~ John Tukey
+///////////////////////////////////////////////////////////////////////////////////////////
+
+<https://www.inbo.be>
+
+
+Op ma 19 aug 2024 om 14:54 schreef Dirk Eddelbuettel <edd at debian.org>:
+
+>
+> Has anybody written a quick helper function that extracts the Authors at R
+> field
+> from tools::CRAN_package_db() and 'stems' it into 'Name, Firstname, ORCID'
+> which one could use to look up ORCID IDs at CRAN? The lookup at orcid.org
+> sometimes gives us 'private entries' that make it harder / impossible to
+> confirm a match. Having a normalised matrix or data.frame (or ...) would
+> also
+> make it easier to generate Authors at R.
+>
+> Cheers, Dirk
+>
+> --
+> dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+>
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+
+	[[alternative HTML version deleted]]
+
+
+From edd @end|ng |rom deb|@n@org  Mon Aug 19 15:39:04 2024
+From: edd @end|ng |rom deb|@n@org (Dirk Eddelbuettel)
+Date: Mon, 19 Aug 2024 08:39:04 -0500
+Subject: [R-pkg-devel] ORCID ID finder via tools::CRAN_package_db() ?
+In-Reply-To: <CAJuCY5ycWMGu9RpVknkuwWLHKjsiBe+J1cQxwoF=B+MT-vc29g@mail.gmail.com>
+References: <26307.16510.300799.974636@rob.eddelbuettel.com>
+ <CAJuCY5ycWMGu9RpVknkuwWLHKjsiBe+J1cQxwoF=B+MT-vc29g@mail.gmail.com>
+Message-ID: <26307.19192.825552.550821@rob.eddelbuettel.com>
+
+
+On 19 August 2024 at 15:15, Thierry Onkelinx wrote:
+| Maybe checklist:::author2df() might be useful. It is an unexported function
+| from my checklist package. It converts a person() object to a dataframe.
+| https://github.com/inbo/checklist/blob/5649985b58693acb88337873ae14a7d5bc018d96
+| /R/store_authors.R#L38
+| 
+| df <- tools::CRAN_package_db()
+| lapply(
+| ? df$`Authors at R`[df$Package ?%in% c("git2rdata", "qrcode")],
+| ? function(x) {
+| ? ? parse(text = x) |>
+| ? ? ? eval() |>
+| ? ? ? vapply(checklist:::author2df, vector(mode = "list", 1)) |>
+| ? ? ? do.call(what = rbind)
+| ? }
+| )
+| 
+| 
+| [[1]]
+|     given       family                       email               orcid affiliation usage
+| 1 Thierry     Onkelinx    thierry.onkelinx at inbo.be 0000-0001-8804-4216        <NA>     1
+| 2  Floris Vanderhaeghe floris.vanderhaeghe at inbo.be 0000-0002-6378-6229        <NA>     1
+| 3   Peter       Desmet        peter.desmet at inbo.be 0000-0002-8442-8025        <NA>     1
+| 4     Els     Lommelen        els.lommelen at inbo.be 0000-0002-3481-5684        <NA>     1
+| 
+| [[2]]
+|     given   family                 email               orcid affiliation usage
+| 1 Thierry Onkelinx qrcode at muscardinus.be 0000-0001-8804-4216        <NA>     1
+| 2  Victor      Teh   victorteh at gmail.com  
+
+That's a very nice start, thank you. (Will also look more closely at
+checklist.)  It needs an `na.omit()` or alike, and even with that `rbind`
+barked a few entries in (i = 19 if you select the full vector right now).
+
+But definitely something to play with and possibly build upon. Thanks!  (And
+the IDs of Floris and you were two of the ones I 'manually' added to a
+DESCRIPTION file ;-)
+
+Best,  Dirk
+
+-- 
+dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From th|erry@onke||nx @end|ng |rom |nbo@be  Tue Aug 20 13:43:20 2024
+From: th|erry@onke||nx @end|ng |rom |nbo@be (Thierry Onkelinx)
+Date: Tue, 20 Aug 2024 13:43:20 +0200
+Subject: [R-pkg-devel] ORCID ID finder via tools::CRAN_package_db() ?
+In-Reply-To: <26307.19192.825552.550821@rob.eddelbuettel.com>
+References: <26307.16510.300799.974636@rob.eddelbuettel.com>
+ <CAJuCY5ycWMGu9RpVknkuwWLHKjsiBe+J1cQxwoF=B+MT-vc29g@mail.gmail.com>
+ <26307.19192.825552.550821@rob.eddelbuettel.com>
+Message-ID: <CAJuCY5xaXjchJbA+k=kPLszP9GjXRFYjJbxduqE+6vZ0phcqxw@mail.gmail.com>
+
+Hi Dirk,
+
+Happy to help. I'm working on a new version of the checklist package. I
+could export the function if that makes it easier for you.
+
+Best regards,
+
+Thierry
+
+ir. Thierry Onkelinx
+Statisticus / Statistician
+
+Vlaamse Overheid / Government of Flanders
+INSTITUUT VOOR NATUUR- EN BOSONDERZOEK / RESEARCH INSTITUTE FOR NATURE AND
+FOREST
+Team Biometrie & Kwaliteitszorg / Team Biometrics & Quality Assurance
+thierry.onkelinx at inbo.be
+Havenlaan 88 bus 73, 1000 Brussel
+*Postadres:* Koning Albert II-laan 15 bus 186, 1210 Brussel
+*Poststukken die naar dit adres worden gestuurd, worden ingescand en
+digitaal aan de geadresseerde bezorgd. Zo kan de Vlaamse overheid haar
+dossiers volledig digitaal behandelen. Poststukken met de vermelding
+?vertrouwelijk? worden niet ingescand, maar ongeopend aan de geadresseerde
+bezorgd.*
+www.inbo.be
+
+///////////////////////////////////////////////////////////////////////////////////////////
+To call in the statistician after the experiment is done may be no more
+than asking him to perform a post-mortem examination: he may be able to say
+what the experiment died of. ~ Sir Ronald Aylmer Fisher
+The plural of anecdote is not data. ~ Roger Brinner
+The combination of some data and an aching desire for an answer does not
+ensure that a reasonable answer can be extracted from a given body of data.
+~ John Tukey
+///////////////////////////////////////////////////////////////////////////////////////////
+
+<https://www.inbo.be>
+
+
+Op ma 19 aug 2024 om 15:39 schreef Dirk Eddelbuettel <edd at debian.org>:
+
+>
+> On 19 August 2024 at 15:15, Thierry Onkelinx wrote:
+> | Maybe checklist:::author2df() might be useful. It is an unexported
+> function
+> | from my checklist package. It converts a person() object to a dataframe.
+> |
+> https://github.com/inbo/checklist/blob/5649985b58693acb88337873ae14a7d5bc018d96
+> | /R/store_authors.R#L38
+> |
+> | df <- tools::CRAN_package_db()
+> | lapply(
+> |   df$`Authors at R`[df$Package  %in% c("git2rdata", "qrcode")],
+> |   function(x) {
+> |     parse(text = x) |>
+> |       eval() |>
+> |       vapply(checklist:::author2df, vector(mode = "list", 1)) |>
+> |       do.call(what = rbind)
+> |   }
+> | )
+> |
+> |
+> | [[1]]
+> |     given       family                       email               orcid
+> affiliation usage
+> | 1 Thierry     Onkelinx    thierry.onkelinx at inbo.be 0000-0001-8804-4216
+>       <NA>     1
+> | 2  Floris Vanderhaeghe floris.vanderhaeghe at inbo.be 0000-0002-6378-6229
+>       <NA>     1
+> | 3   Peter       Desmet        peter.desmet at inbo.be 0000-0002-8442-8025
+>       <NA>     1
+> | 4     Els     Lommelen        els.lommelen at inbo.be 0000-0002-3481-5684
+>       <NA>     1
+> |
+> | [[2]]
+> |     given   family                 email               orcid affiliation
+> usage
+> | 1 Thierry Onkelinx qrcode at muscardinus.be 0000-0001-8804-4216
+> <NA>     1
+> | 2  Victor      Teh   victorteh at gmail.com
+>
+> That's a very nice start, thank you. (Will also look more closely at
+> checklist.)  It needs an `na.omit()` or alike, and even with that `rbind`
+> barked a few entries in (i = 19 if you select the full vector right now).
+>
+> But definitely something to play with and possibly build upon. Thanks!
+> (And
+> the IDs of Floris and you were two of the ones I 'manually' added to a
+> DESCRIPTION file ;-)
+>
+> Best,  Dirk
+>
+> --
+> dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+>
+
+	[[alternative HTML version deleted]]
+
+
+From edd @end|ng |rom deb|@n@org  Tue Aug 20 13:50:20 2024
+From: edd @end|ng |rom deb|@n@org (Dirk Eddelbuettel)
+Date: Tue, 20 Aug 2024 06:50:20 -0500
+Subject: [R-pkg-devel] ORCID ID finder via tools::CRAN_package_db() ?
+In-Reply-To: <CAJuCY5xaXjchJbA+k=kPLszP9GjXRFYjJbxduqE+6vZ0phcqxw@mail.gmail.com>
+References: <26307.16510.300799.974636@rob.eddelbuettel.com>
+ <CAJuCY5ycWMGu9RpVknkuwWLHKjsiBe+J1cQxwoF=B+MT-vc29g@mail.gmail.com>
+ <26307.19192.825552.550821@rob.eddelbuettel.com>
+ <CAJuCY5xaXjchJbA+k=kPLszP9GjXRFYjJbxduqE+6vZ0phcqxw@mail.gmail.com>
+Message-ID: <26308.33532.40021.698529@rob.eddelbuettel.com>
+
+
+Salut Thierry,
+
+On 20 August 2024 at 13:43, Thierry Onkelinx wrote:
+| Happy to help. I'm working on a new version of the checklist package. I could
+| export the function if that makes it easier for you.
+
+Would be happy to help / iterate. Can you take a stab at making the
+per-column split more robust so that we can bulk-process all non-NA entries
+of the returned db?
+
+Best, Dirk
+
+-- 
+dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From Kurt@Horn|k @end|ng |rom wu@@c@@t  Tue Aug 20 14:29:50 2024
+From: Kurt@Horn|k @end|ng |rom wu@@c@@t (Kurt Hornik)
+Date: Tue, 20 Aug 2024 14:29:50 +0200
+Subject: [R-pkg-devel] ORCID ID finder via tools::CRAN_package_db() ?
+In-Reply-To: <26308.33532.40021.698529@rob.eddelbuettel.com>
+References: <26307.16510.300799.974636@rob.eddelbuettel.com>
+ <CAJuCY5ycWMGu9RpVknkuwWLHKjsiBe+J1cQxwoF=B+MT-vc29g@mail.gmail.com>
+ <26307.19192.825552.550821@rob.eddelbuettel.com>
+ <CAJuCY5xaXjchJbA+k=kPLszP9GjXRFYjJbxduqE+6vZ0phcqxw@mail.gmail.com>
+ <26308.33532.40021.698529@rob.eddelbuettel.com>
+Message-ID: <26308.35902.672739.512614@hornik.net>
+
+>>>>> Dirk Eddelbuettel writes:
+
+Dirk et al,
+
+Sorry for not replying any sooner :-)
+
+I think for now you could use something like what I attach below.
+
+Not ideal: I had not too long ago starting adding orcidtools.R to tools,
+which e.g. has .persons_from_metadata(), but that works on the unpacked
+sources and not the CRAN package db.  Need to think about that ...
+
+Best
+-k
+
+********************************************************************
+x <- tools::CRAN_package_db()
+a <- lapply(x[["Authors at R"]],
+            function(a) {
+                if(!is.na(a)) {
+                    a <- tryCatch(utils:::.read_authors_at_R_field(a), 
+                                  error = identity)
+                    if (inherits(a, "person")) 
+                        return(a)
+                }
+                NULL
+            })
+a <- do.call(c, a)
+a <- lapply(a,
+            function(e) {
+                if(is.null(o <- e$comment["ORCID"]) || is.na(o))
+                    return(NULL)
+                cbind(given = paste(e$given, collapse = " "),
+                      family = paste(e$family, collapse = " "),
+                      oid = unname(o))
+            })
+a <- as.data.frame(do.call(rbind, a))
+********************************************************************
+
+> Salut Thierry,
+
+> On 20 August 2024 at 13:43, Thierry Onkelinx wrote:
+> | Happy to help. I'm working on a new version of the checklist package. I could
+> | export the function if that makes it easier for you.
+
+> Would be happy to help / iterate. Can you take a stab at making the
+> per-column split more robust so that we can bulk-process all non-NA entries
+> of the returned db?
+
+> Best, Dirk
+
+> -- 
+> dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From edd @end|ng |rom deb|@n@org  Tue Aug 20 14:57:14 2024
+From: edd @end|ng |rom deb|@n@org (Dirk Eddelbuettel)
+Date: Tue, 20 Aug 2024 07:57:14 -0500
+Subject: [R-pkg-devel] ORCID ID finder via tools::CRAN_package_db() ?
+In-Reply-To: <26308.35902.672739.512614@hornik.net>
+References: <26307.16510.300799.974636@rob.eddelbuettel.com>
+ <CAJuCY5ycWMGu9RpVknkuwWLHKjsiBe+J1cQxwoF=B+MT-vc29g@mail.gmail.com>
+ <26307.19192.825552.550821@rob.eddelbuettel.com>
+ <CAJuCY5xaXjchJbA+k=kPLszP9GjXRFYjJbxduqE+6vZ0phcqxw@mail.gmail.com>
+ <26308.33532.40021.698529@rob.eddelbuettel.com>
+ <26308.35902.672739.512614@hornik.net>
+Message-ID: <26308.37546.287996.39155@rob.eddelbuettel.com>
+
+
+Hi Kurt,
+
+On 20 August 2024 at 14:29, Kurt Hornik wrote:
+| I think for now you could use something like what I attach below.
+| 
+| Not ideal: I had not too long ago starting adding orcidtools.R to tools,
+| which e.g. has .persons_from_metadata(), but that works on the unpacked
+| sources and not the CRAN package db.  Need to think about that ...
+
+We need something like that too as I fat-fingered the string 'ORCID'. See
+fortune::fortunes("Dirk can type").
+
+Will the function below later. Many thanks for sending it along.
+
+Dirk
+
+| 
+| Best
+| -k
+| 
+| ********************************************************************
+| x <- tools::CRAN_package_db()
+| a <- lapply(x[["Authors at R"]],
+|             function(a) {
+|                 if(!is.na(a)) {
+|                     a <- tryCatch(utils:::.read_authors_at_R_field(a), 
+|                                   error = identity)
+|                     if (inherits(a, "person")) 
+|                         return(a)
+|                 }
+|                 NULL
+|             })
+| a <- do.call(c, a)
+| a <- lapply(a,
+|             function(e) {
+|                 if(is.null(o <- e$comment["ORCID"]) || is.na(o))
+|                     return(NULL)
+|                 cbind(given = paste(e$given, collapse = " "),
+|                       family = paste(e$family, collapse = " "),
+|                       oid = unname(o))
+|             })
+| a <- as.data.frame(do.call(rbind, a))
+| ********************************************************************
+| 
+| > Salut Thierry,
+| 
+| > On 20 August 2024 at 13:43, Thierry Onkelinx wrote:
+| > | Happy to help. I'm working on a new version of the checklist package. I could
+| > | export the function if that makes it easier for you.
+| 
+| > Would be happy to help / iterate. Can you take a stab at making the
+| > per-column split more robust so that we can bulk-process all non-NA entries
+| > of the returned db?
+| 
+| > Best, Dirk
+| 
+| > -- 
+| > dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+-- 
+dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From chr|@ho|d @end|ng |rom p@yctc@org  Tue Aug 20 15:13:24 2024
+From: chr|@ho|d @end|ng |rom p@yctc@org (Chris Evans)
+Date: Tue, 20 Aug 2024 15:13:24 +0200
+Subject: [R-pkg-devel] ORCID ID finder via tools::CRAN_package_db() ?
+In-Reply-To: <26308.37546.287996.39155@rob.eddelbuettel.com>
+References: <26307.16510.300799.974636@rob.eddelbuettel.com>
+ <CAJuCY5ycWMGu9RpVknkuwWLHKjsiBe+J1cQxwoF=B+MT-vc29g@mail.gmail.com>
+ <26307.19192.825552.550821@rob.eddelbuettel.com>
+ <CAJuCY5xaXjchJbA+k=kPLszP9GjXRFYjJbxduqE+6vZ0phcqxw@mail.gmail.com>
+ <26308.33532.40021.698529@rob.eddelbuettel.com>
+ <26308.35902.672739.512614@hornik.net>
+ <26308.37546.287996.39155@rob.eddelbuettel.com>
+Message-ID: <a9afccbb-8ccc-4a26-b624-59a42ec599c9@psyctc.org>
+
+As I think that should be
+
+fortunes::fortune("Dirk can type")
+
+rather than
+
+fortune::fortunes("Dirk can type")
+
+I think that has become both recursive and demonstrating excellent 
+test-retest stability!? Oh boy do I know that issue!
+
+Chris
+
+On 20/08/2024 14:57, Dirk Eddelbuettel wrote:
+> Hi Kurt,
+>
+> On 20 August 2024 at 14:29, Kurt Hornik wrote:
+> | I think for now you could use something like what I attach below.
+> |
+> | Not ideal: I had not too long ago starting adding orcidtools.R to tools,
+> | which e.g. has .persons_from_metadata(), but that works on the unpacked
+> | sources and not the CRAN package db.  Need to think about that ...
+>
+> We need something like that too as I fat-fingered the string 'ORCID'. See
+> fortune::fortunes("Dirk can type").
+>
+> Will the function below later. Many thanks for sending it along.
+>
+> Dirk
+>
+> |
+> | Best
+> | -k
+> |
+> | ********************************************************************
+> | x <- tools::CRAN_package_db()
+> | a <- lapply(x[["Authors at R"]],
+> |             function(a) {
+> |                 if(!is.na(a)) {
+> |                     a <- tryCatch(utils:::.read_authors_at_R_field(a),
+> |                                   error = identity)
+> |                     if (inherits(a, "person"))
+> |                         return(a)
+> |                 }
+> |                 NULL
+> |             })
+> | a <- do.call(c, a)
+> | a <- lapply(a,
+> |             function(e) {
+> |                 if(is.null(o <- e$comment["ORCID"]) || is.na(o))
+> |                     return(NULL)
+> |                 cbind(given = paste(e$given, collapse = " "),
+> |                       family = paste(e$family, collapse = " "),
+> |                       oid = unname(o))
+> |             })
+> | a <- as.data.frame(do.call(rbind, a))
+> | ********************************************************************
+> |
+> | > Salut Thierry,
+> |
+> | > On 20 August 2024 at 13:43, Thierry Onkelinx wrote:
+> | > | Happy to help. I'm working on a new version of the checklist package. I could
+> | > | export the function if that makes it easier for you.
+> |
+> | > Would be happy to help / iterate. Can you take a stab at making the
+> | > per-column split more robust so that we can bulk-process all non-NA entries
+> | > of the returned db?
+> |
+> | > Best, Dirk
+> |
+> | > --
+> | > dirk.eddelbuettel.com | @eddelbuettel |edd at debian.org
+>
+-- 
+Chris Evans (he/him)
+Visiting Professor, UDLA, Quito, Ecuador & Honorary Professor, 
+University of Roehampton, London, UK.
+Work web site: https://www.psyctc.org/psyctc/
+CORE site: http://www.coresystemtrust.org.uk/
+Personal site: https://www.psyctc.org/pelerinage2016/
+Emeetings (Thursdays): 
+https://www.psyctc.org/psyctc/booking-meetings-with-me/
+(Beware: French time, generally an hour ahead of UK)
+<https://ombook.psyctc.org/book>
+	[[alternative HTML version deleted]]
+
+
+From edd @end|ng |rom deb|@n@org  Tue Aug 20 15:29:19 2024
+From: edd @end|ng |rom deb|@n@org (Dirk Eddelbuettel)
+Date: Tue, 20 Aug 2024 08:29:19 -0500
+Subject: [R-pkg-devel] ORCID ID finder via tools::CRAN_package_db() ?
+In-Reply-To: <a9afccbb-8ccc-4a26-b624-59a42ec599c9@psyctc.org>
+References: <26307.16510.300799.974636@rob.eddelbuettel.com>
+ <CAJuCY5ycWMGu9RpVknkuwWLHKjsiBe+J1cQxwoF=B+MT-vc29g@mail.gmail.com>
+ <26307.19192.825552.550821@rob.eddelbuettel.com>
+ <CAJuCY5xaXjchJbA+k=kPLszP9GjXRFYjJbxduqE+6vZ0phcqxw@mail.gmail.com>
+ <26308.33532.40021.698529@rob.eddelbuettel.com>
+ <26308.35902.672739.512614@hornik.net>
+ <26308.37546.287996.39155@rob.eddelbuettel.com>
+ <a9afccbb-8ccc-4a26-b624-59a42ec599c9@psyctc.org>
+Message-ID: <26308.39471.752585.593306@rob.eddelbuettel.com>
+
+
+On 20 August 2024 at 15:13, Chris Evans wrote:
+| As I think that should be
+| 
+| fortunes::fortune("Dirk can type")
+| 
+| rather than
+| 
+| fortune::fortunes("Dirk can type")
+
+Yes, thank you. I also failed to run that post through CI and testing before
+sending.  Doing too many things at once...
+
+Dirk
+ 
+| I think that has become both recursive and demonstrating excellent 
+| test-retest stability!? Oh boy do I know that issue!
+| 
+| Chris
+| 
+| On 20/08/2024 14:57, Dirk Eddelbuettel wrote:
+| > Hi Kurt,
+| >
+| > On 20 August 2024 at 14:29, Kurt Hornik wrote:
+| > | I think for now you could use something like what I attach below.
+| > |
+| > | Not ideal: I had not too long ago starting adding orcidtools.R to tools,
+| > | which e.g. has .persons_from_metadata(), but that works on the unpacked
+| > | sources and not the CRAN package db.  Need to think about that ...
+| >
+| > We need something like that too as I fat-fingered the string 'ORCID'. See
+| > fortune::fortunes("Dirk can type").
+| >
+| > Will the function below later. Many thanks for sending it along.
+| >
+| > Dirk
+| >
+| > |
+| > | Best
+| > | -k
+| > |
+| > | ********************************************************************
+| > | x <- tools::CRAN_package_db()
+| > | a <- lapply(x[["Authors at R"]],
+| > |             function(a) {
+| > |                 if(!is.na(a)) {
+| > |                     a <- tryCatch(utils:::.read_authors_at_R_field(a),
+| > |                                   error = identity)
+| > |                     if (inherits(a, "person"))
+| > |                         return(a)
+| > |                 }
+| > |                 NULL
+| > |             })
+| > | a <- do.call(c, a)
+| > | a <- lapply(a,
+| > |             function(e) {
+| > |                 if(is.null(o <- e$comment["ORCID"]) || is.na(o))
+| > |                     return(NULL)
+| > |                 cbind(given = paste(e$given, collapse = " "),
+| > |                       family = paste(e$family, collapse = " "),
+| > |                       oid = unname(o))
+| > |             })
+| > | a <- as.data.frame(do.call(rbind, a))
+| > | ********************************************************************
+| > |
+| > | > Salut Thierry,
+| > |
+| > | > On 20 August 2024 at 13:43, Thierry Onkelinx wrote:
+| > | > | Happy to help. I'm working on a new version of the checklist package. I could
+| > | > | export the function if that makes it easier for you.
+| > |
+| > | > Would be happy to help / iterate. Can you take a stab at making the
+| > | > per-column split more robust so that we can bulk-process all non-NA entries
+| > | > of the returned db?
+| > |
+| > | > Best, Dirk
+| > |
+| > | > --
+| > | > dirk.eddelbuettel.com | @eddelbuettel |edd at debian.org
+| >
+| -- 
+| Chris Evans (he/him)
+| Visiting Professor, UDLA, Quito, Ecuador & Honorary Professor, 
+| University of Roehampton, London, UK.
+| Work web site: https://www.psyctc.org/psyctc/
+| CORE site: http://www.coresystemtrust.org.uk/
+| Personal site: https://www.psyctc.org/pelerinage2016/
+| Emeetings (Thursdays): 
+| https://www.psyctc.org/psyctc/booking-meetings-with-me/
+| (Beware: French time, generally an hour ahead of UK)
+| <https://ombook.psyctc.org/book>
+| 	[[alternative HTML version deleted]]
+| 
+| ______________________________________________
+| R-package-devel at r-project.org mailing list
+| https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+-- 
+dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From edd @end|ng |rom deb|@n@org  Tue Aug 20 15:31:45 2024
+From: edd @end|ng |rom deb|@n@org (Dirk Eddelbuettel)
+Date: Tue, 20 Aug 2024 08:31:45 -0500
+Subject: [R-pkg-devel] ORCID ID finder via tools::CRAN_package_db() ?
+In-Reply-To: <26308.37546.287996.39155@rob.eddelbuettel.com>
+References: <26307.16510.300799.974636@rob.eddelbuettel.com>
+ <CAJuCY5ycWMGu9RpVknkuwWLHKjsiBe+J1cQxwoF=B+MT-vc29g@mail.gmail.com>
+ <26307.19192.825552.550821@rob.eddelbuettel.com>
+ <CAJuCY5xaXjchJbA+k=kPLszP9GjXRFYjJbxduqE+6vZ0phcqxw@mail.gmail.com>
+ <26308.33532.40021.698529@rob.eddelbuettel.com>
+ <26308.35902.672739.512614@hornik.net>
+ <26308.37546.287996.39155@rob.eddelbuettel.com>
+Message-ID: <26308.39617.980467.97910@rob.eddelbuettel.com>
+
+
+On 20 August 2024 at 07:57, Dirk Eddelbuettel wrote:
+| 
+| Hi Kurt,
+| 
+| On 20 August 2024 at 14:29, Kurt Hornik wrote:
+| | I think for now you could use something like what I attach below.
+| | 
+| | Not ideal: I had not too long ago starting adding orcidtools.R to tools,
+| | which e.g. has .persons_from_metadata(), but that works on the unpacked
+| | sources and not the CRAN package db.  Need to think about that ...
+| 
+| We need something like that too as I fat-fingered the string 'ORCID'. See
+| fortune::fortunes("Dirk can type").
+| 
+| Will the function below later. Many thanks for sending it along.
+
+Very nice. Resisted my common impulse to make it a data.table for easy
+sorting via keys etc.  After running your code the line
+
+   head(with(a, sort_by(a, ~ family + given)), 100)
+
+shows that we need a bit more QA as person entries are not properly split
+between 'family' and 'given', use the URL and that we have repeats.
+Excluding those is next.
+
+Dirk
+ 
+| Dirk
+| 
+| | 
+| | Best
+| | -k
+| | 
+| | ********************************************************************
+| | x <- tools::CRAN_package_db()
+| | a <- lapply(x[["Authors at R"]],
+| |             function(a) {
+| |                 if(!is.na(a)) {
+| |                     a <- tryCatch(utils:::.read_authors_at_R_field(a), 
+| |                                   error = identity)
+| |                     if (inherits(a, "person")) 
+| |                         return(a)
+| |                 }
+| |                 NULL
+| |             })
+| | a <- do.call(c, a)
+| | a <- lapply(a,
+| |             function(e) {
+| |                 if(is.null(o <- e$comment["ORCID"]) || is.na(o))
+| |                     return(NULL)
+| |                 cbind(given = paste(e$given, collapse = " "),
+| |                       family = paste(e$family, collapse = " "),
+| |                       oid = unname(o))
+| |             })
+| | a <- as.data.frame(do.call(rbind, a))
+| | ********************************************************************
+| | 
+| | > Salut Thierry,
+| | 
+| | > On 20 August 2024 at 13:43, Thierry Onkelinx wrote:
+| | > | Happy to help. I'm working on a new version of the checklist package. I could
+| | > | export the function if that makes it easier for you.
+| | 
+| | > Would be happy to help / iterate. Can you take a stab at making the
+| | > per-column split more robust so that we can bulk-process all non-NA entries
+| | > of the returned db?
+| | 
+| | > Best, Dirk
+| | 
+| | > -- 
+| | > dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+| 
+| -- 
+| dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+-- 
+dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From Kurt@Horn|k @end|ng |rom wu@@c@@t  Tue Aug 20 15:43:04 2024
+From: Kurt@Horn|k @end|ng |rom wu@@c@@t (Kurt Hornik)
+Date: Tue, 20 Aug 2024 15:43:04 +0200
+Subject: [R-pkg-devel] ORCID ID finder via tools::CRAN_package_db() ?
+In-Reply-To: <26308.39617.980467.97910@rob.eddelbuettel.com>
+References: <26307.16510.300799.974636@rob.eddelbuettel.com>
+ <CAJuCY5ycWMGu9RpVknkuwWLHKjsiBe+J1cQxwoF=B+MT-vc29g@mail.gmail.com>
+ <26307.19192.825552.550821@rob.eddelbuettel.com>
+ <CAJuCY5xaXjchJbA+k=kPLszP9GjXRFYjJbxduqE+6vZ0phcqxw@mail.gmail.com>
+ <26308.33532.40021.698529@rob.eddelbuettel.com>
+ <26308.35902.672739.512614@hornik.net>
+ <26308.37546.287996.39155@rob.eddelbuettel.com>
+ <26308.39617.980467.97910@rob.eddelbuettel.com>
+Message-ID: <26308.40296.318704.764186@hornik.net>
+
+>>>>> Dirk Eddelbuettel writes:
+
+> On 20 August 2024 at 07:57, Dirk Eddelbuettel wrote:
+> | 
+> | Hi Kurt,
+> | 
+> | On 20 August 2024 at 14:29, Kurt Hornik wrote:
+> | | I think for now you could use something like what I attach below.
+> | | 
+> | | Not ideal: I had not too long ago starting adding orcidtools.R to tools,
+> | | which e.g. has .persons_from_metadata(), but that works on the unpacked
+> | | sources and not the CRAN package db.  Need to think about that ...
+> | 
+> | We need something like that too as I fat-fingered the string 'ORCID'. See
+> | fortune::fortunes("Dirk can type").
+> | 
+> | Will the function below later. Many thanks for sending it along.
+
+> Very nice. Resisted my common impulse to make it a data.table for easy
+> sorting via keys etc.  After running your code the line
+
+>    head(with(a, sort_by(a, ~ family + given)), 100)
+
+> shows that we need a bit more QA as person entries are not properly split
+> between 'family' and 'given', use the URL and that we have repeats.
+> Excluding those is next.
+
+Right.  One should canonicalize the ORCID (having the URLs is from being
+nice) and then do unique() ...
+
+Best
+-k
+
+
+
+> Dirk
+ 
+> | Dirk
+> | 
+> | | 
+> | | Best
+> | | -k
+> | | 
+> | | ********************************************************************
+> | | x <- tools::CRAN_package_db()
+> | | a <- lapply(x[["Authors at R"]],
+> | |             function(a) {
+> | |                 if(!is.na(a)) {
+> | |                     a <- tryCatch(utils:::.read_authors_at_R_field(a), 
+> | |                                   error = identity)
+> | |                     if (inherits(a, "person")) 
+> | |                         return(a)
+> | |                 }
+> | |                 NULL
+> | |             })
+> | | a <- do.call(c, a)
+> | | a <- lapply(a,
+> | |             function(e) {
+> | |                 if(is.null(o <- e$comment["ORCID"]) || is.na(o))
+> | |                     return(NULL)
+> | |                 cbind(given = paste(e$given, collapse = " "),
+> | |                       family = paste(e$family, collapse = " "),
+> | |                       oid = unname(o))
+> | |             })
+> | | a <- as.data.frame(do.call(rbind, a))
+> | | ********************************************************************
+> | | 
+> | | > Salut Thierry,
+> | | 
+> | | > On 20 August 2024 at 13:43, Thierry Onkelinx wrote:
+> | | > | Happy to help. I'm working on a new version of the checklist package. I could
+> | | > | export the function if that makes it easier for you.
+> | | 
+> | | > Would be happy to help / iterate. Can you take a stab at making the
+> | | > per-column split more robust so that we can bulk-process all non-NA entries
+> | | > of the returned db?
+> | | 
+> | | > Best, Dirk
+> | | 
+> | | > -- 
+> | | > dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+> | 
+> | -- 
+> | dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+> -- 
+> dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From Kurt@Horn|k @end|ng |rom wu@@c@@t  Tue Aug 20 15:47:22 2024
+From: Kurt@Horn|k @end|ng |rom wu@@c@@t (Kurt Hornik)
+Date: Tue, 20 Aug 2024 15:47:22 +0200
+Subject: [R-pkg-devel] ORCID ID finder via tools::CRAN_package_db() ?
+In-Reply-To: <26308.40296.318704.764186@hornik.net>
+References: <26307.16510.300799.974636@rob.eddelbuettel.com>
+ <CAJuCY5ycWMGu9RpVknkuwWLHKjsiBe+J1cQxwoF=B+MT-vc29g@mail.gmail.com>
+ <26307.19192.825552.550821@rob.eddelbuettel.com>
+ <CAJuCY5xaXjchJbA+k=kPLszP9GjXRFYjJbxduqE+6vZ0phcqxw@mail.gmail.com>
+ <26308.33532.40021.698529@rob.eddelbuettel.com>
+ <26308.35902.672739.512614@hornik.net>
+ <26308.37546.287996.39155@rob.eddelbuettel.com>
+ <26308.39617.980467.97910@rob.eddelbuettel.com>
+ <26308.40296.318704.764186@hornik.net>
+Message-ID: <26308.40554.894652.252504@hornik.net>
+
+>>>>> Kurt Hornik writes:
+
+The variant attaches drops the URL and does unique.
+
+Hmm, the ones in
+
+  head(with(a, sort_by(a, ~ family + given)), 100)
+
+without a family look suspicious ...
+
+Best
+-k
+
+
+-------------- next part --------------
+An embedded and charset-unspecified text was scrubbed...
+Name: orcid.R
+URL: <https://stat.ethz.ch/pipermail/r-package-devel/attachments/20240820/76546959/attachment.ksh>
+
+-------------- next part --------------
+
+
+>>>>> Dirk Eddelbuettel writes:
+>> On 20 August 2024 at 07:57, Dirk Eddelbuettel wrote:
+>> | 
+>> | Hi Kurt,
+>> | 
+>> | On 20 August 2024 at 14:29, Kurt Hornik wrote:
+>> | | I think for now you could use something like what I attach below.
+>> | | 
+>> | | Not ideal: I had not too long ago starting adding orcidtools.R to tools,
+>> | | which e.g. has .persons_from_metadata(), but that works on the unpacked
+>> | | sources and not the CRAN package db.  Need to think about that ...
+>> | 
+>> | We need something like that too as I fat-fingered the string 'ORCID'. See
+>> | fortune::fortunes("Dirk can type").
+>> | 
+>> | Will the function below later. Many thanks for sending it along.
+
+>> Very nice. Resisted my common impulse to make it a data.table for easy
+>> sorting via keys etc.  After running your code the line
+
+>> head(with(a, sort_by(a, ~ family + given)), 100)
+
+>> shows that we need a bit more QA as person entries are not properly split
+>> between 'family' and 'given', use the URL and that we have repeats.
+>> Excluding those is next.
+
+> Right.  One should canonicalize the ORCID (having the URLs is from being
+> nice) and then do unique() ...
+
+> Best
+> -k
+
+
+
+>> Dirk
+ 
+>> | Dirk
+>> | 
+>> | | 
+>> | | Best
+>> | | -k
+>> | | 
+>> | | ********************************************************************
+>> | | x <- tools::CRAN_package_db()
+>> | | a <- lapply(x[["Authors at R"]],
+>> | |             function(a) {
+>> | |                 if(!is.na(a)) {
+>> | |                     a <- tryCatch(utils:::.read_authors_at_R_field(a), 
+>> | |                                   error = identity)
+>> | |                     if (inherits(a, "person")) 
+>> | |                         return(a)
+>> | |                 }
+>> | |                 NULL
+>> | |             })
+>> | | a <- do.call(c, a)
+>> | | a <- lapply(a,
+>> | |             function(e) {
+>> | |                 if(is.null(o <- e$comment["ORCID"]) || is.na(o))
+>> | |                     return(NULL)
+>> | |                 cbind(given = paste(e$given, collapse = " "),
+>> | |                       family = paste(e$family, collapse = " "),
+>> | |                       oid = unname(o))
+>> | |             })
+>> | | a <- as.data.frame(do.call(rbind, a))
+>> | | ********************************************************************
+>> | | 
+>> | | > Salut Thierry,
+>> | | 
+>> | | > On 20 August 2024 at 13:43, Thierry Onkelinx wrote:
+>> | | > | Happy to help. I'm working on a new version of the checklist package. I could
+>> | | > | export the function if that makes it easier for you.
+>> | | 
+>> | | > Would be happy to help / iterate. Can you take a stab at making the
+>> | | > per-column split more robust so that we can bulk-process all non-NA entries
+>> | | > of the returned db?
+>> | | 
+>> | | > Best, Dirk
+>> | | 
+>> | | > -- 
+>> | | > dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+>> | 
+>> | -- 
+>> | dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+>> -- 
+>> dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+From bbo|ker @end|ng |rom gm@||@com  Tue Aug 20 15:58:49 2024
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Tue, 20 Aug 2024 09:58:49 -0400
+Subject: [R-pkg-devel] ORCID ID finder via tools::CRAN_package_db() ?
+In-Reply-To: <26308.40554.894652.252504@hornik.net>
+References: <26307.16510.300799.974636@rob.eddelbuettel.com>
+ <CAJuCY5ycWMGu9RpVknkuwWLHKjsiBe+J1cQxwoF=B+MT-vc29g@mail.gmail.com>
+ <26307.19192.825552.550821@rob.eddelbuettel.com>
+ <CAJuCY5xaXjchJbA+k=kPLszP9GjXRFYjJbxduqE+6vZ0phcqxw@mail.gmail.com>
+ <26308.33532.40021.698529@rob.eddelbuettel.com>
+ <26308.35902.672739.512614@hornik.net>
+ <26308.37546.287996.39155@rob.eddelbuettel.com>
+ <26308.39617.980467.97910@rob.eddelbuettel.com>
+ <26308.40296.318704.764186@hornik.net> <26308.40554.894652.252504@hornik.net>
+Message-ID: <65590043-337b-4d89-b540-36fb5ba27101@gmail.com>
+
+  Looking into one particular example,
+
+https://github.com/seabbs/idmodelr/blob/master/DESCRIPTION
+
+this appears to be the authors' fault:
+
+Authors at R: c(
+     person(given = "Sam Abbott",
+            role = c("aut", "cre"),
+            email = "contact at samabbott.co.uk",
+            comment = c(ORCID = "0000-0001-8057-8037")),
+     person(given = "Akira Endo",
+            role = c("aut"),
+            email = "akira.endo at lshtm.ac.uk",
+            comment = c(ORCID = "0000-0001-6377-7296")))
+
+   Maybe CRAN should start checking for missing 'family' fields in 
+Authors at R ... ???
+
+   cheers
+    Ben Bolker
+
+On 2024-08-20 9:47 a.m., Kurt Hornik wrote:
+>>>>>> Kurt Hornik writes:
+> 
+> The variant attaches drops the URL and does unique.
+> 
+> Hmm, the ones in
+> 
+>    head(with(a, sort_by(a, ~ family + given)), 100)
+> 
+> without a family look suspicious ...
+> 
+> Best
+> -k
+> 
+> 
+> 
+> 
+>>>>>> Dirk Eddelbuettel writes:
+>>> On 20 August 2024 at 07:57, Dirk Eddelbuettel wrote:
+>>> |
+>>> | Hi Kurt,
+>>> |
+>>> | On 20 August 2024 at 14:29, Kurt Hornik wrote:
+>>> | | I think for now you could use something like what I attach below.
+>>> | |
+>>> | | Not ideal: I had not too long ago starting adding orcidtools.R to tools,
+>>> | | which e.g. has .persons_from_metadata(), but that works on the unpacked
+>>> | | sources and not the CRAN package db.  Need to think about that ...
+>>> |
+>>> | We need something like that too as I fat-fingered the string 'ORCID'. See
+>>> | fortune::fortunes("Dirk can type").
+>>> |
+>>> | Will the function below later. Many thanks for sending it along.
+> 
+>>> Very nice. Resisted my common impulse to make it a data.table for easy
+>>> sorting via keys etc.  After running your code the line
+> 
+>>> head(with(a, sort_by(a, ~ family + given)), 100)
+> 
+>>> shows that we need a bit more QA as person entries are not properly split
+>>> between 'family' and 'given', use the URL and that we have repeats.
+>>> Excluding those is next.
+> 
+>> Right.  One should canonicalize the ORCID (having the URLs is from being
+>> nice) and then do unique() ...
+> 
+>> Best
+>> -k
+> 
+> 
+> 
+>>> Dirk
+>   
+>>> | Dirk
+>>> |
+>>> | |
+>>> | | Best
+>>> | | -k
+>>> | |
+>>> | | ********************************************************************
+>>> | | x <- tools::CRAN_package_db()
+>>> | | a <- lapply(x[["Authors at R"]],
+>>> | |             function(a) {
+>>> | |                 if(!is.na(a)) {
+>>> | |                     a <- tryCatch(utils:::.read_authors_at_R_field(a),
+>>> | |                                   error = identity)
+>>> | |                     if (inherits(a, "person"))
+>>> | |                         return(a)
+>>> | |                 }
+>>> | |                 NULL
+>>> | |             })
+>>> | | a <- do.call(c, a)
+>>> | | a <- lapply(a,
+>>> | |             function(e) {
+>>> | |                 if(is.null(o <- e$comment["ORCID"]) || is.na(o))
+>>> | |                     return(NULL)
+>>> | |                 cbind(given = paste(e$given, collapse = " "),
+>>> | |                       family = paste(e$family, collapse = " "),
+>>> | |                       oid = unname(o))
+>>> | |             })
+>>> | | a <- as.data.frame(do.call(rbind, a))
+>>> | | ********************************************************************
+>>> | |
+>>> | | > Salut Thierry,
+>>> | |
+>>> | | > On 20 August 2024 at 13:43, Thierry Onkelinx wrote:
+>>> | | > | Happy to help. I'm working on a new version of the checklist package. I could
+>>> | | > | export the function if that makes it easier for you.
+>>> | |
+>>> | | > Would be happy to help / iterate. Can you take a stab at making the
+>>> | | > per-column split more robust so that we can bulk-process all non-NA entries
+>>> | | > of the returned db?
+>>> | |
+>>> | | > Best, Dirk
+>>> | |
+>>> | | > --
+>>> | | > dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+>>> |
+>>> | --
+>>> | dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+> 
+>>> -- 
+>>> dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+>>>
+>>> ______________________________________________
+>>> R-package-devel at r-project.org mailing list
+>>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+-- 
+Dr. Benjamin Bolker
+Professor, Mathematics & Statistics and Biology, McMaster University
+Director, School of Computational Science and Engineering
+ > E-mail is sent at my convenience; I don't expect replies outside of 
+working hours.
+
+
+From th|erry@onke||nx @end|ng |rom |nbo@be  Tue Aug 20 16:25:25 2024
+From: th|erry@onke||nx @end|ng |rom |nbo@be (Thierry Onkelinx)
+Date: Tue, 20 Aug 2024 16:25:25 +0200
+Subject: [R-pkg-devel] ORCID ID finder via tools::CRAN_package_db() ?
+In-Reply-To: <65590043-337b-4d89-b540-36fb5ba27101@gmail.com>
+References: <26307.16510.300799.974636@rob.eddelbuettel.com>
+ <CAJuCY5ycWMGu9RpVknkuwWLHKjsiBe+J1cQxwoF=B+MT-vc29g@mail.gmail.com>
+ <26307.19192.825552.550821@rob.eddelbuettel.com>
+ <CAJuCY5xaXjchJbA+k=kPLszP9GjXRFYjJbxduqE+6vZ0phcqxw@mail.gmail.com>
+ <26308.33532.40021.698529@rob.eddelbuettel.com>
+ <26308.35902.672739.512614@hornik.net>
+ <26308.37546.287996.39155@rob.eddelbuettel.com>
+ <26308.39617.980467.97910@rob.eddelbuettel.com>
+ <26308.40296.318704.764186@hornik.net> <26308.40554.894652.252504@hornik.net>
+ <65590043-337b-4d89-b540-36fb5ba27101@gmail.com>
+Message-ID: <CAJuCY5wLg3pV+u+rgakcti4BZFsEvEA9i-kB2a9pE=+mvpnjVg@mail.gmail.com>
+
+Dear Ben,
+
+This is as simple as setting mandatory given and family fields.
+checklist::check_description() ensures that given and family are set unless
+the role is "cph" or "fnd". Allowing for organisations to be listed with
+only the given field.
+
+The 0.4.1 branch of checklist
+<https://github.com/inbo/checklist/tree/0.4.1> now
+exports the author2df() function which now can handle objects of call
+person, list, logical (NA) and NULL. Feedback is welcome.
+
+library(checklist)
+df <- tools::CRAN_package_db()
+vapply(
+  df$`Authors at R`[df$Package %in% c("git2rdata", "A3", "digest", "abe")],
+  function(x) {
+    parse(text = x) |>
+      eval() |>
+      list()
+  },
+  vector(mode = "list", 1)
+) |>
+  unname() |>
+  author2df()
+
+Best regards,
+
+ir. Thierry Onkelinx
+Statisticus / Statistician
+
+Vlaamse Overheid / Government of Flanders
+INSTITUUT VOOR NATUUR- EN BOSONDERZOEK / RESEARCH INSTITUTE FOR NATURE AND
+FOREST
+Team Biometrie & Kwaliteitszorg / Team Biometrics & Quality Assurance
+thierry.onkelinx at inbo.be
+Havenlaan 88 bus 73, 1000 Brussel
+*Postadres:* Koning Albert II-laan 15 bus 186, 1210 Brussel
+*Poststukken die naar dit adres worden gestuurd, worden ingescand en
+digitaal aan de geadresseerde bezorgd. Zo kan de Vlaamse overheid haar
+dossiers volledig digitaal behandelen. Poststukken met de vermelding
+?vertrouwelijk? worden niet ingescand, maar ongeopend aan de geadresseerde
+bezorgd.*
+www.inbo.be
+
+///////////////////////////////////////////////////////////////////////////////////////////
+To call in the statistician after the experiment is done may be no more
+than asking him to perform a post-mortem examination: he may be able to say
+what the experiment died of. ~ Sir Ronald Aylmer Fisher
+The plural of anecdote is not data. ~ Roger Brinner
+The combination of some data and an aching desire for an answer does not
+ensure that a reasonable answer can be extracted from a given body of data.
+~ John Tukey
+///////////////////////////////////////////////////////////////////////////////////////////
+
+<https://www.inbo.be>
+
+
+Op di 20 aug 2024 om 15:59 schreef Ben Bolker <bbolker at gmail.com>:
+
+>   Looking into one particular example,
+>
+> https://github.com/seabbs/idmodelr/blob/master/DESCRIPTION
+>
+> this appears to be the authors' fault:
+>
+> Authors at R: c(
+>      person(given = "Sam Abbott",
+>             role = c("aut", "cre"),
+>             email = "contact at samabbott.co.uk",
+>             comment = c(ORCID = "0000-0001-8057-8037")),
+>      person(given = "Akira Endo",
+>             role = c("aut"),
+>             email = "akira.endo at lshtm.ac.uk",
+>             comment = c(ORCID = "0000-0001-6377-7296")))
+>
+>    Maybe CRAN should start checking for missing 'family' fields in
+> Authors at R ... ???
+>
+>    cheers
+>     Ben Bolker
+>
+> On 2024-08-20 9:47 a.m., Kurt Hornik wrote:
+> >>>>>> Kurt Hornik writes:
+> >
+> > The variant attaches drops the URL and does unique.
+> >
+> > Hmm, the ones in
+> >
+> >    head(with(a, sort_by(a, ~ family + given)), 100)
+> >
+> > without a family look suspicious ...
+> >
+> > Best
+> > -k
+> >
+> >
+> >
+> >
+> >>>>>> Dirk Eddelbuettel writes:
+> >>> On 20 August 2024 at 07:57, Dirk Eddelbuettel wrote:
+> >>> |
+> >>> | Hi Kurt,
+> >>> |
+> >>> | On 20 August 2024 at 14:29, Kurt Hornik wrote:
+> >>> | | I think for now you could use something like what I attach below.
+> >>> | |
+> >>> | | Not ideal: I had not too long ago starting adding orcidtools.R to
+> tools,
+> >>> | | which e.g. has .persons_from_metadata(), but that works on the
+> unpacked
+> >>> | | sources and not the CRAN package db.  Need to think about that ...
+> >>> |
+> >>> | We need something like that too as I fat-fingered the string
+> 'ORCID'. See
+> >>> | fortune::fortunes("Dirk can type").
+> >>> |
+> >>> | Will the function below later. Many thanks for sending it along.
+> >
+> >>> Very nice. Resisted my common impulse to make it a data.table for easy
+> >>> sorting via keys etc.  After running your code the line
+> >
+> >>> head(with(a, sort_by(a, ~ family + given)), 100)
+> >
+> >>> shows that we need a bit more QA as person entries are not properly
+> split
+> >>> between 'family' and 'given', use the URL and that we have repeats.
+> >>> Excluding those is next.
+> >
+> >> Right.  One should canonicalize the ORCID (having the URLs is from being
+> >> nice) and then do unique() ...
+> >
+> >> Best
+> >> -k
+> >
+> >
+> >
+> >>> Dirk
+> >
+> >>> | Dirk
+> >>> |
+> >>> | |
+> >>> | | Best
+> >>> | | -k
+> >>> | |
+> >>> | |
+> ********************************************************************
+> >>> | | x <- tools::CRAN_package_db()
+> >>> | | a <- lapply(x[["Authors at R"]],
+> >>> | |             function(a) {
+> >>> | |                 if(!is.na(a)) {
+> >>> | |                     a <-
+> tryCatch(utils:::.read_authors_at_R_field(a),
+> >>> | |                                   error = identity)
+> >>> | |                     if (inherits(a, "person"))
+> >>> | |                         return(a)
+> >>> | |                 }
+> >>> | |                 NULL
+> >>> | |             })
+> >>> | | a <- do.call(c, a)
+> >>> | | a <- lapply(a,
+> >>> | |             function(e) {
+> >>> | |                 if(is.null(o <- e$comment["ORCID"]) || is.na(o))
+> >>> | |                     return(NULL)
+> >>> | |                 cbind(given = paste(e$given, collapse = " "),
+> >>> | |                       family = paste(e$family, collapse = " "),
+> >>> | |                       oid = unname(o))
+> >>> | |             })
+> >>> | | a <- as.data.frame(do.call(rbind, a))
+> >>> | |
+> ********************************************************************
+> >>> | |
+> >>> | | > Salut Thierry,
+> >>> | |
+> >>> | | > On 20 August 2024 at 13:43, Thierry Onkelinx wrote:
+> >>> | | > | Happy to help. I'm working on a new version of the checklist
+> package. I could
+> >>> | | > | export the function if that makes it easier for you.
+> >>> | |
+> >>> | | > Would be happy to help / iterate. Can you take a stab at making
+> the
+> >>> | | > per-column split more robust so that we can bulk-process all
+> non-NA entries
+> >>> | | > of the returned db?
+> >>> | |
+> >>> | | > Best, Dirk
+> >>> | |
+> >>> | | > --
+> >>> | | > dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+> >>> |
+> >>> | --
+> >>> | dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+> >
+> >>> --
+> >>> dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+> >>>
+> >>> ______________________________________________
+> >>> R-package-devel at r-project.org mailing list
+> >>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+> --
+> Dr. Benjamin Bolker
+> Professor, Mathematics & Statistics and Biology, McMaster University
+> Director, School of Computational Science and Engineering
+>  > E-mail is sent at my convenience; I don't expect replies outside of
+> working hours.
+>
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+
+	[[alternative HTML version deleted]]
+
+
+From kev|n@r@coombe@ @end|ng |rom gm@||@com  Tue Aug 20 17:51:03 2024
+From: kev|n@r@coombe@ @end|ng |rom gm@||@com (Kevin R. Coombes)
+Date: Tue, 20 Aug 2024 11:51:03 -0400
+Subject: [R-pkg-devel] Spell Check with Hunspell on Windows
+Message-ID: <68c9f4e1-fe16-4f60-b317-f82a3c3e339e@gmail.com>
+
+Hi,
+
+This is a follow-up to an earlier question where I asked about R CMD 
+check on Windows to be able to check R packages in a manner closer to 
+the checks on CRAN machines before i submit (new or updated) packages.? 
+ From the answers to the previous question, I learned the (magic) 
+environment variable to set in order to trigger spell checks.
+
+So, I then managed to install "hunspell" n my Windows machine. I have 
+confirmed that hunspell works
+
+  * from the command line
+  * inside emacs
+  * inside R when running the "aspell" (or "hunspell") command to check
+    files. (Note that I do not need to set? the "program" argument to
+    aspell in order for this to work.)
+
+However, when I run R CMD check from the command line, I get the message:
+ ??? ''No suitable spell-checker program found."
+
+Is there some other environment variable or command line option that I 
+have to set in order to get R CMD check to use "hunspell" instead of 
+"aspell" or "ispell"?
+
+Thanks,
+ ? Kevin
+
+	[[alternative HTML version deleted]]
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Tue Aug 20 18:02:06 2024
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Tue, 20 Aug 2024 12:02:06 -0400
+Subject: [R-pkg-devel] Spell Check with Hunspell on Windows
+In-Reply-To: <68c9f4e1-fe16-4f60-b317-f82a3c3e339e@gmail.com>
+References: <68c9f4e1-fe16-4f60-b317-f82a3c3e339e@gmail.com>
+Message-ID: <5d6cc0d9-3ba4-4610-b1c3-3451b2e5f768@gmail.com>
+
+When running R CMD check I think the test is using
+
+  Sys.which(c("aspell", "hunspell", "ispell"))
+
+to find the spell check program, so the fact that the aspell() command 
+worked in R suggests that the PATH that R CMD check saw is different 
+than the one that R saw.  Were you running R from the command line when 
+aspell() worked?
+
+Duncan Murdoch
+
+On 2024-08-20 11:51 a.m., Kevin R. Coombes wrote:
+> Hi,
+> 
+> This is a follow-up to an earlier question where I asked about R CMD
+> check on Windows to be able to check R packages in a manner closer to
+> the checks on CRAN machines before i submit (new or updated) packages.
+>   From the answers to the previous question, I learned the (magic)
+> environment variable to set in order to trigger spell checks.
+> 
+> So, I then managed to install "hunspell" n my Windows machine. I have
+> confirmed that hunspell works
+> 
+>    * from the command line
+>    * inside emacs
+>    * inside R when running the "aspell" (or "hunspell") command to check
+>      files. (Note that I do not need to set? the "program" argument to
+>      aspell in order for this to work.)
+> 
+> However, when I run R CMD check from the command line, I get the message:
+>   ??? ''No suitable spell-checker program found."
+> 
+> Is there some other environment variable or command line option that I
+> have to set in order to get R CMD check to use "hunspell" instead of
+> "aspell" or "ispell"?
+> 
+> Thanks,
+>   ? Kevin
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+
+From edd @end|ng |rom deb|@n@org  Wed Aug 21 14:43:05 2024
+From: edd @end|ng |rom deb|@n@org (Dirk Eddelbuettel)
+Date: Wed, 21 Aug 2024 07:43:05 -0500
+Subject: [R-pkg-devel] ORCID ID finder via tools::CRAN_package_db() ?
+In-Reply-To: <26308.40554.894652.252504@hornik.net>
+References: <26307.16510.300799.974636@rob.eddelbuettel.com>
+ <CAJuCY5ycWMGu9RpVknkuwWLHKjsiBe+J1cQxwoF=B+MT-vc29g@mail.gmail.com>
+ <26307.19192.825552.550821@rob.eddelbuettel.com>
+ <CAJuCY5xaXjchJbA+k=kPLszP9GjXRFYjJbxduqE+6vZ0phcqxw@mail.gmail.com>
+ <26308.33532.40021.698529@rob.eddelbuettel.com>
+ <26308.35902.672739.512614@hornik.net>
+ <26308.37546.287996.39155@rob.eddelbuettel.com>
+ <26308.39617.980467.97910@rob.eddelbuettel.com>
+ <26308.40296.318704.764186@hornik.net>
+ <26308.40554.894652.252504@hornik.net>
+Message-ID: <26309.57561.42726.681094@rob.eddelbuettel.com>
+
+
+On 20 August 2024 at 15:47, Kurt Hornik wrote:
+| >>>>> Kurt Hornik writes:
+| 
+| The variant attaches drops the URL and does unique.
+
+Nice. Alas, some of us default to r-release as the daily driver and then
+
+  Error in unname(tools:::.ORCID_iD_canonicalize(o)) : 
+    object '.ORCID_iD_canonicalize' not found
+  > 
+
+Will play with my 'RD' which I keep approximately 'weekly-current'. Quick
+rebuild first.
+
+Dirk
+
+-- 
+dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From Kurt@Horn|k @end|ng |rom wu@@c@@t  Wed Aug 21 14:50:20 2024
+From: Kurt@Horn|k @end|ng |rom wu@@c@@t (Kurt Hornik)
+Date: Wed, 21 Aug 2024 14:50:20 +0200
+Subject: [R-pkg-devel] ORCID ID finder via tools::CRAN_package_db() ?
+In-Reply-To: <26309.57561.42726.681094@rob.eddelbuettel.com>
+References: <26307.16510.300799.974636@rob.eddelbuettel.com>
+ <CAJuCY5ycWMGu9RpVknkuwWLHKjsiBe+J1cQxwoF=B+MT-vc29g@mail.gmail.com>
+ <26307.19192.825552.550821@rob.eddelbuettel.com>
+ <CAJuCY5xaXjchJbA+k=kPLszP9GjXRFYjJbxduqE+6vZ0phcqxw@mail.gmail.com>
+ <26308.33532.40021.698529@rob.eddelbuettel.com>
+ <26308.35902.672739.512614@hornik.net>
+ <26308.37546.287996.39155@rob.eddelbuettel.com>
+ <26308.39617.980467.97910@rob.eddelbuettel.com>
+ <26308.40296.318704.764186@hornik.net>
+ <26308.40554.894652.252504@hornik.net>
+ <26309.57561.42726.681094@rob.eddelbuettel.com>
+Message-ID: <26309.57996.150219.355206@hornik.net>
+
+>>>>> Dirk Eddelbuettel writes:
+
+Meanwhile, I am close to committing a change to R-devel which adds
+tools::CRAN_authors_db() with docs
+
+  \code{CRAN_authors_db()} returns information on the authors of the
+  current CRAN packages extracted from the \samp{Authors at R} fields in
+  the package \file{DESCRIPTION} files, as a data frame with character
+  columns giving the given and family names, email addresses,
+  \abbr{ORCID} identifier, roles, and comments of the person entries,
+  and the corresponding package.
+
+Once make check-all is done ...
+
+Best
+-k
+
+PS.  Sorry about tools:::.ORCID_iD_canonicalize(), had run into the same
+issue when building the authors db on the CRAN master (which uses
+current R release ...)
+
+> On 20 August 2024 at 15:47, Kurt Hornik wrote:
+> | >>>>> Kurt Hornik writes:
+> | 
+> | The variant attaches drops the URL and does unique.
+
+> Nice. Alas, some of us default to r-release as the daily driver and then
+
+>   Error in unname(tools:::.ORCID_iD_canonicalize(o)) : 
+>     object '.ORCID_iD_canonicalize' not found
+>> 
+
+> Will play with my 'RD' which I keep approximately 'weekly-current'. Quick
+> rebuild first.
+
+> Dirk
+
+> -- 
+> dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From edd @end|ng |rom deb|@n@org  Wed Aug 21 14:54:00 2024
+From: edd @end|ng |rom deb|@n@org (Dirk Eddelbuettel)
+Date: Wed, 21 Aug 2024 07:54:00 -0500
+Subject: [R-pkg-devel] ORCID ID finder via tools::CRAN_package_db() ?
+In-Reply-To: <26309.57561.42726.681094@rob.eddelbuettel.com>
+References: <26307.16510.300799.974636@rob.eddelbuettel.com>
+ <CAJuCY5ycWMGu9RpVknkuwWLHKjsiBe+J1cQxwoF=B+MT-vc29g@mail.gmail.com>
+ <26307.19192.825552.550821@rob.eddelbuettel.com>
+ <CAJuCY5xaXjchJbA+k=kPLszP9GjXRFYjJbxduqE+6vZ0phcqxw@mail.gmail.com>
+ <26308.33532.40021.698529@rob.eddelbuettel.com>
+ <26308.35902.672739.512614@hornik.net>
+ <26308.37546.287996.39155@rob.eddelbuettel.com>
+ <26308.39617.980467.97910@rob.eddelbuettel.com>
+ <26308.40296.318704.764186@hornik.net>
+ <26308.40554.894652.252504@hornik.net>
+ <26309.57561.42726.681094@rob.eddelbuettel.com>
+Message-ID: <26309.58216.837682.944710@rob.eddelbuettel.com>
+
+
+On 21 August 2024 at 07:43, Dirk Eddelbuettel wrote:
+| 
+| On 20 August 2024 at 15:47, Kurt Hornik wrote:
+| | >>>>> Kurt Hornik writes:
+| | 
+| | The variant attaches drops the URL and does unique.
+| 
+| Nice. Alas, some of us default to r-release as the daily driver and then
+| 
+|   Error in unname(tools:::.ORCID_iD_canonicalize(o)) : 
+|     object '.ORCID_iD_canonicalize' not found
+|   > 
+| 
+| Will play with my 'RD' which I keep approximately 'weekly-current'. Quick
+| rebuild first.
+
+As simple as adding
+
+  .ORCID_iD_canonicalize <- function (x) sub(tools:::.ORCID_iD_variants_regexp, "\\3", x)
+
+and making the call (or maybe making it a lambda anyway ...)
+
+  oid = unname(.ORCID_iD_canonicalize(o)))
+
+After adding
+
+  a <- sort_by(a, ~ a$family + a$given)
+
+the first 48 out if a (currently) total of 6465 are empty for family.
+
+  > sum(a$family == "")
+  [1] 48
+  > 
+
+Rest is great!
+
+Dirk
+
+-- 
+dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From Kurt@Horn|k @end|ng |rom wu@@c@@t  Wed Aug 21 15:47:53 2024
+From: Kurt@Horn|k @end|ng |rom wu@@c@@t (Kurt Hornik)
+Date: Wed, 21 Aug 2024 15:47:53 +0200
+Subject: [R-pkg-devel] ORCID ID finder via tools::CRAN_package_db() ?
+In-Reply-To: <26309.57996.150219.355206@hornik.net>
+References: <26307.16510.300799.974636@rob.eddelbuettel.com>
+ <CAJuCY5ycWMGu9RpVknkuwWLHKjsiBe+J1cQxwoF=B+MT-vc29g@mail.gmail.com>
+ <26307.19192.825552.550821@rob.eddelbuettel.com>
+ <CAJuCY5xaXjchJbA+k=kPLszP9GjXRFYjJbxduqE+6vZ0phcqxw@mail.gmail.com>
+ <26308.33532.40021.698529@rob.eddelbuettel.com>
+ <26308.35902.672739.512614@hornik.net>
+ <26308.37546.287996.39155@rob.eddelbuettel.com>
+ <26308.39617.980467.97910@rob.eddelbuettel.com>
+ <26308.40296.318704.764186@hornik.net>
+ <26308.40554.894652.252504@hornik.net>
+ <26309.57561.42726.681094@rob.eddelbuettel.com>
+ <26309.57996.150219.355206@hornik.net>
+Message-ID: <26309.61449.590848.266355@hornik.net>
+
+>>>>> Kurt Hornik writes:
+
+Committed now.
+
+Best
+-k
+
+>>>>> Dirk Eddelbuettel writes:
+> Meanwhile, I am close to committing a change to R-devel which adds
+> tools::CRAN_authors_db() with docs
+
+>   \code{CRAN_authors_db()} returns information on the authors of the
+>   current CRAN packages extracted from the \samp{Authors at R} fields in
+>   the package \file{DESCRIPTION} files, as a data frame with character
+>   columns giving the given and family names, email addresses,
+>   \abbr{ORCID} identifier, roles, and comments of the person entries,
+>   and the corresponding package.
+
+> Once make check-all is done ...
+
+> Best
+> -k
+
+> PS.  Sorry about tools:::.ORCID_iD_canonicalize(), had run into the same
+> issue when building the authors db on the CRAN master (which uses
+> current R release ...)
+
+>> On 20 August 2024 at 15:47, Kurt Hornik wrote:
+>> | >>>>> Kurt Hornik writes:
+>> | 
+>> | The variant attaches drops the URL and does unique.
+
+>> Nice. Alas, some of us default to r-release as the daily driver and then
+
+>> Error in unname(tools:::.ORCID_iD_canonicalize(o)) : 
+>> object '.ORCID_iD_canonicalize' not found
+>>> 
+
+>> Will play with my 'RD' which I keep approximately 'weekly-current'. Quick
+>> rebuild first.
+
+>> Dirk
+
+>> -- 
+>> dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From edd @end|ng |rom deb|@n@org  Wed Aug 21 15:56:57 2024
+From: edd @end|ng |rom deb|@n@org (Dirk Eddelbuettel)
+Date: Wed, 21 Aug 2024 08:56:57 -0500
+Subject: [R-pkg-devel] ORCID ID finder via tools::CRAN_package_db() ?
+In-Reply-To: <26309.61449.590848.266355@hornik.net>
+References: <26307.16510.300799.974636@rob.eddelbuettel.com>
+ <CAJuCY5ycWMGu9RpVknkuwWLHKjsiBe+J1cQxwoF=B+MT-vc29g@mail.gmail.com>
+ <26307.19192.825552.550821@rob.eddelbuettel.com>
+ <CAJuCY5xaXjchJbA+k=kPLszP9GjXRFYjJbxduqE+6vZ0phcqxw@mail.gmail.com>
+ <26308.33532.40021.698529@rob.eddelbuettel.com>
+ <26308.35902.672739.512614@hornik.net>
+ <26308.37546.287996.39155@rob.eddelbuettel.com>
+ <26308.39617.980467.97910@rob.eddelbuettel.com>
+ <26308.40296.318704.764186@hornik.net>
+ <26308.40554.894652.252504@hornik.net>
+ <26309.57561.42726.681094@rob.eddelbuettel.com>
+ <26309.57996.150219.355206@hornik.net>
+ <26309.61449.590848.266355@hornik.net>
+Message-ID: <26309.61993.756836.505160@rob.eddelbuettel.com>
+
+
+On 21 August 2024 at 15:47, Kurt Hornik wrote:
+| >>>>> Kurt Hornik writes:
+| 
+| Committed now.
+
+That is just *lovely*:
+
+   > aut <- tools::CRAN_authors_db()
+   > dim(aut)
+   [1] 47433     7
+   > head(aut)
+         given  family                     email               orcid     role comment       package
+   1    Martin   Bladt    martinbladt at math.ku.dk                <NA> aut, cre    <NA> AalenJohansen
+   2 Christian  Furrer         furrer at math.ku.dk                <NA>      aut    <NA> AalenJohansen
+   3    Sercan Kahveci sercan.kahveci at plus.ac.at                <NA> aut, cre    <NA>      AATtools
+   4    Andrew   Pilny        andy.pilny at uky.edu 0000-0001-6603-5490 aut, cre    <NA>   abasequence
+   5   Sigbert  Klinke      sigbert at hu-berlin.de                <NA> aut, cre    <NA>    abbreviate
+   6  Csillery Katalin   kati.csillery at gmail.com                <NA>      aut    <NA>           abc
+   > 
+
+Can we possibly get this into r-patched and the next r-release?
+
+Dirk
+
+-- 
+dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From Kurt@Horn|k @end|ng |rom wu@@c@@t  Wed Aug 21 18:01:49 2024
+From: Kurt@Horn|k @end|ng |rom wu@@c@@t (Kurt Hornik)
+Date: Wed, 21 Aug 2024 18:01:49 +0200
+Subject: [R-pkg-devel] ORCID ID finder via tools::CRAN_package_db() ?
+In-Reply-To: <26309.61993.756836.505160@rob.eddelbuettel.com>
+References: <26307.16510.300799.974636@rob.eddelbuettel.com>
+ <CAJuCY5ycWMGu9RpVknkuwWLHKjsiBe+J1cQxwoF=B+MT-vc29g@mail.gmail.com>
+ <26307.19192.825552.550821@rob.eddelbuettel.com>
+ <CAJuCY5xaXjchJbA+k=kPLszP9GjXRFYjJbxduqE+6vZ0phcqxw@mail.gmail.com>
+ <26308.33532.40021.698529@rob.eddelbuettel.com>
+ <26308.35902.672739.512614@hornik.net>
+ <26308.37546.287996.39155@rob.eddelbuettel.com>
+ <26308.39617.980467.97910@rob.eddelbuettel.com>
+ <26308.40296.318704.764186@hornik.net>
+ <26308.40554.894652.252504@hornik.net>
+ <26309.57561.42726.681094@rob.eddelbuettel.com>
+ <26309.57996.150219.355206@hornik.net>
+ <26309.61449.590848.266355@hornik.net>
+ <26309.61993.756836.505160@rob.eddelbuettel.com>
+Message-ID: <26310.3949.654647.24648@hornik.net>
+
+>>>>> Dirk Eddelbuettel writes:
+
+Possibly yes, if there is enough "need" :-)
+
+Best
+-k
+
+> On 21 August 2024 at 15:47, Kurt Hornik wrote:
+> | >>>>> Kurt Hornik writes:
+> | 
+> | Committed now.
+
+> That is just *lovely*:
+
+>> aut <- tools::CRAN_authors_db()
+>> dim(aut)
+>    [1] 47433     7
+>> head(aut)
+>          given  family                     email               orcid     role comment       package
+>    1    Martin   Bladt    martinbladt at math.ku.dk                <NA> aut, cre    <NA> AalenJohansen
+>    2 Christian  Furrer         furrer at math.ku.dk                <NA>      aut    <NA> AalenJohansen
+>    3    Sercan Kahveci sercan.kahveci at plus.ac.at                <NA> aut, cre    <NA>      AATtools
+>    4    Andrew   Pilny        andy.pilny at uky.edu 0000-0001-6603-5490 aut, cre    <NA>   abasequence
+>    5   Sigbert  Klinke      sigbert at hu-berlin.de                <NA> aut, cre    <NA>    abbreviate
+>    6  Csillery Katalin   kati.csillery at gmail.com                <NA>      aut    <NA>           abc
+>> 
+
+> Can we possibly get this into r-patched and the next r-release?
+
+> Dirk
+
+> -- 
+> dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From j|ox @end|ng |rom mcm@@ter@c@  Mon Sep  2 17:34:09 2024
+From: j|ox @end|ng |rom mcm@@ter@c@ (John Fox)
+Date: Mon, 2 Sep 2024 11:34:09 -0400
+Subject: [R-pkg-devel] unregistered S3 methods in a package
+Message-ID: <b9db0b2d-b863-4367-8e39-00f6a8c60f96@mcmaster.ca>
+
+Dear R-package-devel list members,
+
+I want to introduce several unregistered S3 methods into the cv package 
+(code at <https://github.com/gmonette/cv>). These methods have the form
+
+	coef.merMod <- function(object, ...) lme4::fixef(object)
+
+The object is to mask, e.g., lme4:::coef.merMod(), which returns BLUPs 
+rather than fixed effects, internally in the cv package but *not* to 
+mask the lme4 version of the method for users of the cv package -- that 
+could wreak havoc with their work. Doing this substantially simplifies 
+some of the code in the cv package.
+
+My question: Is it legitimate to define a method in a package for 
+internal use without registering it?
+
+This approach appears to work fine, and R CMD check doesn't complain, 
+although Roxygen does complain that the method isn't "exported" 
+(actually, isn't registered).
+
+Any advice or relevant information would be appreciated.
+
+Thank you,
+  John
+-- 
+John Fox, Professor Emeritus
+McMaster University
+Hamilton, Ontario, Canada
+web: https://www.john-fox.ca/
+--
+
+
+From j|ox @end|ng |rom mcm@@ter@c@  Mon Sep  2 20:57:58 2024
+From: j|ox @end|ng |rom mcm@@ter@c@ (John Fox)
+Date: Mon, 2 Sep 2024 14:57:58 -0400
+Subject: [R-pkg-devel] unregistered S3 methods in a package
+In-Reply-To: <b9db0b2d-b863-4367-8e39-00f6a8c60f96@mcmaster.ca>
+References: <b9db0b2d-b863-4367-8e39-00f6a8c60f96@mcmaster.ca>
+Message-ID: <4aa634d6-01e1-4cb3-8119-35ccdec32ef9@mcmaster.ca>
+
+As it turned out, I was able to avoid redefining coef.merMod(), etc., by 
+making a simple modification to the cv package.
+
+I'm still curious about whether it's OK to have unregistered S3 methods 
+for internal use in a package even though that's no longer necessary for 
+the cv package.
+
+On 2024-09-02 11:34 a.m., John Fox wrote:
+> Caution: External email.
+> 
+> 
+> Dear R-package-devel list members,
+> 
+> I want to introduce several unregistered S3 methods into the cv package
+> (code at <https://github.com/gmonette/cv>). These methods have the form
+> 
+>  ?????? coef.merMod <- function(object, ...) lme4::fixef(object)
+> 
+> The object is to mask, e.g., lme4:::coef.merMod(), which returns BLUPs
+> rather than fixed effects, internally in the cv package but *not* to
+> mask the lme4 version of the method for users of the cv package -- that
+> could wreak havoc with their work. Doing this substantially simplifies
+> some of the code in the cv package.
+> 
+> My question: Is it legitimate to define a method in a package for
+> internal use without registering it?
+> 
+> This approach appears to work fine, and R CMD check doesn't complain,
+> although Roxygen does complain that the method isn't "exported"
+> (actually, isn't registered).
+> 
+> Any advice or relevant information would be appreciated.
+> 
+> Thank you,
+>  ?John
+> -- 
+> John Fox, Professor Emeritus
+> McMaster University
+> Hamilton, Ontario, Canada
+> web: https://www.john-fox.ca/
+> -- 
+> 
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+
+From tdhock5 @end|ng |rom gm@||@com  Wed Sep  4 20:21:22 2024
+From: tdhock5 @end|ng |rom gm@||@com (Toby Hocking)
+Date: Wed, 4 Sep 2024 14:21:22 -0400
+Subject: [R-pkg-devel] unregistered S3 methods in a package
+In-Reply-To: <4aa634d6-01e1-4cb3-8119-35ccdec32ef9@mcmaster.ca>
+References: <b9db0b2d-b863-4367-8e39-00f6a8c60f96@mcmaster.ca>
+ <4aa634d6-01e1-4cb3-8119-35ccdec32ef9@mcmaster.ca>
+Message-ID: <CALK03d3aHJDTLQK7OoVWV=1721cM8k2fRxFGctyXupBxxf=xVQ@mail.gmail.com>
+
+I got this warning too, so I filed an issue to ask
+https://github.com/r-lib/roxygen2/issues/1654
+
+On Mon, Sep 2, 2024 at 2:58?PM John Fox <jfox at mcmaster.ca> wrote:
+>
+> As it turned out, I was able to avoid redefining coef.merMod(), etc., by
+> making a simple modification to the cv package.
+>
+> I'm still curious about whether it's OK to have unregistered S3 methods
+> for internal use in a package even though that's no longer necessary for
+> the cv package.
+>
+> On 2024-09-02 11:34 a.m., John Fox wrote:
+> > Caution: External email.
+> >
+> >
+> > Dear R-package-devel list members,
+> >
+> > I want to introduce several unregistered S3 methods into the cv package
+> > (code at <https://github.com/gmonette/cv>). These methods have the form
+> >
+> >         coef.merMod <- function(object, ...) lme4::fixef(object)
+> >
+> > The object is to mask, e.g., lme4:::coef.merMod(), which returns BLUPs
+> > rather than fixed effects, internally in the cv package but *not* to
+> > mask the lme4 version of the method for users of the cv package -- that
+> > could wreak havoc with their work. Doing this substantially simplifies
+> > some of the code in the cv package.
+> >
+> > My question: Is it legitimate to define a method in a package for
+> > internal use without registering it?
+> >
+> > This approach appears to work fine, and R CMD check doesn't complain,
+> > although Roxygen does complain that the method isn't "exported"
+> > (actually, isn't registered).
+> >
+> > Any advice or relevant information would be appreciated.
+> >
+> > Thank you,
+> >   John
+> > --
+> > John Fox, Professor Emeritus
+> > McMaster University
+> > Hamilton, Ontario, Canada
+> > web: https://www.john-fox.ca/
+> > --
+> >
+> > ______________________________________________
+> > R-package-devel at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+
+From jdnewm|| @end|ng |rom dcn@d@v|@@c@@u@  Wed Sep  4 23:12:09 2024
+From: jdnewm|| @end|ng |rom dcn@d@v|@@c@@u@ (Jeff Newmiller)
+Date: Wed, 04 Sep 2024 14:12:09 -0700
+Subject: [R-pkg-devel] unregistered S3 methods in a package
+In-Reply-To: <CALK03d3aHJDTLQK7OoVWV=1721cM8k2fRxFGctyXupBxxf=xVQ@mail.gmail.com>
+References: <b9db0b2d-b863-4367-8e39-00f6a8c60f96@mcmaster.ca>
+ <4aa634d6-01e1-4cb3-8119-35ccdec32ef9@mcmaster.ca>
+ <CALK03d3aHJDTLQK7OoVWV=1721cM8k2fRxFGctyXupBxxf=xVQ@mail.gmail.com>
+Message-ID: <F143B615-962D-4EB3-8D39-77C8A479E447@dcn.davis.ca.us>
+
+I have been reluctant to pipe up on this because I am no expert on the dark corners of the S3 dispatch mechanism, but I think unregistered S3 methods in packages are verboten. Perhaps [1] will shed some light?
+
+[1] https://blog.r-project.org/2019/08/19/s3-method-lookup/
+
+On September 4, 2024 11:21:22 AM PDT, Toby Hocking <tdhock5 at gmail.com> wrote:
+>I got this warning too, so I filed an issue to ask
+>https://github.com/r-lib/roxygen2/issues/1654
+>
+>On Mon, Sep 2, 2024 at 2:58?PM John Fox <jfox at mcmaster.ca> wrote:
+>>
+>> As it turned out, I was able to avoid redefining coef.merMod(), etc., by
+>> making a simple modification to the cv package.
+>>
+>> I'm still curious about whether it's OK to have unregistered S3 methods
+>> for internal use in a package even though that's no longer necessary for
+>> the cv package.
+>>
+>> On 2024-09-02 11:34 a.m., John Fox wrote:
+>> > Caution: External email.
+>> >
+>> >
+>> > Dear R-package-devel list members,
+>> >
+>> > I want to introduce several unregistered S3 methods into the cv package
+>> > (code at <https://github.com/gmonette/cv>). These methods have the form
+>> >
+>> >         coef.merMod <- function(object, ...) lme4::fixef(object)
+>> >
+>> > The object is to mask, e.g., lme4:::coef.merMod(), which returns BLUPs
+>> > rather than fixed effects, internally in the cv package but *not* to
+>> > mask the lme4 version of the method for users of the cv package -- that
+>> > could wreak havoc with their work. Doing this substantially simplifies
+>> > some of the code in the cv package.
+>> >
+>> > My question: Is it legitimate to define a method in a package for
+>> > internal use without registering it?
+>> >
+>> > This approach appears to work fine, and R CMD check doesn't complain,
+>> > although Roxygen does complain that the method isn't "exported"
+>> > (actually, isn't registered).
+>> >
+>> > Any advice or relevant information would be appreciated.
+>> >
+>> > Thank you,
+>> >   John
+>> > --
+>> > John Fox, Professor Emeritus
+>> > McMaster University
+>> > Hamilton, Ontario, Canada
+>> > web: https://www.john-fox.ca/
+>> > --
+>> >
+>> > ______________________________________________
+>> > R-package-devel at r-project.org mailing list
+>> > https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>>
+>> ______________________________________________
+>> R-package-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+>______________________________________________
+>R-package-devel at r-project.org mailing list
+>https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+-- 
+Sent from my phone. Please excuse my brevity.
+
+
+From j|ox @end|ng |rom mcm@@ter@c@  Thu Sep  5 00:10:22 2024
+From: j|ox @end|ng |rom mcm@@ter@c@ (John Fox)
+Date: Wed, 4 Sep 2024 18:10:22 -0400
+Subject: [R-pkg-devel] unregistered S3 methods in a package
+In-Reply-To: <F143B615-962D-4EB3-8D39-77C8A479E447@dcn.davis.ca.us>
+References: <b9db0b2d-b863-4367-8e39-00f6a8c60f96@mcmaster.ca>
+ <4aa634d6-01e1-4cb3-8119-35ccdec32ef9@mcmaster.ca>
+ <CALK03d3aHJDTLQK7OoVWV=1721cM8k2fRxFGctyXupBxxf=xVQ@mail.gmail.com>
+ <F143B615-962D-4EB3-8D39-77C8A479E447@dcn.davis.ca.us>
+Message-ID: <1e4f4cfc-85ef-4220-947e-f080e56c70f5@mcmaster.ca>
+
+Thanks Toby and Jeff for chiming in on this.
+
+Jeff: I already read Kurt Hornik's post on "S3 Method Lookup" and quite 
+a few other sources.
+
+The main point is that failing to register the methods works in that the 
+methods are nevertheless invoked internally by functions in the package 
+but don't shadow versions of the methods registered by other package 
+externally (e.g., at the command prompt), which was the effect that I 
+wanted. Moreover, as I said, R CMD check (unlike roxygen) didn't complain.
+
+As I mentioned, this is now moot for the cv package, but I'm still 
+interested in the answer, as, apparently, is Toby.
+
+Best,
+  John
+
+On 2024-09-04 5:12 p.m., Jeff Newmiller wrote:
+> Caution: External email.
+> 
+> 
+> I have been reluctant to pipe up on this because I am no expert on the dark corners of the S3 dispatch mechanism, but I think unregistered S3 methods in packages are verboten. Perhaps [1] will shed some light?
+> 
+> [1] https://blog.r-project.org/2019/08/19/s3-method-lookup/
+> 
+> On September 4, 2024 11:21:22 AM PDT, Toby Hocking <tdhock5 at gmail.com> wrote:
+>> I got this warning too, so I filed an issue to ask
+>> https://github.com/r-lib/roxygen2/issues/1654
+>>
+>> On Mon, Sep 2, 2024 at 2:58?PM John Fox <jfox at mcmaster.ca> wrote:
+>>>
+>>> As it turned out, I was able to avoid redefining coef.merMod(), etc., by
+>>> making a simple modification to the cv package.
+>>>
+>>> I'm still curious about whether it's OK to have unregistered S3 methods
+>>> for internal use in a package even though that's no longer necessary for
+>>> the cv package.
+>>>
+>>> On 2024-09-02 11:34 a.m., John Fox wrote:
+>>>> Caution: External email.
+>>>>
+>>>>
+>>>> Dear R-package-devel list members,
+>>>>
+>>>> I want to introduce several unregistered S3 methods into the cv package
+>>>> (code at <https://github.com/gmonette/cv>). These methods have the form
+>>>>
+>>>>          coef.merMod <- function(object, ...) lme4::fixef(object)
+>>>>
+>>>> The object is to mask, e.g., lme4:::coef.merMod(), which returns BLUPs
+>>>> rather than fixed effects, internally in the cv package but *not* to
+>>>> mask the lme4 version of the method for users of the cv package -- that
+>>>> could wreak havoc with their work. Doing this substantially simplifies
+>>>> some of the code in the cv package.
+>>>>
+>>>> My question: Is it legitimate to define a method in a package for
+>>>> internal use without registering it?
+>>>>
+>>>> This approach appears to work fine, and R CMD check doesn't complain,
+>>>> although Roxygen does complain that the method isn't "exported"
+>>>> (actually, isn't registered).
+>>>>
+>>>> Any advice or relevant information would be appreciated.
+>>>>
+>>>> Thank you,
+>>>>    John
+>>>> --
+>>>> John Fox, Professor Emeritus
+>>>> McMaster University
+>>>> Hamilton, Ontario, Canada
+>>>> web: https://www.john-fox.ca/
+>>>> --
+>>>>
+>>>> ______________________________________________
+>>>> R-package-devel at r-project.org mailing list
+>>>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>>>
+>>> ______________________________________________
+>>> R-package-devel at r-project.org mailing list
+>>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>>
+>> ______________________________________________
+>> R-package-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+> 
+> --
+> Sent from my phone. Please excuse my brevity.
+
+
+From ||gge@ @end|ng |rom @t@t|@t|k@tu-dortmund@de  Thu Sep  5 08:47:06 2024
+From: ||gge@ @end|ng |rom @t@t|@t|k@tu-dortmund@de (Uwe Ligges)
+Date: Thu, 5 Sep 2024 08:47:06 +0200
+Subject: [R-pkg-devel] unregistered S3 methods in a package
+In-Reply-To: <1e4f4cfc-85ef-4220-947e-f080e56c70f5@mcmaster.ca>
+References: <b9db0b2d-b863-4367-8e39-00f6a8c60f96@mcmaster.ca>
+ <4aa634d6-01e1-4cb3-8119-35ccdec32ef9@mcmaster.ca>
+ <CALK03d3aHJDTLQK7OoVWV=1721cM8k2fRxFGctyXupBxxf=xVQ@mail.gmail.com>
+ <F143B615-962D-4EB3-8D39-77C8A479E447@dcn.davis.ca.us>
+ <1e4f4cfc-85ef-4220-947e-f080e56c70f5@mcmaster.ca>
+Message-ID: <d7cdb549-9dd0-4c10-a558-02d2c2cfe2e7@statistik.tu-dortmund.de>
+
+Dear John,
+
+the question is not really easy to answer, but there is a nice summary 
+Kurt pointed me to: The code of checkS3methods() includes the following 
+comments with the last paragraph containing the short answer to your 
+question:
+
+     ## Check S3 generics and methods consistency.
+
+     ## Unfortunately, what is an S3 method is not clear.
+     ## These days, S3 methods for a generic GEN are found
+     ## A. via GEN.CLS lookup from the callenv to its topenv;
+     ## B. the S3 registry;
+     ## C. GEN.CLS lookup from the parent of the topenv to baseenv,
+     ##    skipping everything on the search path between globalenv and
+     ##    baseenv.
+     ## Thus if "package code" calls GEN, we first look in the package
+     ## namespace itself, then in the registry, and then in the package
+     ## imports and .BaseNamespaceEnv (and globalenv and baseenv again).
+     ##
+     ## Clearly, everything registered via S3method() should be an S3
+     ## method.  Interestingly, we seem to have some registrations for
+     ## non-generics, such as grDevices::axis().  These are "harmless"
+     ## but likely not "as intended", and hence inconsistencies are not
+     ## ignored.
+     ##
+     ## If the package namespace has a function named GEN.CLS, it is used
+     ## as an S3 method for an S3 generic named GEN (and hence "is an S3
+     ## method") only if the package code actually calls GEN (see A
+     ## above).  So one could argue that we should not be looking at all
+     ## GEN.CLS matches with GEN a generic in the package itself, its
+     ## imports or base, but restrict to only the ones where the package
+     ## code calls GEN.  Doable, but not straightforward (calls could be
+     ## PKG::GEN) and possibly quite time consuming.  For generics from
+     ## the package itself or its imports, not restricting should not
+     ## make a difference (why define or import when not calling?), but
+     ## for generics from base it may: hence we filter out the mismatches
+     ## for base GEN not called in the package.
+     ##
+     ## If a package provides an S3 generic GEN, there is no need to
+     ## register GEN.CLS functions for "internal use" (see above).
+     ## However, if GEN is exported then likely all GEN.CLS functions
+     ## should be registered as S3 methods.
+
+
+Best wishes,
+Uwe
+
+
+On 05.09.2024 00:10, John Fox wrote:
+> Thanks Toby and Jeff for chiming in on this.
+> 
+> Jeff: I already read Kurt Hornik's post on "S3 Method Lookup" and quite 
+> a few other sources.
+> 
+> The main point is that failing to register the methods works in that the 
+> methods are nevertheless invoked internally by functions in the package 
+> but don't shadow versions of the methods registered by other package 
+> externally (e.g., at the command prompt), which was the effect that I 
+> wanted. Moreover, as I said, R CMD check (unlike roxygen) didn't complain.
+> 
+> As I mentioned, this is now moot for the cv package, but I'm still 
+> interested in the answer, as, apparently, is Toby.
+> 
+> Best,
+>  ?John
+> 
+> On 2024-09-04 5:12 p.m., Jeff Newmiller wrote:
+>> Caution: External email.
+>>
+>>
+>> I have been reluctant to pipe up on this because I am no expert on the 
+>> dark corners of the S3 dispatch mechanism, but I think unregistered S3 
+>> methods in packages are verboten. Perhaps [1] will shed some light?
+>>
+>> [1] https://blog.r-project.org/2019/08/19/s3-method-lookup/
+>>
+>> On September 4, 2024 11:21:22 AM PDT, Toby Hocking <tdhock5 at gmail.com> 
+>> wrote:
+>>> I got this warning too, so I filed an issue to ask
+>>> https://github.com/r-lib/roxygen2/issues/1654
+>>>
+>>> On Mon, Sep 2, 2024 at 2:58?PM John Fox <jfox at mcmaster.ca> wrote:
+>>>>
+>>>> As it turned out, I was able to avoid redefining coef.merMod(), 
+>>>> etc., by
+>>>> making a simple modification to the cv package.
+>>>>
+>>>> I'm still curious about whether it's OK to have unregistered S3 methods
+>>>> for internal use in a package even though that's no longer necessary 
+>>>> for
+>>>> the cv package.
+>>>>
+>>>> On 2024-09-02 11:34 a.m., John Fox wrote:
+>>>>> Caution: External email.
+>>>>>
+>>>>>
+>>>>> Dear R-package-devel list members,
+>>>>>
+>>>>> I want to introduce several unregistered S3 methods into the cv 
+>>>>> package
+>>>>> (code at <https://github.com/gmonette/cv>). These methods have the 
+>>>>> form
+>>>>>
+>>>>> ???????? coef.merMod <- function(object, ...) lme4::fixef(object)
+>>>>>
+>>>>> The object is to mask, e.g., lme4:::coef.merMod(), which returns BLUPs
+>>>>> rather than fixed effects, internally in the cv package but *not* to
+>>>>> mask the lme4 version of the method for users of the cv package -- 
+>>>>> that
+>>>>> could wreak havoc with their work. Doing this substantially simplifies
+>>>>> some of the code in the cv package.
+>>>>>
+>>>>> My question: Is it legitimate to define a method in a package for
+>>>>> internal use without registering it?
+>>>>>
+>>>>> This approach appears to work fine, and R CMD check doesn't complain,
+>>>>> although Roxygen does complain that the method isn't "exported"
+>>>>> (actually, isn't registered).
+>>>>>
+>>>>> Any advice or relevant information would be appreciated.
+>>>>>
+>>>>> Thank you,
+>>>>> ?? John
+>>>>> -- 
+>>>>> John Fox, Professor Emeritus
+>>>>> McMaster University
+>>>>> Hamilton, Ontario, Canada
+>>>>> web: https://www.john-fox.ca/
+>>>>> -- 
+>>>>>
+>>>>> ______________________________________________
+>>>>> R-package-devel at r-project.org mailing list
+>>>>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>>>>
+>>>> ______________________________________________
+>>>> R-package-devel at r-project.org mailing list
+>>>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>>>
+>>> ______________________________________________
+>>> R-package-devel at r-project.org mailing list
+>>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>>
+>> -- 
+>> Sent from my phone. Please excuse my brevity.
+> 
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Thu Sep  5 09:44:52 2024
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Thu, 5 Sep 2024 09:44:52 +0200
+Subject: [R-pkg-devel] unregistered S3 methods in a package
+In-Reply-To: <d7cdb549-9dd0-4c10-a558-02d2c2cfe2e7@statistik.tu-dortmund.de>
+References: <b9db0b2d-b863-4367-8e39-00f6a8c60f96@mcmaster.ca>
+ <4aa634d6-01e1-4cb3-8119-35ccdec32ef9@mcmaster.ca>
+ <CALK03d3aHJDTLQK7OoVWV=1721cM8k2fRxFGctyXupBxxf=xVQ@mail.gmail.com>
+ <F143B615-962D-4EB3-8D39-77C8A479E447@dcn.davis.ca.us>
+ <1e4f4cfc-85ef-4220-947e-f080e56c70f5@mcmaster.ca>
+ <d7cdb549-9dd0-4c10-a558-02d2c2cfe2e7@statistik.tu-dortmund.de>
+Message-ID: <26329.24948.135486.590205@stat.math.ethz.ch>
+
+>>>>> Uwe Ligges 
+>>>>>     on Thu, 5 Sep 2024 08:47:06 +0200 writes:
+
+    > Dear John,
+    > the question is not really easy to answer, but there is a nice summary 
+    > Kurt pointed me to: The code of checkS3methods() includes the following 
+    > comments with the last paragraph containing the short answer to your 
+    > question:
+
+    > ## Check S3 generics and methods consistency.
+
+    > ## Unfortunately, what is an S3 method is not clear.
+    > ## These days, S3 methods for a generic GEN are found
+    > ## A. via GEN.CLS lookup from the callenv to its topenv;
+    > ## B. the S3 registry;
+    > ## C. GEN.CLS lookup from the parent of the topenv to baseenv,
+    > ##    skipping everything on the search path between globalenv and
+    > ##    baseenv.
+    > ## Thus if "package code" calls GEN, we first look in the package
+    > ## namespace itself, then in the registry, and then in the package
+    > ## imports and .BaseNamespaceEnv (and globalenv and baseenv again).
+    > ##
+    > ## Clearly, everything registered via S3method() should be an S3
+    > ## method.  Interestingly, we seem to have some registrations for
+    > ## non-generics, such as grDevices::axis().  These are "harmless"
+    > ## but likely not "as intended", and hence inconsistencies are not
+    > ## ignored.
+    > ##
+    > ## If the package namespace has a function named GEN.CLS, it is used
+    > ## as an S3 method for an S3 generic named GEN (and hence "is an S3
+    > ## method") only if the package code actually calls GEN (see A
+    > ## above).  So one could argue that we should not be looking at all
+    > ## GEN.CLS matches with GEN a generic in the package itself, its
+    > ## imports or base, but restrict to only the ones where the package
+    > ## code calls GEN.  Doable, but not straightforward (calls could be
+    > ## PKG::GEN) and possibly quite time consuming.  For generics from
+    > ## the package itself or its imports, not restricting should not
+    > ## make a difference (why define or import when not calling?), but
+    > ## for generics from base it may: hence we filter out the mismatches
+    > ## for base GEN not called in the package.
+    > ##
+    > ## If a package provides an S3 generic GEN, there is no need to
+    > ## register GEN.CLS functions for "internal use" (see above).
+    > ## However, if GEN is exported then likely all GEN.CLS functions
+    > ## should be registered as S3 methods.
+
+    > Best wishes,
+    > Uwe
+
+Excellent!  Thank you, Uwe, for digging this out.
+
+I'd also had answered to John Fox (even more strongly)
+that it *must* remain to be allowed to define "private"
+S3 methods in a package in all cases:
+- for a generic from the package (where the generic would also
+  not be exported)
+- for a generic from another package (which is imported)
+  or base (which need not and cannot be imported).
+
+Note that the same is possible with S4 and (AFAIK, untested)
+with S7.  {which people should really try using more ... }
+
+Martin
+
+
+
+    > On 05.09.2024 00:10, John Fox wrote:
+    >> Thanks Toby and Jeff for chiming in on this.
+    >> 
+    >> Jeff: I already read Kurt Hornik's post on "S3 Method Lookup" and quite 
+    >> a few other sources.
+    >> 
+    >> The main point is that failing to register the methods works in that the 
+    >> methods are nevertheless invoked internally by functions in the package 
+    >> but don't shadow versions of the methods registered by other package 
+    >> externally (e.g., at the command prompt), which was the effect that I 
+    >> wanted. Moreover, as I said, R CMD check (unlike roxygen) didn't complain.
+    >> 
+    >> As I mentioned, this is now moot for the cv package, but I'm still 
+    >> interested in the answer, as, apparently, is Toby.
+    >> 
+    >> Best,
+    >> ?John
+    >> 
+    >> On 2024-09-04 5:12 p.m., Jeff Newmiller wrote:
+    >>> Caution: External email.
+    >>> 
+    >>> 
+    >>> I have been reluctant to pipe up on this because I am no expert on the 
+    >>> dark corners of the S3 dispatch mechanism, but I think unregistered S3 
+    >>> methods in packages are verboten. Perhaps [1] will shed some light?
+    >>> 
+    >>> [1] https://blog.r-project.org/2019/08/19/s3-method-lookup/
+    >>> 
+    >>> On September 4, 2024 11:21:22 AM PDT, Toby Hocking <tdhock5 at gmail.com> 
+    >>> wrote:
+    >>>> I got this warning too, so I filed an issue to ask
+    >>>> https://github.com/r-lib/roxygen2/issues/1654
+    >>>> 
+    >>>> On Mon, Sep 2, 2024 at 2:58?PM John Fox <jfox at mcmaster.ca> wrote:
+    >>>>> 
+    >>>>> As it turned out, I was able to avoid redefining coef.merMod(), 
+    >>>>> etc., by
+    >>>>> making a simple modification to the cv package.
+    >>>>> 
+    >>>>> I'm still curious about whether it's OK to have unregistered S3 methods
+    >>>>> for internal use in a package even though that's no longer necessary 
+    >>>>> for
+    >>>>> the cv package.
+    >>>>> 
+    >>>>> On 2024-09-02 11:34 a.m., John Fox wrote:
+>>>>> Caution: External email.
+    >>>>>> 
+    >>>>>> 
+>>>>> Dear R-package-devel list members,
+    >>>>>> 
+>>>>> I want to introduce several unregistered S3 methods into the cv 
+>>>>> package
+>>>>> (code at <https://github.com/gmonette/cv>). These methods have the 
+>>>>> form
+    >>>>>> 
+>>>>> ???????? coef.merMod <- function(object, ...) lme4::fixef(object)
+    >>>>>> 
+>>>>> The object is to mask, e.g., lme4:::coef.merMod(), which returns BLUPs
+>>>>> rather than fixed effects, internally in the cv package but *not* to
+>>>>> mask the lme4 version of the method for users of the cv package -- 
+>>>>> that
+>>>>> could wreak havoc with their work. Doing this substantially simplifies
+>>>>> some of the code in the cv package.
+    >>>>>> 
+>>>>> My question: Is it legitimate to define a method in a package for
+>>>>> internal use without registering it?
+    >>>>>> 
+>>>>> This approach appears to work fine, and R CMD check doesn't complain,
+>>>>> although Roxygen does complain that the method isn't "exported"
+>>>>> (actually, isn't registered).
+    >>>>>> 
+>>>>> Any advice or relevant information would be appreciated.
+    >>>>>> 
+>>>>> Thank you,
+>>>>> ?? John
+>>>>> -- 
+>>>>> John Fox, Professor Emeritus
+>>>>> McMaster University
+>>>>> Hamilton, Ontario, Canada
+>>>>> web: https://www.john-fox.ca/
+
+
+From t@eyongp @end|ng |rom @ndrew@cmu@edu  Thu Sep  5 22:40:00 2024
+From: t@eyongp @end|ng |rom @ndrew@cmu@edu (Taeyong Park)
+Date: Thu, 5 Sep 2024 23:40:00 +0300
+Subject: [R-pkg-devel] Error in creating virtual environment on Debian
+ machines
+Message-ID: <CA+xzKwwxqL=cazuECCaiWBsdRNire2k+WJ9_BsgweRSez3idwQ@mail.gmail.com>
+
+Hello,
+
+I am trying to create a virtual environment in the zzz.r file of my
+package, and my package is currently passing on Windows and failing on
+Debian with 1 ERROR.
+
+
+This is the ERROR:
+
+* installing *source* package ?PytrendsLongitudinalR? ...
+** using staged installation
+** R
+** inst
+** byte-compile and prepare package for lazy loading
+** help
+*** installing help indices
+** building package indices
+** installing vignettes
+** testing if installed package can be loaded from temporary location
+Using Python: /usr/bin/python3.12
+Creating virtual environment '/home/hornik/.virtualenvs/pytrends-in-r-new' ...
++ /usr/bin/python3.12 -m venv /home/hornik/.virtualenvs/pytrends-in-r-new
+The virtual environment was not created successfully because ensurepip is not
+available.  On Debian/Ubuntu systems, you need to install the python3-venv
+package using the following command.
+
+    apt install python3.12-venv
+
+You may need to use sudo with that command.  After installing the python3-venv
+package, recreate your virtual environment.
+
+Failing command: /home/hornik/.virtualenvs/pytrends-in-r-new/bin/python3.12
+
+FAILED
+Error: package or namespace load failed for ?PytrendsLongitudinalR?:
+ .onLoad failed in loadNamespace() for 'PytrendsLongitudinalR', details:
+  call: NULL
+  error: Error creating virtual environment
+'/home/hornik/.virtualenvs/pytrends-in-r-new' [error code 1]
+Error: loading failed
+Execution halted
+ERROR: loading failed
+* removing ?/srv/hornik/tmp/CRAN_pretest/PytrendsLongitudinalR.Rcheck/PytrendsLongitudinalR?
+
+and this is the onLoad function of my zzz.r file:
+
+
+.onLoad <- function(libname, pkgname) {
+
+
+  # Define paths
+  venv_path <- file.path(Sys.getenv("HOME"), ".virtualenvs",
+"pytrends-in-r-new")
+  python_path <- file.path(venv_path, "bin", "python")
+
+  # Ensure 'virtualenv' is installed
+  if (!reticulate::py_module_available("virtualenv")) {
+    reticulate::py_install("virtualenv")
+  }
+
+
+  # Check if the virtual environment exists
+  if (!reticulate::virtualenv_exists(venv_path)) {
+    # If it doesn't exist, attempt to create it
+    tryCatch({
+      reticulate::virtualenv_create(envname = venv_path, python =
+python_path, force = TRUE, module =
+getOption("reticulate.virtualenv.module"))
+    }, error = function(e) {
+      # Fallback: install Python and create the virtual environment
+      reticulate::virtualenv_create(envname = venv_path, force = TRUE,
+module = getOption("reticulate.virtualenv.module"))
+    })
+  }
+
+  # Use the virtual environment for reticulate operations
+  reticulate::use_virtualenv(venv_path, required = TRUE)
+
+  # Install packages if not already installed
+  packages_to_install <- c("pandas", "requests", "pytrends", "rich")
+  for (package in packages_to_install) {
+    if (!reticulate::py_module_available(package)) {
+      reticulate::py_install(package, envname = "pytrends-in-r-new")
+    }
+  }
+
+
+  TrendReq <<- reticulate::import("pytrends.request", delay_load =
+TRUE)$TrendReq
+  ResponseError <<- reticulate::import("pytrends.exceptions",
+delay_load = TRUE)$ResponseError
+  pd <<- reticulate::import("pandas", delay_load = TRUE)
+  os <<- reticulate::import("os", delay_load = TRUE)
+  glob <<- reticulate::import("glob", delay_load = TRUE)
+  json <<- reticulate::import("json", delay_load = TRUE)
+  requests <<- reticulate::import("requests", delay_load = TRUE)
+  dt <<- reticulate::import("datetime", delay_load = TRUE)
+  relativedelta <<- reticulate::import("dateutil.relativedelta",
+delay_load = TRUE)
+  time <<- reticulate::import("time", delay_load = TRUE)
+  logging <<- reticulate::import("logging", delay_load = TRUE)
+  console <<- reticulate::import("rich.console", delay_load = TRUE)$Console
+  RichHandler <<- reticulate::import("rich.logging", delay_load =
+TRUE)$RichHandler
+  math <<- reticulate::import("math", delay_load = TRUE)
+  platform <<- reticulate::import("platform", delay_load = TRUE)
+
+  # Configure logging
+  configure_logging()
+}
+
+How do I ensure that the virtual environment is created properly on
+Debian systems?  I tried the instructions in the error message but
+still got the error.
+
+Thank you in advance for your help!
+
+
+Best,
+
+Taeyong
+
+
+
+
+*Taeyong Park, Ph.D.*
+*Assistant Teaching Professor of Statistics*
+*Director, Statistical Consulting Center*
+*Carnegie Mellon University Qatar*
+
+	[[alternative HTML version deleted]]
+
+
+From |kry|ov @end|ng |rom d|@root@org  Fri Sep  6 12:45:03 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Fri, 6 Sep 2024 13:45:03 +0300
+Subject: [R-pkg-devel] Error in creating virtual environment on Debian
+ machines
+In-Reply-To: <CA+xzKwwxqL=cazuECCaiWBsdRNire2k+WJ9_BsgweRSez3idwQ@mail.gmail.com>
+References: <CA+xzKwwxqL=cazuECCaiWBsdRNire2k+WJ9_BsgweRSez3idwQ@mail.gmail.com>
+Message-ID: <20240906134503.2ff1f2da@arachnoid>
+
+Hello Taeyong and welcome to R-package-devel!
+
+? Thu, 5 Sep 2024 23:40:00 +0300
+Taeyong Park <taeyongp at andrew.cmu.edu> ?????:
+
+>   # Define paths
+>   venv_path <- file.path(Sys.getenv("HOME"), ".virtualenvs",
+> "pytrends-in-r-new")
+>   python_path <- file.path(venv_path, "bin", "python")
+
+Please don't require placing the virtual environments under
+~/.virtualenvs. 'reticulate' will use this path as a default if you only
+provide the name of the virtual environment, but will also let the user
+configure virtualenv_root() using environment variables.
+
+>   TrendReq <<- reticulate::import("pytrends.request", delay_load =
+> TRUE)$TrendReq
+>   ResponseError <<- reticulate::import("pytrends.exceptions",
+> delay_load = TRUE)$ResponseError
+
+I'm afraid this defeats the purpose of 'delay_load' by immediately
+accessing the module object and forcing 'reticulate' to load it.
+
+I understand the desire to get everything working automatically right
+when the package is loaded, but Python dependency management is a
+complex topic and not all of it is safe to perform from .onLoad. In
+particular, if .onLoad fails, you don't get to let the user call
+PytrendsLongitudinalR::install_pytrends() because the namespace will
+not be available. Try following the guidance in the 'reticulate'
+vignettes [1]:
+
+1. In .onLoad, only express a soft preference for a named virtual
+environment and create but do not access lazy-load Python module
+objects:
+
+.onLoad <- function(libname, pkgname) {
+ use_virtualenv("pytrends-in-r-new", required = FALSE)
+ pytrends.request <<- reticulate::import("pytrends.request", delay_load
+= TRUE)
+ pd <<- reticulate::import("pandas", delay_load = TRUE)
+ # and so on
+}
+
+2. Move all the installation work into a separate function:
+
+install_pytrends <- function(envname = "pytrends-in-r-new", ...)
+ # the vignette suggests wiping the "pytrends-in-r-new" venv here,
+ # just in case
+ py_install(
+  c("pandas", "requests", "pytrends", "rich"),
+  envname = envname, ...
+ )
+
+3. In tests and examples, wrap all uses of Python in checks for
+py_module_available(...). In regular code, you can suggest running
+install_pytrends(), but don't run it for the user. _Automatically_
+installing additional software, whether Python modules or Python
+itself, is prohibited by the CRAN policy [2]:
+
+>> Packages should not write in the user?s home filespace <...> nor
+>> anywhere else on the file system apart from the R session?s
+>> temporary directory (or during installation in the location pointed
+>> to by TMPDIR: and such usage should be cleaned up). <...>
+>> Limited exceptions may be allowed in interactive sessions if the
+>> package obtains confirmation from the user.
+
+Admittedly, this complicates the tests and the examples for your
+package with boilerplate. I see that 'tensorflow', for example, wraps
+all its examples in \dontrun{}, but it's an exceptional package. A few
+other packages that depend on 'reticulate' that I've just taken a look
+at do wrap their examples in checks for the Python packages being
+available.
+
+-- 
+Best regards,
+Ivan
+
+[1]
+https://cran.r-project.org/package=reticulate/vignettes/package.html
+https://cran.r-project.org/package=reticulate/vignettes/python_dependencies.html
+
+[2]
+https://cran.r-project.org/web/packages/policies.html
+
+
+From @|gbert @end|ng |rom w|w|@hu-ber||n@de  Fri Sep  6 14:43:31 2024
+From: @|gbert @end|ng |rom w|w|@hu-ber||n@de (Sigbert Klinke)
+Date: Fri, 6 Sep 2024 14:43:31 +0200
+Subject: [R-pkg-devel] devtools::build() and Authors@R
+Message-ID: <70311e44-7477-4e05-9956-cb7e9e5be549@wiwi.hu-berlin.de>
+
+Hi,
+
+upon resubmitting my package to CRAN, I received the following note:
+
+
+
+Author field differs from that derived from Authors at R
+
+
+
+Author: 'Sigbert Klinke [aut, cre] 
+(https://orcid.org/0000-0003-3337-1863), Jekaterina Zukovska [ctb] 
+(https://orcid.org/0000-0002-7753-9210)'
+
+Authors at R: 'Sigbert Klinke [aut, cre] (ORCID: 
+https://orcid.org/0000-0003-3337-1863), Jekaterina Zukovska [ctb] 
+(ORCID: https://orcid.org/0000-0002-7753-9210)'
+
+Since my DESCRIPTION file only includes the Authors at R field, I was 
+initially confused.
+
+
+
+However, after inspecting the *.tgz file generated with 
+devtools::build(), I found that both fields (Author and Authors at R) were 
+indeed present in the DESCRIPTION file inside the *.tgz. This was also 
+the case with older *.tgz files, but CRAN hadn?t flagged it before.
+
+
+
+As a workaround, I replaced Authors at R with separate Author and 
+Maintainer fields.
+
+
+
+Do you have any other suggestions on how to resolve this?
+
+Thanks Sigbert
+
+-- 
+https://hu.berlin/sk
+
+
+From ||gge@ @end|ng |rom @t@t|@t|k@tu-dortmund@de  Fri Sep  6 14:47:37 2024
+From: ||gge@ @end|ng |rom @t@t|@t|k@tu-dortmund@de (Uwe Ligges)
+Date: Fri, 6 Sep 2024 14:47:37 +0200
+Subject: [R-pkg-devel] devtools::build() and Authors@R
+In-Reply-To: <70311e44-7477-4e05-9956-cb7e9e5be549@wiwi.hu-berlin.de>
+References: <70311e44-7477-4e05-9956-cb7e9e5be549@wiwi.hu-berlin.de>
+Message-ID: <99e84273-d74d-4bb5-8fc3-49a12fd928d9@statistik.tu-dortmund.de>
+
+
+
+On 06.09.2024 14:43, Sigbert Klinke wrote:
+> Hi,
+> 
+> upon resubmitting my package to CRAN, I received the following note:
+> 
+> 
+> 
+> Author field differs from that derived from Authors at R
+> 
+> 
+> 
+> Author: 'Sigbert Klinke [aut, cre] 
+> (https://orcid.org/0000-0003-3337-1863), Jekaterina Zukovska [ctb] 
+> (https://orcid.org/0000-0002-7753-9210)'
+> 
+> Authors at R: 'Sigbert Klinke [aut, cre] (ORCID: 
+> https://orcid.org/0000-0003-3337-1863), Jekaterina Zukovska [ctb] 
+> (ORCID: https://orcid.org/0000-0002-7753-9210)'
+> 
+> Since my DESCRIPTION file only includes the Authors at R field, I was 
+> initially confused.
+> 
+> 
+> 
+> However, after inspecting the *.tgz file generated with 
+> devtools::build(), I found that both fields (Author and Authors at R) were 
+> indeed present in the DESCRIPTION file inside the *.tgz. This was also 
+> the case with older *.tgz files, but CRAN hadn?t flagged it before.
+> 
+> 
+> 
+> As a workaround, I replaced Authors at R with separate Author and 
+> Maintainer fields.
+> 
+> 
+> 
+> Do you have any other suggestions on how to resolve this?
+
+Ignore for now:
+This is from a very recent change in R-devel and should not have been 
+flagged by the checks, now fixed.
+The idea is to allow for more than only ORCID and hence give labels to 
+these ids. This is now done automatically when the Author field is 
+generated from Authors at R by R CMD build, and unfortunately got flagged 
+by our checks that use a very recent version of R-devel from last night.
+
+In short: Simply submit again, the note will be gone.
+
+Best,
+Uwe Ligges
+
+
+
+
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Fri Sep  6 14:49:21 2024
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Fri, 6 Sep 2024 14:49:21 +0200
+Subject: [R-pkg-devel] devtools::build() and Authors@R
+In-Reply-To: <70311e44-7477-4e05-9956-cb7e9e5be549@wiwi.hu-berlin.de>
+References: <70311e44-7477-4e05-9956-cb7e9e5be549@wiwi.hu-berlin.de>
+Message-ID: <26330.64081.194155.832151@stat.math.ethz.ch>
+
+>>>>> Sigbert Klinke 
+>>>>>     on Fri, 6 Sep 2024 14:43:31 +0200 writes:
+
+    > Hi,
+    > upon resubmitting my package to CRAN, I received the following note:
+
+
+
+    > Author field differs from that derived from Authors at R
+
+
+
+    > Author: 'Sigbert Klinke [aut, cre] 
+    > (https://orcid.org/0000-0003-3337-1863), Jekaterina Zukovska [ctb] 
+    > (https://orcid.org/0000-0002-7753-9210)'
+
+    > Authors at R: 'Sigbert Klinke [aut, cre] (ORCID: 
+    > https://orcid.org/0000-0003-3337-1863), Jekaterina Zukovska [ctb] 
+    > (ORCID: https://orcid.org/0000-0002-7753-9210)'
+
+    > Since my DESCRIPTION file only includes the Authors at R field, I was 
+    > initially confused.
+
+
+
+    > However, after inspecting the *.tgz file generated with 
+    > devtools::build(), I found that both fields (Author and Authors at R) were 
+    > indeed present in the DESCRIPTION file inside the *.tgz. This was also 
+    > the case with older *.tgz files, but CRAN hadn?t flagged it before.
+
+
+
+    > As a workaround, I replaced Authors at R with separate Author and 
+    > Maintainer fields.
+
+
+
+    > Do you have any other suggestions on how to resolve this?
+
+Well, that's definitely easy to answer:
+
+Follow *the* reference, the 'R Extensions' manual,
+and use   R CMD build ...
+
+
+    > Thanks Sigbert
+
+    > -- 
+    > https://hu.berlin/sk
+
+    > ______________________________________________
+    > R-package-devel at r-project.org mailing list
+    > https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+
+From j|ox @end|ng |rom mcm@@ter@c@  Fri Sep  6 19:17:06 2024
+From: j|ox @end|ng |rom mcm@@ter@c@ (John Fox)
+Date: Fri, 6 Sep 2024 13:17:06 -0400
+Subject: [R-pkg-devel] unregistered S3 methods in a package
+In-Reply-To: <26329.24948.135486.590205@stat.math.ethz.ch>
+References: <b9db0b2d-b863-4367-8e39-00f6a8c60f96@mcmaster.ca>
+ <4aa634d6-01e1-4cb3-8119-35ccdec32ef9@mcmaster.ca>
+ <CALK03d3aHJDTLQK7OoVWV=1721cM8k2fRxFGctyXupBxxf=xVQ@mail.gmail.com>
+ <F143B615-962D-4EB3-8D39-77C8A479E447@dcn.davis.ca.us>
+ <1e4f4cfc-85ef-4220-947e-f080e56c70f5@mcmaster.ca>
+ <d7cdb549-9dd0-4c10-a558-02d2c2cfe2e7@statistik.tu-dortmund.de>
+ <26329.24948.135486.590205@stat.math.ethz.ch>
+Message-ID: <e28337bb-cb3e-4a97-b1ce-bfe58baea2a1@mcmaster.ca>
+
+Thank you Uwe and Martin for clarifying this issue.
+
+The last paragraph of the comments that Kurt pointed out refers to a 
+generic function defined in a package; in my case, the generic is 
+coef(), which is in the stats package not in the cv package, and the 
+question concerned methods for coef() (previously) defined in the cv 
+package and not registered. But the comments as a whole do cover that 
+case as well.
+
+Best,
+  John
+
+
+On 2024-09-05 3:44 a.m., Martin Maechler wrote:
+> Caution: External email.
+> 
+> 
+>>>>>> Uwe Ligges
+>>>>>>      on Thu, 5 Sep 2024 08:47:06 +0200 writes:
+> 
+>      > Dear John,
+>      > the question is not really easy to answer, but there is a nice summary
+>      > Kurt pointed me to: The code of checkS3methods() includes the following
+>      > comments with the last paragraph containing the short answer to your
+>      > question:
+> 
+>      > ## Check S3 generics and methods consistency.
+> 
+>      > ## Unfortunately, what is an S3 method is not clear.
+>      > ## These days, S3 methods for a generic GEN are found
+>      > ## A. via GEN.CLS lookup from the callenv to its topenv;
+>      > ## B. the S3 registry;
+>      > ## C. GEN.CLS lookup from the parent of the topenv to baseenv,
+>      > ##    skipping everything on the search path between globalenv and
+>      > ##    baseenv.
+>      > ## Thus if "package code" calls GEN, we first look in the package
+>      > ## namespace itself, then in the registry, and then in the package
+>      > ## imports and .BaseNamespaceEnv (and globalenv and baseenv again).
+>      > ##
+>      > ## Clearly, everything registered via S3method() should be an S3
+>      > ## method.  Interestingly, we seem to have some registrations for
+>      > ## non-generics, such as grDevices::axis().  These are "harmless"
+>      > ## but likely not "as intended", and hence inconsistencies are not
+>      > ## ignored.
+>      > ##
+>      > ## If the package namespace has a function named GEN.CLS, it is used
+>      > ## as an S3 method for an S3 generic named GEN (and hence "is an S3
+>      > ## method") only if the package code actually calls GEN (see A
+>      > ## above).  So one could argue that we should not be looking at all
+>      > ## GEN.CLS matches with GEN a generic in the package itself, its
+>      > ## imports or base, but restrict to only the ones where the package
+>      > ## code calls GEN.  Doable, but not straightforward (calls could be
+>      > ## PKG::GEN) and possibly quite time consuming.  For generics from
+>      > ## the package itself or its imports, not restricting should not
+>      > ## make a difference (why define or import when not calling?), but
+>      > ## for generics from base it may: hence we filter out the mismatches
+>      > ## for base GEN not called in the package.
+>      > ##
+>      > ## If a package provides an S3 generic GEN, there is no need to
+>      > ## register GEN.CLS functions for "internal use" (see above).
+>      > ## However, if GEN is exported then likely all GEN.CLS functions
+>      > ## should be registered as S3 methods.
+> 
+>      > Best wishes,
+>      > Uwe
+> 
+> Excellent!  Thank you, Uwe, for digging this out.
+> 
+> I'd also had answered to John Fox (even more strongly)
+> that it *must* remain to be allowed to define "private"
+> S3 methods in a package in all cases:
+> - for a generic from the package (where the generic would also
+>    not be exported)
+> - for a generic from another package (which is imported)
+>    or base (which need not and cannot be imported).
+> 
+> Note that the same is possible with S4 and (AFAIK, untested)
+> with S7.  {which people should really try using more ... }
+> 
+> Martin
+> 
+> 
+> 
+>      > On 05.09.2024 00:10, John Fox wrote:
+>      >> Thanks Toby and Jeff for chiming in on this.
+>      >>
+>      >> Jeff: I already read Kurt Hornik's post on "S3 Method Lookup" and quite
+>      >> a few other sources.
+>      >>
+>      >> The main point is that failing to register the methods works in that the
+>      >> methods are nevertheless invoked internally by functions in the package
+>      >> but don't shadow versions of the methods registered by other package
+>      >> externally (e.g., at the command prompt), which was the effect that I
+>      >> wanted. Moreover, as I said, R CMD check (unlike roxygen) didn't complain.
+>      >>
+>      >> As I mentioned, this is now moot for the cv package, but I'm still
+>      >> interested in the answer, as, apparently, is Toby.
+>      >>
+>      >> Best,
+>      >>  John
+>      >>
+>      >> On 2024-09-04 5:12 p.m., Jeff Newmiller wrote:
+>      >>> Caution: External email.
+>      >>>
+>      >>>
+>      >>> I have been reluctant to pipe up on this because I am no expert on the
+>      >>> dark corners of the S3 dispatch mechanism, but I think unregistered S3
+>      >>> methods in packages are verboten. Perhaps [1] will shed some light?
+>      >>>
+>      >>> [1] https://blog.r-project.org/2019/08/19/s3-method-lookup/
+>      >>>
+>      >>> On September 4, 2024 11:21:22 AM PDT, Toby Hocking <tdhock5 at gmail.com>
+>      >>> wrote:
+>      >>>> I got this warning too, so I filed an issue to ask
+>      >>>> https://github.com/r-lib/roxygen2/issues/1654
+>      >>>>
+>      >>>> On Mon, Sep 2, 2024 at 2:58?PM John Fox <jfox at mcmaster.ca> wrote:
+>      >>>>>
+>      >>>>> As it turned out, I was able to avoid redefining coef.merMod(),
+>      >>>>> etc., by
+>      >>>>> making a simple modification to the cv package.
+>      >>>>>
+>      >>>>> I'm still curious about whether it's OK to have unregistered S3 methods
+>      >>>>> for internal use in a package even though that's no longer necessary
+>      >>>>> for
+>      >>>>> the cv package.
+>      >>>>>
+>      >>>>> On 2024-09-02 11:34 a.m., John Fox wrote:
+>>>>>> Caution: External email.
+>      >>>>>>
+>      >>>>>>
+>>>>>> Dear R-package-devel list members,
+>      >>>>>>
+>>>>>> I want to introduce several unregistered S3 methods into the cv
+>>>>>> package
+>>>>>> (code at <https://github.com/gmonette/cv>). These methods have the
+>>>>>> form
+>      >>>>>>
+>>>>>>           coef.merMod <- function(object, ...) lme4::fixef(object)
+>      >>>>>>
+>>>>>> The object is to mask, e.g., lme4:::coef.merMod(), which returns BLUPs
+>>>>>> rather than fixed effects, internally in the cv package but *not* to
+>>>>>> mask the lme4 version of the method for users of the cv package --
+>>>>>> that
+>>>>>> could wreak havoc with their work. Doing this substantially simplifies
+>>>>>> some of the code in the cv package.
+>      >>>>>>
+>>>>>> My question: Is it legitimate to define a method in a package for
+>>>>>> internal use without registering it?
+>      >>>>>>
+>>>>>> This approach appears to work fine, and R CMD check doesn't complain,
+>>>>>> although Roxygen does complain that the method isn't "exported"
+>>>>>> (actually, isn't registered).
+>      >>>>>>
+>>>>>> Any advice or relevant information would be appreciated.
+>      >>>>>>
+>>>>>> Thank you,
+>>>>>>     John
+>>>>>> --
+>>>>>> John Fox, Professor Emeritus
+>>>>>> McMaster University
+>>>>>> Hamilton, Ontario, Canada
+>>>>>> web: https://www.john-fox.ca/
+
+
+From |@go@bonn|c| @end|ng |rom umontpe|||er@|r  Fri Sep 13 15:00:06 2024
+From: |@go@bonn|c| @end|ng |rom umontpe|||er@|r (Iago Bonnici)
+Date: Fri, 13 Sep 2024 15:00:06 +0200
+Subject: [R-pkg-devel] Justification and status of the 100-bytes path length
+ limit.
+Message-ID: <ff1bda57-3603-448a-8947-6725669297dc@umontpellier.fr>
+
+Hello @r-package-devel,
+
+ ??? Reading from the following guide, I understand that file paths in 
+my R package should remain under 100 bytes long:
+
+https://cran.r-project.org/doc/manuals/R-exts.html#Package-structure-1
+
+ ??? The only explanation I could find stands within the same line in 
+this document:
+
+/>??? ??? packages are normally distributed as tarballs, and these have 
+a limit on path lengths: for maximal portability
+
+/??? So, if I understand correctly, the limit set by CRAN is deferred to 
+some limit of the `tar` archive format.
+
+ ??? Now, reading from the following page:
+
+https://en.wikipedia.org/wiki/Tar_(computing)#File_format
+
+ ??? I learn that `tar` was indeed limited to 100-bytes paths prior to 
+POSIX.1-1988.
+ ??? If I understand correctly. This limitation has been bumped to 256 
+bytes in year 1988.
+ ??? Then, it has been completely lifted in 2001, meaning that 
+POSIX.1-2001-compliant `tar` files have no limit on the file path lengths.
+
+ ??? Although I do understand the importance of ensuring 
+backward-compatibility, I find it suprising that the 100-bytes 
+limitation ensures compatibility with files format /*older than R 
+itself*/ (1993, right?).
+ ??? Considering that the limitation is suprisingly short by modern 
+standards, I have two questions about it:
+
+ ??? - Is the 100-bytes paths limitation only supposed to ensure 
+compatilbility with pre-POSIX.1-1998 `tar` files?
+
+ ??? ??? - If not, then I believe it should be stated in the official 
+guide what are the other reasons to set such a low limit.
+
+ ??? ??? - If yes, then I believe the limitation should either:
+
+ ??? ??? ??? - be reconsidered. For example, it could be lifted for 
+packages targetting R versions posterior to 2021 (20 years after 
+POSIX.1-2001) or anything similar.
+
+ ??? ??? ??? - be justified deeper in the official guide. The guide 
+should explain why CRAN considers it meaningful or important to support 
+pre-POSIX.1-1998 format.
+
+ ??? - Has this discussion already happened like 1000 times 
+<https://stat.ethz.ch/mailman/listinfo/r-package-devel> ? If so, then I 
+believe the answers should be clarified in the official guide anyway.
+
+ ??? Thank you for kind responses, I am happy to help pushing this 
+forward if required.
+
+ ??? Best regards,
+
+
+--
+Iago-lito
+	[[alternative HTML version deleted]]
+
+

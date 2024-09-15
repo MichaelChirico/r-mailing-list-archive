@@ -1,0 +1,1274 @@
+From m@rk@c|ement@ @end|ng |rom k|@@e  Sun Sep  1 14:42:35 2024
+From: m@rk@c|ement@ @end|ng |rom k|@@e (Mark Clements)
+Date: Sun, 1 Sep 2024 12:42:35 +0000
+Subject: [Rd] R compilation (revision 87083) failed after upgrade to Ubuntu
+ 24.04 (libtirpc missing)
+Message-ID: <MM0P280MB0008F1C95663520452BBDEB1F0912@MM0P280MB0008.SWEP280.PROD.OUTLOOK.COM>
+
+Following an upgrade from Ubuntu 22.04 LTS to 24.04.1, revision 87083 failed to compile with an error:
+
+"No rule to make target '/usr/include/tirpc/rpc/types.h', needed by 'saveload.o'"
+
+where the file /usr/include/tirpc/rpc/types.h did not exist. After installing libtirpc-dev:
+
+> sudo apt install libtirpc-dev
+
+compilation proceeded smoothly. I understand that this may be local to my system.
+
+Sincerely, Mark.
+
+
+
+N?r du skickar e-post till Karolinska Institutet (KI) inneb?r detta att KI kommer att behandla dina personuppgifter. H?r finns information om hur KI behandlar personuppgifter<https://ki.se/om-ki/integritetsskyddspolicy>.
+
+
+Sending email to Karolinska Institutet (KI) will result in KI processing your personal data. You can read more about KI's processing of personal data here<https://staff.ki.se/data-protection-policy>.
+
+	[[alternative HTML version deleted]]
+
+
+From tom@@@k@||ber@ @end|ng |rom gm@||@com  Mon Sep  2 16:04:43 2024
+From: tom@@@k@||ber@ @end|ng |rom gm@||@com (Tomas Kalibera)
+Date: Mon, 2 Sep 2024 16:04:43 +0200
+Subject: [Rd] Big speedup in install.packages() by re-using connections
+In-Reply-To: <20240425180109.418ca5f4@arachnoid>
+References: <CABFfbXtpXChZLeLREEWFHFWP24cvD8Ox-7xfBGj0p+N0Rjzwbg@mail.gmail.com>
+ <CABFfbXtnteY=_qRz8ZBQ4aAPi-j+HjasRvU-fcLPJm2nu+QwLQ@mail.gmail.com>
+ <20240425180109.418ca5f4@arachnoid>
+Message-ID: <248ad6c4-ec50-4a3c-b9e4-05346840dbf0@gmail.com>
+
+
+On 4/25/24 17:01, Ivan Krylov via R-devel wrote:
+> On Thu, 25 Apr 2024 14:45:04 +0200
+> Jeroen Ooms <jeroenooms at gmail.com> wrote:
+>
+>> Thoughts?
+> How verboten would it be to create an empty external pointer object,
+> add it to the preserved list, and set an on-exit finalizer to clean up
+> the curl multi-handle? As far as I can tell, the internet module is not
+> supposed to be unloaded, so this would not introduce an opportunity to
+> jump to an unmapped address. This makes it possible to avoid adding a
+> CurlCleanup() function to the internet module:
+
+Cleaning up this way in principle would probably be fine, but R already 
+has support for re-using connections. Even more, R can download files in 
+parallel (in a single thread), which particularly helps with bigger 
+latencies (e.g. typically users connecting from home, etc). See 
+?download.file(), look for "simultaneous".
+
+I've improved the existing support in R-devel and made it the default in 
+install.packages() and download.packages(). I am seeing speedups 
+somewhere between 2x and 9x on several systems (with quiet=TRUE) when 
+downloading many packages.
+
+Sequential downloads by default (quiet=FALSE) show a progress bar, which 
+can be rather slow, particularly on Windows. Turning that off can help 
+with slow downloads in already released versions of R. Consequently, via 
+disabling the progress bar, the speedups with R-devel could seem even 
+bigger than the range.
+
+A common practice when installing/checking say all packages from CRAN or 
+Bioconductor is to set up a local mirror of the repositories and 
+download/update it with "rsync". When R then "downloads" packages from 
+the local mirror using the "file://" protocol, it completely avoids 
+these problems. The increased performance of download in R-devel cannot 
+beat this setup.
+
+However, the improvement should help a little bit users installing 
+binary packages (on Windows, macOS), where the download time can play a 
+visible role, when they install packages with many (uninstalled) 
+dependencies. Users installing from source, particularly with packages 
+needing compilation, would probably not notice.
+
+Tomas
+
+
+>
+> Index: src/modules/internet/libcurl.c
+> ===================================================================
+> --- src/modules/internet/libcurl.c	(revision 86484)
+> +++ src/modules/internet/libcurl.c	(working copy)
+> @@ -55,6 +55,47 @@
+>   
+>   static int current_timeout = 0;
+>   
+> +// The multi-handle is shared between downloads for reusing connections
+> +static CURLM *shared_mhnd = NULL;
+> +static SEXP mhnd_sentinel = NULL;
+> +
+> +static void cleanup_mhnd(SEXP ignored)
+> +{
+> +    if(shared_mhnd){
+> +        curl_multi_cleanup(shared_mhnd);
+> +        shared_mhnd = NULL;
+> +    }
+> +    curl_global_cleanup();
+> +}
+> +static void rollback_mhnd_sentinel(void* sentinel) {
+> +    // Failed to allocate memory while registering a finalizer,
+> +    // therefore must release the object
+> +    R_ReleaseObject((SEXP)sentinel);
+> +}
+> +static CURLM *get_mhnd(void)
+> +{
+> +    if (!mhnd_sentinel) {
+> +      SEXP sentinel = PROTECT(R_MakeExternalPtr(NULL, R_NilValue, R_NilValue));
+> +      R_PreserveObject(sentinel);
+> +      UNPROTECT(1);
+> +      // Avoid leaking the sentinel before setting the finalizer
+> +      RCNTXT cntxt;
+> +      begincontext(&cntxt, CTXT_CCODE, R_NilValue, R_BaseEnv, R_BaseEnv,
+> +                   R_NilValue, R_NilValue);
+> +      cntxt.cend = &rollback_mhnd_sentinel;
+> +      cntxt.cenddata = sentinel;
+> +      R_RegisterCFinalizerEx(sentinel, cleanup_mhnd, TRUE);
+> +      // Succeeded, no need to clean up if endcontext() fails allocation
+> +      mhnd_sentinel = sentinel;
+> +      cntxt.cend = NULL;
+> +      endcontext(&cntxt);
+> +    }
+> +    if(!shared_mhnd) {
+> +      shared_mhnd = curl_multi_init();
+> +    }
+> +    return shared_mhnd;
+> +}
+> +
+>   # if LIBCURL_VERSION_MAJOR < 7 || (LIBCURL_VERSION_MAJOR == 7 && LIBCURL_VERSION_MINOR < 28)
+>   
+>   // curl/curl.h includes <sys/select.h> and headers it requires.
+> @@ -565,8 +606,6 @@
+>   	if (c->hnd && c->hnd[i])
+>   	    curl_easy_cleanup(c->hnd[i]);
+>       }
+> -    if (c->mhnd)
+> -	curl_multi_cleanup(c->mhnd);
+>       if (c->headers)
+>   	curl_slist_free_all(c->headers);
+>   
+> @@ -668,7 +707,7 @@
+>   	c.headers = headers = tmp;
+>       }
+>   
+> -    CURLM *mhnd = curl_multi_init();
+> +    CURLM *mhnd = get_mhnd();
+>       if (!mhnd)
+>   	error(_("could not create curl handle"));
+>       c.mhnd = mhnd;
+>
+>
+
+
+From ggrothend|eck @end|ng |rom gm@||@com  Sun Sep  8 13:30:36 2024
+From: ggrothend|eck @end|ng |rom gm@||@com (Gabor Grothendieck)
+Date: Sun, 8 Sep 2024 07:30:36 -0400
+Subject: [Rd] Inconsistency between row and nrow
+Message-ID: <CAP01uRnVmJ1ETMq93gE7=peHTNZWNLPE49ah8zd9a2A8Sh4SXw@mail.gmail.com>
+
+In the following nrow provides the expected result but row gives an
+error.  I would have thought that they would both work or both fail.
+
+  aa <- array(dim = 5:3)
+
+  nrow(aa)
+  ## [1] 5
+
+  row(aa)
+  ## Error in row(aa) : a matrix-like object is required as argument to 'row'
+
+  # this does work:
+  slice.index(aa, 1)
+
+-- 
+Statistics & Software Consulting
+GKX Group, GKX Associates Inc.
+tel: 1-877-GKX-GROUP
+email: ggrothendieck at gmail.com
+
+
+From m@rc_@chw@rtz @end|ng |rom me@com  Sun Sep  8 14:26:53 2024
+From: m@rc_@chw@rtz @end|ng |rom me@com (Marc Schwartz)
+Date: Sun, 08 Sep 2024 08:26:53 -0400
+Subject: [Rd] Inconsistency between row and nrow
+In-Reply-To: <CAP01uRnVmJ1ETMq93gE7=peHTNZWNLPE49ah8zd9a2A8Sh4SXw@mail.gmail.com>
+References: <CAP01uRnVmJ1ETMq93gE7=peHTNZWNLPE49ah8zd9a2A8Sh4SXw@mail.gmail.com>
+Message-ID: <0453329E-F005-4EB6-86D1-EA9BDEC349CC@me.com>
+
+Hi Gabor,
+
+In strictly reading the help files for both nrow() and row(), the 'x' argument in the former case is "a vector, array, data frame, or NULL.", whereas in the latter case it is "a matrix-like object, that is one with a two-dimensional dim.".
+
+Thus, I would expect row() to fail on a >= 3-dimensional array, as your example shows.
+
+In reading the help file for slice.index(), there is the following in the See Also section:
+
+"row and col for determining row and column indexes; in fact, these are special cases of slice.index corresponding to MARGIN equal to 1 and 2, respectively when x is a matrix."
+
+further differentiating the behavior of row() and col() as more specific implementations in the 2-dimensional case.
+
+To my read then, the difference in behavior appears to be intentional and expected.
+
+Regards,
+
+Marc Schwartz
+
+
+?-----Original Message-----
+From: R-devel <r-devel-bounces at r-project.org <mailto:r-devel-bounces at r-project.org>> on behalf of Gabor Grothendieck <ggrothendieck at gmail.com <mailto:ggrothendieck at gmail.com>>
+Date: Sunday, September 8, 2024 at 7:31 AM
+To: "r-devel at r-project.org <mailto:r-devel at r-project.org>" <r-devel at r-project.org <mailto:r-devel at r-project.org>>
+Subject: [Rd] Inconsistency between row and nrow
+
+
+In the following nrow provides the expected result but row gives an
+error. I would have thought that they would both work or both fail.
+
+
+aa <- array(dim = 5:3)
+
+
+nrow(aa)
+## [1] 5
+
+
+row(aa)
+## Error in row(aa) : a matrix-like object is required as argument to 'row'
+
+
+# this does work:
+slice.index(aa, 1)
+
+
+-- 
+Statistics & Software Consulting
+GKX Group, GKX Associates Inc.
+tel: 1-877-GKX-GROUP
+email: ggrothendieck at gmail.com
+
+
+______________________________________________
+R-devel at r-project.org <mailto:R-devel at r-project.org> mailing list
+https://stat.ethz.ch/mailman/listinfo/r-devel <https://stat.ethz.ch/mailman/listinfo/r-devel>
+
+
+From ggrothend|eck @end|ng |rom gm@||@com  Sun Sep  8 14:36:41 2024
+From: ggrothend|eck @end|ng |rom gm@||@com (Gabor Grothendieck)
+Date: Sun, 8 Sep 2024 08:36:41 -0400
+Subject: [Rd] Inconsistency between row and nrow
+In-Reply-To: <0453329E-F005-4EB6-86D1-EA9BDEC349CC@me.com>
+References: <CAP01uRnVmJ1ETMq93gE7=peHTNZWNLPE49ah8zd9a2A8Sh4SXw@mail.gmail.com>
+ <0453329E-F005-4EB6-86D1-EA9BDEC349CC@me.com>
+Message-ID: <CAP01uRk+k_2w84YtY9i3NDxbr0RNqiC75i70rct7gTTY2cEhUg@mail.gmail.com>
+
+The fact that it is consistent with the documentation is not the
+point.  The  point is that the design itself is inconsistent.
+
+On Sun, Sep 8, 2024 at 8:27?AM Marc Schwartz <marc_schwartz at me.com> wrote:
+>
+> Hi Gabor,
+>
+> In strictly reading the help files for both nrow() and row(), the 'x' argument in the former case is "a vector, array, data frame, or NULL.", whereas in the latter case it is "a matrix-like object, that is one with a two-dimensional dim.".
+>
+> Thus, I would expect row() to fail on a >= 3-dimensional array, as your example shows.
+>
+> In reading the help file for slice.index(), there is the following in the See Also section:
+>
+> "row and col for determining row and column indexes; in fact, these are special cases of slice.index corresponding to MARGIN equal to 1 and 2, respectively when x is a matrix."
+>
+> further differentiating the behavior of row() and col() as more specific implementations in the 2-dimensional case.
+>
+> To my read then, the difference in behavior appears to be intentional and expected.
+>
+> Regards,
+>
+> Marc Schwartz
+>
+>
+> ?-----Original Message-----
+> From: R-devel <r-devel-bounces at r-project.org <mailto:r-devel-bounces at r-project.org>> on behalf of Gabor Grothendieck <ggrothendieck at gmail.com <mailto:ggrothendieck at gmail.com>>
+> Date: Sunday, September 8, 2024 at 7:31 AM
+> To: "r-devel at r-project.org <mailto:r-devel at r-project.org>" <r-devel at r-project.org <mailto:r-devel at r-project.org>>
+> Subject: [Rd] Inconsistency between row and nrow
+>
+>
+> In the following nrow provides the expected result but row gives an
+> error. I would have thought that they would both work or both fail.
+>
+>
+> aa <- array(dim = 5:3)
+>
+>
+> nrow(aa)
+> ## [1] 5
+>
+>
+> row(aa)
+> ## Error in row(aa) : a matrix-like object is required as argument to 'row'
+>
+>
+> # this does work:
+> slice.index(aa, 1)
+>
+>
+> --
+> Statistics & Software Consulting
+> GKX Group, GKX Associates Inc.
+> tel: 1-877-GKX-GROUP
+> email: ggrothendieck at gmail.com
+>
+>
+> ______________________________________________
+> R-devel at r-project.org <mailto:R-devel at r-project.org> mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel <https://stat.ethz.ch/mailman/listinfo/r-devel>
+>
+>
+>
+>
+
+
+-- 
+Statistics & Software Consulting
+GKX Group, GKX Associates Inc.
+tel: 1-877-GKX-GROUP
+email: ggrothendieck at gmail.com
+
+
+From ggrothend|eck @end|ng |rom gm@||@com  Sun Sep  8 14:38:58 2024
+From: ggrothend|eck @end|ng |rom gm@||@com (Gabor Grothendieck)
+Date: Sun, 8 Sep 2024 08:38:58 -0400
+Subject: [Rd] transform
+In-Reply-To: <3b755353-abee-41aa-8621-bbfd49876200@fau.de>
+References: <CAP01uR=DJOOJFBh-kwGAstC1aryt8uMh7c0vceYRYAtyeD59SA@mail.gmail.com>
+ <9629D1E6-A493-41E4-80EB-1A2289F42F60@gmail.com>
+ <3b755353-abee-41aa-8621-bbfd49876200@fau.de>
+Message-ID: <CAP01uRn4dVscOaXdbkLTCL2ZbA_nV=zJzU69_X5ZwQOJp1rGGA@mail.gmail.com>
+
+Suggest you look at dplyr::mutate as this functionality is widely used
+there and has shown itself to be useful.
+
+On Tue, Aug 27, 2024 at 9:16?AM Sebastian Meyer <seb.meyer at fau.de> wrote:
+>
+> Am 27.08.24 um 11:55 schrieb peter dalgaard:
+> > Yes. A quirk, rather than a bug I'd say. One issue is that the internal logic of transform() relies on
+> >
+> >      e <- eval(substitute(list(...)), `_data`, parent.frame())
+> >      tags <- names(e)
+> >
+> > so untagged entries in ... will not be included.
+>
+> ... unless at least one is tagged:
+>
+> R> transform(BOD, 0:5, 1:6)
+>    Time demand
+> 1    1    8.3
+> 2    2   10.3
+> 3    3   19.0
+> 4    4   16.0
+> 5    5   15.6
+> 6    7   19.8
+>
+> R> transform(BOD, 0:5, 1:6, foo = 1)
+>    Time demand 0:5 1:6 foo
+> 1    1    8.3   0   1   1
+> 2    2   10.3   1   2   1
+> 3    3   19.0   2   3   1
+> 4    4   16.0   3   4   1
+> 5    5   15.6   4   5   1
+> 6    7   19.8   5   6   1
+>
+> But as transform.data.frame is only documented for tagged vector
+> expressions, all examples provided in this thread were formal misuses.
+> (It might make sense to warn about untagged entries.)
+>
+> Personally, I'd be quite confused about what to expect from syntax like
+>
+>      transform(BOD, data.frame(y = 1:6))
+>
+> as really no transformation is specified. Looks like cbind() or
+> data.frame() was meant.
+>
+>         Sebastian
+>
+>
+> > The other part is a direct consequence of a quirk in data.frame:
+> >
+> >> data.frame(head(airquality), y=data.frame(x=rnorm(6)))
+> >    Ozone Solar.R Wind Temp Month Day          x
+> > 1    41     190  7.4   67     5   1  0.3075402
+> > 2    36     118  8.0   72     5   2  0.7765265
+> > 3    12     149 12.6   74     5   3  0.3909341
+> > 4    18     313 11.5   62     5   4  0.4733170
+> > 5    NA      NA 14.3   56     5   5 -0.6947709
+> > 6    28      NA 14.9   66     5   6  0.1126040
+> >
+> > whereas (the wisdom of this escapes me)
+> >
+> >> data.frame(head(airquality), y=data.frame(x=rnorm(6),z=rnorm(6)))
+> >    Ozone Solar.R Wind Temp Month Day        y.x         y.z
+> > 1    41     190  7.4   67     5   1 -0.9250228  0.46483406
+> > 2    36     118  8.0   72     5   2 -0.5035793  0.28822668
+> > ...
+> >
+> > On the whole, I think that transform was never designed (nor documented) to take data frame arguments, so caveat emptor.
+> >
+> > - Peter
+> >
+> >
+> >> On 24 Aug 2024, at 16:41 , Gabor Grothendieck <ggrothendieck at gmail.com> wrote:
+> >>
+> >> One oddity in transform that I recently noticed.  It seems that to include
+> >> a one-column data frame in the arguments one must name it even though the
+> >> name is ignored.  If the data frame has more than one column then it must
+> >> also be named but in that case it is not ignored and the names are made up of
+> >> a combination of that name and the data frame's names.  I would have thought
+> >> that if we did not want a combination of names we would just not name the
+> >> argument.
+> >>
+> >>   # ignores second argument returning BOD unchanged
+> >>   transform(BOD, data.frame(y = 1:6)) |> names()
+> >>   ## [1] "Time"   "demand"
+> >>
+> >>   # ignores second argument returning BOD unchanged
+> >>   transform(BOD, data.frame(y = 1:6, z = 6:1)) |> names()
+> >>   ## [1] "Time"   "demand"
+> >>
+> >>   # with one column in data frame it adds the column and names it y ignoring x
+> >>   transform(BOD, x = data.frame(y = 1:6)) |> names()
+> >>   ## [1] "Time"   "demand" "y"
+> >>
+> >>   # with multiple columns in data frame it uses x.y and x.z as names
+> >>   transform(BOD, data.frame(y = 1:6, z = 6:1)) |> names()
+> >>   ## [1] "Time"   "demand" "x.y"    "x.z"
+> >>
+> >>
+> >> --
+> >> Statistics & Software Consulting
+> >> GKX Group, GKX Associates Inc.
+> >> tel: 1-877-GKX-GROUP
+> >> email: ggrothendieck at gmail.com
+> >>
+> >> ______________________________________________
+> >> R-devel at r-project.org mailing list
+> >> https://stat.ethz.ch/mailman/listinfo/r-devel
+> >
+
+
+
+-- 
+Statistics & Software Consulting
+GKX Group, GKX Associates Inc.
+tel: 1-877-GKX-GROUP
+email: ggrothendieck at gmail.com
+
+
+From @vi@e@gross m@iii@g oii gm@ii@com  Sun Sep  8 21:10:07 2024
+From: @vi@e@gross m@iii@g oii gm@ii@com (@vi@e@gross m@iii@g oii gm@ii@com)
+Date: Sun, 8 Sep 2024 15:10:07 -0400
+Subject: [Rd] Inconsistency between row and nrow
+In-Reply-To: <CAP01uRk+k_2w84YtY9i3NDxbr0RNqiC75i70rct7gTTY2cEhUg@mail.gmail.com>
+References: <CAP01uRnVmJ1ETMq93gE7=peHTNZWNLPE49ah8zd9a2A8Sh4SXw@mail.gmail.com>
+ <0453329E-F005-4EB6-86D1-EA9BDEC349CC@me.com>
+ <CAP01uRk+k_2w84YtY9i3NDxbr0RNqiC75i70rct7gTTY2cEhUg@mail.gmail.com>
+Message-ID: <003701db0222$b84b0730$28e11590$@gmail.com>
+
+
+Why would a design made by perhaps different people at different times have to be consistent?
+
+Why complicate a simple design meant to be used in 2-D objects to also handle other things?
+
+It is a bit like asking why for a vector you cannot use the same verb to measure length as in one sense a vector is about the same as a 1-D matrix. Why use length(vec) and not nrow(vec) or something
+
+-----Original Message-----
+From: R-devel <r-devel-bounces at r-project.org> On Behalf Of Gabor Grothendieck
+Sent: Sunday, September 8, 2024 8:37 AM
+To: Marc Schwartz <marc_schwartz at me.com>
+Cc: r-devel at r-project.org
+Subject: Re: [Rd] Inconsistency between row and nrow
+
+The fact that it is consistent with the documentation is not the
+point.  The  point is that the design itself is inconsistent.
+
+On Sun, Sep 8, 2024 at 8:27?AM Marc Schwartz <marc_schwartz at me.com> wrote:
+>
+> Hi Gabor,
+>
+> In strictly reading the help files for both nrow() and row(), the 'x' argument in the former case is "a vector, array, data frame, or NULL.", whereas in the latter case it is "a matrix-like object, that is one with a two-dimensional dim.".
+>
+> Thus, I would expect row() to fail on a >= 3-dimensional array, as your example shows.
+>
+> In reading the help file for slice.index(), there is the following in the See Also section:
+>
+> "row and col for determining row and column indexes; in fact, these are special cases of slice.index corresponding to MARGIN equal to 1 and 2, respectively when x is a matrix."
+>
+> further differentiating the behavior of row() and col() as more specific implementations in the 2-dimensional case.
+>
+> To my read then, the difference in behavior appears to be intentional and expected.
+>
+> Regards,
+>
+> Marc Schwartz
+>
+>
+> ?-----Original Message-----
+> From: R-devel <r-devel-bounces at r-project.org <mailto:r-devel-bounces at r-project.org>> on behalf of Gabor Grothendieck <ggrothendieck at gmail.com <mailto:ggrothendieck at gmail.com>>
+> Date: Sunday, September 8, 2024 at 7:31 AM
+> To: "r-devel at r-project.org <mailto:r-devel at r-project.org>" <r-devel at r-project.org <mailto:r-devel at r-project.org>>
+> Subject: [Rd] Inconsistency between row and nrow
+>
+>
+> In the following nrow provides the expected result but row gives an
+> error. I would have thought that they would both work or both fail.
+>
+>
+> aa <- array(dim = 5:3)
+>
+>
+> nrow(aa)
+> ## [1] 5
+>
+>
+> row(aa)
+> ## Error in row(aa) : a matrix-like object is required as argument to 'row'
+>
+>
+> # this does work:
+> slice.index(aa, 1)
+>
+>
+> --
+> Statistics & Software Consulting
+> GKX Group, GKX Associates Inc.
+> tel: 1-877-GKX-GROUP
+> email: ggrothendieck at gmail.com
+>
+>
+> ______________________________________________
+> R-devel at r-project.org <mailto:R-devel at r-project.org> mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel <https://stat.ethz.ch/mailman/listinfo/r-devel>
+>
+>
+>
+>
+
+
+-- 
+Statistics & Software Consulting
+GKX Group, GKX Associates Inc.
+tel: 1-877-GKX-GROUP
+email: ggrothendieck at gmail.com
+
+______________________________________________
+R-devel at r-project.org mailing list
+https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From jeroenoom@ @end|ng |rom gm@||@com  Sun Sep  8 23:14:22 2024
+From: jeroenoom@ @end|ng |rom gm@||@com (Jeroen Ooms)
+Date: Sun, 8 Sep 2024 17:14:22 -0400
+Subject: [Rd] Big speedup in install.packages() by re-using connections
+In-Reply-To: <248ad6c4-ec50-4a3c-b9e4-05346840dbf0@gmail.com>
+References: <CABFfbXtpXChZLeLREEWFHFWP24cvD8Ox-7xfBGj0p+N0Rjzwbg@mail.gmail.com>
+ <CABFfbXtnteY=_qRz8ZBQ4aAPi-j+HjasRvU-fcLPJm2nu+QwLQ@mail.gmail.com>
+ <20240425180109.418ca5f4@arachnoid>
+ <248ad6c4-ec50-4a3c-b9e4-05346840dbf0@gmail.com>
+Message-ID: <CABFfbXs8n4Okup+8y2zt-P_f7WymoknBP4WAYuQ8dTwNgMAeLg@mail.gmail.com>
+
+On Mon, Sep 2, 2024 at 10:05?AM Tomas Kalibera <tomas.kalibera at gmail.com> wrote:
+>
+>
+> On 4/25/24 17:01, Ivan Krylov via R-devel wrote:
+> > On Thu, 25 Apr 2024 14:45:04 +0200
+> > Jeroen Ooms <jeroenooms at gmail.com> wrote:
+> >
+> >> Thoughts?
+> > How verboten would it be to create an empty external pointer object,
+> > add it to the preserved list, and set an on-exit finalizer to clean up
+> > the curl multi-handle? As far as I can tell, the internet module is not
+> > supposed to be unloaded, so this would not introduce an opportunity to
+> > jump to an unmapped address. This makes it possible to avoid adding a
+> > CurlCleanup() function to the internet module:
+>
+> Cleaning up this way in principle would probably be fine, but R already
+> has support for re-using connections. Even more, R can download files in
+> parallel (in a single thread), which particularly helps with bigger
+> latencies (e.g. typically users connecting from home, etc). See
+> ?download.file(), look for "simultaneous".
+
+Thank you for looking at this. A few ideas wrt parallel downloading:
+
+Additional improvement on Windows can be achieved by enabling the
+nghttp2 driver in libcurl in rtools, such that it takes advantage of
+http2 multiplexing for parallel downloads
+(https://bugs.r-project.org/show_bug.cgi?id=18664).
+
+Moreover, one concern is that install.packages() may fail more
+frequently on low bandwidth connections due to reaching the "download
+timeout" when downloading files in parallel:
+
+R has an unusual definition of the http timeout, which by default
+aborts in-progress downloads after 60 seconds for no obvious reason.
+(by contrast, browsers enforce a timeout on unresponsive/stalled
+downloads only, which can be achieved in libcurl by setting
+CURLOPT_CONNECTTIMEOUT or CURLOPT_LOW_SPEED_TIME).
+
+The above is already a problem on slow networks, where large packages
+can fail to install with a timeout error in the download stage. Users
+may assume there must be a problem with the network, as it is not
+obvious that machines on slower internet connection need to work
+around R's defaults and modify options(timeout) before
+install.packages(). This problem could become more prevalent when
+using parallel downloads while still enforcing the same total timeout.
+
+For example: the MacOS binary for package "sf" is close to 90mb, hence
+currently, under the default R settings of options(timeout=60),
+install.packages will error with a download timeout on clients with
+less than 1.5MB/s bandwidth. But with the parallel implementation,
+install.packages() will share the bandwidth on 6 parallel downloads,
+so if "sf" is downloaded with all its dependencies, we need at least
+9MB/s (i.e. a 100mbit connection) for the default settings to not
+cause a timeout.
+
+Hopefully this can be revised to enforce the timeout on stalled
+downloads only, as is common practice.
+
+
+From @vi@e@gross m@iii@g oii gm@ii@com  Mon Sep  9 00:36:34 2024
+From: @vi@e@gross m@iii@g oii gm@ii@com (@vi@e@gross m@iii@g oii gm@ii@com)
+Date: Sun, 8 Sep 2024 18:36:34 -0400
+Subject: [Rd] Inconsistency between row and nrow
+In-Reply-To: <0453329E-F005-4EB6-86D1-EA9BDEC349CC@me.com>
+References: <CAP01uRnVmJ1ETMq93gE7=peHTNZWNLPE49ah8zd9a2A8Sh4SXw@mail.gmail.com>
+ <0453329E-F005-4EB6-86D1-EA9BDEC349CC@me.com>
+Message-ID: <004001db023f$8f984d80$aec8e880$@gmail.com>
+
+It can be informative to look at what the actual functions being discussed do.
+
+Dim is an internal, meaning written in some variant of C, perhaps:
+
+> dim
+function (x)  .Primitive("dim")
+
+The function nrow, in my distribution, actually just calls dim() and throws away one dimension:
+
+> nrow
+function (x) 
+dim(x)[1L]
+<bytecode: 0x0000022df4d6f348>
+<environment: namespace:base>
+
+The function row is a bit related in calling dim in one of several ways:
+
+> row
+function (x, as.factor = FALSE) 
+{
+    if (as.factor) {
+        labs <- rownames(x, do.NULL = FALSE, prefix = "")
+        res <- factor(.Internal(row(dim(x))), labels = labs)
+        dim(res) <- dim(x)
+        res
+    }
+    else .Internal(row(dim(x)))
+}
+<bytecode: 0x0000022d87fbfb98>
+<environment: namespace:base>
+
+Does this shed any light on why the result may be inconsistent?
+
+-----Original Message-----
+From: R-devel <r-devel-bounces at r-project.org> On Behalf Of Marc Schwartz via R-devel
+Sent: Sunday, September 8, 2024 8:27 AM
+To: Gabor Grothendieck <ggrothendieck at gmail.com>; r-devel at r-project.org
+Subject: Re: [Rd] Inconsistency between row and nrow
+
+Hi Gabor,
+
+In strictly reading the help files for both nrow() and row(), the 'x' argument in the former case is "a vector, array, data frame, or NULL.", whereas in the latter case it is "a matrix-like object, that is one with a two-dimensional dim.".
+
+Thus, I would expect row() to fail on a >= 3-dimensional array, as your example shows.
+
+In reading the help file for slice.index(), there is the following in the See Also section:
+
+"row and col for determining row and column indexes; in fact, these are special cases of slice.index corresponding to MARGIN equal to 1 and 2, respectively when x is a matrix."
+
+further differentiating the behavior of row() and col() as more specific implementations in the 2-dimensional case.
+
+To my read then, the difference in behavior appears to be intentional and expected.
+
+Regards,
+
+Marc Schwartz
+
+
+?-----Original Message-----
+From: R-devel <r-devel-bounces at r-project.org <mailto:r-devel-bounces at r-project.org>> on behalf of Gabor Grothendieck <ggrothendieck at gmail.com <mailto:ggrothendieck at gmail.com>>
+Date: Sunday, September 8, 2024 at 7:31 AM
+To: "r-devel at r-project.org <mailto:r-devel at r-project.org>" <r-devel at r-project.org <mailto:r-devel at r-project.org>>
+Subject: [Rd] Inconsistency between row and nrow
+
+
+In the following nrow provides the expected result but row gives an
+error. I would have thought that they would both work or both fail.
+
+
+aa <- array(dim = 5:3)
+
+
+nrow(aa)
+## [1] 5
+
+
+row(aa)
+## Error in row(aa) : a matrix-like object is required as argument to 'row'
+
+
+# this does work:
+slice.index(aa, 1)
+
+
+-- 
+Statistics & Software Consulting
+GKX Group, GKX Associates Inc.
+tel: 1-877-GKX-GROUP
+email: ggrothendieck at gmail.com
+
+
+______________________________________________
+R-devel at r-project.org <mailto:R-devel at r-project.org> mailing list
+https://stat.ethz.ch/mailman/listinfo/r-devel <https://stat.ethz.ch/mailman/listinfo/r-devel>
+
+______________________________________________
+R-devel at r-project.org mailing list
+https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From ||u|@@rev|||@ @end|ng |rom gm@||@com  Mon Sep  9 08:00:00 2024
+From: ||u|@@rev|||@ @end|ng |rom gm@||@com (=?UTF-8?Q?Llu=C3=ADs_Revilla?=)
+Date: Mon, 9 Sep 2024 08:00:00 +0200
+Subject: [Rd] Documentation cross references
+Message-ID: <CAN+W6_sBbuyThDTJX27rYAxwyrZLBsm1FKYtDtRnttAYP+6Ltg@mail.gmail.com>
+
+Hi all,
+
+I am checking the cross references at CRAN and base R, and I am having
+trouble understanding how to reconcile the documentation and how R
+help links work.
+
+Checking the documentation [1] it seems that in a cross reference such
+as \link[pkg:x]{text} x should be a topic (created with \alias{topic}
+in R documentation).
+But I found some cases exploring the output of
+tools::base_rdxrefs_db() where it is a file name (without the .Rd
+extension).
+For instance, ?print has a link with text (Target as named by the
+output) ".print.via.format" and the anchor "tools:print.via.format".
+The topic would be print.via.format, but if one uses:
+help(topic = "print.via.format", package = "tools"):
+     No documentation for 'print.via.format' in specified packages and
+libraries:
+     you could try '??print.via.format'
+
+However, if one accesses the html help page and clicks
+.print.via.format, is redirected to the right help page (found in the
+REPL too with help(topic = ".print.via.format", package = "tools") ).
+
+I see a paragraph in R 4.1 NEWS about a change in behaviour [2] (also
+hinted in WRE), where it is described as:
+... "and fall back to a file link only if the topic is not found in
+the target package. The earlier rule which prioritized file names over
+topics can be restored by setting the environment variable
+_R_HELP_LINKS_TO_TOPICS_ to a false value."
+
+The internal variable _R_HELP_LINKS_TO_TOPICS_ isn't mentioned on
+R-internals and this behaviour of html pages is not mentioned on WRE.
+ - Perhaps documentation at R-internals and WRE could be updated to
+show how html page links are created?
+ - And/or the behaviour could continue the path started on R 4.1 and
+start complaining about anchors pointing to files?
+
+In the second case, ~10 links in base R would be affected but on CRAN
+this could affect ~1700 more packages than those currently with "Rd
+cross-references" notes.
+
+Regards,
+
+Llu?s
+
+[1]: https://cran.r-project.org/doc/manuals/r-devel/R-exts.html#Cross_002dreferences
+[2]: https://developer.r-project.org/blosxom.cgi/R-4-1-branch/NEWS/2021/04/20#n2021-04-21
+
+
+From tom@@@k@||ber@ @end|ng |rom gm@||@com  Mon Sep  9 11:11:02 2024
+From: tom@@@k@||ber@ @end|ng |rom gm@||@com (Tomas Kalibera)
+Date: Mon, 9 Sep 2024 11:11:02 +0200
+Subject: [Rd] Big speedup in install.packages() by re-using connections
+In-Reply-To: <CABFfbXs8n4Okup+8y2zt-P_f7WymoknBP4WAYuQ8dTwNgMAeLg@mail.gmail.com>
+References: <CABFfbXtpXChZLeLREEWFHFWP24cvD8Ox-7xfBGj0p+N0Rjzwbg@mail.gmail.com>
+ <CABFfbXtnteY=_qRz8ZBQ4aAPi-j+HjasRvU-fcLPJm2nu+QwLQ@mail.gmail.com>
+ <20240425180109.418ca5f4@arachnoid>
+ <248ad6c4-ec50-4a3c-b9e4-05346840dbf0@gmail.com>
+ <CABFfbXs8n4Okup+8y2zt-P_f7WymoknBP4WAYuQ8dTwNgMAeLg@mail.gmail.com>
+Message-ID: <905cd9c7-5c1f-43eb-b104-d540a5598d96@gmail.com>
+
+
+On 9/8/24 23:14, Jeroen Ooms wrote:
+> On Mon, Sep 2, 2024 at 10:05?AM Tomas Kalibera <tomas.kalibera at gmail.com> wrote:
+>>
+>> On 4/25/24 17:01, Ivan Krylov via R-devel wrote:
+>>> On Thu, 25 Apr 2024 14:45:04 +0200
+>>> Jeroen Ooms <jeroenooms at gmail.com> wrote:
+>>>
+>>>> Thoughts?
+>>> How verboten would it be to create an empty external pointer object,
+>>> add it to the preserved list, and set an on-exit finalizer to clean up
+>>> the curl multi-handle? As far as I can tell, the internet module is not
+>>> supposed to be unloaded, so this would not introduce an opportunity to
+>>> jump to an unmapped address. This makes it possible to avoid adding a
+>>> CurlCleanup() function to the internet module:
+>> Cleaning up this way in principle would probably be fine, but R already
+>> has support for re-using connections. Even more, R can download files in
+>> parallel (in a single thread), which particularly helps with bigger
+>> latencies (e.g. typically users connecting from home, etc). See
+>> ?download.file(), look for "simultaneous".
+> Thank you for looking at this. A few ideas wrt parallel downloading:
+>
+> Additional improvement on Windows can be achieved by enabling the
+> nghttp2 driver in libcurl in rtools, such that it takes advantage of
+> http2 multiplexing for parallel downloads
+> (https://bugs.r-project.org/show_bug.cgi?id=18664).
+
+Anyone who wants to cooperate and help is more than welcome to 
+contribute patches to upstream MXE.
+
+In case of nghttp2, thanks to Andrew Johnson, who contributed nghttp2 
+support to upstream MXE. It will be part of the next Rtools (probably 
+Rtools45).
+
+> Moreover, one concern is that install.packages() may fail more
+> frequently on low bandwidth connections due to reaching the "download
+> timeout" when downloading files in parallel:
+>
+> R has an unusual definition of the http timeout, which by default
+> aborts in-progress downloads after 60 seconds for no obvious reason.
+> (by contrast, browsers enforce a timeout on unresponsive/stalled
+> downloads only, which can be achieved in libcurl by setting
+> CURLOPT_CONNECTTIMEOUT or CURLOPT_LOW_SPEED_TIME).
+>
+> The above is already a problem on slow networks, where large packages
+> can fail to install with a timeout error in the download stage. Users
+> may assume there must be a problem with the network, as it is not
+> obvious that machines on slower internet connection need to work
+> around R's defaults and modify options(timeout) before
+> install.packages(). This problem could become more prevalent when
+> using parallel downloads while still enforcing the same total timeout.
+>
+> For example: the MacOS binary for package "sf" is close to 90mb, hence
+> currently, under the default R settings of options(timeout=60),
+> install.packages will error with a download timeout on clients with
+> less than 1.5MB/s bandwidth. But with the parallel implementation,
+> install.packages() will share the bandwidth on 6 parallel downloads,
+> so if "sf" is downloaded with all its dependencies, we need at least
+> 9MB/s (i.e. a 100mbit connection) for the default settings to not
+> cause a timeout.
+>
+> Hopefully this can be revised to enforce the timeout on stalled
+> downloads only, as is common practice.
+
+Yes, this is work in progress, I am aware that the timeout could use 
+some thought re simultaneous downloads.
+
+If anyone wants to help with testing the current implementation of 
+simultaneous download and report any bugs found, that would be nice.
+
+Best
+Tomas
+
+
+From jeroenoom@ @end|ng |rom gm@||@com  Mon Sep  9 18:19:12 2024
+From: jeroenoom@ @end|ng |rom gm@||@com (Jeroen Ooms)
+Date: Mon, 9 Sep 2024 18:19:12 +0200
+Subject: [Rd] Big speedup in install.packages() by re-using connections
+In-Reply-To: <905cd9c7-5c1f-43eb-b104-d540a5598d96@gmail.com>
+References: <CABFfbXtpXChZLeLREEWFHFWP24cvD8Ox-7xfBGj0p+N0Rjzwbg@mail.gmail.com>
+ <CABFfbXtnteY=_qRz8ZBQ4aAPi-j+HjasRvU-fcLPJm2nu+QwLQ@mail.gmail.com>
+ <20240425180109.418ca5f4@arachnoid>
+ <248ad6c4-ec50-4a3c-b9e4-05346840dbf0@gmail.com>
+ <CABFfbXs8n4Okup+8y2zt-P_f7WymoknBP4WAYuQ8dTwNgMAeLg@mail.gmail.com>
+ <905cd9c7-5c1f-43eb-b104-d540a5598d96@gmail.com>
+Message-ID: <CABFfbXtxuX+7JqQ0ZSc=JaVs-1sOH_JtDHEpNBHQd76trPA2sg@mail.gmail.com>
+
+On Mon, Sep 9, 2024 at 11:11?AM Tomas Kalibera <tomas.kalibera at gmail.com> wrote:
+>
+>
+> On 9/8/24 23:14, Jeroen Ooms wrote:
+> > On Mon, Sep 2, 2024 at 10:05?AM Tomas Kalibera <tomas.kalibera at gmail.com> wrote:
+> >>
+> >> On 4/25/24 17:01, Ivan Krylov via R-devel wrote:
+> >>> On Thu, 25 Apr 2024 14:45:04 +0200
+> >>> Jeroen Ooms <jeroenooms at gmail.com> wrote:
+> >>>
+> >>>> Thoughts?
+> >>> How verboten would it be to create an empty external pointer object,
+> >>> add it to the preserved list, and set an on-exit finalizer to clean up
+> >>> the curl multi-handle? As far as I can tell, the internet module is not
+> >>> supposed to be unloaded, so this would not introduce an opportunity to
+> >>> jump to an unmapped address. This makes it possible to avoid adding a
+> >>> CurlCleanup() function to the internet module:
+> >> Cleaning up this way in principle would probably be fine, but R already
+> >> has support for re-using connections. Even more, R can download files in
+> >> parallel (in a single thread), which particularly helps with bigger
+> >> latencies (e.g. typically users connecting from home, etc). See
+> >> ?download.file(), look for "simultaneous".
+> > Thank you for looking at this. A few ideas wrt parallel downloading:
+> >
+> > Additional improvement on Windows can be achieved by enabling the
+> > nghttp2 driver in libcurl in rtools, such that it takes advantage of
+> > http2 multiplexing for parallel downloads
+> > (https://bugs.r-project.org/show_bug.cgi?id=18664).
+>
+> Anyone who wants to cooperate and help is more than welcome to
+> contribute patches to upstream MXE.
+>
+> In case of nghttp2, thanks to Andrew Johnson, who contributed nghttp2
+> support to upstream MXE. It will be part of the next Rtools (probably
+> Rtools45).
+>
+> > Moreover, one concern is that install.packages() may fail more
+> > frequently on low bandwidth connections due to reaching the "download
+> > timeout" when downloading files in parallel:
+> >
+> > R has an unusual definition of the http timeout, which by default
+> > aborts in-progress downloads after 60 seconds for no obvious reason.
+> > (by contrast, browsers enforce a timeout on unresponsive/stalled
+> > downloads only, which can be achieved in libcurl by setting
+> > CURLOPT_CONNECTTIMEOUT or CURLOPT_LOW_SPEED_TIME).
+> >
+> > The above is already a problem on slow networks, where large packages
+> > can fail to install with a timeout error in the download stage. Users
+> > may assume there must be a problem with the network, as it is not
+> > obvious that machines on slower internet connection need to work
+> > around R's defaults and modify options(timeout) before
+> > install.packages(). This problem could become more prevalent when
+> > using parallel downloads while still enforcing the same total timeout.
+> >
+> > For example: the MacOS binary for package "sf" is close to 90mb, hence
+> > currently, under the default R settings of options(timeout=60),
+> > install.packages will error with a download timeout on clients with
+> > less than 1.5MB/s bandwidth. But with the parallel implementation,
+> > install.packages() will share the bandwidth on 6 parallel downloads,
+> > so if "sf" is downloaded with all its dependencies, we need at least
+> > 9MB/s (i.e. a 100mbit connection) for the default settings to not
+> > cause a timeout.
+> >
+> > Hopefully this can be revised to enforce the timeout on stalled
+> > downloads only, as is common practice.
+>
+> Yes, this is work in progress, I am aware that the timeout could use
+> some thought re simultaneous downloads.
+
+OK that is good to hear.
+
+
+> If anyone wants to help with testing the current implementation of
+> simultaneous download and report any bugs found, that would be nice.
+
+R-universe has ran this a few thousand times to recheck packages on
+r-devel on both linux and windows, and it works well. It reduces the
+CI process by a few seconds, and there are less random connection
+failures. If you want to inspect some recent logs for yourself, click
+the rightmost column on https://r-universe.dev/builds and then on the
+GitHub Actions page, look under the "Build R-devel for Windows /
+Linux" runs to see the log files.
+
+I was also able to confirm an edge case that install.packages() does
+not abort if any of the dependencies fails to download with http-404,
+which I think is desired behavior. If there is anything else
+specifically that you would like to see tested I can look at that.
+
+
+From @|mon@@ndrew@ @end|ng |rom b@br@h@m@@c@uk  Thu Sep 12 14:01:54 2024
+From: @|mon@@ndrew@ @end|ng |rom b@br@h@m@@c@uk (Simon Andrews)
+Date: Thu, 12 Sep 2024 12:01:54 +0000
+Subject: [Rd] Can gzfile be given the same method option as file
+Message-ID: <CWXP123MB619012B710931D02CF91B812D0642@CWXP123MB6190.GBRP123.PROD.OUTLOOK.COM>
+
+Recently my employer has introduced a security system which generates SSL certificates on the fly to be able to see the content of https connections.  To make this work they add a new root certificate to the windows certificate store.
+
+In R this causes problems because the default library used to download data from URLs doesn't look at this store, however the "wininet" download method works so where this is used then things work (albeit with a warning about future deprecation).
+
+For functions like download.file this works great, but it fails when running readRDS:
+
+readRDS('https://seurat.nygenome.org/azimuth/references/homologs.rds')
+Error in gzfile(file, "rb") : cannot open the connection
+In addition: Warning message:
+In gzfile(file, "rb") :
+  cannot open compressed file 'https://seurat.nygenome.org/azimuth/references/homologs.rds', probable reason 'Invalid argument'
+
+After some debugging I see that the root cause is from the gzfile function.
+
+> gzfile('https://seurat.nygenome.org/azimuth/references/homologs.rds') -> g
+> open(g, open="r")
+Error in open.connection(g, open = "r") : cannot open the connection
+In addition: Warning message:
+In open.connection(g, open = "r") :
+  cannot open compressed file 'https://seurat.nygenome.org/azimuth/references/homologs.rds', probable reason 'Invalid argument'
+
+If this was not a compressed file then using file rather than gzfile we can make this work by setting the url.method option:
+
+> options("url.method"="wininet")
+> file('https://seurat.nygenome.org/azimuth/references/homologs.rds') -> g
+> open(g, open="r")
+Warning message:
+In open.connection(g, open = "r") :
+  the 'wininet' method of url() is deprecated for http:// and https:// URLs
+
+So I get a warning, but it works.
+
+I guess this boils down to two questions:
+
+
+  1.  Is it possible to add the same "method" argument to gzfile that file uses so that people in my situation have a work round?
+  2.  Given the warnings we're getting when using wininet, are their plans to make windows certficates be supported in another way?
+
+Thanks
+
+Simon.
+
+
+
+
+
+
+
+
+
+
+
+
+	[[alternative HTML version deleted]]
+
+
+From |kry|ov @end|ng |rom d|@root@org  Thu Sep 12 16:27:37 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Thu, 12 Sep 2024 17:27:37 +0300
+Subject: [Rd] Can gzfile be given the same method option as file
+In-Reply-To: <CWXP123MB619012B710931D02CF91B812D0642@CWXP123MB6190.GBRP123.PROD.OUTLOOK.COM>
+References: <CWXP123MB619012B710931D02CF91B812D0642@CWXP123MB6190.GBRP123.PROD.OUTLOOK.COM>
+Message-ID: <20240912172737.1202b2bd@arachnoid>
+
+? Thu, 12 Sep 2024 12:01:54 +0000
+Simon Andrews via R-devel <r-devel at r-project.org> ?????:
+
+> readRDS('https://seurat.nygenome.org/azimuth/references/homologs.rds')
+> Error in gzfile(file, "rb") : cannot open the connection
+
+I don't think that gzfile works with URLs. gzcon(), on the other hand,
+does work with url() connections, which accepts the 'method' argument
+and the getOption('url.method') default.
+
+h <- readRDS(url(
+ 'https://seurat.nygenome.org/azimuth/references/homologs.rds'
+))
+
+But that only works with gzip-compressed files. For example, CRAN's
+PACKAGES.rds is xz-compressed, and I don't see a way to read it the
+same way:
+
+readBin(
+ index <- file.path(
+  contrib.url(getOption('repos')['CRAN']),
+  'PACKAGES.rds'
+ ), raw(), 5
+) |> rawToChar()
+# [1] "\xfd7zXZ" <-- note the "7zXZ" header
+readRDS(url(index))
+# Error in readRDS(url(index)) : unknown input format
+
+>   2.  Given the warnings we're getting when using wininet, are their
+> plans to make windows certficates be supported in another way?
+
+What does libcurlVersion() return for you? In theory, it should be
+possible to make libcurl use schannel and therefore the system
+certificate store for TLS verification purposes.
+
+-- 
+Best regards,
+Ivan
+
+
+From @|mon@@ndrew@ @end|ng |rom b@br@h@m@@c@uk  Thu Sep 12 17:06:50 2024
+From: @|mon@@ndrew@ @end|ng |rom b@br@h@m@@c@uk (Simon Andrews)
+Date: Thu, 12 Sep 2024 15:06:50 +0000
+Subject: [Rd] Can gzfile be given the same method option as file
+In-Reply-To: <20240912172737.1202b2bd@arachnoid>
+References: <CWXP123MB619012B710931D02CF91B812D0642@CWXP123MB6190.GBRP123.PROD.OUTLOOK.COM>
+ <20240912172737.1202b2bd@arachnoid>
+Message-ID: <CWXP123MB6190D38EB374D47862DC5E52D0642@CWXP123MB6190.GBRP123.PROD.OUTLOOK.COM>
+
+Thankyou!  This helped a lot.  I had mis-understood some of the chain of functions which got to the eventual failure.  I can confirm that it does indeed work if you create a url() first and it picks the appropriate back end as long as the url.method option is set.
+
+For the schannel back end I have:
+
+> libcurlVersion()
+[1] "8.6.0"
+attr(,"ssl_version")
+[1] "(OpenSSL/3.2.1) Schannel"
+attr(,"libssh_version")
+[1] "libssh2/1.11.0"
+
+However I can't get either of the curl related methods to work.
+
+> download.file('https://seurat.nygenome.org/azimuth/references/homologs.rds', destfile = "c:/Users/andrewss/homologs.rds", method="libcurl")
+trying URL 'https://seurat.nygenome.org/azimuth/references/homologs.rds'
+Error in download.file("https://seurat.nygenome.org/azimuth/references/homologs.rds",  : 
+  cannot open URL 'https://seurat.nygenome.org/azimuth/references/homologs.rds'
+In addition: Warning message:
+In download.file("https://seurat.nygenome.org/azimuth/references/homologs.rds",  :
+  URL 'https://seurat.nygenome.org/azimuth/references/homologs.rds': status was 'SSL connect error'
+
+> download.file('https://seurat.nygenome.org/azimuth/references/homologs.rds', destfile = "c:/Users/andrewss/homologs.rds", method="curl")
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
+curl: (35) schannel: next InitializeSecurityContext failed: CRYPT_E_NO_REVOCATION_CHECK (0x80092012) - The revocation function was unable to check revocation for the certificate.
+Error in download.file("https://seurat.nygenome.org/azimuth/references/homologs.rds",  : 
+  'curl' call had nonzero exit status
+
+I realise that this may not be as simple as the certificate not being seen, and that the system here may not fake the revocation infrastructure too, but I don't see that this is going to change, and it's only the winet method which actually allows anything to connect.
+
+Simon.
+
+
+
+
+-----Original Message-----
+From: Ivan Krylov <ikrylov at disroot.org> 
+Sent: 12 September 2024 15:28
+To: Simon Andrews via R-devel <r-devel at r-project.org>
+Cc: Simon Andrews <simon.andrews at babraham.ac.uk>
+Subject: Re: [Rd] Can gzfile be given the same method option as file
+
+? Thu, 12 Sep 2024 12:01:54 +0000
+Simon Andrews via R-devel <r-devel at r-project.org> ?????:
+
+> readRDS('https://seurat.nygenome.org/azimuth/references/homologs.rds')
+> Error in gzfile(file, "rb") : cannot open the connection
+
+I don't think that gzfile works with URLs. gzcon(), on the other hand, does work with url() connections, which accepts the 'method' argument and the getOption('url.method') default.
+
+h <- readRDS(url(
+ 'https://seurat.nygenome.org/azimuth/references/homologs.rds'
+))
+
+But that only works with gzip-compressed files. For example, CRAN's PACKAGES.rds is xz-compressed, and I don't see a way to read it the same way:
+
+readBin(
+ index <- file.path(
+  contrib.url(getOption('repos')['CRAN']),
+  'PACKAGES.rds'
+ ), raw(), 5
+) |> rawToChar()
+# [1] "\xfd7zXZ" <-- note the "7zXZ" header
+readRDS(url(index))
+# Error in readRDS(url(index)) : unknown input format
+
+>   2.  Given the warnings we're getting when using wininet, are their 
+> plans to make windows certficates be supported in another way?
+
+What does libcurlVersion() return for you? In theory, it should be possible to make libcurl use schannel and therefore the system certificate store for TLS verification purposes.
+
+--
+Best regards,
+Ivan
+
+------------------------------------
+This email has been scanned for spam & viruses. If you believe this email should have been stopped by our filters, click the following link to report it (https://portal-uk.mailanyone.net/index.html#/outer/reportspam?token=dXNlcj1zaW1vbi5hbmRyZXdzQGJhYnJhaGFtLmFjLnVrO3RzPTE3MjYxNTEyNjU7dXVpZD02NkUyRkE2MDJDNjczRjRCREUwOTMxQUM4NTdCNkY3Nzt0b2tlbj1lNWI5MzU2NGJmOWE1MTcwYmM4ZmY2YjNhNTYwMWQ5ZmFkOTU2YWE1Ow%3D%3D).
+
+
+From |kry|ov @end|ng |rom d|@root@org  Thu Sep 12 17:23:02 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Thu, 12 Sep 2024 18:23:02 +0300
+Subject: [Rd] Can gzfile be given the same method option as file
+In-Reply-To: <CWXP123MB6190D38EB374D47862DC5E52D0642@CWXP123MB6190.GBRP123.PROD.OUTLOOK.COM>
+References: <CWXP123MB619012B710931D02CF91B812D0642@CWXP123MB6190.GBRP123.PROD.OUTLOOK.COM>
+ <20240912172737.1202b2bd@arachnoid>
+ <CWXP123MB6190D38EB374D47862DC5E52D0642@CWXP123MB6190.GBRP123.PROD.OUTLOOK.COM>
+Message-ID: <20240912182302.5ddbe5a8@arachnoid>
+
+? Thu, 12 Sep 2024 15:06:50 +0000
+Simon Andrews <simon.andrews at babraham.ac.uk> ?????:
+
+> > download.file('https://seurat.nygenome.org/azimuth/references/homologs.rds',
+> > destfile = "c:/Users/andrewss/homologs.rds", method="libcurl")  
+<...>
+> status was 'SSL connect error'
+> 
+> > download.file('https://seurat.nygenome.org/azimuth/references/homologs.rds',
+> > destfile = "c:/Users/andrewss/homologs.rds", method="curl")  
+<...>
+> curl: (35) schannel: next InitializeSecurityContext
+> failed: CRYPT_E_NO_REVOCATION_CHECK (0x80092012) - The revocation
+> function was unable to check revocation for the certificate.
+
+This extra error code is useful, thank you for trying the "curl"
+method. https://github.com/curl/curl/issues/14315 suggests a libcurl
+option and a curl command line option.
+
+Does download.file(method = 'curl', extra = '--ssl-no-revoke') work for
+you?
+
+Since R-4.2.2, R understands the R_LIBCURL_SSL_REVOKE_BEST_EFFORT
+environment variable. Does it help to set it to "TRUE" (e.g. in the
+.Renviron file) before invoking download.file(method = "libcurl")?
+
+Some extra context can be found in
+news(grepl('R_LIBCURL_SSL_REVOKE_BEST_EFFORT', Text)) and
+<https://bugs.r-project.org/show_bug.cgi?id=18379>.
+
+-- 
+Best regards,
+Ivan
+
+
+From @|mon@@ndrew@ @end|ng |rom b@br@h@m@@c@uk  Thu Sep 12 17:36:32 2024
+From: @|mon@@ndrew@ @end|ng |rom b@br@h@m@@c@uk (Simon Andrews)
+Date: Thu, 12 Sep 2024 15:36:32 +0000
+Subject: [Rd] Can gzfile be given the same method option as file
+In-Reply-To: <20240912182302.5ddbe5a8@arachnoid>
+References: <CWXP123MB619012B710931D02CF91B812D0642@CWXP123MB6190.GBRP123.PROD.OUTLOOK.COM>
+ <20240912172737.1202b2bd@arachnoid>
+ <CWXP123MB6190D38EB374D47862DC5E52D0642@CWXP123MB6190.GBRP123.PROD.OUTLOOK.COM>
+ <20240912182302.5ddbe5a8@arachnoid>
+Message-ID: <CWXP123MB6190EF5BCE48303117C82AA4D0642@CWXP123MB6190.GBRP123.PROD.OUTLOOK.COM>
+
+? Thu, 12 Sep 2024 15:06:50 +0000
+Simon Andrews <simon.andrews at babraham.ac.uk> ?????:
+
+> > > download.file('https://seurat.nygenome.org/azimuth/references/homolo
+> > > gs.rds', destfile = "c:/Users/andrewss/homologs.rds", method="curl")
+<...>
+> > curl: (35) schannel: next InitializeSecurityContext
+> > failed: CRYPT_E_NO_REVOCATION_CHECK (0x80092012) - The revocation 
+> > function was unable to check revocation for the certificate.
+
+> This extra error code is useful, thank you for trying the "curl"
+> method. https://github.com/curl/curl/issues/14315 suggests a libcurl option and a curl command line option.
+> 
+> Does download.file(method = 'curl', extra = '--ssl-no-revoke') work for you?
+
+Yes!  Adding that option does indeed work and generates no warnings.
+
+> Since R-4.2.2, R understands the R_LIBCURL_SSL_REVOKE_BEST_EFFORT environment variable. Does it help to set it > to "TRUE" (e.g. in the .Renviron file) before invoking download.file(method = "libcurl")?
+
+Yes, this also works and will provide a workable solution for our environment
+
+> Sys.getenv("R_LIBCURL_SSL_REVOKE_BEST_EFFORT")
+[1] "TRUE"
+> download.file('https://seurat.nygenome.org/azimuth/references/homologs.rds', destfile = "c:/Users/andrewss/homologs.rds", method="libcurl")
+trying URL 'https://seurat.nygenome.org/azimuth/references/homologs.rds'
+Content type 'application/octet-stream' length 3458249 bytes (3.3 MB)
+downloaded 3.3 MB
+
+Thank you so much for your help with this.  I shall implement this for the rest of our organisation.
+
+Simon.
+
+
