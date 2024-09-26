@@ -1,0 +1,283 @@
+From md@umner @end|ng |rom gm@||@com  Tue Feb  1 08:53:53 2022
+From: md@umner @end|ng |rom gm@||@com (Michael Sumner)
+Date: Tue, 1 Feb 2022 18:53:53 +1100
+Subject: [R-sig-Geo] How to export a GeoTIFF 8 bit raster
+In-Reply-To: <CAKnqGuQJafTiTT5bugr0293JBaWYR4o1P1pzAE_g869yjCLrSQ@mail.gmail.com>
+References: <CAKnqGuQJafTiTT5bugr0293JBaWYR4o1P1pzAE_g869yjCLrSQ@mail.gmail.com>
+Message-ID: <CAAcGz99=LYWGFz=bEUMEcczYm_uGXspzUvgKFxzRpZUKqaX0bg@mail.gmail.com>
+
+this might work, your file link doesn't provide access to me so I created a
+guess example
+
+library(terra)
+x <- rast(matrix(sample(0:255, 12), 3))
+file.tif <- tempfile(fileext = ".tif")
+#writeRaster(x, file.tif, gdal = "NBITS=8", datatype = "INT1U")
+#rast(file.tif)
+
+terra has its own controls over the options, some interact/overlap with the
+gdal ones I haven't explored that
+
+HTH,  Mike
+
+On Mon, Jan 31, 2022 at 5:52 AM Rik Ferreira <rikferreiraalves at gmail.com>
+wrote:
+>
+> Hello!
+>
+> How a raster image can be exported as a 8 bit GeoTIFF image?
+>
+> I'm downloading a 8 bit image from this link:
+> http://geoinfo.cnps.embrapa.br/documents/2918/download, cropping it with a
+> vector mask, treating it, and exporting it with terra package (writeRaster
+> function).
+>
+> However, the original image is a GeoTIFF with 8 bit depth but the output
+> image (terra package, writeRaster function) is a 32 bit image.
+>
+> I can control it with `gdal = "NBITS=8"` argument to writeRaster but i get
+> such warning:
+>
+> Warning message:
+> > In x at ptr$writeRaster(opt) :
+> >   GDAL Message 6:
+> > /mnt/HDD/STORAGE/r-projects/raster-bit-depth/output/recorte.tif: Only
+> > NBITS=16 is supported for data type Float32
+> >
+>
+> How can I export this raster as a 8 bit GeoTIFF image with terra package?
+>
+> --
+> Rik Ferreira Alves
+> Graduando em Geografia - Unimontes
+> https://rikferreira.netlify.app/
+>
+>         [[alternative HTML version deleted]]
+>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+
+
+
+--
+Michael Sumner
+Software and Database Engineer
+Australian Antarctic Division
+Hobart, Australia
+e-mail: mdsumner at gmail.com
+
+	[[alternative HTML version deleted]]
+
+
+From n|ko@@tz|ok@@ @end|ng |rom gm@||@com  Fri Feb 18 17:01:58 2022
+From: n|ko@@tz|ok@@ @end|ng |rom gm@||@com (Nikolaos Tziokas)
+Date: Fri, 18 Feb 2022 16:01:58 +0000
+Subject: [R-sig-Geo] (no subject)
+Message-ID: <CAGg5H0aqA91W2LQyQT0_j9f5sF6CYg30gx_bn-VS7ft_kWnK4Q@mail.gmail.com>
+
+Hi, I tried to perform *Area-to-Area Regression CoKriging (AtACoK)* for
+raster downscaling using the package *atakrig*. My dataset consists of 1
+dependent variable with spatial resolution 400m and 2 covariates with 100m
+pixel size. After performing  *AtACoK* the resulting raster's image values
+are from 0:Infinity (I followed the steps included in the *atakrig*
+package). Any ideas why those values? For comparison, when I tried
+Area-to-Area Kriging (using 1 independent variable) the downscaled image
+was fine. Thank you. Here is the code:
+
+library(atakrig)
+library(raster)
+library(beepr)
+
+ntl = raster("path/atacok/ntl_nov.tif") #dependent var
+ndvi = raster("path/ndvi.tif") #independent var (any combination can be used)
+pop = raster("path/pop.tif") #independent var
+
+ntl.d <- discretizeRaster(ntl, 100);
+ndvi.d <- discretizeRaster(ndvi, 100);
+pop.d <- discretizeRaster(pop, 100);
+grid.pred <- discretizeRaster(ndvi, 100, type = "value");
+
+pop.d$areaValues$value <- log(pop.d$areaValues$value)
+ntl.d$areaValues$value <- log(ntl.d$areaValues$value)
+ndvi.d$areaValues$value <- log(ndvi.d$areaValues$value)
+## area-to-area Kriging ----# point-scale variogram from combined ndvi and ntl
+aod.combine <- rbindDiscreteArea(ndvi.d, ntl.d)
+sv.ok_combine <- deconvPointVgm(aod.combine,
+                                model = "Gau",
+                                rd = 0.5,
+                                maxIter = 20); beep(7)
+# point-scale cross-variogram (for AtACoK)
+aod.list <-list(ndvi = ndvi.d, ntl = ntl.d, pop = pop.d)sv.ck
+<-deconvPointVgmForCoKriging(aod.list,
+                                   model = "Exp", #Sph, Exp, Gau
+                                   rd = 0.7,
+                                   maxIter = 20); beep(7)
+# prediction
+pred.ataok <- ataKriging(ntl.d,
+                         grid.pred,
+                         sv.ck$ntl,
+                         showProgress = TRUE); beep(7)
+
+
+pred.atack <- ataCoKriging(aod.list,
+                           unknownVarId = "ntl",
+                           unknown = grid.pred,
+                           ptVgms = sv.ck,
+                           oneCondition = F,
+                           auxRatioAdj = F,
+                           showProgress = T); beep(7)
+
+# convert result to raster
+pred.ataok.r <-rasterFromXYZ(pred.ataok[,-1]);
+plot(pred.ataok.r)
+
+pred.atack.r <-rasterFromXYZ(pred.atack[,-1]);
+plot(pred.atack.r)
+
+
+-- 
+Tziokas Nikolaos
+GIS Technician
+
+Tel:(+44)07561120302
+LinkedIn <http://linkedin.com/in/nikolaos-tziokas-896081130>
+
+	[[alternative HTML version deleted]]
+
+
+From bh@@k@r@ko|k@t@ @end|ng |rom gm@||@com  Fri Feb 25 16:23:09 2022
+From: bh@@k@r@ko|k@t@ @end|ng |rom gm@||@com (Bhaskar Mitra)
+Date: Fri, 25 Feb 2022 08:23:09 -0700
+Subject: [R-sig-Geo] Request for help on R codes for equivalent QGIS
+ operation
+Message-ID: <CAEGXkYV4JT-hY67JeFm=EEHcpo-FxA5AGZ+mFq=2+GOc1fsqVg@mail.gmail.com>
+
+Hello Everyone,
+
+I have two shapefiles :
+
+shp1 has 400 polygons. One of the columns is X.
+shp2 has 10 polygons.
+
+Both have the same extent and crs. I want to summarize the value of column
+X from shp1 within the
+boundary of each polygons for shp2
+
+Can anyone please suggest to me an equivalent approach in R to join
+attributes by location.
+
+I am using the following approach in QGIS:
+
+1) Under Processing Toolbox, select Vector General
+2) Join attributes by location (summary)
+3) Select shp2 as Input Layer
+4) Select shp1 as Join layer
+5) Under Geometric properties, select intersects, overlaps,
+contains and within
+4) Fields to summarizse: select X
+5) Summaries to calculate: select sum
+
+
+I would really appreciate some help or suggestions in this regard.
+
+Thanks,
+Bhaskar
+
+	[[alternative HTML version deleted]]
+
+
+From b|@|ev||@t @end|ng |rom gm@||@com  Fri Feb 25 16:39:05 2022
+From: b|@|ev||@t @end|ng |rom gm@||@com (=?UTF-8?Q?Bede-Fazekas_=c3=81kos?=)
+Date: Fri, 25 Feb 2022 16:39:05 +0100
+Subject: [R-sig-Geo] Request for help on R codes for equivalent QGIS
+ operation
+In-Reply-To: <CAEGXkYV4JT-hY67JeFm=EEHcpo-FxA5AGZ+mFq=2+GOc1fsqVg@mail.gmail.com>
+References: <CAEGXkYV4JT-hY67JeFm=EEHcpo-FxA5AGZ+mFq=2+GOc1fsqVg@mail.gmail.com>
+Message-ID: <874df921-3481-d200-2954-340a83eff6b5@gmail.com>
+
+Dear Bhaskar,
+
+function st_join() from package 'sf' is what you are searching for. See 
+the examples in the help page of the function about the aggregation of 
+the spatially joined data:
+https://r-spatial.github.io/sf/reference/st_join.html
+
+HTH,
+?kos Bede-Fazekas
+Centre for Ecological Research, Hungary
+
+2022.02.25. 16:23 keltez?ssel, Bhaskar Mitra ?rta:
+> Hello Everyone,
+>
+> I have two shapefiles :
+>
+> shp1 has 400 polygons. One of the columns is X.
+> shp2 has 10 polygons.
+>
+> Both have the same extent and crs. I want to summarize the value of column
+> X from shp1 within the
+> boundary of each polygons for shp2
+>
+> Can anyone please suggest to me an equivalent approach in R to join
+> attributes by location.
+>
+> I am using the following approach in QGIS:
+>
+> 1) Under Processing Toolbox, select Vector General
+> 2) Join attributes by location (summary)
+> 3) Select shp2 as Input Layer
+> 4) Select shp1 as Join layer
+> 5) Under Geometric properties, select intersects, overlaps,
+> contains and within
+> 4) Fields to summarizse: select X
+> 5) Summaries to calculate: select sum
+>
+>
+> I would really appreciate some help or suggestions in this regard.
+>
+> Thanks,
+> Bhaskar
+>
+> 	[[alternative HTML version deleted]]
+>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+
+
+From debor@h@pr|@@ @end|ng |rom durh@m@@c@uk  Mon Feb 28 16:40:26 2022
+From: debor@h@pr|@@ @end|ng |rom durh@m@@c@uk (PRIS, DEBORAH)
+Date: Mon, 28 Feb 2022 15:40:26 +0000
+Subject: [R-sig-Geo] Retrieve endpoints of MULTILINESTRINGS
+Message-ID: <CWXP265MB5622CFFD68DDE817C9492C7DD3019@CWXP265MB5622.GBRP265.PROD.OUTLOOK.COM>
+
+"Linestrings.png": https://acrobat.adobe.com/link/track?uri=urn:aaid:scds:US:8407a39f-a9c6-409c-865e-ebd252316696
+"Multilinstrings_grouped.png": https://acrobat.adobe.com/link/track?uri=urn:aaid:scds:US:9058d999-6bd0-4ba2-b308-941287711821
+"Result_st_line_sample.png": https://acrobat.adobe.com/link/track?uri=urn:aaid:scds:US:e22f6121-5809-4bf4-88a9-9f39ab6334d2
+
+
+Hello everyone, 
+
+I have an sf object of multilinestrings (image "Linestrings") that I created by closing the gaps between (black) lines, thereby constructing a new set of (red) lines. I merged the two sets of lines into a multilinestring object and now would like to get the endpoints of every multilinestring. I know that there is the st_line_sample for linestrings, but when I st_cast my multilinestrings to linestrings, the function of course returns every endpoint from every linestring (black and red) that are contained in a mulitlinestring (image "Result_st_line_sample"). 
+
+I grouped the individual linestrings to multilinestrings based on shared endpoints (image "Mulitlinestrings_grouped") but I don't know how to go on from there. I also tried to merge the mulitlinestrings into linestrings in various ways to overcome this issue and tested different approaches to get the endpoints, but nothing worked so far. 
+
+Any help is much appreciated!
+
+Many thanks,
+Deborah
+
+
+
+Deborah Pri? (she/her/hers)
+Early Stage Researcher / PhD student
+Department of Geography
+Durham University, UK
+
+deborah.priss at durham.ac.uk
+i-CONN network
+
+

@@ -554,3 +554,1007 @@ On September 9, 2024 1:53:45 AM PDT, peter dalgaard <pdalgd at gmail.com> wrote:
 Sent from my phone. Please excuse my brevity.
 
 
+From n@re@h_gurbux@n| @end|ng |rom hotm@||@com  Sun Sep 15 18:28:57 2024
+From: n@re@h_gurbux@n| @end|ng |rom hotm@||@com (Naresh Gurbuxani)
+Date: Sun, 15 Sep 2024 12:28:57 -0400
+Subject: [R-SIG-Mac] data.table install with HomeBrew
+In-Reply-To: <7cbae008-78fe-48b1-9551-ece52beb495d@gmail.com>
+References: <7cbae008-78fe-48b1-9551-ece52beb495d@gmail.com>
+Message-ID: <IA1P223MB0499B5EA92089CF56413E874FA672@IA1P223MB0499.NAMP223.PROD.OUTLOOK.COM>
+
+Seeking a volunteer who uses HomeBrew package manager.
+
+Currently data.table installation wiki 
+(https://github.com/Rdatatable/data.table/wiki/Installation) describes a 
+complicated method using Makevars file.
+
+With MacPorts (which I use), data.table install with OpenMP enabled is 
+quite simple:
+
+Install OpenMP from https://mac.r-project.org/openmp/
+
+Install data.table: sudo port install r-data.table +openmp
+
+There was no need to use Makevars file.
+
+Can someone using HomeBrew try installing data.table in a similar way 
+without using Makevars?? If data.table install (with OpenMP support) is 
+successful, then we can update wiki to include this simpler method.
+
+My R installation was done using MacPorts.? I am assuming that HomeBrew 
+user has installed R using HomeBrew.
+
+Finally, does above method miss out on any features that are included 
+when data.table is installed with Makevars file?
+
+Thanks,
+
+Naresh
+
+
+From j@g@nmn2 @end|ng |rom gm@||@com  Mon Sep 16 02:02:26 2024
+From: j@g@nmn2 @end|ng |rom gm@||@com (Mikael Jagan)
+Date: Sun, 15 Sep 2024 20:02:26 -0400
+Subject: [R-SIG-Mac] WRE advice about alloca portability seems incomplete or
+ out-of-date
+Message-ID: <d2a70dc6-7d7d-4ace-b409-6f9b18035057@gmail.com>
+
+R-exts provides some header preamble for using alloca() and suggests that it
+"suffices for known R platforms", with the caveat that it "should be included
+before standard C headers such as stdlib.h".  But attempting to compile a
+minimal program using Xcode 15.3 with macOS 14.4 SDK, including the preamble
+followed by stdlib.h, results in an error:
+
+     Source:
+
+     #include <Rconfig.h> // for HAVE_ALLOCA_H
+     #ifdef __GNUC__
+     // this covers gcc, clang, icc
+     # undef alloca
+     # define alloca(x) __builtin_alloca((x))
+     #elif defined(HAVE_ALLOCA_H)
+     // needed for native compilers on Solaris and AIX
+     # include <alloca.h>
+     #endif
+     #include <stdlib.h>
+     int main()
+     {
+         return 0;
+     }
+
+     Output:
+
+     $ clang -I"`R RHOME`/include" test.c -o test.o
+     In file included from test.c:11:
+     In file included from 
+/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/stdlib.h:68:
+ 
+/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/alloca.h:32:7: 
+error: conflicting types for '__builtin_alloca'
+     void    *alloca(size_t);                /* built-in for gcc */
+              ^
+     test.c:5:20: note: expanded from macro 'alloca'
+     # define alloca(x) __builtin_alloca((x))
+                        ^
+ 
+/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/alloca.h:32:7: 
+note: '__builtin_alloca' is a builtin with type 'void *(unsigned long)'
+     test.c:5:20: note: expanded from macro 'alloca'
+     # define alloca(x) __builtin_alloca((x))
+                        ^
+     1 error generated.
+
+where it seems that the macro alloca() defined at line 5 is expanded in
+alloca.h, producing a nonsense declaration there.  I conclude that the currently
+documented advice is not quite portable here ...
+
+I know that I can just prefix identifier as below:
+
+     #include <Rconfig.h> // for HAVE_ALLOCA_H
+     #ifdef __GNUC__
+     // this covers gcc, clang, icc
+     # define prefixed_alloca(x) __builtin_alloca((x))
+     #else
+     # ifdef HAVE_ALLOCA_H
+     // needed for native compilers on Solaris and AIX
+     #  include <alloca.h>
+     # endif
+     # define prefixed_alloca(x) alloca((x))
+     #endif
+
+but if there is another way to remain portable, then perhaps it could be
+documented.
+
+Mikael
+
+
+From jeroenoom@ @end|ng |rom gm@||@com  Mon Sep 23 22:27:40 2024
+From: jeroenoom@ @end|ng |rom gm@||@com (Jeroen Ooms)
+Date: Mon, 23 Sep 2024 22:27:40 +0200
+Subject: [R-SIG-Mac] Fix for compiling C++ after upgrading to CLT for Xcode
+ 16 on Sequoia
+Message-ID: <CABFfbXugr7nsyHqVxcep+NgEntJHG=+gh8idHEMeqkT6-Oyzbg@mail.gmail.com>
+
+I had two different machines (both intel and arm64) that were no
+longer able to compile C++ code after MacOS automatically updated to
+Command Line Tools for Xcode version 16 on Sequoia. After the update,
+clang is no longer able to find libc++ headers, e.g.
+
+fatal error: 'cmath' file not found
+  100 | #include <cmath>
+      |          ^~~~~~~
+1 error generated.
+
+The solution is given on
+https://trac.macports.org/wiki/SequoiaProblems: the installer for the
+Command Line Tools for Xcode 16 does not delete a directory that was
+installed by some older versions of the CLTs, which unfortunately
+causes clang++ to look in the wrong place for C++ headers. The fix is
+to delete the stray directory if it exists:
+
+    sudo rm -rf /Library/Developer/CommandLineTools/usr/include/c++
+
+Hope this helps some others.
+
+
+From @eb@@t|@n@kreutzer @end|ng |rom un|-he|de|berg@de  Mon Sep 23 16:27:57 2024
+From: @eb@@t|@n@kreutzer @end|ng |rom un|-he|de|berg@de (Sebastian Kreutzer)
+Date: Mon, 23 Sep 2024 16:27:57 +0200
+Subject: [R-SIG-Mac] R-devel segmentation fault in combination RStudio/R GUI
+Message-ID: <B4603557-CEC4-4F10-A141-01678B94922D@uni-heidelberg.de>
+
+Hello, 
+
+I am writing because I have been struggling for a couple of months to get R-devel to work in combination with 
+RStudio or the R GUI.
+
+In the past, I had been downloading R-devel for macOS from https://mac.r-project.org/, which 
+nearly always worked, however, for some (months I have in mind), there aren't daily R-devel builds. So I started building 
+R from source following https://stackoverflow.com/questions/75595875/how-do-i-build-r-from-sources-on-macos
+
+Adapted to my system, this worked surprisingly well, so I kept drawing R-devel from the SNV server on a regular 
+basis and built it from the source. However, it stopped working in mid-August. In a nutshell: 
+
+- I can build R-devel from the source without any issue flagged, and when started in the terminal, it works as expected.
+- However, it crashes reproducibly when trying to load a package in RStudio (stable/nightly build) and the R GUI (always the latest version) 
+terminates the R session on start. Error messages in the console I get read as follows: 
+
+> R GUI: Termination Reason:  Namespace SIGNAL, Code 11 Segmentation fault: 11 
+> RStudio: Exception Type: EXC_CRASH (SIGABRT) ->    /usr/lib/dyld 0x0 - 0xffffffffffffffff ??? (*) <00000000-0000-0000-0000-000000000000> ???
+
+I can share the full logs, but I want to keep it short for now.
+ 
+My questions are: 
+
+- Did anybody encounter such an issue with the latest R-devel and R GUI, RStudio? 
+- Is this perhaps why an R-devel binary is currently not available on https://mac.r-project.org/?
+
+If I know that this is a known issue, it is all good; however, if it works 
+For all others without, then the error must be on my end, and I have to keep digging further. 
+
+- Tested systems: M2 -> macOS 14.5 to 15.0 with the Xcode on always the latest version available at the time.
+- SNV: Always the latest check out 
+
+
+Kind regards, 
+
+
+Sebastian Kreutzer
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: smime.p7s
+Type: application/pkcs7-signature
+Size: 5890 bytes
+Desc: not available
+URL: <https://stat.ethz.ch/pipermail/r-sig-mac/attachments/20240923/a415cd7a/attachment.p7s>
+
+From @|mon@urb@nek @end|ng |rom R-project@org  Wed Sep 25 01:40:21 2024
+From: @|mon@urb@nek @end|ng |rom R-project@org (Simon Urbanek)
+Date: Wed, 25 Sep 2024 11:40:21 +1200
+Subject: [R-SIG-Mac] 
+ R-devel segmentation fault in combination RStudio/R GUI
+In-Reply-To: <B4603557-CEC4-4F10-A141-01678B94922D@uni-heidelberg.de>
+References: <B4603557-CEC4-4F10-A141-01678B94922D@uni-heidelberg.de>
+Message-ID: <50FE6D48-5A7D-413D-94F0-1DAFFCB90663@R-project.org>
+
+Sebastian,
+
+if you want to replicate the CRAN builds, you have to also use the same settings, otherwise you may have a build which is not binary compatible. It is unclear from your description how you built R (there are several variants such as framework install vs "unix"-style install and they are incompatible). You can see the flags actually used at the top of ${R_HOME}/etc/Makevars.
+
+As for macOS R binaries, all latest builds are always available from
+https://mac.r-project.org/big-sur/last-success/
+
+The fact that the main page itself is not showing R-devel is certainly not intentional since the binaries are there - I?ll look into that, thanks for reposting (you shouldn't wait months to report that ;)).
+
+Thanks,
+Simon
+
+
+
+> On 24 Sep 2024, at 02:27, Sebastian Kreutzer <sebastian.kreutzer at uni-heidelberg.de> wrote:
+> 
+> Hello, 
+> 
+> I am writing because I have been struggling for a couple of months to get R-devel to work in combination with 
+> RStudio or the R GUI.
+> 
+> In the past, I had been downloading R-devel for macOS from https://mac.r-project.org/, which 
+> nearly always worked, however, for some (months I have in mind), there aren't daily R-devel builds. So I started building 
+> R from source following https://stackoverflow.com/questions/75595875/how-do-i-build-r-from-sources-on-macos
+> 
+> Adapted to my system, this worked surprisingly well, so I kept drawing R-devel from the SNV server on a regular 
+> basis and built it from the source. However, it stopped working in mid-August. In a nutshell: 
+> 
+> - I can build R-devel from the source without any issue flagged, and when started in the terminal, it works as expected.
+> - However, it crashes reproducibly when trying to load a package in RStudio (stable/nightly build) and the R GUI (always the latest version) 
+> terminates the R session on start. Error messages in the console I get read as follows: 
+> 
+>> R GUI: Termination Reason:  Namespace SIGNAL, Code 11 Segmentation fault: 11 
+>> RStudio: Exception Type: EXC_CRASH (SIGABRT) ->    /usr/lib/dyld 0x0 - 0xffffffffffffffff ??? (*) <00000000-0000-0000-0000-000000000000> ???
+> 
+> I can share the full logs, but I want to keep it short for now.
+> 
+> My questions are: 
+> 
+> - Did anybody encounter such an issue with the latest R-devel and R GUI, RStudio? 
+> - Is this perhaps why an R-devel binary is currently not available on https://mac.r-project.org/?
+> 
+> If I know that this is a known issue, it is all good; however, if it works 
+> For all others without, then the error must be on my end, and I have to keep digging further. 
+> 
+> - Tested systems: M2 -> macOS 14.5 to 15.0 with the Xcode on always the latest version available at the time.
+> - SNV: Always the latest check out 
+> 
+> 
+> Kind regards, 
+> 
+> 
+> Sebastian Kreutzer
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+
+
+From @eb@@t|@n@kreutzer @end|ng |rom un|-he|de|berg@de  Wed Sep 25 11:26:01 2024
+From: @eb@@t|@n@kreutzer @end|ng |rom un|-he|de|berg@de (Sebastian Kreutzer)
+Date: Wed, 25 Sep 2024 11:26:01 +0200
+Subject: [R-SIG-Mac] 
+ R-devel segmentation fault in combination RStudio/R GUI
+In-Reply-To: <50FE6D48-5A7D-413D-94F0-1DAFFCB90663@R-project.org>
+References: <B4603557-CEC4-4F10-A141-01678B94922D@uni-heidelberg.de>
+ <50FE6D48-5A7D-413D-94F0-1DAFFCB90663@R-project.org>
+Message-ID: <2A9471D9-2A20-4BCC-84D3-A6C1B54E611C@uni-heidelberg.de>
+
+Hi Simon, 
+
+Many thanks for your prompt reply and the link; it greatly helps, and I appreciate it!
+
+Yes, sorry for not detailing my issue further, but I did not want to 
+spam anybody with the log and configuration files I am using, so I cut it short. 
+
+I will also look more carefully into the differences between ?my? build process and the CRAN builds; 
+it seems evident that I have overlooked something. My initial thought was just that with all the API 
+changes going on and me using a more recent version of macOS for the build than CRAN does, 
+it would not surprise me that, at some point, something
+had changed in macOS, causing this ?user-interface-only? crash.
+
+Anyway, so as not to bother you further, thanks again for the help. I am good for now, 
+and if I figure out what has to be changed in my configuration to make it work again,  I will post it.
+
+
+Kind regards, 
+
+Sebastian 
+
+> On 25. Sep 2024, at 01:40, Simon Urbanek <simon.urbanek at R-project.org> wrote:
+> 
+> Sebastian,
+> 
+> if you want to replicate the CRAN builds, you have to also use the same settings, otherwise you may have a build which is not binary compatible. It is unclear from your description how you built R (there are several variants such as framework install vs "unix"-style install and they are incompatible). You can see the flags actually used at the top of ${R_HOME}/etc/Makevars.
+> 
+> As for macOS R binaries, all latest builds are always available from
+> https://mac.r-project.org/big-sur/last-success/
+> 
+> The fact that the main page itself is not showing R-devel is certainly not intentional since the binaries are there - I?ll look into that, thanks for reposting (you shouldn't wait months to report that ;)).
+> 
+> Thanks,
+> Simon
+> 
+> 
+> 
+>> On 24 Sep 2024, at 02:27, Sebastian Kreutzer <sebastian.kreutzer at uni-heidelberg.de> wrote:
+>> 
+>> Hello, 
+>> 
+>> I am writing because I have been struggling for a couple of months to get R-devel to work in combination with 
+>> RStudio or the R GUI.
+>> 
+>> In the past, I had been downloading R-devel for macOS from https://mac.r-project.org/, which 
+>> nearly always worked, however, for some (months I have in mind), there aren't daily R-devel builds. So I started building 
+>> R from source following https://stackoverflow.com/questions/75595875/how-do-i-build-r-from-sources-on-macos
+>> 
+>> Adapted to my system, this worked surprisingly well, so I kept drawing R-devel from the SNV server on a regular 
+>> basis and built it from the source. However, it stopped working in mid-August. In a nutshell: 
+>> 
+>> - I can build R-devel from the source without any issue flagged, and when started in the terminal, it works as expected.
+>> - However, it crashes reproducibly when trying to load a package in RStudio (stable/nightly build) and the R GUI (always the latest version) 
+>> terminates the R session on start. Error messages in the console I get read as follows: 
+>> 
+>>> R GUI: Termination Reason:  Namespace SIGNAL, Code 11 Segmentation fault: 11 
+>>> RStudio: Exception Type: EXC_CRASH (SIGABRT) ->    /usr/lib/dyld 0x0 - 0xffffffffffffffff ??? (*) <00000000-0000-0000-0000-000000000000> ???
+>> 
+>> I can share the full logs, but I want to keep it short for now.
+>> 
+>> My questions are: 
+>> 
+>> - Did anybody encounter such an issue with the latest R-devel and R GUI, RStudio? 
+>> - Is this perhaps why an R-devel binary is currently not available on https://mac.r-project.org/?
+>> 
+>> If I know that this is a known issue, it is all good; however, if it works 
+>> For all others without, then the error must be on my end, and I have to keep digging further. 
+>> 
+>> - Tested systems: M2 -> macOS 14.5 to 15.0 with the Xcode on always the latest version available at the time.
+>> - SNV: Always the latest check out 
+>> 
+>> 
+>> Kind regards, 
+>> 
+>> 
+>> Sebastian Kreutzer
+>> 
+>> 
+>> 
+>> 
+>> 
+>> 
+>> 
+>> 
+>> 
+>> 
+>> 
+>> 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <https://stat.ethz.ch/pipermail/r-sig-mac/attachments/20240925/d6ec8e70/attachment-0001.html>
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: smime.p7s
+Type: application/pkcs7-signature
+Size: 5890 bytes
+Desc: not available
+URL: <https://stat.ethz.ch/pipermail/r-sig-mac/attachments/20240925/d6ec8e70/attachment-0001.p7s>
+
+From r|p|ey @end|ng |rom @t@t@@ox@@c@uk  Wed Sep 25 11:50:49 2024
+From: r|p|ey @end|ng |rom @t@t@@ox@@c@uk (Prof Brian Ripley)
+Date: Wed, 25 Sep 2024 10:50:49 +0100
+Subject: [R-SIG-Mac] 
+ R-devel segmentation fault in combination RStudio/R GUI
+In-Reply-To: <2A9471D9-2A20-4BCC-84D3-A6C1B54E611C@uni-heidelberg.de>
+References: <B4603557-CEC4-4F10-A141-01678B94922D@uni-heidelberg.de>
+ <50FE6D48-5A7D-413D-94F0-1DAFFCB90663@R-project.org>
+ <2A9471D9-2A20-4BCC-84D3-A6C1B54E611C@uni-heidelberg.de>
+Message-ID: <c3caaba8-5082-4f2c-927c-d710c9dbfca2@stats.ox.ac.uk>
+
+On 25/09/2024 10:26, Sebastian Kreutzer wrote:
+> Hi Simon,
+> 
+> Many thanks for your prompt reply and the link; it greatly helps, and I 
+> appreciate it!
+> 
+> Yes, sorry for not detailing my issue further, but I did not want to
+> spam anybody with the log and configuration files I am using, so I cut 
+> it short.
+> 
+> I will also look more carefully into the differences between ?my? build 
+> process and the CRAN builds;
+> it seems evident that I have overlooked something. My initial thought 
+> was just that with all the API
+> changes going on and me using a more recent version of macOS for the 
+> build than CRAN does,
+
+The machine used for the M1mac additional issue is fully up-to-date, see 
+https://www.stats.ox.ac.uk/pub/bdr/M1mac/README.txt
+
+Following the instructions in the R-admin manual and not by some third 
+party is always a good idea before posting.
+
+Do please stop sending HTML, as required in the posting guide.
+
+> it would not surprise me that, at some point, something
+> had changed in macOS, causing this ?user-interface-only? crash.
+> 
+> Anyway, so as not to bother you further, thanks again for the help. I am 
+> good for now,
+> and if I figure out what has to be changed in my configuration to make 
+> it work again, ?I will post it.
+> 
+> 
+> Kind regards,
+> 
+> Sebastian
+> 
+>> On 25. Sep 2024, at 01:40, Simon Urbanek <simon.urbanek at R-project.org> 
+>> wrote:
+>>
+>> Sebastian,
+>>
+>> if you want to replicate the CRAN builds, you have to also use the 
+>> same settings, otherwise you may have a build which is not binary 
+>> compatible. It is unclear from your description how you built R (there 
+>> are several variants such as framework install vs "unix"-style install 
+>> and they are incompatible). You can see the flags actually used at the 
+>> top of ${R_HOME}/etc/Makevars.
+>>
+>> As for macOS R binaries, all latest builds are always available from
+>> https://mac.r-project.org/big-sur/last-success/
+>>
+>> The fact that the main page itself is not showing R-devel is certainly 
+>> not intentional since the binaries are there - I?ll look into that, 
+>> thanks for reposting (you shouldn't wait months to report that ;)).
+
+I did report it a month ago to Simon.
+
+>>
+>> Thanks,
+>> Simon
+>>
+>>
+>>
+>>> On 24 Sep 2024, at 02:27, Sebastian Kreutzer <sebastian.kreutzer at uni- 
+>>> heidelberg.de> wrote:
+>>>
+>>> Hello,
+>>>
+>>> I am writing because I have been struggling for a couple of months to 
+>>> get R-devel to work in combination with
+>>> RStudio or the R GUI.
+>>>
+>>> In the past, I had been downloading R-devel for macOS from https:// 
+>>> mac.r-project.org/, which
+>>> nearly always worked, however, for some (months I have in mind), 
+>>> there aren't daily R-devel builds. So I started building
+>>> R from source following https://stackoverflow.com/questions/75595875/ 
+>>> how-do-i-build-r-from-sources-on-macos
+>>>
+>>> Adapted to my system, this worked surprisingly well, so I kept 
+>>> drawing R-devel from the SNV server on a regular
+>>> basis and built it from the source. However, it stopped working in 
+>>> mid-August. In a nutshell:
+>>>
+>>> - I can build R-devel from the source without any issue flagged, and 
+>>> when started in the terminal, it works as expected.
+>>> - However, it crashes reproducibly when trying to load a package in 
+>>> RStudio (stable/nightly build) and the R GUI (always the latest version)
+>>> terminates the R session on start. Error messages in the console I 
+>>> get read as follows:
+>>>
+>>>> R GUI: Termination Reason: ?Namespace SIGNAL, Code 11 Segmentation 
+>>>> fault: 11
+>>>> RStudio: Exception Type: EXC_CRASH (SIGABRT) -> ???/usr/lib/dyld 0x0 
+>>>> - 0xffffffffffffffff ??? (*) <00000000-0000-0000-0000-000000000000> ???
+>>>
+>>> I can share the full logs, but I want to keep it short for now.
+>>>
+>>> My questions are:
+>>>
+>>> - Did anybody encounter such an issue with the latest R-devel and R 
+>>> GUI, RStudio?
+>>> - Is this perhaps why an R-devel binary is currently not available on 
+>>> https://mac.r-project.org/?
+>>>
+>>> If I know that this is a known issue, it is all good; however, if it 
+>>> works
+>>> For all others without, then the error must be on my end, and I have 
+>>> to keep digging further.
+>>>
+>>> - Tested systems: M2 -> macOS 14.5 to 15.0 with the Xcode on always 
+>>> the latest version available at the time.
+>>> - SNV: Always the latest check out
+>>>
+>>>
+>>> Kind regards,
+>>>
+>>>
+>>> Sebastian Kreutzer
+>>>
+>>>
+>>>
+>>>
+>>>
+>>>
+>>>
+>>>
+>>>
+>>>
+>>>
+>>>
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+
+
+-- 
+Brian D. Ripley,                  ripley at stats.ox.ac.uk
+Emeritus Professor of Applied Statistics, University of Oxford
+
+
+From @eb@@t|@n@kreutzer @end|ng |rom un|-he|de|berg@de  Wed Sep 25 20:12:41 2024
+From: @eb@@t|@n@kreutzer @end|ng |rom un|-he|de|berg@de (Sebastian Kreutzer)
+Date: Wed, 25 Sep 2024 20:12:41 +0200
+Subject: [R-SIG-Mac] 
+ R-devel segmentation fault in combination RStudio/R GUI
+In-Reply-To: <c3caaba8-5082-4f2c-927c-d710c9dbfca2@stats.ox.ac.uk>
+References: <B4603557-CEC4-4F10-A141-01678B94922D@uni-heidelberg.de>
+ <50FE6D48-5A7D-413D-94F0-1DAFFCB90663@R-project.org>
+ <2A9471D9-2A20-4BCC-84D3-A6C1B54E611C@uni-heidelberg.de>
+ <c3caaba8-5082-4f2c-927c-d710c9dbfca2@stats.ox.ac.uk>
+Message-ID: <21143C50-4DD9-4B13-ACDA-07C24E1703F9@uni-heidelberg.de>
+
+Hello, 
+
+Thanks again to Prof Ripley and Simon; however, I am afraid I have to get back 
+to you on this because my ?I am good for now" was premature.
+
+The R-devel builds now appear again on https://mac.r-project.org/; thank you very much!
+
+Unfortunately, I have the same issue with these builds as with the ones I have produced locally.
+
+- I installed and tried the binary builds from https://mac.r-project.org/big-sur/last-success/ and 
+https://mac.r-project.org/ but when I use RStudio (just updated before once more) and try to load
+a package, the session crashes immediately. The same goes for the R GUI; it won?t start anymore.
+
+- As before, calling R from the terminal works fine without any issue
+
+- When I return to R-4.4.1-arm64.pkg (always freshly installed, no version switching), 
+everything works as expected, with no error or issue. 
+
+- I?ve looked up the RStudio GitHub issue list but found no report
+
+- The console shows the following errors (shorted; I can provide full reports if wanted): 
+
+RStudio:  EXC_CRASH (SIGABRT)
+R GUI: codes":"0x0000000000000000, 0x0000000000000000","rawCodes":[0,0],"type":"EXC_CRASH","signal":?SIGABRT"
+
+- To be absolutely sure, I then tried to install the R-devel build from https://mac.r-project.org/ on my private M1 Mac mini, still running macOS 14.7 and 
+I got the same crashes. Other than being from Apple, these two machines (the M2 and the private M1) have nothing in common 
+regarding the setup. 
+
+This observation makes me somewhat think that it is likely that someone else can perhaps reproduce this "issue"? 
+
+Thanks once more for your support and kind regards, 
+
+Sebastian 
+
+P.S. Sorry for the HTML in my last messages. Prof Ripley was so kind as to point me to the e-mail certificate that caused these HTML tags. It should be fine now. 
+
+
+> On 25. Sep 2024, at 11:50, Prof Brian Ripley <ripley at stats.ox.ac.uk> wrote:
+> 
+> On 25/09/2024 10:26, Sebastian Kreutzer wrote:
+>> Hi Simon,
+>> Many thanks for your prompt reply and the link; it greatly helps, and I appreciate it!
+>> Yes, sorry for not detailing my issue further, but I did not want to
+>> spam anybody with the log and configuration files I am using, so I cut it short.
+>> I will also look more carefully into the differences between ?my? build process and the CRAN builds;
+>> it seems evident that I have overlooked something. My initial thought was just that with all the API
+>> changes going on and me using a more recent version of macOS for the build than CRAN does,
+> 
+> The machine used for the M1mac additional issue is fully up-to-date, see https://www.stats.ox.ac.uk/pub/bdr/M1mac/README.txt
+> 
+> Following the instructions in the R-admin manual and not by some third party is always a good idea before posting.
+> 
+> Do please stop sending HTML, as required in the posting guide.
+> 
+>> it would not surprise me that, at some point, something
+>> had changed in macOS, causing this ?user-interface-only? crash.
+>> Anyway, so as not to bother you further, thanks again for the help. I am good for now,
+>> and if I figure out what has to be changed in my configuration to make it work again,  I will post it.
+>> Kind regards,
+>> Sebastian
+>>> On 25. Sep 2024, at 01:40, Simon Urbanek <simon.urbanek at R-project.org> wrote:
+>>> 
+>>> Sebastian,
+>>> 
+>>> if you want to replicate the CRAN builds, you have to also use the same settings, otherwise you may have a build which is not binary compatible. It is unclear from your description how you built R (there are several variants such as framework install vs "unix"-style install and they are incompatible). You can see the flags actually used at the top of ${R_HOME}/etc/Makevars.
+>>> 
+>>> As for macOS R binaries, all latest builds are always available from
+>>> https://mac.r-project.org/big-sur/last-success/
+>>> 
+>>> The fact that the main page itself is not showing R-devel is certainly not intentional since the binaries are there - I?ll look into that, thanks for reposting (you shouldn't wait months to report that ;)).
+> 
+> I did report it a month ago to Simon.
+> 
+>>> 
+>>> Thanks,
+>>> Simon
+>>> 
+>>> 
+>>> 
+>>>> On 24 Sep 2024, at 02:27, Sebastian Kreutzer <sebastian.kreutzer at uni- heidelberg.de> wrote:
+>>>> 
+>>>> Hello,
+>>>> 
+>>>> I am writing because I have been struggling for a couple of months to get R-devel to work in combination with
+>>>> RStudio or the R GUI.
+>>>> 
+>>>> In the past, I had been downloading R-devel for macOS from https:// mac.r-project.org/, which
+>>>> nearly always worked, however, for some (months I have in mind), there aren't daily R-devel builds. So I started building
+>>>> R from source following https://stackoverflow.com/questions/75595875/ how-do-i-build-r-from-sources-on-macos
+>>>> 
+>>>> Adapted to my system, this worked surprisingly well, so I kept drawing R-devel from the SNV server on a regular
+>>>> basis and built it from the source. However, it stopped working in mid-August. In a nutshell:
+>>>> 
+>>>> - I can build R-devel from the source without any issue flagged, and when started in the terminal, it works as expected.
+>>>> - However, it crashes reproducibly when trying to load a package in RStudio (stable/nightly build) and the R GUI (always the latest version)
+>>>> terminates the R session on start. Error messages in the console I get read as follows:
+>>>> 
+>>>>> R GUI: Termination Reason:  Namespace SIGNAL, Code 11 Segmentation fault: 11
+>>>>> RStudio: Exception Type: EXC_CRASH (SIGABRT) ->    /usr/lib/dyld 0x0 - 0xffffffffffffffff ??? (*) <00000000-0000-0000-0000-000000000000> ???
+>>>> 
+>>>> I can share the full logs, but I want to keep it short for now.
+>>>> 
+>>>> My questions are:
+>>>> 
+>>>> - Did anybody encounter such an issue with the latest R-devel and R GUI, RStudio?
+>>>> - Is this perhaps why an R-devel binary is currently not available on https://mac.r-project.org/?
+>>>> 
+>>>> If I know that this is a known issue, it is all good; however, if it works
+>>>> For all others without, then the error must be on my end, and I have to keep digging further.
+>>>> 
+>>>> - Tested systems: M2 -> macOS 14.5 to 15.0 with the Xcode on always the latest version available at the time.
+>>>> - SNV: Always the latest check out
+>>>> 
+>>>> 
+>>>> Kind regards,
+>>>> 
+>>>> 
+>>>> Sebastian Kreutzer
+>>>> 
+>>>> 
+>>>> 
+>>>> 
+>>>> 
+>>>> 
+>>>> 
+>>>> 
+>>>> 
+>>>> 
+>>>> 
+>>>> 
+>> _______________________________________________
+>> R-SIG-Mac mailing list
+>> R-SIG-Mac at r-project.org
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+> 
+> 
+> -- 
+> Brian D. Ripley,                  ripley at stats.ox.ac.uk
+> Emeritus Professor of Applied Statistics, University of Oxford
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	[[alternative HTML version deleted]]
+
+
+From @|mon@urb@nek @end|ng |rom R-project@org  Thu Sep 26 01:42:17 2024
+From: @|mon@urb@nek @end|ng |rom R-project@org (Simon Urbanek)
+Date: Thu, 26 Sep 2024 11:42:17 +1200
+Subject: [R-SIG-Mac] 
+ R-devel segmentation fault in combination RStudio/R GUI
+In-Reply-To: <21143C50-4DD9-4B13-ACDA-07C24E1703F9@uni-heidelberg.de>
+References: <B4603557-CEC4-4F10-A141-01678B94922D@uni-heidelberg.de>
+ <50FE6D48-5A7D-413D-94F0-1DAFFCB90663@R-project.org>
+ <2A9471D9-2A20-4BCC-84D3-A6C1B54E611C@uni-heidelberg.de>
+ <c3caaba8-5082-4f2c-927c-d710c9dbfca2@stats.ox.ac.uk>
+ <21143C50-4DD9-4B13-ACDA-07C24E1703F9@uni-heidelberg.de>
+Message-ID: <66EC6489-F1D0-4AD1-BDB4-BC6327C3F24B@R-project.org>
+
+Sebastian,
+
+thanks, I can replicate the crash in the R GUI and it?s due to a missing symbol detected at run-time (I?m attaching the traceback even though it?s not very helpful). Unfortunately, the error doesn?t say which symbol and from which library - and the use is inside Apple?s core library, not R itself - so I have to dig deeper to see what triggers it. This could well be some bug in R-devel, because the build of R-4.4-branch from the same nightly run works fine. I?ll try to have a more in-depth look next week.
+
+Cheers,
+Simon
+
+
+* thread #1, queue = 'com.apple.main-thread', stop reason = signal SIGABRT
+    frame #0: 0x00000001972434c8 dyld`__abort_with_payload + 8
+dyld`:
+->  0x1972434c8 <+8>:  b.lo   0x1972434e8               ; <+40>
+    0x1972434cc <+12>: pacibsp 
+    0x1972434d0 <+16>: stp    x29, x30, [sp, #-0x10]!
+    0x1972434d4 <+20>: mov    x29, sp
+Target 0: (R) stopped.
+(lldb) bt
+* thread #1, queue = 'com.apple.main-thread', stop reason = signal SIGABRT
+  * frame #0: 0x00000001972434c8 dyld`__abort_with_payload + 8
+    frame #1: 0x000000019724e0cc dyld`abort_with_payload_wrapper_internal + 104
+    frame #2: 0x000000019724e100 dyld`abort_with_payload + 16
+    frame #3: 0x00000001971df7f0 dyld`dyld4::halt(char const*, dyld4::StructuredError const*) + 304
+    frame #4: 0x00000001972144fc dyld`dyld4::APIs::_dyld_missing_symbol_abort() + 28
+    frame #5: 0x000000019879574c Foundation`__NSFireDelayedPerform + 372
+    frame #6: 0x00000001976615b8 CoreFoundation`__CFRUNLOOP_IS_CALLING_OUT_TO_A_TIMER_CALLBACK_FUNCTION__ + 32
+    frame #7: 0x000000019766125c CoreFoundation`__CFRunLoopDoTimer + 972
+    frame #8: 0x0000000197660d94 CoreFoundation`__CFRunLoopDoTimers + 356
+    frame #9: 0x00000001976441cc CoreFoundation`__CFRunLoopRun + 1856
+    frame #10: 0x0000000197643434 CoreFoundation`CFRunLoopRunSpecific + 608
+    frame #11: 0x00000001a1ded19c HIToolbox`RunCurrentEventLoopInMode + 292
+    frame #12: 0x00000001a1decfd8 HIToolbox`ReceiveNextEventCommon + 648
+    frame #13: 0x00000001a1decd30 HIToolbox`_BlockUntilNextEventMatchingListInModeWithFilter + 76
+    frame #14: 0x000000019aea2cc8 AppKit`_DPSNextEvent + 660
+    frame #15: 0x000000019b6994d0 AppKit`-[NSApplication(NSEventRouting) _nextEventMatchingEventMask:untilDate:inMode:dequeue:] + 700
+    frame #16: 0x0000000100009628 R`-[RController doProcessEvents:] + 160
+    frame #17: 0x0000000100005260 R`-[RController handleReadConsole:] + 80
+    frame #18: 0x000000010000c0d8 R`Re_ReadConsole + 192
+    frame #19: 0x0000000100b76328 libR.dylib`R_ReplDLLdo1 at main.c:375:6 [opt]
+    frame #20: 0x0000000100016ea0 R`run_REngineRmainloop + 260
+    frame #21: 0x000000010000e54c R`-[REngine runREPL] + 124
+    frame #22: 0x0000000100001c2c R`main + 592
+    frame #23: 0x00000001971db154 dyld`start + 2476
+
+
+
+
+
+	
+> On 26 Sep 2024, at 06:12, Sebastian Kreutzer <sebastian.kreutzer at uni-heidelberg.de> wrote:
+> 
+> Hello, 
+> 
+> Thanks again to Prof Ripley and Simon; however, I am afraid I have to get back 
+> to you on this because my ?I am good for now" was premature.
+> 
+> The R-devel builds now appear again on https://mac.r-project.org/; thank you very much!
+> 
+> Unfortunately, I have the same issue with these builds as with the ones I have produced locally.
+> 
+> - I installed and tried the binary builds from https://mac.r-project.org/big-sur/last-success/ and 
+> https://mac.r-project.org/ but when I use RStudio (just updated before once more) and try to load
+> a package, the session crashes immediately. The same goes for the R GUI; it won?t start anymore.
+> 
+> - As before, calling R from the terminal works fine without any issue
+> 
+> - When I return to R-4.4.1-arm64.pkg (always freshly installed, no version switching), 
+> everything works as expected, with no error or issue. 
+> 
+> - I?ve looked up the RStudio GitHub issue list but found no report
+> 
+> - The console shows the following errors (shorted; I can provide full reports if wanted): 
+> 
+> RStudio:  EXC_CRASH (SIGABRT)
+> R GUI: codes":"0x0000000000000000, 0x0000000000000000","rawCodes":[0,0],"type":"EXC_CRASH","signal":?SIGABRT"
+> 
+> - To be absolutely sure, I then tried to install the R-devel build from https://mac.r-project.org/ on my private M1 Mac mini, still running macOS 14.7 and 
+> I got the same crashes. Other than being from Apple, these two machines (the M2 and the private M1) have nothing in common 
+> regarding the setup. 
+> 
+> This observation makes me somewhat think that it is likely that someone else can perhaps reproduce this "issue"? 
+> 
+> Thanks once more for your support and kind regards, 
+> 
+> Sebastian 
+> 
+> P.S. Sorry for the HTML in my last messages. Prof Ripley was so kind as to point me to the e-mail certificate that caused these HTML tags. It should be fine now. 
+> 
+> 
+>> On 25. Sep 2024, at 11:50, Prof Brian Ripley <ripley at stats.ox.ac.uk> wrote:
+>> 
+>> On 25/09/2024 10:26, Sebastian Kreutzer wrote:
+>>> Hi Simon,
+>>> Many thanks for your prompt reply and the link; it greatly helps, and I appreciate it!
+>>> Yes, sorry for not detailing my issue further, but I did not want to
+>>> spam anybody with the log and configuration files I am using, so I cut it short.
+>>> I will also look more carefully into the differences between ?my? build process and the CRAN builds;
+>>> it seems evident that I have overlooked something. My initial thought was just that with all the API
+>>> changes going on and me using a more recent version of macOS for the build than CRAN does,
+>> 
+>> The machine used for the M1mac additional issue is fully up-to-date, see https://www.stats.ox.ac.uk/pub/bdr/M1mac/README.txt
+>> 
+>> Following the instructions in the R-admin manual and not by some third party is always a good idea before posting.
+>> 
+>> Do please stop sending HTML, as required in the posting guide.
+>> 
+>>> it would not surprise me that, at some point, something
+>>> had changed in macOS, causing this ?user-interface-only? crash.
+>>> Anyway, so as not to bother you further, thanks again for the help. I am good for now,
+>>> and if I figure out what has to be changed in my configuration to make it work again,  I will post it.
+>>> Kind regards,
+>>> Sebastian
+>>>> On 25. Sep 2024, at 01:40, Simon Urbanek <simon.urbanek at R-project.org> wrote:
+>>>> 
+>>>> Sebastian,
+>>>> 
+>>>> if you want to replicate the CRAN builds, you have to also use the same settings, otherwise you may have a build which is not binary compatible. It is unclear from your description how you built R (there are several variants such as framework install vs "unix"-style install and they are incompatible). You can see the flags actually used at the top of ${R_HOME}/etc/Makevars.
+>>>> 
+>>>> As for macOS R binaries, all latest builds are always available from
+>>>> https://mac.r-project.org/big-sur/last-success/
+>>>> 
+>>>> The fact that the main page itself is not showing R-devel is certainly not intentional since the binaries are there - I?ll look into that, thanks for reposting (you shouldn't wait months to report that ;)).
+>> 
+>> I did report it a month ago to Simon.
+>> 
+>>>> 
+>>>> Thanks,
+>>>> Simon
+>>>> 
+>>>> 
+>>>> 
+>>>>> On 24 Sep 2024, at 02:27, Sebastian Kreutzer <sebastian.kreutzer at uni- heidelberg.de> wrote:
+>>>>> 
+>>>>> Hello,
+>>>>> 
+>>>>> I am writing because I have been struggling for a couple of months to get R-devel to work in combination with
+>>>>> RStudio or the R GUI.
+>>>>> 
+>>>>> In the past, I had been downloading R-devel for macOS from https:// mac.r-project.org/, which
+>>>>> nearly always worked, however, for some (months I have in mind), there aren't daily R-devel builds. So I started building
+>>>>> R from source following https://stackoverflow.com/questions/75595875/ how-do-i-build-r-from-sources-on-macos
+>>>>> 
+>>>>> Adapted to my system, this worked surprisingly well, so I kept drawing R-devel from the SNV server on a regular
+>>>>> basis and built it from the source. However, it stopped working in mid-August. In a nutshell:
+>>>>> 
+>>>>> - I can build R-devel from the source without any issue flagged, and when started in the terminal, it works as expected.
+>>>>> - However, it crashes reproducibly when trying to load a package in RStudio (stable/nightly build) and the R GUI (always the latest version)
+>>>>> terminates the R session on start. Error messages in the console I get read as follows:
+>>>>> 
+>>>>>> R GUI: Termination Reason:  Namespace SIGNAL, Code 11 Segmentation fault: 11
+>>>>>> RStudio: Exception Type: EXC_CRASH (SIGABRT) ->    /usr/lib/dyld 0x0 - 0xffffffffffffffff ??? (*) <00000000-0000-0000-0000-000000000000> ???
+>>>>> 
+>>>>> I can share the full logs, but I want to keep it short for now.
+>>>>> 
+>>>>> My questions are:
+>>>>> 
+>>>>> - Did anybody encounter such an issue with the latest R-devel and R GUI, RStudio?
+>>>>> - Is this perhaps why an R-devel binary is currently not available on https://mac.r-project.org/?
+>>>>> 
+>>>>> If I know that this is a known issue, it is all good; however, if it works
+>>>>> For all others without, then the error must be on my end, and I have to keep digging further.
+>>>>> 
+>>>>> - Tested systems: M2 -> macOS 14.5 to 15.0 with the Xcode on always the latest version available at the time.
+>>>>> - SNV: Always the latest check out
+>>>>> 
+>>>>> 
+>>>>> Kind regards,
+>>>>> 
+>>>>> 
+>>>>> Sebastian Kreutzer
+>>>>> 
+>>>>> 
+>>>>> 
+>>>>> 
+>>>>> 
+>>>>> 
+>>>>> 
+>>>>> 
+>>>>> 
+>>>>> 
+>>>>> 
+>>>>> 
+>>> _______________________________________________
+>>> R-SIG-Mac mailing list
+>>> R-SIG-Mac at r-project.org
+>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>> 
+>> 
+>> -- 
+>> Brian D. Ripley,                  ripley at stats.ox.ac.uk
+>> Emeritus Professor of Applied Statistics, University of Oxford
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> [[alternative HTML version deleted]]
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+> 
+
+

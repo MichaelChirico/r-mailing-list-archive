@@ -1,0 +1,5479 @@
+From thi_veloso at yahoo.com.br  Tue Mar  1 01:47:29 2016
+From: thi_veloso at yahoo.com.br (Thiago V. dos Santos)
+Date: Tue, 1 Mar 2016 00:47:29 +0000 (UTC)
+Subject: [R-sig-Geo] Error running Mann-Kendall trend test on a raster
+ stack
+In-Reply-To: <56D18597.4020700@wur.nl>
+References: <1030783680.11714.1456519780832.JavaMail.yahoo.ref@mail.yahoo.com>
+	<1030783680.11714.1456519780832.JavaMail.yahoo@mail.yahoo.com>
+	<56D1468C.4050903@gmail.com> <56D18597.4020700@wur.nl>
+Message-ID: <619615368.1056531.1456793249817.JavaMail.yahoo@mail.yahoo.com>
+
+Hi Tim and Lo?c,
+
+Thanks for your suggestions.
+
+I was able to run the analysis using the following function (which also accounts for NA values in the raster object):
+
+----------------
+library(raster)
+library(rkt)
+
+# Create the date sequence
+idx <- seq.Date(as.Date("2011-01-01"), as.Date("2099-01-01"), by='year')
+
+# Create raster stack and apply the date
+r <- raster(ncol=23, nrow=19)
+s <- stack(lapply(1:length(idx), function(x) setValues(r, runif(ncell(r), 0, 1200))))
+s <- setZ(s, idx)
+s
+
+year <- as.numeric(substr(getZ(s), 1, 4))
+# Now I define a function
+tsfun <- function(x) {
+if(all(is.na(x))){
+c(NA, NA)
+} else {
+r.kenn <- rkt(year, x)
+a <- r.kenn$B
+b <- r.kenn$sl
+return(cbind(a, b))
+}
+
+# I then apply the function - takes a while to run!
+raster.kenn <- calc(s, fun=tsfun)
+raster.kenn
+----------------
+Greetings,
+ -- Thiago V. dos Santos
+
+PhD student
+Land and Atmospheric Science
+University of Minnesota
+
+
+
+On Saturday, February 27, 2016 5:19 AM, Lo?c Dutrieux <loic.dutrieux at wur.nl> wrote:
+Hi Thiago,
+
+A few calc tips inline that you can use together with Tim's suggestion.
+
+On 02/27/2016 07:47 AM, Tim Appelhans wrote:
+> Dear Thiago,
+> have a look at the gimms package, available on CRAN. The function of
+> interest is significantTau().
+>
+> https://github.com/environmentalinformatics-marburg/gimms/blob/master/R/significantTau.R
+>
+>
+> Hope this helps,
+> Tim
+>
+> On 27.02.2016 09:49, Thiago V. dos Santos wrote:
+>> Dear colleagues,
+>>
+>> I have a raster stack with 89 layers, each layer representing yearly
+>> precipitation.
+>>
+>> I am trying to use the function rkt (from package "rkt") to detect a
+>> possible trend in my precipitation time series.
+>>
+>> Its usage is pretty simple, and this is how it runs on a data frame:
+>>
+>> --------------------------------
+>> library(rkt)
+>>
+>> # generate some random data
+>> myDF <- data.frame(Date = seq.Date(as.Date("2011-01-01"),
+>> as.Date("2099-01-01"), by='year'),
+>> value = runif(89,0,1200))
+>>
+>> # extract year from date, as numeric
+>> myDF$year <- as.numeric(format(myDF$Date, "%Y"))
+>>
+>> # run mann-kendall test
+>> kenn <- rkt(myDF$year, myDF$value)
+>> kenn
+>>
+>> --------------------------------
+>>
+>> Now, this is my attempt to apply this test on a raster stack, using a
+>> calc function:
+>>
+>> --------------------------------
+>> library(raster)
+>>
+>> # Create the date sequence
+>> idx <- myDF$Date
+>>
+>> # Create raster stack and apply the date
+>> r <- raster(ncol=50, nrow=50)
+>> s <- stack(lapply(1:length(idx), function(x) setValues(r,
+>> runif(ncell(r), 0, 1200))))
+>> s <- setZ(s, idx)
+>> s
+>>
+>> # Now I define a function
+>> tsfun <- function(x) {
+>>      year <- as.numeric(substr(getZ(x), 1, 4))
+>>      r.kenn <- rkt(year, x)
+>>      return(r.kenn)
+>> }
+
+You can't call getZ() on x. Within the calc function environment x is a 
+numeric vector not a RasterBrick.
+If you do it outside of the function and refer to it within the function 
+it should work.
+dates <- getZ(s) # then use the dates variable in the function.
+
+You can only store numerics in raster cells, and r.kenn is a full 
+object. You need to choose which numerics contained in that object you 
+want the function to return and subset the object accordingly.
+
+Functions passed to calc should work on numeric vectors and ideally they 
+should also be vectorized. It's not always easy to vectorize a function 
+though; so in such case you can set the forceapply= argument to TRUE. I 
+believe that may cost a bit of speed though.
+
+Cheers,
+Lo?c
+
+>>
+>> # I apply the function
+>> raster.kenn <- calc(s, fun=tsfun)
+>>
+>> --------------------------------
+>>
+>>
+>> And the error message I get is:
+>>
+>> Error in .calcTest(x[1:5], fun, na.rm, forcefun, forceapply) :
+>> cannot use this function
+Always loved that very informative error message from calc :)
+
+>>
+>> What am I doing wrong here?
+>> Greetings,
+>>   -- Thiago V. dos Santos
+>>
+>> PhD student
+>> Land and Atmospheric Science
+>> University of Minnesota
+>>
+>> _______________________________________________
+>> R-sig-Geo mailing list
+>> R-sig-Geo at r-project.org
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>
+
+_______________________________________________
+R-sig-Geo mailing list
+R-sig-Geo at r-project.org
+https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+
+
+From markpayneatwork at gmail.com  Tue Mar  1 12:06:18 2016
+From: markpayneatwork at gmail.com (Mark R Payne)
+Date: Tue, 1 Mar 2016 12:06:18 +0100
+Subject: [R-sig-Geo] raster package: Force read into memory
+Message-ID: <CAGBzUO8MnoUmS8JqifFE8quQP5+QQeFnNi-2YQoJciEprUpCsA@mail.gmail.com>
+
+Hi,
+
+Once upon a time I remember there being functionality in the raster package
+to force it to read the contents of a raster object into memory (admittidly
+at your own risk). However, I can't seem to find it - has it been removed?
+How can I override rasters memory management features manually if I don't
+agree with them?
+
+Mark
+
+	[[alternative HTML version deleted]]
+
+
+From loic.dutrieux at wur.nl  Tue Mar  1 12:29:54 2016
+From: loic.dutrieux at wur.nl (=?UTF-8?Q?Lo=c3=afc_Dutrieux?=)
+Date: Tue, 1 Mar 2016 12:29:54 +0100
+Subject: [R-sig-Geo] raster package: Force read into memory
+In-Reply-To: <CAGBzUO8MnoUmS8JqifFE8quQP5+QQeFnNi-2YQoJciEprUpCsA@mail.gmail.com>
+References: <CAGBzUO8MnoUmS8JqifFE8quQP5+QQeFnNi-2YQoJciEprUpCsA@mail.gmail.com>
+Message-ID: <56D57D32.7040805@wur.nl>
+
+Hi MArk,
+
+I believe you're looking for readAll()
+
+Cheers,
+Lo?c
+
+On 03/01/2016 12:06 PM, Mark R Payne wrote:
+> Hi,
+>
+> Once upon a time I remember there being functionality in the raster package
+> to force it to read the contents of a raster object into memory (admittidly
+> at your own risk). However, I can't seem to find it - has it been removed?
+> How can I override rasters memory management features manually if I don't
+> agree with them?
+>
+> Mark
+>
+> 	[[alternative HTML version deleted]]
+>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>
+
+
+From andrew.allyn at gmail.com  Tue Mar  1 13:55:09 2016
+From: andrew.allyn at gmail.com (Andrew Allyn)
+Date: Tue, 1 Mar 2016 07:55:09 -0500
+Subject: [R-sig-Geo] Plotting Kernel results with ggplot2
+Message-ID: <56D5912D.5060608@gmail.com>
+
+Hello Diego,
+
+Hopefully I am submitting this correctly -- first time answering a 
+question rather than asking one on here. I think the following code 
+should do what you want.
+
+- Andrew
+
+##### Start -- after running your preliminary code and getting the 50 
+and 75 kernel contour vertices from the kernelUD object
+### Using ggplot2 geom_holygon
+library(ggplot2)
+library(proto)
+library(grid)
+
+## Define geom_holygon function, from 
+http://rstudio-pubs-static.s3.amazonaws.com/3522_52420d28ca7d443eae79850822ead5b8.html
+GeomHolygon <- ggproto(
+   "GeomHolygon",
+   GeomPolygon,
+   extra_params = c("na.rm", "rule"),
+   draw_panel = function(data, scales, coordinates, rule) {
+     n <- nrow(data)
+     if (n == 1)
+       return(zeroGrob())
+
+     munched <- coord_munch(coordinates, data, scales)
+     munched <- munched[order(munched$group), ]
+
+     first_idx <- !duplicated(munched$group)
+     first_rows <- munched[first_idx, ]
+
+     ggplot2:::ggname(
+       "geom_holygon",
+       pathGrob(munched$x, munched$y, default.units = "native",
+                id = munched$group, rule = rule,
+                gp = gpar(col = first_rows$colour,
+                          fill = alpha(first_rows$fill, first_rows$alpha),
+                          lwd = first_rows$size * .pt,
+                          lty = first_rows$linetype)))
+   }
+)
+
+geom_holygon <- function (mapping = NULL, data = NULL, stat = 
+"identity", position = "identity",
+                           na.rm = FALSE, show.legend = NA, inherit.aes 
+= TRUE, rule = "winding", ...) {
+   ggplot2::layer(data = data, mapping = mapping, stat = stat, geom = 
+GeomHolygon,
+                  position = position, show.legend = show.legend, 
+inherit.aes = inherit.aes,
+                  params = list(na.rm = na.rm , rule = rule, ...))
+}
+
+
+## Plotting
+# "Fortify" polygons
+kern.50.df<- fortify(ver.sim50)
+kern.75.df<- fortify(ver.sim75)
+
+# Plot
+ggplot() +
+   geom_holygon(data = kern.75.df, aes(x = long, y = lat, group = 
+group), fill = "steelblue") +
+   geom_holygon(data = kern.50.df, aes(x = long, y = lat, group = 
+group), fill = "#8CC739") +
+   theme_bw()
+
+# Note: for this simple example, it doesn't look like there are any 
+holes in your kernel contours SpatialPolygonsDataframe object. The real 
+advantage of the geom_holygon that I noticed was when you do have holes, 
+or different regions with 50% or 75% contours. This function is able to 
+plot just the filled areas more effectively than I was able to do either 
+by subsetting the SpatialPolygons to remove holes or by forcing holes to 
+be white/not filled.
+
+## A different option, using geom_path
+ggplot() +
+   geom_path(data = kern.75.df, aes(x = long, y = lat), colour = 
+"steelblue") +
+   geom_path(data = kern.50.df, aes(x = long, y = lat), colour = 
+"#8CC739") +
+   theme_bw()
+
+# Note, not sure how the geom_path would behave with holes in the 
+polygons as discussed above.
+
+##### End code
+
+
+From Dominik.Schneider at colorado.edu  Wed Mar  2 01:48:05 2016
+From: Dominik.Schneider at colorado.edu (Dominik Schneider)
+Date: Tue, 1 Mar 2016 17:48:05 -0700
+Subject: [R-sig-Geo] raster::zonal with more than 1 zonal layer
+Message-ID: <CAF1jk_n1s_rBSsgYH5G4fKHDd4j9t2jMEjRG3RckyaC6eFoegw@mail.gmail.com>
+
+I'd like to summarise a raster using elevation and watershed. I was
+originally using extract() with a shape file and then each elevation band
+within each polygon but it's very slow.   zonal() is much faster and I can
+rasterize my polygons to use it.  But how do I robustly combine multiple
+rasterized shapefiles?
+e.g.
+dat=raster(matrix(runif(64),nrow=8))
+z1=raster(matrix( sample(1:4, 64, replace=T),nrow=8))#represents elevation
+bands
+z2=raster(matrix(sample(1401:1408,64,replace=T),nrow=8))#represents
+watersheds
+zonal(dat,z1*z2,'mean')
+
+this works well if you are certain that each combination of the values in
+z1 and z2 are unique and each combination is present. otherwise it gets
+messy.  are there any suggestions for this use case?
+ideally one could do: zonal(dat,stack(z1,z2),'mean')  and all the
+bookkeeping would be taken care of. my other thought is to extract all the
+values into data frames and use dplyr but I was wondering if there was a
+raster way to do this.
+Thanks
+Dominik
+
+	[[alternative HTML version deleted]]
+
+
+From Alexander.Herr at csiro.au  Wed Mar  2 03:58:08 2016
+From: Alexander.Herr at csiro.au (Alexander.Herr at csiro.au)
+Date: Wed, 2 Mar 2016 02:58:08 +0000
+Subject: [R-sig-Geo] raster::zonal with more than 1 zonal layer
+In-Reply-To: <CAF1jk_n1s_rBSsgYH5G4fKHDd4j9t2jMEjRG3RckyaC6eFoegw@mail.gmail.com>
+References: <CAF1jk_n1s_rBSsgYH5G4fKHDd4j9t2jMEjRG3RckyaC6eFoegw@mail.gmail.com>
+Message-ID: <DE9431576890DA46BC57EA03BC10449BB9D4C7CF@exmbx06-cdc.nexus.csiro.au>
+
+Is this what you are after?
+
+
+require(raster)
+require(spatial)
+require(sp)
+dat=raster(matrix(runif(64),nrow=8))
+z1=raster(matrix( sample(1:4, 64, replace=T),nrow=8))#represents elevation bands 
+z2=raster(matrix(sample(1401:1408,64,replace=T),nrow=8))#represents
+watersheds
+
+
+#assign unique id for each elevation x watershed
+z1[]->elv
+z2[]->ws
+elv*1000000+ws->nd
+z1->z3
+z3[]<-nd
+sort(unique(nd))
+
+# do zonal
+zonal(dat,z3, 'mean')
+
+
+Cheers
+Herry
+
+-----Original Message-----
+From: R-sig-Geo [mailto:r-sig-geo-bounces at r-project.org] On Behalf Of Dominik Schneider
+Sent: Wednesday, 2 March 2016 11:48 AM
+To: Help R-Sig_Geo
+Subject: [R-sig-Geo] raster::zonal with more than 1 zonal layer
+
+I'd like to summarise a raster using elevation and watershed. I was originally using extract() with a shape file and then each elevation band
+within each polygon but it's very slow.   zonal() is much faster and I can
+rasterize my polygons to use it.  But how do I robustly combine multiple rasterized shapefiles?
+e.g.
+dat=raster(matrix(runif(64),nrow=8))
+z1=raster(matrix( sample(1:4, 64, replace=T),nrow=8))#represents elevation bands z2=raster(matrix(sample(1401:1408,64,replace=T),nrow=8))#represents
+watersheds
+zonal(dat,z1*z2,'mean')
+
+this works well if you are certain that each combination of the values in
+z1 and z2 are unique and each combination is present. otherwise it gets messy.  are there any suggestions for this use case?
+ideally one could do: zonal(dat,stack(z1,z2),'mean')  and all the bookkeeping would be taken care of. my other thought is to extract all the values into data frames and use dplyr but I was wondering if there was a raster way to do this.
+Thanks
+Dominik
+
+	[[alternative HTML version deleted]]
+
+_______________________________________________
+R-sig-Geo mailing list
+R-sig-Geo at r-project.org
+https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+
+
+From dosc3612 at colorado.edu  Wed Mar  2 05:31:18 2016
+From: dosc3612 at colorado.edu (Dominik Schneider)
+Date: Tue, 1 Mar 2016 21:31:18 -0700
+Subject: [R-sig-Geo] raster::zonal with more than 1 zonal layer
+In-Reply-To: <DE9431576890DA46BC57EA03BC10449BB9D4C7CF@exmbx06-cdc.nexus.csiro.au>
+References: <CAF1jk_n1s_rBSsgYH5G4fKHDd4j9t2jMEjRG3RckyaC6eFoegw@mail.gmail.com>
+	<DE9431576890DA46BC57EA03BC10449BB9D4C7CF@exmbx06-cdc.nexus.csiro.au>
+Message-ID: <CAF1jk_=9wTru=c5eF4O_r5EHnyEjXLOHL5g8Ark6zofFiw5Gew@mail.gmail.com>
+
+How do you separate the zone values from the zonal output into the original
+elv and WS values?
+On Mar 1, 2016 7:58 PM, <Alexander.Herr at csiro.au> wrote:
+
+> Is this what you are after?
+>
+>
+> require(raster)
+> require(spatial)
+> require(sp)
+> dat=raster(matrix(runif(64),nrow=8))
+> z1=raster(matrix( sample(1:4, 64, replace=T),nrow=8))#represents elevation
+> bands
+> z2=raster(matrix(sample(1401:1408,64,replace=T),nrow=8))#represents
+> watersheds
+>
+>
+> #assign unique id for each elevation x watershed
+> z1[]->elv
+> z2[]->ws
+> elv*1000000+ws->nd
+> z1->z3
+> z3[]<-nd
+> sort(unique(nd))
+>
+> # do zonal
+> zonal(dat,z3, 'mean')
+>
+>
+> Cheers
+> Herry
+>
+> -----Original Message-----
+> From: R-sig-Geo [mailto:r-sig-geo-bounces at r-project.org] On Behalf Of
+> Dominik Schneider
+> Sent: Wednesday, 2 March 2016 11:48 AM
+> To: Help R-Sig_Geo
+> Subject: [R-sig-Geo] raster::zonal with more than 1 zonal layer
+>
+> I'd like to summarise a raster using elevation and watershed. I was
+> originally using extract() with a shape file and then each elevation band
+> within each polygon but it's very slow.   zonal() is much faster and I can
+> rasterize my polygons to use it.  But how do I robustly combine multiple
+> rasterized shapefiles?
+> e.g.
+> dat=raster(matrix(runif(64),nrow=8))
+> z1=raster(matrix( sample(1:4, 64, replace=T),nrow=8))#represents elevation
+> bands z2=raster(matrix(sample(1401:1408,64,replace=T),nrow=8))#represents
+> watersheds
+> zonal(dat,z1*z2,'mean')
+>
+> this works well if you are certain that each combination of the values in
+> z1 and z2 are unique and each combination is present. otherwise it gets
+> messy.  are there any suggestions for this use case?
+> ideally one could do: zonal(dat,stack(z1,z2),'mean')  and all the
+> bookkeeping would be taken care of. my other thought is to extract all the
+> values into data frames and use dplyr but I was wondering if there was a
+> raster way to do this.
+> Thanks
+> Dominik
+>
+>         [[alternative HTML version deleted]]
+>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>
+
+	[[alternative HTML version deleted]]
+
+
+From Virgilio.Gomez at uclm.es  Wed Mar  2 08:45:24 2016
+From: Virgilio.Gomez at uclm.es (VIRGILIO GOMEZ RUBIO)
+Date: Wed, 2 Mar 2016 07:45:24 +0000
+Subject: [R-sig-Geo] R has been accepted for GSoC 2016
+Message-ID: <4DF0932C-CE62-4916-A45C-A86CD643846B@uclm.es>
+
+Dear all,
+
+I know that this is a bit off topic but the R project has been accepted as a mentoring organization for Google Summer of Code 2016. As stated by Gergely in his blog [1]:
+
+"In short, Google offers $5,000 to the accepted students to work on open-source and useful R packages for a few months with the help of mentors, who get contributed code instead of money from this nice, alternative and open summer ~internship.?
+
+Now it it s the time to develop project proposals that should be included here:
+
+https://github.com/rstats-gsoc/gsoc2016/wiki/table-of-proposed-coding-projects
+
+Projects can be proposed by students (looking for mentors) and mentors (who will be looking for student). Please, let me encourage you to submit proposals about any spatial project you have in mind.
+
+Best wishes,
+
+Virgilio
+
+P.S: Mentors will also get a very nice t-shirt. :D
+
+[1] http://blog.rapporter.net/2016/03/r-projects-at-google-summer-of-code-2016.html
+
+
+
+From diego.pavonjordan at gmail.com  Wed Mar  2 10:32:20 2016
+From: diego.pavonjordan at gmail.com (Diego Pavon)
+Date: Wed, 2 Mar 2016 11:32:20 +0200
+Subject: [R-sig-Geo] Plotting Kernel results with ggplot2
+In-Reply-To: <56D5912D.5060608@gmail.com>
+References: <56D5912D.5060608@gmail.com>
+Message-ID: <CAD93_FpGRDxtOJ1vxWz0qdyVNyBAtACz0W6hpdVPeSnoRLcCJg@mail.gmail.com>
+
+Hi Andrew and all
+
+Thanks a lot for this! This was awesome! I could even plot those kernels in
+google.maps and other .shp files!
+ This was a brilliant piece of code!
+
+Thanks again
+
+Cheers
+
+Diego
+
+2016-03-01 14:55 GMT+02:00 Andrew Allyn <andrew.allyn at gmail.com>:
+
+> Hello Diego,
+>
+> Hopefully I am submitting this correctly -- first time answering a
+> question rather than asking one on here. I think the following code should
+> do what you want.
+>
+> - Andrew
+>
+> ##### Start -- after running your preliminary code and getting the 50 and
+> 75 kernel contour vertices from the kernelUD object
+> ### Using ggplot2 geom_holygon
+> library(ggplot2)
+> library(proto)
+> library(grid)
+>
+> ## Define geom_holygon function, from
+> http://rstudio-pubs-static.s3.amazonaws.com/3522_52420d28ca7d443eae79850822ead5b8.html
+> GeomHolygon <- ggproto(
+>   "GeomHolygon",
+>   GeomPolygon,
+>   extra_params = c("na.rm", "rule"),
+>   draw_panel = function(data, scales, coordinates, rule) {
+>     n <- nrow(data)
+>     if (n == 1)
+>       return(zeroGrob())
+>
+>     munched <- coord_munch(coordinates, data, scales)
+>     munched <- munched[order(munched$group), ]
+>
+>     first_idx <- !duplicated(munched$group)
+>     first_rows <- munched[first_idx, ]
+>
+>     ggplot2:::ggname(
+>       "geom_holygon",
+>       pathGrob(munched$x, munched$y, default.units = "native",
+>                id = munched$group, rule = rule,
+>                gp = gpar(col = first_rows$colour,
+>                          fill = alpha(first_rows$fill, first_rows$alpha),
+>                          lwd = first_rows$size * .pt,
+>                          lty = first_rows$linetype)))
+>   }
+> )
+>
+> geom_holygon <- function (mapping = NULL, data = NULL, stat = "identity",
+> position = "identity",
+>                           na.rm = FALSE, show.legend = NA, inherit.aes =
+> TRUE, rule = "winding", ...) {
+>   ggplot2::layer(data = data, mapping = mapping, stat = stat, geom =
+> GeomHolygon,
+>                  position = position, show.legend = show.legend,
+> inherit.aes = inherit.aes,
+>                  params = list(na.rm = na.rm , rule = rule, ...))
+> }
+>
+>
+> ## Plotting
+> # "Fortify" polygons
+> kern.50.df<- fortify(ver.sim50)
+> kern.75.df<- fortify(ver.sim75)
+>
+> # Plot
+> ggplot() +
+>   geom_holygon(data = kern.75.df, aes(x = long, y = lat, group = group),
+> fill = "steelblue") +
+>   geom_holygon(data = kern.50.df, aes(x = long, y = lat, group = group),
+> fill = "#8CC739") +
+>   theme_bw()
+>
+> # Note: for this simple example, it doesn't look like there are any holes
+> in your kernel contours SpatialPolygonsDataframe object. The real advantage
+> of the geom_holygon that I noticed was when you do have holes, or different
+> regions with 50% or 75% contours. This function is able to plot just the
+> filled areas more effectively than I was able to do either by subsetting
+> the SpatialPolygons to remove holes or by forcing holes to be white/not
+> filled.
+>
+> ## A different option, using geom_path
+> ggplot() +
+>   geom_path(data = kern.75.df, aes(x = long, y = lat), colour =
+> "steelblue") +
+>   geom_path(data = kern.50.df, aes(x = long, y = lat), colour = "#8CC739")
+> +
+>   theme_bw()
+>
+> # Note, not sure how the geom_path would behave with holes in the polygons
+> as discussed above.
+>
+> ##### End code
+>
+>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>
+
+
+
+-- 
+*Diego Pav?n Jord?n*
+
+*Finnish Museum of Natural History*
+*PO BOX 17 *
+
+*Helsinki. Finland*
+
+
+
+*0445061210https://tuhat.halvi.helsinki.fi/portal/en/persons/diego-pavon-jordan%288d5db37c-eddd-4fca-92cd-9c9956a42b4a%29.html
+<https://tuhat.halvi.helsinki.fi/portal/en/persons/diego-pavon-jordan%288d5db37c-eddd-4fca-92cd-9c9956a42b4a%29.html>http://www.linkedin.com/profile/view?id=170617924&trk=nav_responsive_tab_profile
+<http://www.linkedin.com/profile/view?id=170617924&trk=nav_responsive_tab_profile>https://helsinki.academia.edu/DiegoPavon
+<https://helsinki.academia.edu/DiegoPavon>*
+
+	[[alternative HTML version deleted]]
+
+
+From loic.dutrieux at wur.nl  Wed Mar  2 11:24:37 2016
+From: loic.dutrieux at wur.nl (=?UTF-8?Q?Lo=c3=afc_Dutrieux?=)
+Date: Wed, 2 Mar 2016 11:24:37 +0100
+Subject: [R-sig-Geo] raster::zonal with more than 1 zonal layer
+In-Reply-To: <CAF1jk_n1s_rBSsgYH5G4fKHDd4j9t2jMEjRG3RckyaC6eFoegw@mail.gmail.com>
+References: <CAF1jk_n1s_rBSsgYH5G4fKHDd4j9t2jMEjRG3RckyaC6eFoegw@mail.gmail.com>
+Message-ID: <56D6BF65.30801@wur.nl>
+
+
+
+On 03/02/2016 01:48 AM, Dominik Schneider wrote:
+> I'd like to summarise a raster using elevation and watershed. I was
+> originally using extract() with a shape file and then each elevation band
+> within each polygon but it's very slow.   zonal() is much faster and I can
+> rasterize my polygons to use it.
+
+Is it really much faster? I sounds very similar to what extract() does 
+under the hood.
+
+> But how do I robustly combine multiple
+> rasterized shapefiles?
+> e.g.
+> dat=raster(matrix(runif(64),nrow=8))
+> z1=raster(matrix( sample(1:4, 64, replace=T),nrow=8))#represents elevation
+> bands
+> z2=raster(matrix(sample(1401:1408,64,replace=T),nrow=8))#represents
+> watersheds
+> zonal(dat,z1*z2,'mean')
+>
+> this works well if you are certain that each combination of the values in
+> z1 and z2 are unique and each combination is present. otherwise it gets
+> messy.  are there any suggestions for this use case?
+> ideally one could do: zonal(dat,stack(z1,z2),'mean')  and all the
+> bookkeeping would be taken care of.
+
+What about:
+
+s <- stack(z1, z2)
+u <- data.frame(unique(s))
+u$newVal <- seq(nrow(u))
+zoneLayer <- subs(s, u, by = 1:2, which = 3)
+
+# Let's validate
+a <- zonal(dat,z1*z2,'mean')
+b <- zonal(dat, zoneLayer, 'mean')
+all.equal(b[order(b[,2]),2], a[order(a[,2]),2]) # TRUE
+
+Cheers,
+Lo?c
+
+> my other thought is to extract all the
+> values into data frames and use dplyr but I was wondering if there was a
+> raster way to do this.
+> Thanks
+> Dominik
+>
+> 	[[alternative HTML version deleted]]
+>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>
+
+
+From qiuhuanihao at gmail.com  Thu Mar  3 00:50:42 2016
+From: qiuhuanihao at gmail.com (Qiuhua Ma)
+Date: Wed, 2 Mar 2016 16:50:42 -0700
+Subject: [R-sig-Geo] different Moran's I results using R and matlab
+Message-ID: <CACc7PKpsRtVb7+kM5f9ka_fYnqBodfORadMAYsfiDU11aF9OjQ@mail.gmail.com>
+
+Hi,
+
+I run the exactly same regression using R and matlab and get the same
+regression results.
+
+However I got different results for Moran't I test and LM test results.
+
+*R command:*
+nb4 <- knn2nb(knearneigh(sale.sp, k = 4))
+knn4listw <- nb2listw(nb4, style="W")
+
+lm.morantest(near7_comrisk_semilog.out, knn4listw)
+lm.LMtests(near7_comrisk_semilog.out, knn4listw, test=c("LMerr", "LMlag",
+"RLMerr", "RLMlag"))
+
+*R results:*
+Moran I statistic standard deviate = 1.4135, p-value = 0.07875
+Observed Moran's I        Expectation           Variance
+      8.780168e-03      -2.762542e-04       4.104967e-05
+
+LMerr = 1.8752, df = 1, p-value = 0.1709
+LMlag = 0.14335, df = 1, p-value = 0.705
+RLMerr = 2.1193, df = 1, p-value = 0.1455
+RLMlag = 0.38741, df = 1, p-value = 0.5337
+
+*Matlab command:*
+W_sale_4 = make_nnw(xc,yc,4);
+
+moran4= moran(y,x, W_sale_4)
+error_4 = lmerror(y,x,W_sale_4)
+lag_4 = lmlag(y,x,W_sale_4)
+error_4r = lmerror_robust(y,x,W_sale_4)
+lag_4r = lmlag_robust(y,x,W_sale_4)
+
+*Matlab results:*
+Moran I-test for spatial correlation in residuals
+Moran I                    0.13979528
+Moran I-statistic         22.05018073
+Marginal Probability       0.00000000
+mean                      -0.00126742
+standard deviation         0.00639735
+
+error_4 =
+    meth: 'lmerror'
+      lm: 475.1839
+    prob: 0
+    chi1: 17.6110
+
+
+lag_4 =
+    meth: 'lmlag'
+      lm: 465.4518
+    prob: 0
+    chi1: 17.6110
+
+error_4r =
+    meth: 'lmerror_robust'
+      lm: 76.5845
+    prob: 0
+    chi1: 6.6400
+
+lag_4r =
+
+    meth: 'lmlag_robust'
+      lm: 66.1547
+    prob: 4.4409e-16
+    chi1: 6.6400
+
+Did I do anything wrong? Any thought on this problem?
+
+thanks,
+
+qiuhua
+
+	[[alternative HTML version deleted]]
+
+
+From Roger.Bivand at nhh.no  Thu Mar  3 08:43:36 2016
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Thu, 3 Mar 2016 08:43:36 +0100
+Subject: [R-sig-Geo] different Moran's I results using R and matlab
+In-Reply-To: <CACc7PKpsRtVb7+kM5f9ka_fYnqBodfORadMAYsfiDU11aF9OjQ@mail.gmail.com>
+References: <CACc7PKpsRtVb7+kM5f9ka_fYnqBodfORadMAYsfiDU11aF9OjQ@mail.gmail.com>
+Message-ID: <alpine.LFD.2.20.1603030838080.21940@reclus.nhh.no>
+
+On Thu, 3 Mar 2016, Qiuhua Ma wrote:
+
+> Hi,
+>
+> I run the exactly same regression using R and matlab and get the same
+> regression results.
+
+Well, you need to give the exact reference to the matlab code you have 
+used - are they the functions in Spatial Econometrics Toolbox under 
+spatial/stats? I do not see the robust variants there.
+
+Most likely the data or the weights are different. Make your data set 
+available on a link, and I'll take a look.
+
+Roger
+
+>
+> However I got different results for Moran't I test and LM test results.
+>
+> *R command:*
+> nb4 <- knn2nb(knearneigh(sale.sp, k = 4))
+> knn4listw <- nb2listw(nb4, style="W")
+>
+> lm.morantest(near7_comrisk_semilog.out, knn4listw)
+> lm.LMtests(near7_comrisk_semilog.out, knn4listw, test=c("LMerr", "LMlag",
+> "RLMerr", "RLMlag"))
+>
+> *R results:*
+> Moran I statistic standard deviate = 1.4135, p-value = 0.07875
+> Observed Moran's I        Expectation           Variance
+>      8.780168e-03      -2.762542e-04       4.104967e-05
+>
+> LMerr = 1.8752, df = 1, p-value = 0.1709
+> LMlag = 0.14335, df = 1, p-value = 0.705
+> RLMerr = 2.1193, df = 1, p-value = 0.1455
+> RLMlag = 0.38741, df = 1, p-value = 0.5337
+>
+> *Matlab command:*
+> W_sale_4 = make_nnw(xc,yc,4);
+>
+> moran4= moran(y,x, W_sale_4)
+> error_4 = lmerror(y,x,W_sale_4)
+> lag_4 = lmlag(y,x,W_sale_4)
+> error_4r = lmerror_robust(y,x,W_sale_4)
+> lag_4r = lmlag_robust(y,x,W_sale_4)
+>
+> *Matlab results:*
+> Moran I-test for spatial correlation in residuals
+> Moran I                    0.13979528
+> Moran I-statistic         22.05018073
+> Marginal Probability       0.00000000
+> mean                      -0.00126742
+> standard deviation         0.00639735
+>
+> error_4 =
+>    meth: 'lmerror'
+>      lm: 475.1839
+>    prob: 0
+>    chi1: 17.6110
+>
+>
+> lag_4 =
+>    meth: 'lmlag'
+>      lm: 465.4518
+>    prob: 0
+>    chi1: 17.6110
+>
+> error_4r =
+>    meth: 'lmerror_robust'
+>      lm: 76.5845
+>    prob: 0
+>    chi1: 6.6400
+>
+> lag_4r =
+>
+>    meth: 'lmlag_robust'
+>      lm: 66.1547
+>    prob: 4.4409e-16
+>    chi1: 6.6400
+>
+> Did I do anything wrong? Any thought on this problem?
+>
+> thanks,
+>
+> qiuhua
+>
+> 	[[alternative HTML version deleted]]
+>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>
+
+-- 
+Roger Bivand
+Department of Economics, Norwegian School of Economics,
+Helleveien 30, N-5045 Bergen, Norway.
+voice: +47 55 95 93 55; fax +47 55 95 91 00
+e-mail: Roger.Bivand at nhh.no
+http://orcid.org/0000-0003-2392-6140
+https://scholar.google.no/citations?user=AWeghB0AAAAJ&hl=en
+http://depsy.org/person/434412
+
+
+From loic.dutrieux at wur.nl  Thu Mar  3 19:15:50 2016
+From: loic.dutrieux at wur.nl (=?UTF-8?Q?Lo=c3=afc_Dutrieux?=)
+Date: Thu, 3 Mar 2016 19:15:50 +0100
+Subject: [R-sig-Geo] raster::zonal with more than 1 zonal layer
+In-Reply-To: <56d862d68c59ce1700000001@polymail.io>
+References: <56D6BF65.30801@wur.nl> <56d862d68c59ce1700000001@polymail.io>
+Message-ID: <56D87F56.9040309@wur.nl>
+
+
+
+On 03/03/2016 05:19 PM, Dominik Schneider wrote:
+> That looks great, thanks!
+> to close the question:
+> b=as.data.frame(zonal(dat, zoneLayer, 'mean') )
+> full_join(u,b,by=c('newVal'='zone?))
+>
+> 1 question,
+> in this line: u <- data.frame(unique(s))
+> does unique(s) give all unique combinations in the 3rd dimension of the
+> stack? that?s a neat trick.
+
+I'm not 100% sure, we can check with a simplified case.
+
+r1 <- r2 <- raster()
+n <- ncell(r1)
+r1[] <- c(rep(1, n/3), rep(2, n/3), rep(3, n/3))
+r2[] <- c(rep(4, n/2), rep(5, n/2))
+s <- stack(r1, r2)
+plot(s)
+
+unique(s)
+
+So yes, it looks like unique combinations in the 3rd dimension is what 
+unique() returns in the case of a multilayer raster object.
+
+Cheers,
+Lo?c
+
+>
+> ds
+>
+>
+>
+> On Wed, Mar 02, 2016 at 3:24 AM "Lo?c Dutrieux" <">"Lo?c Dutrieux"
+> <mailto:>> wrote:
+>
+>
+>
+>     On 03/02/2016 01:48 AM, Dominik Schneider wrote:
+>      > I'd like to summarise a raster using elevation and watershed. I was
+>      > originally using extract() with a shape file and then each
+>     elevation band
+>      > within each polygon but it's very slow. zonal() is much faster
+>     and I can
+>      > rasterize my polygons to use it.
+>
+>     Is it really much faster? I sounds very similar to what extract() does
+>     under the hood.
+>
+>      > But how do I robustly combine multiple
+>      > rasterized shapefiles?
+>      > e.g.
+>      > dat=raster(matrix(runif(64),nrow=8))
+>      > z1=raster(matrix( sample(1:4, 64, replace=T),nrow=8))#represents
+>     elevation
+>      > bands
+>      > z2=raster(matrix(sample(1401:1408,64,replace=T),nrow=8))#represents
+>      > watersheds
+>      > zonal(dat,z1*z2,'mean')
+>      >
+>      > this works well if you are certain that each combination of the
+>     values in
+>      > z1 and z2 are unique and each combination is present. otherwise
+>     it gets
+>      > messy. are there any suggestions for this use case?
+>      > ideally one could do: zonal(dat,stack(z1,z2),'mean') and all the
+>      > bookkeeping would be taken care of.
+>
+>     What about:
+>
+>     s <- stack(z1, z2)
+>     u <- data.frame(unique(s))
+>     u$newVal <- seq(nrow(u))
+>     zoneLayer <- subs(s, u, by = 1:2, which = 3)
+>
+>     # Let's validate
+>     a <- zonal(dat,z1*z2,'mean')
+>     b <- zonal(dat, zoneLayer, 'mean')
+>     all.equal(b[order(b[,2]),2], a[order(a[,2]),2]) # TRUE
+>
+>     Cheers,
+>     Lo?c
+>
+>      > my other thought is to extract all the
+>      > values into data frames and use dplyr but I was wondering if
+>     there was a
+>      > raster way to do this.
+>      > Thanks
+>      > Dominik
+>      >
+>      > [[alternative HTML version deleted]]
+>      >
+>      > _______________________________________________
+>      > R-sig-Geo mailing list
+>      > R-sig-Geo at r-project.org <mailto:R-sig-Geo at r-project.org>
+>      > https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>      >
+>
+>     _______________________________________________
+>     R-sig-Geo mailing list
+>     R-sig-Geo at r-project.org <mailto:R-sig-Geo at r-project.org>
+>     https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>
+>
+
+
+From rami.krispin at gmail.com  Thu Mar  3 22:45:51 2016
+From: rami.krispin at gmail.com (Rami Krispin)
+Date: Thu, 3 Mar 2016 16:45:51 -0500
+Subject: [R-sig-Geo] Analysis of sub-districts border changes over time
+Message-ID: <CADjaWvQefgDZtoCjofVs_fTGPpUZjq2dMS6X1G6jxE+6soc=tQ@mail.gmail.com>
+
+Hello Everyone,
+
+I am trying to identify changes over time of sub-district in Andhra Pradesh
+(a state in India). My data contains 4 shape file from a different period.
+At 1981 there were 320 sub-dist and over time there were splits of the
+state sub-dist which increase to 1128 at 2011.
+
+I am trying to find how the border of each sub-dist change over time (stay
+the same, increase, split etc.) using the centroids and area of each
+polygon.
+
+Is there a way to compare between 2 shape files and to check how the
+polygon change?
+
+Also, does any one know how can I check whatever the centroid is
+inside/outside the polygon area?
+
+Thank you in advance,
+Rami Krispin
+
+	[[alternative HTML version deleted]]
+
+
+From roman.lustrik at gmail.com  Fri Mar  4 09:32:08 2016
+From: roman.lustrik at gmail.com (=?UTF-8?Q?Roman_Lu=C5=A1trik?=)
+Date: Fri, 4 Mar 2016 09:32:08 +0100
+Subject: [R-sig-Geo] Analysis of sub-districts border changes over time
+In-Reply-To: <CADjaWvQefgDZtoCjofVs_fTGPpUZjq2dMS6X1G6jxE+6soc=tQ@mail.gmail.com>
+References: <CADjaWvQefgDZtoCjofVs_fTGPpUZjq2dMS6X1G6jxE+6soc=tQ@mail.gmail.com>
+Message-ID: <CAHT1vpjsJcEOMWh=b0J_LM-skc_W+x8P=niFP3KU0STO0XFKww@mail.gmail.com>
+
+Assuming polygon IDs were kept from 1981 to 2011, you can just compare
+areas. If area changed, there's a good chance the border changed as well.
+The caveat is that if the border changed, there's also a chance that the
+area was preserved. I would inspect each (pair of) polygon visually to make
+sure.
+
+Another way would be to compare if borders still overlap. Package rgeos has
+many functions to test these sort of cases, including point in polygon.
+
+Cheers,
+Roman
+
+On Thu, Mar 3, 2016 at 10:45 PM, Rami Krispin <rami.krispin at gmail.com>
+wrote:
+
+> Hello Everyone,
+>
+> I am trying to identify changes over time of sub-district in Andhra Pradesh
+> (a state in India). My data contains 4 shape file from a different period.
+> At 1981 there were 320 sub-dist and over time there were splits of the
+> state sub-dist which increase to 1128 at 2011.
+>
+> I am trying to find how the border of each sub-dist change over time (stay
+> the same, increase, split etc.) using the centroids and area of each
+> polygon.
+>
+> Is there a way to compare between 2 shape files and to check how the
+> polygon change?
+>
+> Also, does any one know how can I check whatever the centroid is
+> inside/outside the polygon area?
+>
+> Thank you in advance,
+> Rami Krispin
+>
+>         [[alternative HTML version deleted]]
+>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>
+
+
+
+-- 
+In God we trust, all others bring data.
+
+	[[alternative HTML version deleted]]
+
+
+From Roger.Bivand at nhh.no  Fri Mar  4 13:46:26 2016
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Fri, 4 Mar 2016 13:46:26 +0100
+Subject: [R-sig-Geo] different Moran's I results using R and matlab
+In-Reply-To: <alpine.LFD.2.20.1603030838080.21940@reclus.nhh.no>
+References: <CACc7PKpsRtVb7+kM5f9ka_fYnqBodfORadMAYsfiDU11aF9OjQ@mail.gmail.com>
+	<alpine.LFD.2.20.1603030838080.21940@reclus.nhh.no>
+Message-ID: <alpine.LFD.2.20.1603041331110.9419@reclus.nhh.no>
+
+On Thu, 3 Mar 2016, Roger Bivand wrote:
+
+> On Thu, 3 Mar 2016, Qiuhua Ma wrote:
+>
+>>  Hi,
+>>
+>>  I run the exactly same regression using R and matlab and get the same
+>>  regression results.
+>
+> Well, you need to give the exact reference to the matlab code you have used - 
+> are they the functions in Spatial Econometrics Toolbox under spatial/stats? I 
+> do not see the robust variants there.
+>
+> Most likely the data or the weights are different. Make your data set 
+> available on a link, and I'll take a look.
+
+Having not heard back, I ran moran() and lmerror() in Matlab using the 
+Spatial Econometrics Toolbox on the data presented in stats/moran_d.m:
+
+load anselin.dat;
+
+y = anselin(:,1);
+n = length(y);
+
+x = [ones(n,1) anselin(:,2:3)];
+
+xc = anselin(:,4);
+yc = anselin(:,5);
+[j W j] = xy2cont(xc,yc);
+
+result = moran(y,x,W);
+
+> tests$result
+, , 1
+
+        [,1]
+meth   "moran"
+nobs   49
+nvar   3
+morani 0.2861962
+istat  4.019423
+imean  -0.03180435
+ivar   0.006259337
+prob   5.834084e-05
+
+(R result after moving the input data from Matlab to R with 
+R.matlab::readMat())
+
+> lm.morantest(lm_obj, lw, alternative="two.sided")
+
+ 	Global Moran I for regression residuals
+
+data:
+model: lm(formula = y ~ x - 1)
+weights: lw
+
+Moran I statistic standard deviate = 4.0194, p-value = 5.834e-05
+alternative hypothesis: two.sided
+sample estimates:
+Observed Moran I      Expectation         Variance
+      0.286196209     -0.031804345      0.006259337
+
+[SAME RESULT]
+
+and similarly with lmerror()
+
+> tests$result2
+, , 1
+
+      [,1]
+meth "lmerror"
+lm   10.7656
+prob 0.001034042
+chi1 17.611
+nobs 49
+nvar 3
+
+
+> lm.LMtests(lm_obj, lw)
+
+ 	Lagrange multiplier diagnostics for spatial dependence
+
+data:
+model: lm(formula = y ~ x - 1)
+weights: lw
+
+LMErr = 10.766, df = 1, p-value = 0.001034
+
+[SAME RESULT]
+
+The result for lmlag() differs, probably because the Matlab code uses two 
+different values for sigma and epe:
+
+sigma  = (e'*e)/(n-k);
+
+epe = (e'*e)/n;
+lm1 = (e'*W*y)/epe;
+
+t1 = trace((W+W')*W);
+D1=W*x*b;
+M=eye(n)-x*inv((x'*x))*x';
+D=(D1'*M*D1)*(1/sigma)+t1;
+
+lmlag = (lm1*lm1)*(1/D);
+
+so does not match the R code which follows Eq. 13 in Anselin et al. (1996, 
+p. 84) in dividing the sum of squared errors by n, not n-k.
+
+I have not found lmlag_robust() or lmerror_robust() anywhere.
+
+Please provide the code of these functions if you need further 
+clarification - the R code for the Moran's I test on OLS residuals is OK, 
+as is the LM error test. The LM lag test chooses a version using ML sigma 
+in harmony with the source article.
+
+Roger
+
+>
+> Roger
+>
+>>
+>>  However I got different results for Moran't I test and LM test results.
+>>
+>>  *R command:*
+>>  nb4 <- knn2nb(knearneigh(sale.sp, k = 4))
+>>  knn4listw <- nb2listw(nb4, style="W")
+>>
+>>  lm.morantest(near7_comrisk_semilog.out, knn4listw)
+>>  lm.LMtests(near7_comrisk_semilog.out, knn4listw, test=c("LMerr", "LMlag",
+>>  "RLMerr", "RLMlag"))
+>>
+>>  *R results:*
+>>  Moran I statistic standard deviate = 1.4135, p-value = 0.07875
+>>  Observed Moran's I        Expectation           Variance
+>>       8.780168e-03      -2.762542e-04       4.104967e-05
+>>
+>>  LMerr = 1.8752, df = 1, p-value = 0.1709
+>>  LMlag = 0.14335, df = 1, p-value = 0.705
+>>  RLMerr = 2.1193, df = 1, p-value = 0.1455
+>>  RLMlag = 0.38741, df = 1, p-value = 0.5337
+>>
+>>  *Matlab command:*
+>>  W_sale_4 = make_nnw(xc,yc,4);
+>>
+>>  moran4= moran(y,x, W_sale_4)
+>>  error_4 = lmerror(y,x,W_sale_4)
+>>  lag_4 = lmlag(y,x,W_sale_4)
+>>  error_4r = lmerror_robust(y,x,W_sale_4)
+>>  lag_4r = lmlag_robust(y,x,W_sale_4)
+>>
+>>  *Matlab results:*
+>>  Moran I-test for spatial correlation in residuals
+>>  Moran I                    0.13979528
+>>  Moran I-statistic         22.05018073
+>>  Marginal Probability       0.00000000
+>>  mean                      -0.00126742
+>>  standard deviation         0.00639735
+>>
+>>  error_4 =
+>>     meth: 'lmerror'
+>>       lm: 475.1839
+>>     prob: 0
+>>     chi1: 17.6110
+>> 
+>>
+>>  lag_4 =
+>>     meth: 'lmlag'
+>>       lm: 465.4518
+>>     prob: 0
+>>     chi1: 17.6110
+>>
+>>  error_4r =
+>>     meth: 'lmerror_robust'
+>>       lm: 76.5845
+>>     prob: 0
+>>     chi1: 6.6400
+>>
+>>  lag_4r =
+>>
+>>     meth: 'lmlag_robust'
+>>       lm: 66.1547
+>>     prob: 4.4409e-16
+>>     chi1: 6.6400
+>>
+>>  Did I do anything wrong? Any thought on this problem?
+>>
+>>  thanks,
+>>
+>>  qiuhua
+>>
+>>   [[alternative HTML version deleted]]
+>>
+>>  _______________________________________________
+>>  R-sig-Geo mailing list
+>>  R-sig-Geo at r-project.org
+>>  https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>> 
+>
+>
+
+-- 
+Roger Bivand
+Department of Economics, Norwegian School of Economics,
+Helleveien 30, N-5045 Bergen, Norway.
+voice: +47 55 95 93 55; fax +47 55 95 91 00
+e-mail: Roger.Bivand at nhh.no
+http://orcid.org/0000-0003-2392-6140
+https://scholar.google.no/citations?user=AWeghB0AAAAJ&hl=en
+http://depsy.org/person/434412
+
+
+From Dominik.Schneider at colorado.edu  Fri Mar  4 17:36:47 2016
+From: Dominik.Schneider at colorado.edu (Dominik Schneider)
+Date: Fri, 4 Mar 2016 09:36:47 -0700
+Subject: [R-sig-Geo] raster::zonal with more than 1 zonal layer
+In-Reply-To: <56D87F56.9040309@wur.nl>
+References: <56D6BF65.30801@wur.nl> <56d862d68c59ce1700000001@polymail.io>
+	<56D87F56.9040309@wur.nl>
+Message-ID: <CAF1jk_nam43dkdPHCvDLO3J9_+zWD+VzvWugcO9FNSMbCrVK9w@mail.gmail.com>
+
+Thanks  Lo?c
+On Mar 3, 2016 11:15 AM, "Lo?c Dutrieux" <loic.dutrieux at wur.nl> wrote:
+
+>
+>
+> On 03/03/2016 05:19 PM, Dominik Schneider wrote:
+>
+>> That looks great, thanks!
+>> to close the question:
+>> b=as.data.frame(zonal(dat, zoneLayer, 'mean') )
+>> full_join(u,b,by=c('newVal'='zone?))
+>>
+>> 1 question,
+>> in this line: u <- data.frame(unique(s))
+>> does unique(s) give all unique combinations in the 3rd dimension of the
+>> stack? that?s a neat trick.
+>>
+>
+> I'm not 100% sure, we can check with a simplified case.
+>
+> r1 <- r2 <- raster()
+> n <- ncell(r1)
+> r1[] <- c(rep(1, n/3), rep(2, n/3), rep(3, n/3))
+> r2[] <- c(rep(4, n/2), rep(5, n/2))
+> s <- stack(r1, r2)
+> plot(s)
+>
+> unique(s)
+>
+> So yes, it looks like unique combinations in the 3rd dimension is what
+> unique() returns in the case of a multilayer raster object.
+>
+> Cheers,
+> Lo?c
+>
+>
+>> ds
+>>
+>>
+>>
+>> On Wed, Mar 02, 2016 at 3:24 AM "Lo?c Dutrieux" <">"Lo?c Dutrieux"
+>> <mailto:>> wrote:
+>>
+>>
+>>
+>>     On 03/02/2016 01:48 AM, Dominik Schneider wrote:
+>>      > I'd like to summarise a raster using elevation and watershed. I was
+>>      > originally using extract() with a shape file and then each
+>>     elevation band
+>>      > within each polygon but it's very slow. zonal() is much faster
+>>     and I can
+>>      > rasterize my polygons to use it.
+>>
+>>     Is it really much faster? I sounds very similar to what extract() does
+>>     under the hood.
+>>
+>>      > But how do I robustly combine multiple
+>>      > rasterized shapefiles?
+>>      > e.g.
+>>      > dat=raster(matrix(runif(64),nrow=8))
+>>      > z1=raster(matrix( sample(1:4, 64, replace=T),nrow=8))#represents
+>>     elevation
+>>      > bands
+>>      > z2=raster(matrix(sample(1401:1408,64,replace=T),nrow=8))#represents
+>>      > watersheds
+>>      > zonal(dat,z1*z2,'mean')
+>>      >
+>>      > this works well if you are certain that each combination of the
+>>     values in
+>>      > z1 and z2 are unique and each combination is present. otherwise
+>>     it gets
+>>      > messy. are there any suggestions for this use case?
+>>      > ideally one could do: zonal(dat,stack(z1,z2),'mean') and all the
+>>      > bookkeeping would be taken care of.
+>>
+>>     What about:
+>>
+>>     s <- stack(z1, z2)
+>>     u <- data.frame(unique(s))
+>>     u$newVal <- seq(nrow(u))
+>>     zoneLayer <- subs(s, u, by = 1:2, which = 3)
+>>
+>>     # Let's validate
+>>     a <- zonal(dat,z1*z2,'mean')
+>>     b <- zonal(dat, zoneLayer, 'mean')
+>>     all.equal(b[order(b[,2]),2], a[order(a[,2]),2]) # TRUE
+>>
+>>     Cheers,
+>>     Lo?c
+>>
+>>      > my other thought is to extract all the
+>>      > values into data frames and use dplyr but I was wondering if
+>>     there was a
+>>      > raster way to do this.
+>>      > Thanks
+>>      > Dominik
+>>      >
+>>      > [[alternative HTML version deleted]]
+>>      >
+>>      > _______________________________________________
+>>      > R-sig-Geo mailing list
+>>      > R-sig-Geo at r-project.org <mailto:R-sig-Geo at r-project.org>
+>>      > https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>>      >
+>>
+>>     _______________________________________________
+>>     R-sig-Geo mailing list
+>>     R-sig-Geo at r-project.org <mailto:R-sig-Geo at r-project.org>
+>>     https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>>
+>>
+>>
+
+	[[alternative HTML version deleted]]
+
+
+From qiuhuanihao at gmail.com  Fri Mar  4 21:00:02 2016
+From: qiuhuanihao at gmail.com (Qiuhua Ma)
+Date: Fri, 4 Mar 2016 13:00:02 -0700
+Subject: [R-sig-Geo] different Moran's I results using R and matlab
+In-Reply-To: <alpine.LFD.2.20.1603041331110.9419@reclus.nhh.no>
+References: <CACc7PKpsRtVb7+kM5f9ka_fYnqBodfORadMAYsfiDU11aF9OjQ@mail.gmail.com>
+	<alpine.LFD.2.20.1603030838080.21940@reclus.nhh.no>
+	<alpine.LFD.2.20.1603041331110.9419@reclus.nhh.no>
+Message-ID: <CACc7PKpbLPPBfFd1HvkDFSiLCgie2DfscunQeFrcfnyAWk4ZOQ@mail.gmail.com>
+
+Roger,
+
+Sorry for not replying sooner.
+
+I check the dataset anselin.dat and I think I found the problem. xc and yc
+should be latitude and longitude, but I used x coordinate and y coordinate.
+After converting to latitude and longitude, I got the similar result.
+
+Best,
+
+Qiuhua
+
+
+On Fri, Mar 4, 2016 at 5:46 AM, Roger Bivand <Roger.Bivand at nhh.no> wrote:
+
+> On Thu, 3 Mar 2016, Roger Bivand wrote:
+>
+> On Thu, 3 Mar 2016, Qiuhua Ma wrote:
+>>
+>>  Hi,
+>>>
+>>>  I run the exactly same regression using R and matlab and get the same
+>>>  regression results.
+>>>
+>>
+>> Well, you need to give the exact reference to the matlab code you have
+>> used - are they the functions in Spatial Econometrics Toolbox under
+>> spatial/stats? I do not see the robust variants there.
+>>
+>> Most likely the data or the weights are different. Make your data set
+>> available on a link, and I'll take a look.
+>>
+>
+> Having not heard back, I ran moran() and lmerror() in Matlab using the
+> Spatial Econometrics Toolbox on the data presented in stats/moran_d.m:
+>
+> load anselin.dat;
+>
+> y = anselin(:,1);
+> n = length(y);
+>
+> x = [ones(n,1) anselin(:,2:3)];
+>
+> xc = anselin(:,4);
+> yc = anselin(:,5);
+> [j W j] = xy2cont(xc,yc);
+>
+> result = moran(y,x,W);
+>
+> tests$result
+>>
+> , , 1
+>
+>        [,1]
+> meth   "moran"
+> nobs   49
+> nvar   3
+> morani 0.2861962
+> istat  4.019423
+> imean  -0.03180435
+> ivar   0.006259337
+> prob   5.834084e-05
+>
+> (R result after moving the input data from Matlab to R with
+> R.matlab::readMat())
+>
+> lm.morantest(lm_obj, lw, alternative="two.sided")
+>>
+>
+>         Global Moran I for regression residuals
+>
+> data:
+> model: lm(formula = y ~ x - 1)
+> weights: lw
+>
+> Moran I statistic standard deviate = 4.0194, p-value = 5.834e-05
+> alternative hypothesis: two.sided
+> sample estimates:
+> Observed Moran I      Expectation         Variance
+>      0.286196209     -0.031804345      0.006259337
+>
+> [SAME RESULT]
+>
+> and similarly with lmerror()
+>
+> tests$result2
+>>
+> , , 1
+>
+>      [,1]
+> meth "lmerror"
+> lm   10.7656
+> prob 0.001034042
+> chi1 17.611
+> nobs 49
+> nvar 3
+>
+>
+> lm.LMtests(lm_obj, lw)
+>>
+>
+>         Lagrange multiplier diagnostics for spatial dependence
+>
+> data:
+> model: lm(formula = y ~ x - 1)
+> weights: lw
+>
+> LMErr = 10.766, df = 1, p-value = 0.001034
+>
+> [SAME RESULT]
+>
+> The result for lmlag() differs, probably because the Matlab code uses two
+> different values for sigma and epe:
+>
+> sigma  = (e'*e)/(n-k);
+>
+> epe = (e'*e)/n;
+> lm1 = (e'*W*y)/epe;
+>
+> t1 = trace((W+W')*W);
+> D1=W*x*b;
+> M=eye(n)-x*inv((x'*x))*x';
+> D=(D1'*M*D1)*(1/sigma)+t1;
+>
+> lmlag = (lm1*lm1)*(1/D);
+>
+> so does not match the R code which follows Eq. 13 in Anselin et al. (1996,
+> p. 84) in dividing the sum of squared errors by n, not n-k.
+>
+> I have not found lmlag_robust() or lmerror_robust() anywhere.
+>
+> Please provide the code of these functions if you need further
+> clarification - the R code for the Moran's I test on OLS residuals is OK,
+> as is the LM error test. The LM lag test chooses a version using ML sigma
+> in harmony with the source article.
+>
+> Roger
+>
+>
+>
+>> Roger
+>>
+>>
+>>>  However I got different results for Moran't I test and LM test results.
+>>>
+>>>  *R command:*
+>>>  nb4 <- knn2nb(knearneigh(sale.sp, k = 4))
+>>>  knn4listw <- nb2listw(nb4, style="W")
+>>>
+>>>  lm.morantest(near7_comrisk_semilog.out, knn4listw)
+>>>  lm.LMtests(near7_comrisk_semilog.out, knn4listw, test=c("LMerr",
+>>> "LMlag",
+>>>  "RLMerr", "RLMlag"))
+>>>
+>>>  *R results:*
+>>>  Moran I statistic standard deviate = 1.4135, p-value = 0.07875
+>>>  Observed Moran's I        Expectation           Variance
+>>>       8.780168e-03      -2.762542e-04       4.104967e-05
+>>>
+>>>  LMerr = 1.8752, df = 1, p-value = 0.1709
+>>>  LMlag = 0.14335, df = 1, p-value = 0.705
+>>>  RLMerr = 2.1193, df = 1, p-value = 0.1455
+>>>  RLMlag = 0.38741, df = 1, p-value = 0.5337
+>>>
+>>>  *Matlab command:*
+>>>  W_sale_4 = make_nnw(xc,yc,4);
+>>>
+>>>  moran4= moran(y,x, W_sale_4)
+>>>  error_4 = lmerror(y,x,W_sale_4)
+>>>  lag_4 = lmlag(y,x,W_sale_4)
+>>>  error_4r = lmerror_robust(y,x,W_sale_4)
+>>>  lag_4r = lmlag_robust(y,x,W_sale_4)
+>>>
+>>>  *Matlab results:*
+>>>  Moran I-test for spatial correlation in residuals
+>>>  Moran I                    0.13979528
+>>>  Moran I-statistic         22.05018073
+>>>  Marginal Probability       0.00000000
+>>>  mean                      -0.00126742
+>>>  standard deviation         0.00639735
+>>>
+>>>  error_4 =
+>>>     meth: 'lmerror'
+>>>       lm: 475.1839
+>>>     prob: 0
+>>>     chi1: 17.6110
+>>>
+>>>
+>>>  lag_4 =
+>>>     meth: 'lmlag'
+>>>       lm: 465.4518
+>>>     prob: 0
+>>>     chi1: 17.6110
+>>>
+>>>  error_4r =
+>>>     meth: 'lmerror_robust'
+>>>       lm: 76.5845
+>>>     prob: 0
+>>>     chi1: 6.6400
+>>>
+>>>  lag_4r =
+>>>
+>>>     meth: 'lmlag_robust'
+>>>       lm: 66.1547
+>>>     prob: 4.4409e-16
+>>>     chi1: 6.6400
+>>>
+>>>  Did I do anything wrong? Any thought on this problem?
+>>>
+>>>  thanks,
+>>>
+>>>  qiuhua
+>>>
+>>>   [[alternative HTML version deleted]]
+>>>
+>>>  _______________________________________________
+>>>  R-sig-Geo mailing list
+>>>  R-sig-Geo at r-project.org
+>>>  https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>>>
+>>>
+>>
+>>
+> --
+> Roger Bivand
+> Department of Economics, Norwegian School of Economics,
+> Helleveien 30, N-5045 Bergen, Norway.
+> voice: +47 55 95 93 55; fax +47 55 95 91 00
+> e-mail: Roger.Bivand at nhh.no
+> http://orcid.org/0000-0003-2392-6140
+> https://scholar.google.no/citations?user=AWeghB0AAAAJ&hl=en
+> http://depsy.org/person/434412
+>
+
+	[[alternative HTML version deleted]]
+
+
+From Roger.Bivand at nhh.no  Sat Mar  5 20:39:06 2016
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Sat, 5 Mar 2016 20:39:06 +0100
+Subject: [R-sig-Geo] different Moran's I results using R and matlab
+In-Reply-To: <alpine.LFD.2.20.1603041331110.9419@reclus.nhh.no>
+References: <CACc7PKpsRtVb7+kM5f9ka_fYnqBodfORadMAYsfiDU11aF9OjQ@mail.gmail.com>
+	<alpine.LFD.2.20.1603030838080.21940@reclus.nhh.no>
+	<alpine.LFD.2.20.1603041331110.9419@reclus.nhh.no>
+Message-ID: <alpine.LFD.2.20.1603052034420.4215@reclus.nhh.no>
+
+On Fri, 4 Mar 2016, Roger Bivand wrote:
+
+> On Thu, 3 Mar 2016, Roger Bivand wrote:
+>
+>>  On Thu, 3 Mar 2016, Qiuhua Ma wrote:
+>> 
+>> >   Hi,
+>> > 
+>> >   I run the exactly same regression using R and matlab and get the same
+>> >   regression results.
+>>
+>>  Well, you need to give the exact reference to the matlab code you have
+>>  used - are they the functions in Spatial Econometrics Toolbox under
+>>  spatial/stats? I do not see the robust variants there.
+>>
+>>  Most likely the data or the weights are different. Make your data set
+>>  available on a link, and I'll take a look.
+>
+> Having not heard back, I ran moran() and lmerror() in Matlab using the 
+> Spatial Econometrics Toolbox on the data presented in stats/moran_d.m:
+>
+> load anselin.dat;
+>
+> y = anselin(:,1);
+> n = length(y);
+>
+> x = [ones(n,1) anselin(:,2:3)];
+>
+> xc = anselin(:,4);
+> yc = anselin(:,5);
+> [j W j] = xy2cont(xc,yc);
+>
+> result = moran(y,x,W);
+>
+>>  tests$result
+> , , 1
+>
+>       [,1]
+> meth   "moran"
+> nobs   49
+> nvar   3
+> morani 0.2861962
+> istat  4.019423
+> imean  -0.03180435
+> ivar   0.006259337
+> prob   5.834084e-05
+>
+> (R result after moving the input data from Matlab to R with 
+> R.matlab::readMat())
+>
+>>  lm.morantest(lm_obj, lw, alternative="two.sided")
+>
+> 	Global Moran I for regression residuals
+>
+> data:
+> model: lm(formula = y ~ x - 1)
+> weights: lw
+>
+> Moran I statistic standard deviate = 4.0194, p-value = 5.834e-05
+> alternative hypothesis: two.sided
+> sample estimates:
+> Observed Moran I      Expectation         Variance
+>      0.286196209     -0.031804345      0.006259337
+>
+> [SAME RESULT]
+>
+> and similarly with lmerror()
+>
+>>  tests$result2
+> , , 1
+>
+>     [,1]
+> meth "lmerror"
+> lm   10.7656
+> prob 0.001034042
+> chi1 17.611
+> nobs 49
+> nvar 3
+>
+>
+>>  lm.LMtests(lm_obj, lw)
+>
+> 	Lagrange multiplier diagnostics for spatial dependence
+>
+> data:
+> model: lm(formula = y ~ x - 1)
+> weights: lw
+>
+> LMErr = 10.766, df = 1, p-value = 0.001034
+>
+> [SAME RESULT]
+>
+> The result for lmlag() differs, probably because the Matlab code uses two 
+> different values for sigma and epe:
+
+This is definitely the case - setting
+
+>
+> sigma  = (e'*e)/(n-k);
+>
+> epe = (e'*e)/n;
+
+sigma = epe;
+
+gives exactly the same results as test="LMlag" in spdep::lm.LMtests()
+
+So the reported differences are due to 1) the user not using the same 
+data in R and Matlab, and 2) the Matlab code being undecided about 
+dividing the sum of squared errors by n or n-k, and consequently making 
+choices that might seem sensible but aren't fully supported in the 
+underlying article.
+
+Roger
+
+> lm1 = (e'*W*y)/epe;
+>
+> t1 = trace((W+W')*W);
+> D1=W*x*b;
+> M=eye(n)-x*inv((x'*x))*x';
+> D=(D1'*M*D1)*(1/sigma)+t1;
+>
+> lmlag = (lm1*lm1)*(1/D);
+>
+> so does not match the R code which follows Eq. 13 in Anselin et al. (1996, p. 
+> 84) in dividing the sum of squared errors by n, not n-k.
+>
+> I have not found lmlag_robust() or lmerror_robust() anywhere.
+>
+> Please provide the code of these functions if you need further clarification 
+> - the R code for the Moran's I test on OLS residuals is OK, as is the LM 
+> error test. The LM lag test chooses a version using ML sigma in harmony with 
+> the source article.
+>
+> Roger
+>
+>>
+>>  Roger
+>> 
+>> > 
+>> >   However I got different results for Moran't I test and LM test results.
+>> > 
+>> >   *R command:*
+>> >   nb4 <- knn2nb(knearneigh(sale.sp, k = 4))
+>> >   knn4listw <- nb2listw(nb4, style="W")
+>> > 
+>> >   lm.morantest(near7_comrisk_semilog.out, knn4listw)
+>> >   lm.LMtests(near7_comrisk_semilog.out, knn4listw, test=c("LMerr", 
+>> >   "LMlag",
+>> >   "RLMerr", "RLMlag"))
+>> > 
+>> >   *R results:*
+>> >   Moran I statistic standard deviate = 1.4135, p-value = 0.07875
+>> >   Observed Moran's I        Expectation           Variance
+>> >        8.780168e-03      -2.762542e-04       4.104967e-05
+>> > 
+>> >   LMerr = 1.8752, df = 1, p-value = 0.1709
+>> >   LMlag = 0.14335, df = 1, p-value = 0.705
+>> >   RLMerr = 2.1193, df = 1, p-value = 0.1455
+>> >   RLMlag = 0.38741, df = 1, p-value = 0.5337
+>> > 
+>> >   *Matlab command:*
+>> >   W_sale_4 = make_nnw(xc,yc,4);
+>> > 
+>> >   moran4= moran(y,x, W_sale_4)
+>> >   error_4 = lmerror(y,x,W_sale_4)
+>> >   lag_4 = lmlag(y,x,W_sale_4)
+>> >   error_4r = lmerror_robust(y,x,W_sale_4)
+>> >   lag_4r = lmlag_robust(y,x,W_sale_4)
+>> > 
+>> >   *Matlab results:*
+>> >   Moran I-test for spatial correlation in residuals
+>> >   Moran I                    0.13979528
+>> >   Moran I-statistic         22.05018073
+>> >   Marginal Probability       0.00000000
+>> >   mean                      -0.00126742
+>> >   standard deviation         0.00639735
+>> > 
+>> >   error_4 =
+>> >      meth: 'lmerror'
+>> >        lm: 475.1839
+>> >      prob: 0
+>> >      chi1: 17.6110
+>> > 
+>> > 
+>> >   lag_4 =
+>> >      meth: 'lmlag'
+>> >        lm: 465.4518
+>> >      prob: 0
+>> >      chi1: 17.6110
+>> > 
+>> >   error_4r =
+>> >      meth: 'lmerror_robust'
+>> >        lm: 76.5845
+>> >      prob: 0
+>> >      chi1: 6.6400
+>> > 
+>> >   lag_4r =
+>> > 
+>> >      meth: 'lmlag_robust'
+>> >        lm: 66.1547
+>> >      prob: 4.4409e-16
+>> >      chi1: 6.6400
+>> > 
+>> >   Did I do anything wrong? Any thought on this problem?
+>> > 
+>> >   thanks,
+>> > 
+>> >   qiuhua
+>> > 
+>> >    [[alternative HTML version deleted]]
+>> > 
+>> >   _______________________________________________
+>> >   R-sig-Geo mailing list
+>> >   R-sig-Geo at r-project.org
+>> >   https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>> > 
+>> 
+>> 
+>
+>
+
+-- 
+Roger Bivand
+Department of Economics, Norwegian School of Economics,
+Helleveien 30, N-5045 Bergen, Norway.
+voice: +47 55 95 93 55; fax +47 55 95 91 00
+e-mail: Roger.Bivand at nhh.no
+http://orcid.org/0000-0003-2392-6140
+https://scholar.google.no/citations?user=AWeghB0AAAAJ&hl=en
+http://depsy.org/person/434412
+
+
+From g.ottoni at gmail.com  Mon Mar  7 20:25:38 2016
+From: g.ottoni at gmail.com (Guilherme Ottoni)
+Date: Mon, 7 Mar 2016 16:25:38 -0300
+Subject: [R-sig-Geo] Regression - large neighbour matrix - poor performance
+Message-ID: <CAK0WGMbTpL4_MkUtJOBAC2mqy7d+Wso3pqNTCFUTSwRGUA70UQ@mail.gmail.com>
+
+Dear list,
+
+I'm working with some land's Hedonic Pricing Model, at county level,
+to determine how much few urban facilities would incrise the land's
+value. The literature and the spatial exploratory data analysis show
+that spatial effects should be considered while modeling.
+
+The shapefile I'm using is points type, not polygons. So I took the
+coordenates of the land points and generated the neighbour matrix
+(distance range of 500m - file size 400mb). However, the matrix got
+too big (as shown below).
+
+I could manage to do the Moran's tests. When I tryed to run the SAR,
+SEM and other models of spatial regression, I got the error mesage
+saying R has reached the total memory size of the computer (8GB).
+
+I tryed to change the "method" in the *sarlm types from "default" to
+"LU", but the estimation is running for 3h so far and it seemd that
+the Hessian maximization looped in certain value.
+
+I got no clue whether I'm doing it the rightway or there is a smarter
+way of doing so.
+
+Any help would be very welcome!
+
+------------------------------------------------------ ROUTINE
+------------------------------------
+mapa <- readShapePoints("OUC-ACLO_ITBI5500.shp")
+mapa <- readOGR(".", "OUC-ACLO_ITBI5500")
+OGR data source with driver: ESRI Shapefile
+Source: ".", layer: "OUC-ACLO_ITBI5500"
+with 25857 features
+It has 42 fields
+
+coords<-coordinates(mapa)
+vizinhos <- dnearneigh(coords, d1=0, d2=500, row.names=IDs)
+matriz_vizinhos <- nb2listw(vizinhos)
+
+summary(vizinhos)
+Neighbour list object:
+Number of regions: 25857
+Number of nonzero links: 15642996
+Percentage nonzero weights: 2.339719
+Average number of links: 604.9811
+
+lag.fit<-lagsarlm(formula, data=mapa, listw=matriz_vizinhos,
+method = "Matrix", quiet = FALSE)
+----------------------------------------------------------------------------------------------------------------------
+
+Cheers
+
+
+From Roger.Bivand at nhh.no  Mon Mar  7 21:09:37 2016
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Mon, 7 Mar 2016 21:09:37 +0100
+Subject: [R-sig-Geo] Regression - large neighbour matrix - poor
+ performance
+In-Reply-To: <CAK0WGMbTpL4_MkUtJOBAC2mqy7d+Wso3pqNTCFUTSwRGUA70UQ@mail.gmail.com>
+References: <CAK0WGMbTpL4_MkUtJOBAC2mqy7d+Wso3pqNTCFUTSwRGUA70UQ@mail.gmail.com>
+Message-ID: <alpine.LFD.2.20.1603072048090.17311@reclus.nhh.no>
+
+On Mon, 7 Mar 2016, Guilherme Ottoni wrote:
+
+> Dear list,
+>
+> I'm working with some land's Hedonic Pricing Model, at county level,
+> to determine how much few urban facilities would incrise the land's
+> value. The literature and the spatial exploratory data analysis show
+> that spatial effects should be considered while modeling.
+>
+> The shapefile I'm using is points type, not polygons. So I took the
+> coordenates of the land points and generated the neighbour matrix
+> (distance range of 500m - file size 400mb). However, the matrix got
+> too big (as shown below).
+>
+> I could manage to do the Moran's tests. When I tryed to run the SAR,
+> SEM and other models of spatial regression, I got the error mesage
+> saying R has reached the total memory size of the computer (8GB).
+>
+> I tryed to change the "method" in the *sarlm types from "default" to
+> "LU", but the estimation is running for 3h so far and it seemd that
+> the Hessian maximization looped in certain value.
+>
+> I got no clue whether I'm doing it the rightway or there is a smarter
+> way of doing so.
+>
+> Any help would be very welcome!
+>
+> ------------------------------------------------------ ROUTINE
+> ------------------------------------
+> mapa <- readShapePoints("OUC-ACLO_ITBI5500.shp")
+> mapa <- readOGR(".", "OUC-ACLO_ITBI5500")
+> OGR data source with driver: ESRI Shapefile
+> Source: ".", layer: "OUC-ACLO_ITBI5500"
+> with 25857 features
+> It has 42 fields
+>
+> coords<-coordinates(mapa)
+> vizinhos <- dnearneigh(coords, d1=0, d2=500, row.names=IDs)
+> matriz_vizinhos <- nb2listw(vizinhos)
+>
+> summary(vizinhos)
+> Neighbour list object:
+> Number of regions: 25857
+> Number of nonzero links: 15642996
+> Percentage nonzero weights: 2.339719
+
+This weights matrix is not very sparse, so all calculations will end up 
+the same way. Use either a different distance threshold, or if the point 
+density is very varied, use a variant of triangulation (SOI usually works 
+well). If the weights are sparse, as with the Lucas county house price 
+data from Spatial Econometrics toolbox and included in spdep, everything 
+should run very much faster.
+
+> Average number of links: 604.9811
+
+This should certainly alert you to the problem - a mean count of 
+neighbours of 605 implies that on average y is impacted by its nearest 605 
+neighbours.
+
+>
+> lag.fit<-lagsarlm(formula, data=mapa, listw=matriz_vizinhos,
+> method = "Matrix", quiet = FALSE)
+
+library(spdep)
+data(house)
+hform <- formula(log(price) ~ age + I(age^2) + I(age^3) + log(lotsize) +
+   rooms + beds + syear)
+hlw <- nb2listw(LO_nb)
+system.time(hlag_ML_Matrix <- lagsarlm(hform, data=house, listw=hlw,
+   method="Matrix"))
+#   user  system elapsed
+#  1.331   0.007   1.338
+
+on a four-year old laptop. But:
+
+> LO_nb
+Neighbour list object:
+Number of regions: 25357
+Number of nonzero links: 74874
+Percentage nonzero weights: 0.01164489
+Average number of links: 2.952794
+
+Hope this clarifies,
+
+Roger
+
+> ----------------------------------------------------------------------------------------------------------------------
+>
+> Cheers
+>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>
+
+-- 
+Roger Bivand
+Department of Economics, Norwegian School of Economics,
+Helleveien 30, N-5045 Bergen, Norway.
+voice: +47 55 95 93 55; fax +47 55 95 91 00
+e-mail: Roger.Bivand at nhh.no
+http://orcid.org/0000-0003-2392-6140
+https://scholar.google.no/citations?user=AWeghB0AAAAJ&hl=en
+http://depsy.org/person/434412
+
+
+From alexandresantosbr at yahoo.com.br  Thu Mar 10 13:24:02 2016
+From: alexandresantosbr at yahoo.com.br (ASANTOS)
+Date: Thu, 10 Mar 2016 08:24:02 -0400
+Subject: [R-sig-Geo] [R-sig-eco] Two-way contrasts with adonis()
+In-Reply-To: <56E031F5.3070806@mytng.de>
+References: <56E00A54.50904@yahoo.com.br> <56E031F5.3070806@mytng.de>
+Message-ID: <56E16762.20905@yahoo.com.br>
+
+Hi Sven,
+
+         Thank you other time, but I improve my code for multiple 
+comparisons with adonis() function and I have other problems in my code, 
+because the function don't read my comparisons object contr2(list), in 
+my code:
+
+#1st factor
+treat <- gl(4, 15, labels = paste("t", 1:4, sep="")); treat
+
+#Variables
+set.sed(124)
+sp  <- cbind(c(rnorm(10,  5, 0.25), rnorm(50, 2.5, 0.25)), rnorm(60, 
+2.5, 0.25),
+              c(rnorm(10, 12, 0.25), rnorm(50, 2.5, 0.25)), rnorm(60, 
+2.5, 0.25))
+colnames(sp) <- c("sp1", "sp2", "sp3", "sp4")
+head(sp))
+
+
+#create a design matrix of the contrasts for "treat"
+Treat_Imp<-model.matrix(~treat-1)
+
+require(vegan)
+
+fullModel <- adonis(sp ~ treat, method = "euclidean", permutations = 9999)
+
+fullModel
+
+#Comparisons
+TI    <- model.matrix(~ treat-1)
+head(TI)
+
+f    <- length(levels(treat))
+comb <- t(combn(1:f, 2))
+n    <- nrow(comb)
+
+contr2 <- NULL
+for (x in 1:n) {
+      i <- comb[x, 1]
+      j <- comb[x, 2]
+      tmp <- list(TI[,i] - TI[,j]); names(tmp) <- paste0("TI",i, "_", j)
+      contr2 <- c(contr2, tmp)
+}
+contr2
+
+adonis(sp ~ contr2[1]+contr2[2]+contr2[3]+contr2[4]+contr2[5]+contr2[6],
+method = "euclidean", permutations = 9999)
+#
+
+Thanks
+
+-- 
+======================================================================
+Alexandre dos Santos
+Prote??o Florestal
+IFMT - Instituto Federal de Educa??o, Ci?ncia e Tecnologia de Mato Grosso
+Campus C?ceres
+Caixa Postal 244
+Avenida dos Ramires, s/n
+Bairro: Distrito Industrial
+C?ceres - MT                      CEP: 78.200-000
+Fone: (+55) 65 8132-8112 (TIM)   (+55) 65 9686-6970 (VIVO)
+
+         alexandre.santos at cas.ifmt.edu.br
+Lattes: http://lattes.cnpq.br/1360403201088680
+OrcID: orcid.org/0000-0001-8232-6722
+Researchgate: https://www.researchgate.net/profile/Alexandre_Santos10
+LinkedIn: https://br.linkedin.com/in/alexandre-dos-santos-87961635
+======================================================================
+
+Em 09/03/2016 10:23, microbiomics escreveu:
+> Hi Alexandre,
+>
+> On 09.03.2016 12:34, ASANTOS wrote:
+> [the code above is OK]
+>
+>> #Comparisons
+>> impyes:treatt1_impno:treatt1<- Treat_Imp[, 1] - Treat_Imp[, 2]
+>> impyes:treatt2_impno:treatt2<- Treat_Imp[, 2] - Treat_Imp[, 3]
+>> impyes:treatt3_impno:treatt3<- Treat_Imp[, 3] - Treat_Imp[, 4]
+>>
+>
+> First, variable names cannot contain ":", so you need to replace the 
+> colon with a period. Also, it looks like you mixed up column indices 
+> of Treat_Imp, so my suggestion is:
+>
+> impyes.treatt1_impno.treatt1<- Treat_Imp[, 1] - Treat_Imp[, 2]
+> impyes.treatt2_impno.treatt2<- Treat_Imp[, 3] - Treat_Imp[, 4]
+> impyes.treatt3_impno.treatt3<- Treat_Imp[, 5] - Treat_Imp[, 6]
+>
+>
+>
+>
+> To simply make the code run as per your request, try this:
+>
+> adonis(sp ~ impyes.treatt1_impno.treatt1
+>       + impyes.treatt2_impno.treatt2
+>       + impyes.treatt3_impno.treatt3,
+>       method = "euclidean")
+>
+>
+>
+> One problem with this approach is that terms are added sequentially to 
+> the test, so "impyes.treatt1_impno.treatt1" is tested alone, while 
+> "impyes.treatt2_impno.treatt2" is tested in presence of 
+> "impyes.treatt1_impno.treatt1" and so on. Thus, your result depends on 
+> the input order of your terms, which might not be what you expect or 
+> even want.
+>
+> A better alternative to the above code would thus involve function 
+> rda(), followed by its anova() method:
+>
+>
+> rdaModel <- rda(sp ~ impyes.treatt1_impno.treatt1
+>                + impyes.treatt2_impno.treatt2
+>                + impyes.treatt3_impno.treatt3)
+>
+> anova(rdaModel, by = "terms")
+>
+>
+>
+> Still, it looks like you are trying to construct a "Swiss Army knife" 
+> to do ANOVA and multiple pairwise tests at the same time. IMHO, you 
+> need to perform the pairwise comparisons one by one, each with its 
+> respective subset of data - and appropriate p-value adjustment for 
+> multiple testing.
+>
+>
+>
+> Best,
+> Sven
+>
+
+
+From ludotifo at hotmail.fr  Thu Mar 10 21:27:22 2016
+From: ludotifo at hotmail.fr (ludovic)
+Date: Thu, 10 Mar 2016 20:27:22 +0000
+Subject: [R-sig-Geo] =?iso-8859-1?q?Ludovic_Foti-probl=E9me_export_krige_s?=
+	=?iso-8859-1?q?ur_carte?=
+Message-ID: <DB5PR09MB0581915FE719EAEBC9556335BCB40@DB5PR09MB0581.eurprd09.prod.outlook.com>
+
+Bonjour,
+
+
+je suis doctorant ? Jussieu et dans ce cadre, j'ai fais un krige de m?taux sous R et j'aimerais exporter le r?sultat sur une carte ILE DE FRANCE. Le probl?me c'est que je ne sais pas du tout comment proc?der. J'ai cherch? mais n'y arrive pas et je ne sais plus quoi faire.
+
+
+Pouvez-vous m'aider? Ci-joint le fichier R du script pour le krige, un fichier avec les donn?es.
+
+
+
+Merci pour votre future aide.
+
+
+Bien cordialement,
+
+
+Ludovic Foti
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20160310/b2a337d7/attachment.html>
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: semivariogramme2.R
+Type: application/octet-stream
+Size: 1344 bytes
+Desc: semivariogramme2.R
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20160310/b2a337d7/attachment.obj>
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: pbt.csv
+Type: text/csv
+Size: 7228 bytes
+Desc: pbt.csv
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20160310/b2a337d7/attachment.bin>
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: ast.csv
+Type: text/csv
+Size: 7237 bytes
+Desc: ast.csv
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20160310/b2a337d7/attachment-0001.bin>
+
+From ashenkin at ufl.edu  Fri Mar 11 11:07:54 2016
+From: ashenkin at ufl.edu (Alexander Shenkin)
+Date: Fri, 11 Mar 2016 10:07:54 +0000
+Subject: [R-sig-Geo] extract mean raster value from polygon
+Message-ID: <56E298FA.4030508@ufl.edu>
+
+Hello All,
+
+I've been working to be able to make elevation profiles from a DEM along 
+a swath, rather than just a line (thanks to Forrest Stevens for the help 
+so far).  To that end, I've made a function, create_perp_buffers, that 
+creates polygons perpendicular to, and along, a transect (see graphic 
+below).
+
+Now, I would like to be able to intersect each polygon with the 
+SpatialGridDataFrame DEM, and get an average elevation for each 
+polygon.  I've tried using over(), but it just hangs forever (my actual 
+DEM is quite large, a mosaic from SRTM).  Can anyone suggest a good way 
+to do this?
+
+Thanks,
+Allie
+
+
+
+
+
+
+create_perp_buffers <- function(x1, y1, x2, y2, grid_dist, slice_width, 
+proj4string = "+init=epsg:28992 
++towgs84=565.237,50.0087,465.658,-0.406857,0.350733,-1.87035,4.0812") {
+     xdiff <- x2 - x1
+     ydiff <- y2 - y1
+     lineangle <- atan(ydiff/xdiff)
+     dx = cos(lineangle)
+     dy = sin(lineangle)
+     left_angle = lineangle - 90
+     right_angle = lineangle + 90
+     midpoints = data.frame(x = seq(from = x1, to = x2, by = 
+dx*grid_dist), y = seq(from = y1, to = y2, by = dy*grid_dist))
+     begin.coord = data.frame("x" = cos(left_angle)*slice_width + 
+midpoints$x, "y" = sin(left_angle)*slice_width + midpoints$y)
+     end.coord = data.frame("x" = cos(right_angle)*slice_width + 
+midpoints$x, "y" = sin(right_angle)*slice_width + midpoints$y)
+
+     l <- vector("list", nrow(begin.coord))
+
+     for (i in seq_along(l)) {
+         l[[i]] <- Lines(list(Line(rbind(begin.coord[i,], 
+end.coord[i,]))), as.character(i))
+     }
+
+     sl <- SpatialLines(l)
+
+     names(begin.coord) <- c("begin_x", "begin_y")
+     names(end.coord) <- c("end_x", "end_y")
+     sldf <- SpatialLinesDataFrame(sl, 
+data.frame("lineID"=1:nrow(begin.coord), begin.coord, end.coord))
+     proj4string(sldf) = proj4string
+
+     blpi <- gBuffer(sldf, byid=TRUE, id=sldf$lineID, width = grid_dist/2)
+
+     return(blpi)
+}
+
+my_blpi <- create_perp_buffers(180000, 331500, 181000, 332500, 100, 100)
+
+data(meuse.grid)
+coordinates(meuse.grid) <- ~x+y
+gridded(meuse.grid) <- TRUE
+proj4string(meuse.grid) <- 
+CRS(paste("+init=epsg:28992","+towgs84=565.237,50.0087,465.658,-0.406857,0.350733,-1.87035,4.0812"))
+plot(meuse.grid, axes = T)
+plot(my_blpi, col="red", add=T)
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20160311/228a7824/attachment.html>
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: igeciice.png
+Type: image/png
+Size: 8315 bytes
+Desc: not available
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20160311/228a7824/attachment.png>
+
+From edzer.pebesma at uni-muenster.de  Fri Mar 11 12:09:09 2016
+From: edzer.pebesma at uni-muenster.de (Edzer Pebesma)
+Date: Fri, 11 Mar 2016 12:09:09 +0100
+Subject: [R-sig-Geo] extract mean raster value from polygon
+In-Reply-To: <56E298FA.4030508@ufl.edu>
+References: <56E298FA.4030508@ufl.edu>
+Message-ID: <56E2A755.5060206@uni-muenster.de>
+
+Allie, thanks for the reproducible example, which runs after loading
+packages sp and rgeos. You can get the aggregate & plot directly by
+
+a = aggregate(meuse.grid["dist"], my_blpi, mean)
+spplot(a)
+
+Package raster may have routines that do the same thing faster for large
+raster data. In raster, ``aggregate'' has a very different meaning.
+
+
+On 11/03/16 11:07, Alexander Shenkin wrote:
+> Hello All,
+> 
+> I've been working to be able to make elevation profiles from a DEM along
+> a swath, rather than just a line (thanks to Forrest Stevens for the help
+> so far).  To that end, I've made a function, create_perp_buffers, that
+> creates polygons perpendicular to, and along, a transect (see graphic
+> below).
+> 
+> Now, I would like to be able to intersect each polygon with the
+> SpatialGridDataFrame DEM, and get an average elevation for each
+> polygon.  I've tried using over(), but it just hangs forever (my actual
+> DEM is quite large, a mosaic from SRTM).  Can anyone suggest a good way
+> to do this?
+> 
+> Thanks,
+> Allie
+> 
+> 
+> 
+> 
+> 
+> 
+> create_perp_buffers <- function(x1, y1, x2, y2, grid_dist, slice_width,
+> proj4string = "+init=epsg:28992
+> +towgs84=565.237,50.0087,465.658,-0.406857,0.350733,-1.87035,4.0812") {
+>     xdiff <- x2 - x1
+>     ydiff <- y2 - y1
+>     lineangle <- atan(ydiff/xdiff)
+>     dx = cos(lineangle)
+>     dy = sin(lineangle)
+>     left_angle = lineangle - 90
+>     right_angle = lineangle + 90
+>     midpoints = data.frame(x = seq(from = x1, to = x2, by =
+> dx*grid_dist), y = seq(from = y1, to = y2, by = dy*grid_dist))
+>     begin.coord = data.frame("x" = cos(left_angle)*slice_width +
+> midpoints$x, "y" = sin(left_angle)*slice_width + midpoints$y)
+>     end.coord = data.frame("x" = cos(right_angle)*slice_width +
+> midpoints$x, "y" = sin(right_angle)*slice_width + midpoints$y)
+>    
+>     l <- vector("list", nrow(begin.coord))
+>    
+>     for (i in seq_along(l)) {
+>         l[[i]] <- Lines(list(Line(rbind(begin.coord[i,],
+> end.coord[i,]))), as.character(i))
+>     }
+>    
+>     sl <- SpatialLines(l)
+>    
+>     names(begin.coord) <- c("begin_x", "begin_y")
+>     names(end.coord) <- c("end_x", "end_y")
+>     sldf <- SpatialLinesDataFrame(sl,
+> data.frame("lineID"=1:nrow(begin.coord), begin.coord, end.coord))
+>     proj4string(sldf) = proj4string
+>    
+>     blpi <- gBuffer(sldf, byid=TRUE, id=sldf$lineID, width = grid_dist/2)
+>    
+>     return(blpi)
+> }
+> 
+> my_blpi <- create_perp_buffers(180000, 331500, 181000, 332500, 100, 100)
+> 
+> data(meuse.grid)
+> coordinates(meuse.grid) <- ~x+y
+> gridded(meuse.grid) <- TRUE
+> proj4string(meuse.grid) <-
+> CRS(paste("+init=epsg:28992","+towgs84=565.237,50.0087,465.658,-0.406857,0.350733,-1.87035,4.0812"))
+> plot(meuse.grid, axes = T)
+> plot(my_blpi, col="red", add=T)
+> 
+> 
+> 
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> 
+
+-- 
+Edzer Pebesma
+Institute for Geoinformatics  (ifgi),  University of M?nster
+Heisenbergstra?e 2, 48149 M?nster, Germany; +49 251 83 33081
+Journal of Statistical Software:   http://www.jstatsoft.org/
+Computers & Geosciences:   http://elsevier.com/locate/cageo/
+Spatial Statistics Society http://www.spatialstatistics.info
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 490 bytes
+Desc: OpenPGP digital signature
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20160311/67e7eb90/attachment.bin>
+
+From biswaj41_ssf at jnu.ac.in  Fri Mar 11 15:21:57 2016
+From: biswaj41_ssf at jnu.ac.in (BISWAJIT KAR)
+Date: Fri, 11 Mar 2016 19:51:57 +0530
+Subject: [R-sig-Geo] Need help on NSS Data (India)
+Message-ID: <CAOL95K4ytewgp2T_QxhA_8TN87sjF3VVRwMQ5si7BKn6dqjeaA@mail.gmail.com>
+
+Respected All,
+                     This mail is regarding National Sample Survey (NSS)
+Data of India. I know how to analyse NSS data by SPSS software. Now, I want
+to learn NSS in R. Can anyone suggest or forward any help to learn NSS Data
+in R? Specifically, I want to know how to extract NSS data in R and use
+weights to get estimation. Giving any reference of any documents/tutorials
+will be very helpful.
+
+Thanks and regards,
+Biswajit
+
+-- 
+*Biswajit Kar*
+(Research Scholar)
+ Ph. D. Student, Geography
+Centre for the Study of Regional Development
+School of Social Sciences
+Jawaharala Nehru University
+New Delhi-110067
+
+Email: biswaj41_ssf at jnu.ac.in
+          biswajitkar2009 at gmail.com
+
+	[[alternative HTML version deleted]]
+
+
+From r-sig-geo at forreststevens.com  Fri Mar 11 16:06:22 2016
+From: r-sig-geo at forreststevens.com (Forrest Stevens)
+Date: Fri, 11 Mar 2016 15:06:22 +0000
+Subject: [R-sig-Geo] extract mean raster value from polygon
+In-Reply-To: <56E2A755.5060206@uni-muenster.de>
+References: <56E298FA.4030508@ufl.edu> <56E2A755.5060206@uni-muenster.de>
+Message-ID: <CAEBQMM=c7eNYwPSUBJ+PsZya=DKKm87Seo2TsY1=5Lnzsjaj9A@mail.gmail.com>
+
+Using the raster package's zonal() function maybe be better suited for your
+situation Allie, depending on the size of the underlying elevation raster
+and how efficient you really need it to be, this approach could be used
+(tacked on to your reproducible example):
+
+## Use zonal from the raster package:
+r <- raster(meuse.grid["dist"])
+b <- rasterize(my_blpi, r)
+my_blpi[["a"]] <- zonal(r, b, fun='mean')[,2]
+spplot(my_blpi["a"])
+
+As somewhat of an aside, this requires you to rasterize your transects (the
+second line in the code above) which if being done over very large areas
+and fine grained scales can be quite inefficient using the raster package.
+In the past I've called the GDAL rasterize utility directly via a system()
+call to get modest gains in this context.
+
+Hope this helps!
+
+Forrest
+
+On Fri, Mar 11, 2016 at 6:24 AM Edzer Pebesma <edzer.pebesma at uni-muenster.de>
+wrote:
+
+> Allie, thanks for the reproducible example, which runs after loading
+> packages sp and rgeos. You can get the aggregate & plot directly by
+>
+> a = aggregate(meuse.grid["dist"], my_blpi, mean)
+> spplot(a)
+>
+> Package raster may have routines that do the same thing faster for large
+> raster data. In raster, ``aggregate'' has a very different meaning.
+>
+>
+> On 11/03/16 11:07, Alexander Shenkin wrote:
+> > Hello All,
+> >
+> > I've been working to be able to make elevation profiles from a DEM along
+> > a swath, rather than just a line (thanks to Forrest Stevens for the help
+> > so far).  To that end, I've made a function, create_perp_buffers, that
+> > creates polygons perpendicular to, and along, a transect (see graphic
+> > below).
+> >
+> > Now, I would like to be able to intersect each polygon with the
+> > SpatialGridDataFrame DEM, and get an average elevation for each
+> > polygon.  I've tried using over(), but it just hangs forever (my actual
+> > DEM is quite large, a mosaic from SRTM).  Can anyone suggest a good way
+> > to do this?
+> >
+> > Thanks,
+> > Allie
+> >
+> >
+> >
+> >
+> >
+> >
+> > create_perp_buffers <- function(x1, y1, x2, y2, grid_dist, slice_width,
+> > proj4string = "+init=epsg:28992
+> > +towgs84=565.237,50.0087,465.658,-0.406857,0.350733,-1.87035,4.0812") {
+> >     xdiff <- x2 - x1
+> >     ydiff <- y2 - y1
+> >     lineangle <- atan(ydiff/xdiff)
+> >     dx = cos(lineangle)
+> >     dy = sin(lineangle)
+> >     left_angle = lineangle - 90
+> >     right_angle = lineangle + 90
+> >     midpoints = data.frame(x = seq(from = x1, to = x2, by =
+> > dx*grid_dist), y = seq(from = y1, to = y2, by = dy*grid_dist))
+> >     begin.coord = data.frame("x" = cos(left_angle)*slice_width +
+> > midpoints$x, "y" = sin(left_angle)*slice_width + midpoints$y)
+> >     end.coord = data.frame("x" = cos(right_angle)*slice_width +
+> > midpoints$x, "y" = sin(right_angle)*slice_width + midpoints$y)
+> >
+> >     l <- vector("list", nrow(begin.coord))
+> >
+> >     for (i in seq_along(l)) {
+> >         l[[i]] <- Lines(list(Line(rbind(begin.coord[i,],
+> > end.coord[i,]))), as.character(i))
+> >     }
+> >
+> >     sl <- SpatialLines(l)
+> >
+> >     names(begin.coord) <- c("begin_x", "begin_y")
+> >     names(end.coord) <- c("end_x", "end_y")
+> >     sldf <- SpatialLinesDataFrame(sl,
+> > data.frame("lineID"=1:nrow(begin.coord), begin.coord, end.coord))
+> >     proj4string(sldf) = proj4string
+> >
+> >     blpi <- gBuffer(sldf, byid=TRUE, id=sldf$lineID, width = grid_dist/2)
+> >
+> >     return(blpi)
+> > }
+> >
+> > my_blpi <- create_perp_buffers(180000, 331500, 181000, 332500, 100, 100)
+> >
+> > data(meuse.grid)
+> > coordinates(meuse.grid) <- ~x+y
+> > gridded(meuse.grid) <- TRUE
+> > proj4string(meuse.grid) <-
+> >
+> CRS(paste("+init=epsg:28992","+towgs84=565.237,50.0087,465.658,-0.406857,0.350733,-1.87035,4.0812"))
+> > plot(meuse.grid, axes = T)
+> > plot(my_blpi, col="red", add=T)
+> >
+> >
+> >
+> > _______________________________________________
+> > R-sig-Geo mailing list
+> > R-sig-Geo at r-project.org
+> > https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> >
+>
+> --
+> Edzer Pebesma
+> Institute for Geoinformatics  (ifgi),  University of M?nster
+> Heisenbergstra?e 2, 48149 M?nster, Germany; +49 251 83 33081
+> Journal of Statistical Software:   http://www.jstatsoft.org/
+> Computers & Geosciences:   http://elsevier.com/locate/cageo/
+> Spatial Statistics Society http://www.spatialstatistics.info
+>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+
+	[[alternative HTML version deleted]]
+
+
+From ashenkin at ufl.edu  Mon Mar 14 16:28:35 2016
+From: ashenkin at ufl.edu (Alexander Shenkin)
+Date: Mon, 14 Mar 2016 15:28:35 +0000
+Subject: [R-sig-Geo] extract mean raster value from polygon
+In-Reply-To: <CAEBQMM=c7eNYwPSUBJ+PsZya=DKKm87Seo2TsY1=5Lnzsjaj9A@mail.gmail.com>
+References: <56E298FA.4030508@ufl.edu> <56E2A755.5060206@uni-muenster.de>
+	<CAEBQMM=c7eNYwPSUBJ+PsZya=DKKm87Seo2TsY1=5Lnzsjaj9A@mail.gmail.com>
+Message-ID: <56E6D8A3.2070706@ufl.edu>
+
+Hi All,
+
+Thanks for everyone's input, especially Forrest Stevens'.  I've put my 
+solution up here: https://gist.github.com/ashenkin/7fceb77e78efc33961a8 .
+
+Thanks,
+Allie
+
+On 3/11/2016 3:06 PM, Forrest Stevens wrote:
+> Using the raster package's zonal() function maybe be better suited for 
+> your situation Allie, depending on the size of the underlying 
+> elevation raster and how efficient you really need it to be, this 
+> approach could be used (tacked on to your reproducible example):
+>
+> ##Use zonal from the raster package:
+> r <- raster(meuse.grid["dist"])
+> b <- rasterize(my_blpi, r)
+> my_blpi[["a"]] <- zonal(r, b, fun='mean')[,2]
+> spplot(my_blpi["a"])
+>
+> As somewhat of an aside, this requires you to rasterize your transects 
+> (the second line in the code above) which if being done over very 
+> large areas and fine grained scales can be quite inefficient using the 
+> raster package.  In the past I've called the GDAL rasterize utility 
+> directly via a system() call to get modest gains in this context.
+>
+> Hope this helps!
+>
+> Forrest
+>
+> On Fri, Mar 11, 2016 at 6:24 AM Edzer Pebesma 
+> <edzer.pebesma at uni-muenster.de <mailto:edzer.pebesma at uni-muenster.de>> 
+> wrote:
+>
+>     Allie, thanks for the reproducible example, which runs after loading
+>     packages sp and rgeos. You can get the aggregate & plot directly by
+>
+>     a = aggregate(meuse.grid["dist"], my_blpi, mean)
+>     spplot(a)
+>
+>     Package raster may have routines that do the same thing faster for
+>     large
+>     raster data. In raster, ``aggregate'' has a very different meaning.
+>
+>
+>     On 11/03/16 11:07, Alexander Shenkin wrote:
+>     > Hello All,
+>     >
+>     > I've been working to be able to make elevation profiles from a
+>     DEM along
+>     > a swath, rather than just a line (thanks to Forrest Stevens for
+>     the help
+>     > so far).  To that end, I've made a function,
+>     create_perp_buffers, that
+>     > creates polygons perpendicular to, and along, a transect (see
+>     graphic
+>     > below).
+>     >
+>     > Now, I would like to be able to intersect each polygon with the
+>     > SpatialGridDataFrame DEM, and get an average elevation for each
+>     > polygon.  I've tried using over(), but it just hangs forever (my
+>     actual
+>     > DEM is quite large, a mosaic from SRTM).  Can anyone suggest a
+>     good way
+>     > to do this?
+>     >
+>     > Thanks,
+>     > Allie
+>     >
+>     >
+>     >
+>     >
+>     >
+>     >
+>     > create_perp_buffers <- function(x1, y1, x2, y2, grid_dist,
+>     slice_width,
+>     > proj4string = "+init=epsg:28992
+>     >
+>     +towgs84=565.237,50.0087,465.658,-0.406857,0.350733,-1.87035,4.0812")
+>     {
+>     >     xdiff <- x2 - x1
+>     >     ydiff <- y2 - y1
+>     >     lineangle <- atan(ydiff/xdiff)
+>     >     dx = cos(lineangle)
+>     >     dy = sin(lineangle)
+>     >     left_angle = lineangle - 90
+>     >     right_angle = lineangle + 90
+>     >     midpoints = data.frame(x = seq(from = x1, to = x2, by =
+>     > dx*grid_dist), y = seq(from = y1, to = y2, by = dy*grid_dist))
+>     >     begin.coord = data.frame("x" = cos(left_angle)*slice_width +
+>     > midpoints$x, "y" = sin(left_angle)*slice_width + midpoints$y)
+>     >     end.coord = data.frame("x" = cos(right_angle)*slice_width +
+>     > midpoints$x, "y" = sin(right_angle)*slice_width + midpoints$y)
+>     >
+>     >     l <- vector("list", nrow(begin.coord))
+>     >
+>     >     for (i in seq_along(l)) {
+>     >         l[[i]] <- Lines(list(Line(rbind(begin.coord[i,],
+>     > end.coord[i,]))), as.character(i))
+>     >     }
+>     >
+>     >     sl <- SpatialLines(l)
+>     >
+>     >     names(begin.coord) <- c("begin_x", "begin_y")
+>     >     names(end.coord) <- c("end_x", "end_y")
+>     >     sldf <- SpatialLinesDataFrame(sl,
+>     > data.frame("lineID"=1:nrow(begin.coord), begin.coord, end.coord))
+>     >     proj4string(sldf) = proj4string
+>     >
+>     >     blpi <- gBuffer(sldf, byid=TRUE, id=sldf$lineID, width =
+>     grid_dist/2)
+>     >
+>     >     return(blpi)
+>     > }
+>     >
+>     > my_blpi <- create_perp_buffers(180000, 331500, 181000, 332500,
+>     100, 100)
+>     >
+>     > data(meuse.grid)
+>     > coordinates(meuse.grid) <- ~x+y
+>     > gridded(meuse.grid) <- TRUE
+>     > proj4string(meuse.grid) <-
+>     >
+>     CRS(paste("+init=epsg:28992","+towgs84=565.237,50.0087,465.658,-0.406857,0.350733,-1.87035,4.0812"))
+>     > plot(meuse.grid, axes = T)
+>     > plot(my_blpi, col="red", add=T)
+>     >
+>     >
+>     >
+>     > _______________________________________________
+>     > R-sig-Geo mailing list
+>     > R-sig-Geo at r-project.org <mailto:R-sig-Geo at r-project.org>
+>     > https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>     >
+>
+>     --
+>     Edzer Pebesma
+>     Institute for Geoinformatics  (ifgi),  University of M?nster
+>     Heisenbergstra?e 2, 48149 M?nster, Germany; +49 251 83 33081
+>     Journal of Statistical Software: http://www.jstatsoft.org/
+>     Computers & Geosciences: http://elsevier.com/locate/cageo/
+>     Spatial Statistics Society http://www.spatialstatistics.info
+>
+>     _______________________________________________
+>     R-sig-Geo mailing list
+>     R-sig-Geo at r-project.org <mailto:R-sig-Geo at r-project.org>
+>     https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>
+
+
+	[[alternative HTML version deleted]]
+
+
+From vinay223333 at gmail.com  Tue Mar 15 04:56:37 2016
+From: vinay223333 at gmail.com (Vinay Elothunkal)
+Date: Tue, 15 Mar 2016 12:56:37 +0900
+Subject: [R-sig-Geo] About fixed and adaptive kernel of GWmodel version 1.2-5
+Message-ID: <CAEke+YFE2LC3YR4bqjs7pbboy7r8i2uj+mkYi6nayVOyzvoNpQ@mail.gmail.com>
+
+Hi all,
+
+I am using "gwr.predict" to estimate coefficients from multispectral bands
+using rgrass7. Adaptive=T provides me better accuracy results that fixed
+bandwidth for randomly distributed Y variables.
+
+   In my second case,  Y variables are not randomly distributed but its
+like an arbitrary track. While evaluating the result, adaptive bandwidth
+provides demarcation along the track like[1]  and fixed bandwidth result [2
+]provides no such demarcation and produce  better estimation in terms R2.
+please note that  the black track shown on the [1] and [2] are the Y
+variables used for "gwr.predict".
+
+
+   Can anyone tell why this kind of results providing by the adaptive
+kernel, is this obvious or abnormal?
+[1] Adaptive_BW1.jpg
+[2] Fixed_BW2.jpg
+
+
+Any kind of comments related GWmodel is appreciated
+
+Regards,
+Vinay
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20160315/a4563f11/attachment.html>
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: Adaptive_BW1.jpg
+Type: image/jpeg
+Size: 13233 bytes
+Desc: not available
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20160315/a4563f11/attachment.jpg>
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: Fixed_BW2.jpg
+Type: image/jpeg
+Size: 14087 bytes
+Desc: not available
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20160315/a4563f11/attachment-0001.jpg>
+
+From alessandrosamuel at yahoo.com.br  Tue Mar 15 14:19:16 2016
+From: alessandrosamuel at yahoo.com.br (Alessandro Samuel Rosa)
+Date: Tue, 15 Mar 2016 13:19:16 +0000 (UTC)
+Subject: [R-sig-Geo] spsann 2.0-0 is out (Optimization of Sample
+ Configurations using Spatial Simulated Annealing)
+References: <156359428.196955.1458047956953.JavaMail.yahoo.ref@mail.yahoo.com>
+Message-ID: <156359428.196955.1458047956953.JavaMail.yahoo@mail.yahoo.com>
+
+Dear all,
+
+I'm happy to announce the major CRAN release (2.0-0) of the package spsann. The package?provides methods to optimize spatial sample configurations using spatial simulated annealing. Multiple objective functions are implemented for various purposes, such as variogram estimation, spatial trend estimation, and spatial interpolation. A general purpose spatial simulated annealing function enables the user to define his/her own objective function.
+
+The new major release includes several conceptual changes. Despite our efforts, it was not possible to guarantee the compatibility with previous versions. We have decided not to deprecate functions and function arguments because (1) this would require deprecating a lot of code and (2) the user should first read the updated package documentation to understand the conceptual changes that we have made before using the package.
+The main changes are:* A completely new annealing schedule was implemented.* A more elegant solution to jitter the sample points was implemented.* Solving multi-objective combinatorial optimization problems has become easier with the creation of a function to compute the Pareto maximum and minimum values.* The output of the optimization is now stored in an object of class OptimizedSampleConfiguration, for which S3 methods were implemented to retrieve information from the new class, as well as producing plots of the optimized sample configuration.* Package documentation was expanded and adapted to cope with the conceptual changes that were made.* Finally, bugs were fixed, warning messages were improved, and a faster code was implemented whenever possible.
+
+With best regards,?Alessandro Samuel Rosa
+Post-DoctorateQuantitative PedologyUniversidade Federal Rural do Rio de Janeiro
+http://samuel-rosa.github.io/
+
+
+
+	[[alternative HTML version deleted]]
+
+
+From x.giroux.bougard at gmail.com  Wed Mar 16 18:25:35 2016
+From: x.giroux.bougard at gmail.com (Xavier Giroux-Bougard)
+Date: Wed, 16 Mar 2016 11:25:35 -0600
+Subject: [R-sig-Geo] adehabitatHR : object "rgeos" not found
+Message-ID: <CAMOcQZ+vYrc31m0qY0NGVX6-Y5faZ2mvhmE8vrbZipCQ0a9AEg@mail.gmail.com>
+
+Hello everyone,
+
+I am trying to estimate some home ranges using the LoCoH method as
+implemented in adehabitatHR, but I am getting some error messages related
+to rgeos. Here is some quick code that produces this error:
+
+> require(adehabitatHR)
+> require(rgeos)
+> require(maptools)
+> data("puechabonsp")
+> res <- LoCoH.k(puechabonsp$relocs[,1], 10)
+
+so far so good! However, when I use the LoCoH.k.area() function to evaluate
+what the choice of K has on the area of the home range estimates,  I get
+some error messages informing me that the function produces orphaned holes:
+
+> LoCoH.k.area(puechabonsp$relocs[,1], krange = seq(4 ,15, length = 5),
+percent = 100)
+
+Error in rgeos::createPolygonsComment(oobj) : rgeos_PolyCreateComment:
+orphaned hole, cannot find containing polygon for hole at index 4
+
+At first I was getting this message on my own relocation data and I thought
+I had some funky locations that got through my QA/QC filters, but it is
+also as I just showed using the example code in the adehabitatHR vignette.
+This leads me to believe that the function itself is building some polygons
+that throw this error message.
+
+Any thoughts?
+
+Thanks for your time!
+
+Xavier
+
+
+sessionInfo()
+
+R version 3.2.3 (2015-12-10)
+Platform: x86_64-w64-mingw32/x64 (64-bit)
+Running under: Windows >= 8 x64 (build 9200)
+
+locale:
+[1] LC_COLLATE=English_United States.1252
+[2] LC_CTYPE=English_United States.1252
+[3] LC_MONETARY=English_United States.1252
+[4] LC_NUMERIC=C
+[5] LC_TIME=English_United States.1252
+
+attached base packages:
+[1] stats     graphics  grDevices utils     datasets
+[6] methods   base
+
+other attached packages:
+ [1] maptools_0.8-39  rgeos_0.3-17        adehabitatHR_0.4.14
+ [4] adehabitatLT_0.3.20 CircStats_0.2-4
+ [6] boot_1.3-17         MASS_7.3-45
+ [8] adehabitatMA_0.3.10 ade4_1.7-4
+ [10] deldir_0.1-12       sp_1.2-2
+
+loaded via a namespace (and not attached):
+[1] tools_3.2.3     foreign_0.8-66  maptools_0.8-39
+[4] grid_3.2.3      lattice_0.20-33
+
+	[[alternative HTML version deleted]]
+
+
+From marine.regis at hotmail.fr  Fri Mar 18 00:27:16 2016
+From: marine.regis at hotmail.fr (Marine Regis)
+Date: Thu, 17 Mar 2016 23:27:16 +0000
+Subject: [R-sig-Geo] Fill NoData cells in a raster
+Message-ID: <AMSPR07MB470E1306AACDD1AEDE0DA1CE28B0@AMSPR07MB470.eurprd07.prod.outlook.com>
+
+Hello,
+
+I am beginner in spatial statistics and I would need some advice. I have a raster that is based on a grid of 30 m resolution and in which each cell is assigned to one of ten land cover types (coded as 1, 2, 3, 4, ..., 10 in the raster). However, there are some NoData cells in the raster. Is there an efficient way to fill NoData cells with reasonable values of land cover types? Should I use an interpolation method?
+
+Thank you very much for your time.
+
+Marine
+
+
+	[[alternative HTML version deleted]]
+
+
+From marcoswfreitas at gmail.com  Fri Mar 18 01:43:39 2016
+From: marcoswfreitas at gmail.com (Marcos Freitas)
+Date: Thu, 17 Mar 2016 21:43:39 -0300
+Subject: [R-sig-Geo] Fill NoData cells in a raster
+In-Reply-To: <AMSPR07MB470E1306AACDD1AEDE0DA1CE28B0@AMSPR07MB470.eurprd07.prod.outlook.com>
+References: <AMSPR07MB470E1306AACDD1AEDE0DA1CE28B0@AMSPR07MB470.eurprd07.prod.outlook.com>
+Message-ID: <824016C3-B88E-457B-8BED-9FDCAE4079DC@gmail.com>
+
+Land use classes are categorical or dummy data type, an interpolation approach shouldn't be used with this kind of data. You can perform a resampling approach, but you'll lost in spatial resolution. This approach just will succeed if your no data pixels are small patches.
+
+Marcos W. D. de Freitas
+
+> Em 17 de mar de 2016, ?s 20:27, Marine Regis <marine.regis at hotmail.fr> escreveu:
+> 
+> Hello,
+> 
+> I am beginner in spatial statistics and I would need some advice. I have a raster that is based on a grid of 30 m resolution and in which each cell is assigned to one of ten land cover types (coded as 1, 2, 3, 4, ..., 10 in the raster). However, there are some NoData cells in the raster. Is there an efficient way to fill NoData cells with reasonable values of land cover types? Should I use an interpolation method?
+> 
+> Thank you very much for your time.
+> 
+> Marine
+> 
+> 
+>    [[alternative HTML version deleted]]
+> 
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+
+
+From Alexander.Herr at csiro.au  Fri Mar 18 01:48:16 2016
+From: Alexander.Herr at csiro.au (Alexander.Herr at csiro.au)
+Date: Fri, 18 Mar 2016 00:48:16 +0000
+Subject: [R-sig-Geo] Fill NoData cells in a raster
+In-Reply-To: <824016C3-B88E-457B-8BED-9FDCAE4079DC@gmail.com>
+References: <AMSPR07MB470E1306AACDD1AEDE0DA1CE28B0@AMSPR07MB470.eurprd07.prod.outlook.com>
+	<824016C3-B88E-457B-8BED-9FDCAE4079DC@gmail.com>
+Message-ID: <1de9561a019f4a63bf11b0f46d7e82d1@exch1-mel.nexus.csiro.au>
+
+A nearest neighbour approach might do what you want
+
+-----Original Message-----
+From: R-sig-Geo [mailto:r-sig-geo-bounces at r-project.org] On Behalf Of Marcos Freitas
+Sent: Friday, 18 March 2016 11:44 AM
+To: Marine Regis <marine.regis at hotmail.fr>
+Cc: r-sig-geo at r-project.org
+Subject: Re: [R-sig-Geo] Fill NoData cells in a raster
+
+Land use classes are categorical or dummy data type, an interpolation approach shouldn't be used with this kind of data. You can perform a resampling approach, but you'll lost in spatial resolution. This approach just will succeed if your no data pixels are small patches.
+
+Marcos W. D. de Freitas
+
+> Em 17 de mar de 2016, ?s 20:27, Marine Regis <marine.regis at hotmail.fr> escreveu:
+> 
+> Hello,
+> 
+> I am beginner in spatial statistics and I would need some advice. I have a raster that is based on a grid of 30 m resolution and in which each cell is assigned to one of ten land cover types (coded as 1, 2, 3, 4, ..., 10 in the raster). However, there are some NoData cells in the raster. Is there an efficient way to fill NoData cells with reasonable values of land cover types? Should I use an interpolation method?
+> 
+> Thank you very much for your time.
+> 
+> Marine
+> 
+> 
+>    [[alternative HTML version deleted]]
+> 
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+
+_______________________________________________
+R-sig-Geo mailing list
+R-sig-Geo at r-project.org
+https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+
+From inacio.adrien at gmail.com  Fri Mar 18 10:12:05 2016
+From: inacio.adrien at gmail.com (Adrien Inacio)
+Date: Fri, 18 Mar 2016 10:12:05 +0100
+Subject: [R-sig-Geo] Find a circle center with spatial points
+Message-ID: <CAHN6w5jaBqTr2-ADiB3jC=se11WVq_V53OqzNC+3cashwbc-Jw@mail.gmail.com>
+
+Dear all,
+
+I need some advices for a problem I have on R.
+So, I have points with latitude and longitude. These points seem to be part
+of a circle, and I need to determine the center of this circle
+(automatically). So, if you have an idea of the methods for it, It would be
+great,
+
+Thank you,
+Adrien I.
+
+ps: you can see an exemple of points here.
+
+[image: Images int?gr?es 1]
+
+
+Cet e-mail a ?t? envoy? depuis un ordinateur prot?g? par Avast.
+www.avast.com
+<https://www.avast.com/fr-fr/lp-esg-fav?utm_medium=email&utm_source=link&utm_campaign=sig-email&utm_content=webmail&utm_term=OA-2109-B>
+<#-7691127820984744905_DDB4FAA8-2DD7-40BB-A1B8-4E2AA1F9FDF2>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20160318/2f6b3f18/attachment.html>
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: points_mouillage.PNG
+Type: image/png
+Size: 2948 bytes
+Desc: not available
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20160318/2f6b3f18/attachment.png>
+
+From tech_dev at wildintellect.com  Fri Mar 18 15:43:13 2016
+From: tech_dev at wildintellect.com (Alex Mandel)
+Date: Fri, 18 Mar 2016 07:43:13 -0700
+Subject: [R-sig-Geo] Find a circle center with spatial points
+In-Reply-To: <CAHN6w5jaBqTr2-ADiB3jC=se11WVq_V53OqzNC+3cashwbc-Jw@mail.gmail.com>
+References: <CAHN6w5jaBqTr2-ADiB3jC=se11WVq_V53OqzNC+3cashwbc-Jw@mail.gmail.com>
+Message-ID: <56EC1401.8070706@wildintellect.com>
+
+library(rgeos)
+gCentroid
+
+http://www.rdocumentation.org/packages/rgeos/functions/topo-unary-gCentroid
+
+Assuming its a circle that would be the center. Then you need to decide
+how much of a difference between that and your existing point is
+acceptable to still call them the same point.
+
+Enjoy,
+Alex
+
+On 03/18/2016 02:12 AM, Adrien Inacio wrote:
+> Dear all,
+> 
+> I need some advices for a problem I have on R.
+> So, I have points with latitude and longitude. These points seem to be part
+> of a circle, and I need to determine the center of this circle
+> (automatically). So, if you have an idea of the methods for it, It would be
+> great,
+> 
+> Thank you,
+> Adrien I.
+> 
+> ps: you can see an exemple of points here.
+> 
+> [image: Images int?gr?es 1]
+> 
+> 
+> Cet e-mail a ?t? envoy? depuis un ordinateur prot?g? par Avast.
+> www.avast.com
+> <https://www.avast.com/fr-fr/lp-esg-fav?utm_medium=email&utm_source=link&utm_campaign=sig-email&utm_content=webmail&utm_term=OA-2109-B>
+> <#-7691127820984744905_DDB4FAA8-2DD7-40BB-A1B8-4E2AA1F9FDF2>
+> 
+> 
+> 
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>
+
+
+From zaholdenfs at gmail.com  Fri Mar 18 15:45:41 2016
+From: zaholdenfs at gmail.com (Zack Holden)
+Date: Fri, 18 Mar 2016 08:45:41 -0600
+Subject: [R-sig-Geo] Fill NoData cells in a raster
+In-Reply-To: <AMSPR07MB470E1306AACDD1AEDE0DA1CE28B0@AMSPR07MB470.eurprd07.prod.outlook.com>
+References: <AMSPR07MB470E1306AACDD1AEDE0DA1CE28B0@AMSPR07MB470.eurprd07.prod.outlook.com>
+Message-ID: <CAGC_mZSbJu1KdypdW20zHDjCgXHbZRX=anHSEh8Ae8rQCkozJw@mail.gmail.com>
+
+Marine,
+The focal() function in the raster library should work. You should be able
+to apply a custom function to only NA cells by setting NAonly=T.
+
+require(raster)
+?focal
+
+Zack
+
+
+On Thu, Mar 17, 2016 at 5:27 PM, Marine Regis <marine.regis at hotmail.fr>
+wrote:
+
+> Hello,
+>
+> I am beginner in spatial statistics and I would need some advice. I have a
+> raster that is based on a grid of 30 m resolution and in which each cell is
+> assigned to one of ten land cover types (coded as 1, 2, 3, 4, ..., 10 in
+> the raster). However, there are some NoData cells in the raster. Is there
+> an efficient way to fill NoData cells with reasonable values of land cover
+> types? Should I use an interpolation method?
+>
+> Thank you very much for your time.
+>
+> Marine
+>
+>
+>         [[alternative HTML version deleted]]
+>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>
+
+	[[alternative HTML version deleted]]
+
+
+From jecogeo at gmail.com  Fri Mar 18 15:51:22 2016
+From: jecogeo at gmail.com (Jefferson Ferreira-Ferreira)
+Date: Fri, 18 Mar 2016 10:51:22 -0400
+Subject: [R-sig-Geo] Fill NoData cells in a raster
+In-Reply-To: <CAGC_mZSbJu1KdypdW20zHDjCgXHbZRX=anHSEh8Ae8rQCkozJw@mail.gmail.com>
+References: <AMSPR07MB470E1306AACDD1AEDE0DA1CE28B0@AMSPR07MB470.eurprd07.prod.outlook.com>
+	<CAGC_mZSbJu1KdypdW20zHDjCgXHbZRX=anHSEh8Ae8rQCkozJw@mail.gmail.com>
+Message-ID: <CAFFT+Y5D9HTtoPOUDPiecz2pxV7igncaL3akEcpeR4i4zvYSYw@mail.gmail.com>
+
+A bunch of options is given here too:
+http://rstudio-pubs-static.s3.amazonaws.com/1057_1f7e9ac569644689b7e4de78c1fece90.html
+
+2016-03-18 10:45 GMT-04:00 Zack Holden <zaholdenfs at gmail.com>:
+
+> Marine,
+> The focal() function in the raster library should work. You should be able
+> to apply a custom function to only NA cells by setting NAonly=T.
+>
+> require(raster)
+> ?focal
+>
+> Zack
+>
+>
+> On Thu, Mar 17, 2016 at 5:27 PM, Marine Regis <marine.regis at hotmail.fr>
+> wrote:
+>
+> > Hello,
+> >
+> > I am beginner in spatial statistics and I would need some advice. I have
+> a
+> > raster that is based on a grid of 30 m resolution and in which each cell
+> is
+> > assigned to one of ten land cover types (coded as 1, 2, 3, 4, ..., 10 in
+> > the raster). However, there are some NoData cells in the raster. Is there
+> > an efficient way to fill NoData cells with reasonable values of land
+> cover
+> > types? Should I use an interpolation method?
+> >
+> > Thank you very much for your time.
+> >
+> > Marine
+> >
+> >
+> >         [[alternative HTML version deleted]]
+> >
+> > _______________________________________________
+> > R-sig-Geo mailing list
+> > R-sig-Geo at r-project.org
+> > https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> >
+>
+>         [[alternative HTML version deleted]]
+>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>
+
+
+
+-- 
+
+*Jefferson Ferreira-Ferreira*
+
+Ge?grafo ? GEOPROCESSAMENTO IDSM | Coordenadoria de TI
+
+
+Jefferson.ferreira at mamiraua.org.br
+
+*Instituto de Desenvolvimento Sustent?vel Mamirau?*
+
+Minist?rio da Ci?ncia, Tecnologia e Inova??o
+
+Telefone: +55 97 3343-9710
+
+*Google Maps* - Mapas deste e-mail:
+
+Exibir mapa ampliado
+<https://maps.google.com.br/maps?q=-3.355557,-64.731151&ll=-3.355471,-64.731145&spn=0.004632,0.006968&num=1&t=h&z=18>
+
+
+*Contatos particulares:*
+*(55) 9615-0100*
+
+	[[alternative HTML version deleted]]
+
+
+From b.rowlingson at lancaster.ac.uk  Fri Mar 18 18:36:58 2016
+From: b.rowlingson at lancaster.ac.uk (Barry Rowlingson)
+Date: Fri, 18 Mar 2016 17:36:58 +0000
+Subject: [R-sig-Geo] Find a circle center with spatial points
+In-Reply-To: <56EC1401.8070706@wildintellect.com>
+References: <CAHN6w5jaBqTr2-ADiB3jC=se11WVq_V53OqzNC+3cashwbc-Jw@mail.gmail.com>
+	<56EC1401.8070706@wildintellect.com>
+Message-ID: <CANVKczN2v2V4zy3j=XhMCcJnPDVZ1P8nGRrnYQpQAETK462XEw@mail.gmail.com>
+
+On Fri, Mar 18, 2016 at 2:43 PM, Alex Mandel <tech_dev at wildintellect.com> wrote:
+> library(rgeos)
+> gCentroid
+>
+> http://www.rdocumentation.org/packages/rgeos/functions/topo-unary-gCentroid
+>
+> Assuming its a circle that would be the center.
+
+Only if you have points uniformly (or uniform-randomly) distributed
+round the full extent of the circle. From Adrien's plot it looks like
+he's got an arc there.
+
+ It seems more like a three-parameter optimisation problem. Find x, y,
+and r that define the circle that minimises the sum of squared
+distances from data points to the circle.
+
+ I'm not sure how you'd choose a good initial x,y,r for your optimiser
+since I suspect the surface you're optimising over is not unimodal...
+You could try taking lots of random samples of three points from your
+data and computing the unique circle that fits those points, then
+using the mean (or possibly median, there's a fair chance of massive
+outliers) value as the initial values.
+
+A quick googling has actually found this little paper on the subject:
+
+http://www.spaceroots.org/documents/circle/circle-fitting.pdf
+
+So I'll shut up now.
+
+Barry
+
+
+From marine.regis at hotmail.fr  Fri Mar 18 19:10:04 2016
+From: marine.regis at hotmail.fr (Marine Regis)
+Date: Fri, 18 Mar 2016 18:10:04 +0000
+Subject: [R-sig-Geo] Fill NoData cells in a raster
+In-Reply-To: <CAFFT+Y5D9HTtoPOUDPiecz2pxV7igncaL3akEcpeR4i4zvYSYw@mail.gmail.com>
+References: <AMSPR07MB470E1306AACDD1AEDE0DA1CE28B0@AMSPR07MB470.eurprd07.prod.outlook.com>
+	<CAGC_mZSbJu1KdypdW20zHDjCgXHbZRX=anHSEh8Ae8rQCkozJw@mail.gmail.com>,
+	<CAFFT+Y5D9HTtoPOUDPiecz2pxV7igncaL3akEcpeR4i4zvYSYw@mail.gmail.com>
+Message-ID: <AMSPR07MB470ACE145C5F8A101A78E34E28C0@AMSPR07MB470.eurprd07.prod.outlook.com>
+
+Hello,
+
+
+
+Thank you very much for your answers. To fill the noData cells, I have calculated the frequency of values of land cover types around a given noData cell and I have assigned the value of land cover type with maximum frequency to the noData cell. When there was more than one value of maximum frequency, I have used the function "sample". Here is my code with a reproducible example:
+
+
+
+r2 <- raster(ncol=10, nrow=10) ## To check r2 <- raster(ncol=3, nrow=3)
+
+values(r2) <- sample(1:8,ncell(r2),replace=T)
+
+r2[c(5)] <- NA
+
+plot(r2)
+
+f2 <- focal(r2, w=matrix(1,nrow=3,ncol=3), fun=fillNoData, NAonly=T, pad=T)
+
+plot(f2)
+
+
+
+fillNoData <- function(x) {
+
+feq_class <- as.data.frame(table(x))
+
+colnames(feq_class) <- c("Class","Freq")
+
+value_noData <- as.numeric(as.character(feq_class$Class[feq_class$Freq==max(feq_class$Freq)]))
+
+value_noData <- sample(value_noData,1,replace=F)
+
+return(value_noData)
+
+}
+
+
+
+Is the use of maximum frequency appropriate for filling the noData cells? In this case, when there is more than one value of maximum frequency, is it more correct to increase the moving window or to create a buffer around a given noData cell than to use the 8 neighbour cells?
+
+
+
+Thank you very much for your time.
+
+Marine
+
+
+
+________________________________
+De : Jefferson Ferreira-Ferreira <jecogeo at gmail.com>
+Envoy? : vendredi 18 mars 2016 15:51
+? : Zack Holden
+Cc : Marine Regis; r-sig-geo at r-project.org
+Objet : Re: [R-sig-Geo] Fill NoData cells in a raster
+
+A bunch of options is given here too: http://rstudio-pubs-static.s3.amazonaws.com/1057_1f7e9ac569644689b7e4de78c1fece90.html
+
+Map Algebra in R - Amazon Web Services<http://rstudio-pubs-static.s3.amazonaws.com/1057_1f7e9ac569644689b7e4de78c1fece90.html>
+rstudio-pubs-static.s3.amazonaws.com
+Map Algebra in R. Map Algebra is a framework used to manipulate field data that are stored as grid values. Though the gridded data can be stored in a vector form, map ...
+
+
+
+2016-03-18 10:45 GMT-04:00 Zack Holden <zaholdenfs at gmail.com<mailto:zaholdenfs at gmail.com>>:
+Marine,
+The focal() function in the raster library should work. You should be able
+to apply a custom function to only NA cells by setting NAonly=T.
+
+require(raster)
+?focal
+
+Zack
+
+
+On Thu, Mar 17, 2016 at 5:27 PM, Marine Regis <marine.regis at hotmail.fr<mailto:marine.regis at hotmail.fr>>
+wrote:
+
+> Hello,
+>
+> I am beginner in spatial statistics and I would need some advice. I have a
+> raster that is based on a grid of 30 m resolution and in which each cell is
+> assigned to one of ten land cover types (coded as 1, 2, 3, 4, ..., 10 in
+> the raster). However, there are some NoData cells in the raster. Is there
+> an efficient way to fill NoData cells with reasonable values of land cover
+> types? Should I use an interpolation method?
+>
+> Thank you very much for your time.
+>
+> Marine
+>
+>
+>         [[alternative HTML version deleted]]
+>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at r-project.org<mailto:R-sig-Geo at r-project.org>
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>
+
+        [[alternative HTML version deleted]]
+
+_______________________________________________
+R-sig-Geo mailing list
+R-sig-Geo at r-project.org<mailto:R-sig-Geo at r-project.org>
+https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+
+
+
+--
+
+Jefferson Ferreira-Ferreira
+
+Ge?grafo - GEOPROCESSAMENTO IDSM | Coordenadoria de TI
+
+[https://imageshack.com/a/img924/3023/UGEtug.png]
+
+Jefferson.ferreira at mamiraua.org.br<mailto:Jefferson.ferreira at mamiraua.org.br>
+
+Instituto de Desenvolvimento Sustent?vel Mamirau?
+
+Minist?rio da Ci?ncia, Tecnologia e Inova??o
+
+Telefone: +55 97 3343-9710
+
+[https://imageshack.com/a/img922/761/fPeXJi.png]Google Maps - Mapas deste e-mail:
+
+[https://imageshack.com/a/img921/7894/xDTJEU.png]Exibir mapa ampliado<https://maps.google.com.br/maps?q=-3.355557,-64.731151&ll=-3.355471,-64.731145&spn=0.004632,0.006968&num=1&t=h&z=18>
+
+Contatos particulares:
+(55) 9615-0100
+
+
+	[[alternative HTML version deleted]]
+
+
+From reudenbach at uni-marburg.de  Fri Mar 18 19:49:55 2016
+From: reudenbach at uni-marburg.de (Chris Reudenbach)
+Date: Fri, 18 Mar 2016 19:49:55 +0100
+Subject: [R-sig-Geo] Find a circle center with spatial points
+In-Reply-To: <CANVKczN2v2V4zy3j=XhMCcJnPDVZ1P8nGRrnYQpQAETK462XEw@mail.gmail.com>
+References: <CAHN6w5jaBqTr2-ADiB3jC=se11WVq_V53OqzNC+3cashwbc-Jw@mail.gmail.com>
+	<56EC1401.8070706@wildintellect.com>
+	<CANVKczN2v2V4zy3j=XhMCcJnPDVZ1P8nGRrnYQpQAETK462XEw@mail.gmail.com>
+Message-ID: <56EC4DD3.7070001@uni-marburg.de>
+
+Because it seems to be an arc and not a circle issue that you can solve 
+the problem by
+picking arbitrary two points of your assumed "arc" then construct 
+(calculate)  the perpendicular bisector of
+the line between them and do so for another arbitrary two points of the 
+assumed "arc".
+
+The intersection of the perpendicular lines is the assumed center of the 
+arc.
+
+If you iterate over all points this should be a pretty good estimation 
+of the real center.
+
+cheers Chris
+
+Am 18.03.2016 um 18:36 schrieb Barry Rowlingson:
+> On Fri, Mar 18, 2016 at 2:43 PM, Alex Mandel <tech_dev at wildintellect.com> wrote:
+>> library(rgeos)
+>> gCentroid
+>>
+>> http://www.rdocumentation.org/packages/rgeos/functions/topo-unary-gCentroid
+>>
+>> Assuming its a circle that would be the center.
+> Only if you have points uniformly (or uniform-randomly) distributed
+> round the full extent of the circle. From Adrien's plot it looks like
+> he's got an arc there.
+>
+>   It seems more like a three-parameter optimisation problem. Find x, y,
+> and r that define the circle that minimises the sum of squared
+> distances from data points to the circle.
+>
+>   I'm not sure how you'd choose a good initial x,y,r for your optimiser
+> since I suspect the surface you're optimising over is not unimodal...
+> You could try taking lots of random samples of three points from your
+> data and computing the unique circle that fits those points, then
+> using the mean (or possibly median, there's a fair chance of massive
+> outliers) value as the initial values.
+>
+> A quick googling has actually found this little paper on the subject:
+>
+> http://www.spaceroots.org/documents/circle/circle-fitting.pdf
+>
+> So I'll shut up now.
+>
+> Barry
+>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>
+
+
+From b.rowlingson at lancaster.ac.uk  Fri Mar 18 20:11:23 2016
+From: b.rowlingson at lancaster.ac.uk (Barry Rowlingson)
+Date: Fri, 18 Mar 2016 19:11:23 +0000
+Subject: [R-sig-Geo] Find a circle center with spatial points
+In-Reply-To: <56EC4DD3.7070001@uni-marburg.de>
+References: <CAHN6w5jaBqTr2-ADiB3jC=se11WVq_V53OqzNC+3cashwbc-Jw@mail.gmail.com>
+	<56EC1401.8070706@wildintellect.com>
+	<CANVKczN2v2V4zy3j=XhMCcJnPDVZ1P8nGRrnYQpQAETK462XEw@mail.gmail.com>
+	<56EC4DD3.7070001@uni-marburg.de>
+Message-ID: <CANVKczN9NvwdL5=s8KvB+cLr6_buquto-7xKtCKWxpgvs0C0Sw@mail.gmail.com>
+
+On Fri, Mar 18, 2016 at 6:49 PM, Chris Reudenbach
+<reudenbach at uni-marburg.de> wrote:
+> Because it seems to be an arc and not a circle issue that you can solve the
+> problem by
+> picking arbitrary two points of your assumed "arc" then construct
+> (calculate)  the perpendicular bisector of
+> the line between them and do so for another arbitrary two points of the
+> assumed "arc".
+>
+> The intersection of the perpendicular lines is the assumed center of the
+> arc.
+>
+> If you iterate over all points this should be a pretty good estimation of
+> the real center.
+
+ This is the  "sample 3 points and find the fitted circle" idea, you
+are likely to get massive "outliers" and if you take the mean
+coordinate it could fail horribly. See the paper I linked to for an
+example. They use the median to get an initial "robust" estimate of
+x,y,R, and then use some specialised optimisation to improve the
+estimate - you can't just throw it into "optim"!
+
+ Not sure I understand the maths in it yet though....
+
+Barry
+
+
+From reudenbach at uni-marburg.de  Fri Mar 18 23:28:51 2016
+From: reudenbach at uni-marburg.de (Chris Reudenbach)
+Date: Fri, 18 Mar 2016 23:28:51 +0100
+Subject: [R-sig-Geo] Find a circle center with spatial points
+In-Reply-To: <CANVKczN9NvwdL5=s8KvB+cLr6_buquto-7xKtCKWxpgvs0C0Sw@mail.gmail.com>
+References: <CAHN6w5jaBqTr2-ADiB3jC=se11WVq_V53OqzNC+3cashwbc-Jw@mail.gmail.com>
+	<56EC1401.8070706@wildintellect.com>
+	<CANVKczN2v2V4zy3j=XhMCcJnPDVZ1P8nGRrnYQpQAETK462XEw@mail.gmail.com>
+	<56EC4DD3.7070001@uni-marburg.de>
+	<CANVKczN9NvwdL5=s8KvB+cLr6_buquto-7xKtCKWxpgvs0C0Sw@mail.gmail.com>
+Message-ID: <56EC8123.5080204@uni-marburg.de>
+
+Oops :-[ , Barry thanks for clarification , I got it now.
+
+I don't understand the math either but as a kind of "reparation"
+for not reading well enough I found the authors java code.
+https://www.spaceroots.org/documents/circle/CircleFitter.java
+After download you should for standalone compilation delete line 37 
+"package org.spaceroots;"
+compile it with:
+
+  javac CircleFitter.java -Xlint:unchecked
+
+then you can run it with:
+
+java CircleFitter input.file
+
+The input data should be formated like:
+
+# input
+# x y
+0 5
+1 4.5
+2.5 4
+3 3.5
+4 2
+5 0
+
+the above input yields
+
+initial circle: -001.69467803 -000.69446643 006.23578103
+converged after 7 iterations
+final circle: -001.34339845 -001.34426151 006.44308386
+with the format x,y,radius
+
+which at least make sense with respect to the data.
+
+You easily can  run it from R by system() and grab the output in a file 
+using a OS depending pipe
+or you may run it using the rJava package which could be more complex.
+
+cheers Chris
+
+if you want you can call it from R with javaR
+
+Am 18.03.2016 um 20:11 schrieb Barry Rowlingson:
+> On Fri, Mar 18, 2016 at 6:49 PM, Chris Reudenbach
+> <reudenbach at uni-marburg.de> wrote:
+>> Because it seems to be an arc and not a circle issue that you can solve the
+>> problem by
+>> picking arbitrary two points of your assumed "arc" then construct
+>> (calculate)  the perpendicular bisector of
+>> the line between them and do so for another arbitrary two points of the
+>> assumed "arc".
+>>
+>> The intersection of the perpendicular lines is the assumed center of the
+>> arc.
+>>
+>> If you iterate over all points this should be a pretty good estimation of
+>> the real center.
+>   This is the  "sample 3 points and find the fitted circle" idea, you
+> are likely to get massive "outliers" and if you take the mean
+> coordinate it could fail horribly. See the paper I linked to for an
+> example. They use the median to get an initial "robust" estimate of
+> x,y,R, and then use some specialised optimisation to improve the
+> estimate - you can't just throw it into "optim"!
+>
+>   Not sure I understand the maths in it yet though....
+>
+> Barry
+>
+
+
+From kmb56 at berkeley.edu  Sat Mar 19 06:24:58 2016
+From: kmb56 at berkeley.edu (Kenny Bell)
+Date: Fri, 18 Mar 2016 22:24:58 -0700
+Subject: [R-sig-Geo] Speeding up focal
+Message-ID: <CALOjXYSveO-7ryaZg5H3mcUrB4XTnJge3GJp5s1da10kiAuShw@mail.gmail.com>
+
+I am trying to use raster::focal to fill some holes in many RasterLayers. I
+call:
+
+focal(raster_layer, fun = mean, w = matrix(1, nrow = 3, ncol = 3), NAonly =
+TRUE, na.rm = TRUE)
+
+I am only interested in filling in holes in a small subset of each
+RasterLayer (i.e. a country when the raster is global). focal spends a lot
+of time trying to fill in the oceans and holes in other countries.
+
+Is there any way to get focal to only change values for some specific
+subset of a RasterLayer?
+
+Thanks so much!
+Kenny
+
+	[[alternative HTML version deleted]]
+
+
+From edzer.pebesma at uni-muenster.de  Sat Mar 19 13:54:33 2016
+From: edzer.pebesma at uni-muenster.de (Edzer Pebesma)
+Date: Sat, 19 Mar 2016 13:54:33 +0100
+Subject: [R-sig-Geo] Find a circle center with spatial points
+In-Reply-To: <56EC8123.5080204@uni-marburg.de>
+References: <CAHN6w5jaBqTr2-ADiB3jC=se11WVq_V53OqzNC+3cashwbc-Jw@mail.gmail.com>
+	<56EC1401.8070706@wildintellect.com>
+	<CANVKczN2v2V4zy3j=XhMCcJnPDVZ1P8nGRrnYQpQAETK462XEw@mail.gmail.com>
+	<56EC4DD3.7070001@uni-marburg.de>
+	<CANVKczN9NvwdL5=s8KvB+cLr6_buquto-7xKtCKWxpgvs0C0Sw@mail.gmail.com>
+	<56EC8123.5080204@uni-marburg.de>
+Message-ID: <56ED4C09.50202@uni-muenster.de>
+
+Here's a toy R script that fits circle parameters to noisy data, using
+optim:
+
+x0 = 10
+y0 = 5
+r = 4
+
+n = 50
+sd = .3
+
+rad = runif(n) * 2 * pi
+x = x0 + r * cos(rad) + rnorm(n, sd = sd)
+y = y0 + r * sin(rad) + rnorm(n, sd = sd)
+plot(x, y, asp = 1)
+
+SSdist2circ = function(par, x, y)  {
+	x0 = par[1]
+	y0 = par[2]
+	r = par[3]
+	sum(abs(sqrt((x-x0)^2+(y-y0)^2) - r))
+}
+
+
+plotCirc = function(x0, y0, r, ...) {
+	sq = seq(0, 2 * pi, length.out = 100)
+	lines(x0 + r * cos(sq), y0 + r * sin(sq), ...)
+}
+
+# model:
+plotCirc(x0, y0, r, col = 'blue')
+# fitted:
+p = optim(c(x0 = 0, y0 = 0, r = 1), SSdist2circ, x = x, y = y)
+plotCirc(p$par[1], p$par[2], p$par[3], col = 'red')
+
+
+On 18/03/16 23:28, Chris Reudenbach wrote:
+> Oops :-[ , Barry thanks for clarification , I got it now.
+> 
+> I don't understand the math either but as a kind of "reparation"
+> for not reading well enough I found the authors java code.
+> https://www.spaceroots.org/documents/circle/CircleFitter.java
+> After download you should for standalone compilation delete line 37
+> "package org.spaceroots;"
+> compile it with:
+> 
+>  javac CircleFitter.java -Xlint:unchecked
+> 
+> then you can run it with:
+> 
+> java CircleFitter input.file
+> 
+> The input data should be formated like:
+> 
+> # input
+> # x y
+> 0 5
+> 1 4.5
+> 2.5 4
+> 3 3.5
+> 4 2
+> 5 0
+> 
+> the above input yields
+> 
+> initial circle: -001.69467803 -000.69446643 006.23578103
+> converged after 7 iterations
+> final circle: -001.34339845 -001.34426151 006.44308386
+> with the format x,y,radius
+> 
+> which at least make sense with respect to the data.
+> 
+> You easily can  run it from R by system() and grab the output in a file
+> using a OS depending pipe
+> or you may run it using the rJava package which could be more complex.
+> 
+> cheers Chris
+> 
+> if you want you can call it from R with javaR
+> 
+> Am 18.03.2016 um 20:11 schrieb Barry Rowlingson:
+>> On Fri, Mar 18, 2016 at 6:49 PM, Chris Reudenbach
+>> <reudenbach at uni-marburg.de> wrote:
+>>> Because it seems to be an arc and not a circle issue that you can
+>>> solve the
+>>> problem by
+>>> picking arbitrary two points of your assumed "arc" then construct
+>>> (calculate)  the perpendicular bisector of
+>>> the line between them and do so for another arbitrary two points of the
+>>> assumed "arc".
+>>>
+>>> The intersection of the perpendicular lines is the assumed center of the
+>>> arc.
+>>>
+>>> If you iterate over all points this should be a pretty good
+>>> estimation of
+>>> the real center.
+>>   This is the  "sample 3 points and find the fitted circle" idea, you
+>> are likely to get massive "outliers" and if you take the mean
+>> coordinate it could fail horribly. See the paper I linked to for an
+>> example. They use the median to get an initial "robust" estimate of
+>> x,y,R, and then use some specialised optimisation to improve the
+>> estimate - you can't just throw it into "optim"!
+>>
+>>   Not sure I understand the maths in it yet though....
+>>
+>> Barry
+>>
+> 
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+
+-- 
+Edzer Pebesma
+Institute for Geoinformatics  (ifgi),  University of M?nster
+Heisenbergstra?e 2, 48149 M?nster, Germany; +49 251 83 33081
+Journal of Statistical Software:   http://www.jstatsoft.org/
+Computers & Geosciences:   http://elsevier.com/locate/cageo/
+Spatial Statistics Society http://www.spatialstatistics.info
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 490 bytes
+Desc: OpenPGP digital signature
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20160319/ac7a330a/attachment.bin>
+
+From b.rowlingson at lancaster.ac.uk  Sat Mar 19 15:45:07 2016
+From: b.rowlingson at lancaster.ac.uk (Barry Rowlingson)
+Date: Sat, 19 Mar 2016 14:45:07 +0000
+Subject: [R-sig-Geo] Find a circle center with spatial points
+In-Reply-To: <56ED4C09.50202@uni-muenster.de>
+References: <CAHN6w5jaBqTr2-ADiB3jC=se11WVq_V53OqzNC+3cashwbc-Jw@mail.gmail.com>
+	<56EC1401.8070706@wildintellect.com>
+	<CANVKczN2v2V4zy3j=XhMCcJnPDVZ1P8nGRrnYQpQAETK462XEw@mail.gmail.com>
+	<56EC4DD3.7070001@uni-marburg.de>
+	<CANVKczN9NvwdL5=s8KvB+cLr6_buquto-7xKtCKWxpgvs0C0Sw@mail.gmail.com>
+	<56EC8123.5080204@uni-marburg.de> <56ED4C09.50202@uni-muenster.de>
+Message-ID: <CANVKczPuwhPzmwRW6AHB189RHqGny15NO6x32JnUHH+JMPpCug@mail.gmail.com>
+
+And here's a package that implements that, along with finding an
+initial point via the 3-point sampling circle method and a function
+for making test data:
+
+https://github.com/barryrowlingson/circlefitter/tree/master
+
+no documentation, of course, except the README... And no license...
+Edzer wrote a chunk of it... I don't think he'll mind :)
+
+the least-squares method works pretty well for fairly point data that
+defines the circle pretty well, but if you do points over a small arc
+then I've had cases where the centre is on the wrong side of the
+circle. I'm not sure if the optimiser has found the global minimum is
+over there or whether it has just missed a minimum at the true x,y,r
+values. But data with a large radius variance on a short arc section
+is hard to tell which way it is arcing...
+
+At some point I still might implement the methods in that paper...
+
+Barry
+
+
+
+On Sat, Mar 19, 2016 at 12:54 PM, Edzer Pebesma
+<edzer.pebesma at uni-muenster.de> wrote:
+> Here's a toy R script that fits circle parameters to noisy data, using
+> optim:
+>
+> x0 = 10
+> y0 = 5
+> r = 4
+>
+> n = 50
+> sd = .3
+>
+> rad = runif(n) * 2 * pi
+> x = x0 + r * cos(rad) + rnorm(n, sd = sd)
+> y = y0 + r * sin(rad) + rnorm(n, sd = sd)
+> plot(x, y, asp = 1)
+>
+> SSdist2circ = function(par, x, y)  {
+>         x0 = par[1]
+>         y0 = par[2]
+>         r = par[3]
+>         sum(abs(sqrt((x-x0)^2+(y-y0)^2) - r))
+> }
+>
+>
+> plotCirc = function(x0, y0, r, ...) {
+>         sq = seq(0, 2 * pi, length.out = 100)
+>         lines(x0 + r * cos(sq), y0 + r * sin(sq), ...)
+> }
+>
+> # model:
+> plotCirc(x0, y0, r, col = 'blue')
+> # fitted:
+> p = optim(c(x0 = 0, y0 = 0, r = 1), SSdist2circ, x = x, y = y)
+> plotCirc(p$par[1], p$par[2], p$par[3], col = 'red')
+>
+>
+> On 18/03/16 23:28, Chris Reudenbach wrote:
+>> Oops :-[ , Barry thanks for clarification , I got it now.
+>>
+>> I don't understand the math either but as a kind of "reparation"
+>> for not reading well enough I found the authors java code.
+>> https://www.spaceroots.org/documents/circle/CircleFitter.java
+>> After download you should for standalone compilation delete line 37
+>> "package org.spaceroots;"
+>> compile it with:
+>>
+>>  javac CircleFitter.java -Xlint:unchecked
+>>
+>> then you can run it with:
+>>
+>> java CircleFitter input.file
+>>
+>> The input data should be formated like:
+>>
+>> # input
+>> # x y
+>> 0 5
+>> 1 4.5
+>> 2.5 4
+>> 3 3.5
+>> 4 2
+>> 5 0
+>>
+>> the above input yields
+>>
+>> initial circle: -001.69467803 -000.69446643 006.23578103
+>> converged after 7 iterations
+>> final circle: -001.34339845 -001.34426151 006.44308386
+>> with the format x,y,radius
+>>
+>> which at least make sense with respect to the data.
+>>
+>> You easily can  run it from R by system() and grab the output in a file
+>> using a OS depending pipe
+>> or you may run it using the rJava package which could be more complex.
+>>
+>> cheers Chris
+>>
+>> if you want you can call it from R with javaR
+>>
+>> Am 18.03.2016 um 20:11 schrieb Barry Rowlingson:
+>>> On Fri, Mar 18, 2016 at 6:49 PM, Chris Reudenbach
+>>> <reudenbach at uni-marburg.de> wrote:
+>>>> Because it seems to be an arc and not a circle issue that you can
+>>>> solve the
+>>>> problem by
+>>>> picking arbitrary two points of your assumed "arc" then construct
+>>>> (calculate)  the perpendicular bisector of
+>>>> the line between them and do so for another arbitrary two points of the
+>>>> assumed "arc".
+>>>>
+>>>> The intersection of the perpendicular lines is the assumed center of the
+>>>> arc.
+>>>>
+>>>> If you iterate over all points this should be a pretty good
+>>>> estimation of
+>>>> the real center.
+>>>   This is the  "sample 3 points and find the fitted circle" idea, you
+>>> are likely to get massive "outliers" and if you take the mean
+>>> coordinate it could fail horribly. See the paper I linked to for an
+>>> example. They use the median to get an initial "robust" estimate of
+>>> x,y,R, and then use some specialised optimisation to improve the
+>>> estimate - you can't just throw it into "optim"!
+>>>
+>>>   Not sure I understand the maths in it yet though....
+>>>
+>>> Barry
+>>>
+>>
+>> _______________________________________________
+>> R-sig-Geo mailing list
+>> R-sig-Geo at r-project.org
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>
+> --
+> Edzer Pebesma
+> Institute for Geoinformatics  (ifgi),  University of M?nster
+> Heisenbergstra?e 2, 48149 M?nster, Germany; +49 251 83 33081
+> Journal of Statistical Software:   http://www.jstatsoft.org/
+> Computers & Geosciences:   http://elsevier.com/locate/cageo/
+> Spatial Statistics Society http://www.spatialstatistics.info
+>
+>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+
+
+From Roger.Bivand at nhh.no  Mon Mar 21 13:39:43 2016
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Mon, 21 Mar 2016 13:39:43 +0100
+Subject: [R-sig-Geo] Tutorials
+Message-ID: <alpine.LFD.2.20.1603211332340.5181@reclus.nhh.no>
+
+There will be a cartography tutorial in Toulouse on Wednesday 22 June:
+
+http://r2016-toulouse.sciencesconf.org/resource/page/id/9
+
+and two spatial/small area tutorials at useR! at Stanford on Monday 27 
+June:
+
+http://user2016.org/#tutorials
+
+It would be useful for someone to collect information on coming events of 
+this type, some is on geostat-course.org, typically under events, but 
+other offers of help to provide a shareable calendar of R-spatial events 
+would be great.
+
+Roger
+
+-- 
+Roger Bivand
+Department of Economics, Norwegian School of Economics,
+Helleveien 30, N-5045 Bergen, Norway.
+voice: +47 55 95 93 55; fax +47 55 95 91 00
+e-mail: Roger.Bivand at nhh.no
+http://orcid.org/0000-0003-2392-6140
+https://scholar.google.no/citations?user=AWeghB0AAAAJ&hl=en
+http://depsy.org/person/434412
+
+
+From yusuff.suleiman at gmail.com  Mon Mar 21 13:51:10 2016
+From: yusuff.suleiman at gmail.com (El yusuf Suleiman)
+Date: Mon, 21 Mar 2016 13:51:10 +0100
+Subject: [R-sig-Geo] Tutorials
+In-Reply-To: <alpine.LFD.2.20.1603211332340.5181@reclus.nhh.no>
+References: <alpine.LFD.2.20.1603211332340.5181@reclus.nhh.no>
+Message-ID: <20160321125110.5894224.95879.887@gmail.com>
+
+Awesome
+
+
+? Original Message ?
+From: Roger Bivand
+Sent: Monday, 21 March 2016 13:41
+To: r-sig-geo
+Reply To: Roger.Bivand at nhh.no
+Subject: [R-sig-Geo] Tutorials
+
+There will be a cartography tutorial in Toulouse on Wednesday 22 June:
+
+http://r2016-toulouse.sciencesconf.org/resource/page/id/9
+
+and two spatial/small area tutorials at useR! at Stanford on Monday 27 
+June:
+
+http://user2016.org/#tutorials
+
+It would be useful for someone to collect information on coming events of 
+this type, some is on geostat-course.org, typically under events, but 
+other offers of help to provide a shareable calendar of R-spatial events 
+would be great.
+
+Roger
+
+-- 
+Roger Bivand
+Department of Economics, Norwegian School of Economics,
+Helleveien 30, N-5045 Bergen, Norway.
+voice: +47 55 95 93 55; fax +47 55 95 91 00
+e-mail: Roger.Bivand at nhh.no
+http://orcid.org/0000-0003-2392-6140
+https://scholar.google.no/citations?user=AWeghB0AAAAJ&hl=en
+http://depsy.org/person/434412
+
+_______________________________________________
+R-sig-Geo mailing list
+R-sig-Geo at r-project.org
+https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+
+
+From edzer.pebesma at uni-muenster.de  Mon Mar 21 14:33:10 2016
+From: edzer.pebesma at uni-muenster.de (Edzer Pebesma)
+Date: Mon, 21 Mar 2016 14:33:10 +0100
+Subject: [R-sig-Geo] Tutorials
+In-Reply-To: <alpine.LFD.2.20.1603211332340.5181@reclus.nhh.no>
+References: <alpine.LFD.2.20.1603211332340.5181@reclus.nhh.no>
+Message-ID: <56EFF816.4030903@uni-muenster.de>
+
+
+
+On 21/03/16 13:39, Roger Bivand wrote:
+> There will be a cartography tutorial in Toulouse on Wednesday 22 June:
+> 
+> http://r2016-toulouse.sciencesconf.org/resource/page/id/9
+> 
+> and two spatial/small area tutorials at useR! at Stanford on Monday 27
+> June:
+> 
+> http://user2016.org/#tutorials
+> 
+> It would be useful for someone to collect information on coming events
+> of this type, some is on geostat-course.org, typically under events, but
+> other offers of help to provide a shareable calendar of R-spatial events
+> would be great.
+> 
+
+Good idea. I added an "Events" tab to the http://r-spatial.org/ blog,
+and added these two events.
+
+Best regards,
+-- 
+Edzer Pebesma
+Institute for Geoinformatics  (ifgi),  University of M?nster
+Heisenbergstra?e 2, 48149 M?nster, Germany; +49 251 83 33081
+Journal of Statistical Software:   http://www.jstatsoft.org/
+Computers & Geosciences:   http://elsevier.com/locate/cageo/
+Spatial Statistics Society http://www.spatialstatistics.info
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 490 bytes
+Desc: OpenPGP digital signature
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20160321/d096e8b8/attachment.bin>
+
+From inacio.adrien at gmail.com  Mon Mar 21 15:00:07 2016
+From: inacio.adrien at gmail.com (Adrien Inacio)
+Date: Mon, 21 Mar 2016 15:00:07 +0100
+Subject: [R-sig-Geo] Find a circle center with spatial points
+In-Reply-To: <56EC8123.5080204@uni-marburg.de>
+References: <CAHN6w5jaBqTr2-ADiB3jC=se11WVq_V53OqzNC+3cashwbc-Jw@mail.gmail.com>
+	<56EC1401.8070706@wildintellect.com>
+	<CANVKczN2v2V4zy3j=XhMCcJnPDVZ1P8nGRrnYQpQAETK462XEw@mail.gmail.com>
+	<56EC4DD3.7070001@uni-marburg.de>
+	<CANVKczN9NvwdL5=s8KvB+cLr6_buquto-7xKtCKWxpgvs0C0Sw@mail.gmail.com>
+	<56EC8123.5080204@uni-marburg.de>
+Message-ID: <CAHN6w5iyeFi+eCF7CiB_U9yYrVhW82DZVziHZ4naOugQ1XwvrQ@mail.gmail.com>
+
+Hello Chris,
+Thanks for your help,
+I try to find how I can use the java script but I don't really understand
+these parts:
+"After download you should for standalone compilation delete line 37
+"package org.spaceroots;"
+compile it with:
+
+
+
+*" javac CircleFitter.java -Xlint:uncheckedthen you can run it with:java
+CircleFitter input.file"*
+
+*"grab the output in a file using a OS depending pipe"*
+
+Have I to download an application wich permit to work on java script, or
+all can be done with R (I have never work with java so i'm a little bit
+lost).
+
+Thank you again.
+
+Adrien I.
+
+
+Cet e-mail a ?t? envoy? depuis un ordinateur prot?g? par Avast.
+www.avast.com
+<https://www.avast.com/fr-fr/lp-safe-emailing-2109?utm_medium=email&utm_source=link&utm_campaign=sig-email&utm_content=webmail&utm_term=OA-2109-A>
+<#DDB4FAA8-2DD7-40BB-A1B8-4E2AA1F9FDF2>
+
+2016-03-18 23:28 GMT+01:00 Chris Reudenbach <reudenbach at uni-marburg.de>:
+
+> Oops :-[ , Barry thanks for clarification , I got it now.
+>
+> I don't understand the math either but as a kind of "reparation"
+> for not reading well enough I found the authors java code.
+> https://www.spaceroots.org/documents/circle/CircleFitter.java
+> After download you should for standalone compilation delete line 37
+> "package org.spaceroots;"
+> compile it with:
+>
+>  javac CircleFitter.java -Xlint:unchecked
+>
+> then you can run it with:
+>
+> java CircleFitter input.file
+>
+> The input data should be formated like:
+>
+> # input
+> # x y
+> 0 5
+> 1 4.5
+> 2.5 4
+> 3 3.5
+> 4 2
+> 5 0
+>
+> the above input yields
+>
+> initial circle: -001.69467803 -000.69446643 006.23578103
+> converged after 7 iterations
+> final circle: -001.34339845 -001.34426151 006.44308386
+> with the format x,y,radius
+>
+> which at least make sense with respect to the data.
+>
+> You easily can  run it from R by system() and grab the output in a file
+> using a OS depending pipe
+> or you may run it using the rJava package which could be more complex.
+>
+> cheers Chris
+>
+> if you want you can call it from R with javaR
+>
+>
+> Am 18.03.2016 um 20:11 schrieb Barry Rowlingson:
+>
+>> On Fri, Mar 18, 2016 at 6:49 PM, Chris Reudenbach
+>> <reudenbach at uni-marburg.de> wrote:
+>>
+>>> Because it seems to be an arc and not a circle issue that you can solve
+>>> the
+>>> problem by
+>>> picking arbitrary two points of your assumed "arc" then construct
+>>> (calculate)  the perpendicular bisector of
+>>> the line between them and do so for another arbitrary two points of the
+>>> assumed "arc".
+>>>
+>>> The intersection of the perpendicular lines is the assumed center of the
+>>> arc.
+>>>
+>>> If you iterate over all points this should be a pretty good estimation of
+>>> the real center.
+>>>
+>>   This is the  "sample 3 points and find the fitted circle" idea, you
+>> are likely to get massive "outliers" and if you take the mean
+>> coordinate it could fail horribly. See the paper I linked to for an
+>> example. They use the median to get an initial "robust" estimate of
+>> x,y,R, and then use some specialised optimisation to improve the
+>> estimate - you can't just throw it into "optim"!
+>>
+>>   Not sure I understand the maths in it yet though....
+>>
+>> Barry
+>>
+>>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>
+
+	[[alternative HTML version deleted]]
+
+
+From luke.macaulay at gmail.com  Tue Mar 22 19:18:59 2016
+From: luke.macaulay at gmail.com (Luke Macaulay)
+Date: Tue, 22 Mar 2016 14:18:59 -0400
+Subject: [R-sig-Geo] split() function on SpatialPolygonsDataFrame increases
+	file size
+Message-ID: <CAOQcy94oTS8yvwLUFGW9oXSxwEissed6=o=dNsvJ4s+teXckPQ@mail.gmail.com>
+
+I have a large SpatialPolygonsDataFrame of 500,000 polygons named sub
+that I am splitting into 8 separate objects using split() to perform
+multicore processing on.
+
+xx<-split(sub, rep(1:cores, len=nrow(sub at data)))
+
+The original file size in R's environment shows 4gb, but after the
+split, the list size increases to 7gb, which seems like a really big
+increase.
+
+Is this normal?  I wonder if there's increased file size due to the
+reproduction of polygon borders and vertices that were previously
+shared in the unsplit data, or is something else is going on? I
+suspect that the split files are retaining some of the entire
+dataset's characteristics, but I'm not sure.
+
+I thought this post
+(http://stackoverflow.com/questions/29137914/r-split-function-size-increase-issue)
+would solve my problem: the poster split by a numeric ID variable that
+was used as an index in the created list, leading to the creation of
+many empty lists. But I'm not splitting on a column, and after trying
+the split in various ways, including trying to split on a created
+column that was a factor, I still have the same problem.
+
+The problem ultimately is that when I try to process this on multiple
+cores, I max out my memory.
+
+Much thanks,
+Luke
+
+
+From mdsumner at gmail.com  Tue Mar 22 22:44:56 2016
+From: mdsumner at gmail.com (Michael Sumner)
+Date: Tue, 22 Mar 2016 21:44:56 +0000
+Subject: [R-sig-Geo] split() function on SpatialPolygonsDataFrame
+ increases file size
+In-Reply-To: <CAOQcy94oTS8yvwLUFGW9oXSxwEissed6=o=dNsvJ4s+teXckPQ@mail.gmail.com>
+References: <CAOQcy94oTS8yvwLUFGW9oXSxwEissed6=o=dNsvJ4s+teXckPQ@mail.gmail.com>
+Message-ID: <CAAcGz99QXWzyVsozF==4KWhY5JJeB=PF1vAVYcbNJA5zyqVJiA@mail.gmail.com>
+
+On Wed, 23 Mar 2016, 05:19 Luke Macaulay <luke.macaulay at gmail.com> wrote:
+
+> I have a large SpatialPolygonsDataFrame of 500,000 polygons named sub
+> that I am splitting into 8 separate objects using split() to perform
+> multicore processing on.
+>
+> xx<-split(sub, rep(1:cores, len=nrow(sub at data)))
+>
+> The original file size in R's environment shows 4gb, but after the
+> split, the list size increases to 7gb, which seems like a really big
+> increase.
+>
+> Is this normal?  I wonder if there's increased file size due to the
+> reproduction of polygon borders and vertices that were previously
+> shared in the unsplit data, or is something else is going on?
+
+
+
+These objects never share vertices. If you think that can help there are
+ways to store these objects as tables that removes redundancy.
+
+Can you set up a clear demonstration that is reproducible? I think advice
+here needs much more info, particularly on what kind of shapes your
+polygons are and what the processing is to do.
+
+Cheers, Mike
+
+
+
+
+I
+> suspect that the split files are retaining some of the entire
+> dataset's characteristics, but I'm not sure.
+>
+> I thought this post
+> (
+> http://stackoverflow.com/questions/29137914/r-split-function-size-increase-issue
+> )
+> would solve my problem: the poster split by a numeric ID variable that
+> was used as an index in the created list, leading to the creation of
+> many empty lists. But I'm not splitting on a column, and after trying
+> the split in various ways, including trying to split on a created
+> column that was a factor, I still have the same problem.
+>
+> The problem ultimately is that when I try to process this on multiple
+> cores, I max out my memory.
+>
+> Much thanks,
+> Luke
+>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>
+-- 
+Dr. Michael Sumner
+Software and Database Engineer
+Australian Antarctic Division
+203 Channel Highway
+Kingston Tasmania 7050 Australia
+
+	[[alternative HTML version deleted]]
+
+
+From edzer.pebesma at uni-muenster.de  Tue Mar 22 23:10:58 2016
+From: edzer.pebesma at uni-muenster.de (Edzer Pebesma)
+Date: Tue, 22 Mar 2016 23:10:58 +0100
+Subject: [R-sig-Geo] split() function on SpatialPolygonsDataFrame
+ increases file size
+In-Reply-To: <CAAcGz99QXWzyVsozF==4KWhY5JJeB=PF1vAVYcbNJA5zyqVJiA@mail.gmail.com>
+References: <CAOQcy94oTS8yvwLUFGW9oXSxwEissed6=o=dNsvJ4s+teXckPQ@mail.gmail.com>
+	<CAAcGz99QXWzyVsozF==4KWhY5JJeB=PF1vAVYcbNJA5zyqVJiA@mail.gmail.com>
+Message-ID: <56F1C2F2.5010307@uni-muenster.de>
+
+I can't confirm this in a simple example:
+
+> library(sp)
+> x = GridTopology(c(0,0), c(1,1), c(100,100))
+> p = as(x, "SpatialPolygons")
+> p$z = 1:10000
+> object.size(p)
+35763352 bytes
+> xx = split(p, rep(1:4, len = length(p)))
+> object.size(xx)
+35812992 bytes
+> xx = split(p, rep(1:8, len = length(p)))
+> object.size(xx)
+35825792 bytes
+
+In case this persists, please consider sharing data that reproduce this
+with me off-line.
+
+
+On 22/03/16 22:44, Michael Sumner wrote:
+> On Wed, 23 Mar 2016, 05:19 Luke Macaulay <luke.macaulay at gmail.com> wrote:
+> 
+>> I have a large SpatialPolygonsDataFrame of 500,000 polygons named sub
+>> that I am splitting into 8 separate objects using split() to perform
+>> multicore processing on.
+>>
+>> xx<-split(sub, rep(1:cores, len=nrow(sub at data)))
+>>
+>> The original file size in R's environment shows 4gb, but after the
+>> split, the list size increases to 7gb, which seems like a really big
+>> increase.
+>>
+>> Is this normal?  I wonder if there's increased file size due to the
+>> reproduction of polygon borders and vertices that were previously
+>> shared in the unsplit data, or is something else is going on?
+> 
+> 
+> 
+> These objects never share vertices. If you think that can help there are
+> ways to store these objects as tables that removes redundancy.
+> 
+> Can you set up a clear demonstration that is reproducible? I think advice
+> here needs much more info, particularly on what kind of shapes your
+> polygons are and what the processing is to do.
+> 
+> Cheers, Mike
+> 
+> 
+> 
+> 
+> I
+>> suspect that the split files are retaining some of the entire
+>> dataset's characteristics, but I'm not sure.
+>>
+>> I thought this post
+>> (
+>> http://stackoverflow.com/questions/29137914/r-split-function-size-increase-issue
+>> )
+>> would solve my problem: the poster split by a numeric ID variable that
+>> was used as an index in the created list, leading to the creation of
+>> many empty lists. But I'm not splitting on a column, and after trying
+>> the split in various ways, including trying to split on a created
+>> column that was a factor, I still have the same problem.
+>>
+>> The problem ultimately is that when I try to process this on multiple
+>> cores, I max out my memory.
+>>
+>> Much thanks,
+>> Luke
+>>
+>> _______________________________________________
+>> R-sig-Geo mailing list
+>> R-sig-Geo at r-project.org
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>>
+
+-- 
+Edzer Pebesma
+Institute for Geoinformatics  (ifgi),  University of M?nster
+Heisenbergstra?e 2, 48149 M?nster, Germany; +49 251 83 33081
+Journal of Statistical Software:   http://www.jstatsoft.org/
+Computers & Geosciences:   http://elsevier.com/locate/cageo/
+Spatial Statistics Society http://www.spatialstatistics.info
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 490 bytes
+Desc: OpenPGP digital signature
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20160322/e3a63b54/attachment.bin>
+
+From englishchristophera at gmail.com  Wed Mar 23 06:31:57 2016
+From: englishchristophera at gmail.com (chris english)
+Date: Wed, 23 Mar 2016 07:31:57 +0200
+Subject: [R-sig-Geo] Fill NoData cells in a raster
+In-Reply-To: <AMSPR07MB470ACE145C5F8A101A78E34E28C0@AMSPR07MB470.eurprd07.prod.outlook.com>
+References: <AMSPR07MB470E1306AACDD1AEDE0DA1CE28B0@AMSPR07MB470.eurprd07.prod.outlook.com>
+	<CAGC_mZSbJu1KdypdW20zHDjCgXHbZRX=anHSEh8Ae8rQCkozJw@mail.gmail.com>
+	<CAFFT+Y5D9HTtoPOUDPiecz2pxV7igncaL3akEcpeR4i4zvYSYw@mail.gmail.com>
+	<AMSPR07MB470ACE145C5F8A101A78E34E28C0@AMSPR07MB470.eurprd07.prod.outlook.com>
+Message-ID: <CAASFQpSUey0iFx7DyGXi=RkL7f-Rg2iHqxr21_4WO9iO=BRJqg@mail.gmail.com>
+
+Marine,
+
+Is one of the land cover types "impervious"? or are they all some
+classification of vegetation type? If impervious is included in the ten
+types then ignore this comment. If it isn't in the classifications then you
+might want to check your region at 30m against impervious (roads, parking
+lots, buildings & etc) and then add 11 to the types. That way the parking
+lot won't be like it's nearest neighbor, the park. And assign noData to 11
+in the cases where they match up.
+
+Cheers,
+Chris
+
+On Fri, Mar 18, 2016 at 8:10 PM, Marine Regis <marine.regis at hotmail.fr>
+wrote:
+
+> Hello,
+>
+>
+>
+> Thank you very much for your answers. To fill the noData cells, I have
+> calculated the frequency of values of land cover types around a given
+> noData cell and I have assigned the value of land cover type with maximum
+> frequency to the noData cell. When there was more than one value of maximum
+> frequency, I have used the function "sample". Here is my code with a
+> reproducible example:
+>
+>
+>
+> r2 <- raster(ncol=10, nrow=10) ## To check r2 <- raster(ncol=3, nrow=3)
+>
+> values(r2) <- sample(1:8,ncell(r2),replace=T)
+>
+> r2[c(5)] <- NA
+>
+> plot(r2)
+>
+> f2 <- focal(r2, w=matrix(1,nrow=3,ncol=3), fun=fillNoData, NAonly=T, pad=T)
+>
+> plot(f2)
+>
+>
+>
+> fillNoData <- function(x) {
+>
+> feq_class <- as.data.frame(table(x))
+>
+> colnames(feq_class) <- c("Class","Freq")
+>
+> value_noData <-
+> as.numeric(as.character(feq_class$Class[feq_class$Freq==max(feq_class$Freq)]))
+>
+> value_noData <- sample(value_noData,1,replace=F)
+>
+> return(value_noData)
+>
+> }
+>
+>
+>
+> Is the use of maximum frequency appropriate for filling the noData cells?
+> In this case, when there is more than one value of maximum frequency, is it
+> more correct to increase the moving window or to create a buffer around a
+> given noData cell than to use the 8 neighbour cells?
+>
+>
+>
+> Thank you very much for your time.
+>
+> Marine
+>
+>
+>
+> ________________________________
+> De : Jefferson Ferreira-Ferreira <jecogeo at gmail.com>
+> Envoy? : vendredi 18 mars 2016 15:51
+> ? : Zack Holden
+> Cc : Marine Regis; r-sig-geo at r-project.org
+> Objet : Re: [R-sig-Geo] Fill NoData cells in a raster
+>
+> A bunch of options is given here too:
+> http://rstudio-pubs-static.s3.amazonaws.com/1057_1f7e9ac569644689b7e4de78c1fece90.html
+>
+> Map Algebra in R - Amazon Web Services<
+> http://rstudio-pubs-static.s3.amazonaws.com/1057_1f7e9ac569644689b7e4de78c1fece90.html
+> >
+> rstudio-pubs-static.s3.amazonaws.com
+> Map Algebra in R. Map Algebra is a framework used to manipulate field data
+> that are stored as grid values. Though the gridded data can be stored in a
+> vector form, map ...
+>
+>
+>
+> 2016-03-18 10:45 GMT-04:00 Zack Holden <zaholdenfs at gmail.com<mailto:
+> zaholdenfs at gmail.com>>:
+> Marine,
+> The focal() function in the raster library should work. You should be able
+> to apply a custom function to only NA cells by setting NAonly=T.
+>
+> require(raster)
+> ?focal
+>
+> Zack
+>
+>
+> On Thu, Mar 17, 2016 at 5:27 PM, Marine Regis <marine.regis at hotmail.fr
+> <mailto:marine.regis at hotmail.fr>>
+> wrote:
+>
+> > Hello,
+> >
+> > I am beginner in spatial statistics and I would need some advice. I have
+> a
+> > raster that is based on a grid of 30 m resolution and in which each cell
+> is
+> > assigned to one of ten land cover types (coded as 1, 2, 3, 4, ..., 10 in
+> > the raster). However, there are some NoData cells in the raster. Is there
+> > an efficient way to fill NoData cells with reasonable values of land
+> cover
+> > types? Should I use an interpolation method?
+> >
+> > Thank you very much for your time.
+> >
+> > Marine
+> >
+> >
+> >         [[alternative HTML version deleted]]
+> >
+> > _______________________________________________
+> > R-sig-Geo mailing list
+> > R-sig-Geo at r-project.org<mailto:R-sig-Geo at r-project.org>
+> > https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> >
+>
+>         [[alternative HTML version deleted]]
+>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at r-project.org<mailto:R-sig-Geo at r-project.org>
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>
+>
+>
+> --
+>
+> Jefferson Ferreira-Ferreira
+>
+> Ge?grafo - GEOPROCESSAMENTO IDSM | Coordenadoria de TI
+>
+> [https://imageshack.com/a/img924/3023/UGEtug.png]
+>
+> Jefferson.ferreira at mamiraua.org.br<mailto:
+> Jefferson.ferreira at mamiraua.org.br>
+>
+> Instituto de Desenvolvimento Sustent?vel Mamirau?
+>
+> Minist?rio da Ci?ncia, Tecnologia e Inova??o
+>
+> Telefone: +55 97 3343-9710
+>
+> [https://imageshack.com/a/img922/761/fPeXJi.png]Google Maps - Mapas deste
+> e-mail:
+>
+> [https://imageshack.com/a/img921/7894/xDTJEU.png]Exibir mapa ampliado<
+> https://maps.google.com.br/maps?q=-3.355557,-64.731151&ll=-3.355471,-64.731145&spn=0.004632,0.006968&num=1&t=h&z=18
+> >
+>
+> Contatos particulares:
+> (55) 9615-0100
+>
+>
+>         [[alternative HTML version deleted]]
+>
+>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>
+
+	[[alternative HTML version deleted]]
+
+
+From ahartell at gmail.com  Thu Mar 24 18:21:11 2016
+From: ahartell at gmail.com (Ann Hartell)
+Date: Thu, 24 Mar 2016 18:21:11 +0100
+Subject: [R-sig-Geo] Problems with read.gal
+Message-ID: <56F42207.3040504@gmail.com>
+
+Hello All,
+
+I'm having issues getting R to properly read a GAL file.  GeoDa is 
+reading the file and correctly assigning neighbors, calculating various 
+spatial statistics, etc.  I've checked the GAL file for any coding 
+anomolies (using a short Perl program), and all seems well.
+
+After the usual preliminaries of loading packages (e.g. spdep v. 
+0.5-92), setting a working directory, reading in the SHP file . .  .
+
+##  read into R as an nb object following the Usage in the spdep help file:
+
+queen.nb <- read.gal("MyShapeFile.GAL", region.id=NULL, override.id=FALSE)
+
+
+##Returns this error:
+
+Error in read.gal("MyShapeFile.GAL", region.id = NULL, override.id = 
+FALSE) : GAL file IDs and region.id differ
+
+##In the past, I have had success following the example
+## from Anselin linked in the spdep help at < 
+https://geodacenter.asu.edu/system/files/rex1.pdf  >
+
+queen.nb <- read.gal("MyShapeFile.GAL", override.id=TRUE)
+queen.listW <- nb2listw(queen.nb, style="W", zero.policy = TRUE)
+class(queen.listW)
+
+[1] "listw" "nb"
+
+summary(queen.listW)
+
+
+Characteristics of weights list object:
+Neighbour list object:
+Number of regions: 39361
+Number of nonzero links: 238004
+Percentage nonzero weights: 0.01536215
+Average number of links: 6.046696
+Non-symmetric neighbours list
+Link number distribution:
+
+    1    2    3    4    5    6    7    8    9   10   11   12   13   14   15   16   17
+  217  640 2041 4804 8062 8752 7196 4194 1863
+
+
+###. . . .  and so on . . . .
+
+## Plotting a contiguity map reveals the trouble
+
+plot(data, border="grey60")
+title(main="Queen contiguity")
+plot(queen.listW, coord, add=TRUE, col="green", pch=19, cex=0.6)
+
+### Far flung spatial units are linked as neighbors, which is incorrect.
+###  I get the same jumble results using:
+
+queen.nb <- read.gal("MyShapeFile.GAL", region.id = NULL, override.id=TRUE)
+
+### Then, following the example provided here: 
+http://cran.at.r-project.org/web/packages/spdep/vignettes/nb.pdf
+
+MyFile <- readShapeSpatial("MyShapeFile")
+library(spdep)
+queen.nb <- read.gal("MyShapeFile.GAL", region.id = row.names(MyFile))
+
+## Returns:
+
+Error in read.gal("MyShapeFile.GAL", region.id = row.names(test)) : GAL 
+file IDs and region.id differ
+
+
+#######End
+
+So, an issue with the id variables between the two files, but I cannot 
+work out how to resolve it.
+Any insights or elaboration on the Usage and Arguments provided in the 
+spdep help most appreciated.
+Thanks,
+Ann Hartell
+
+-- 
+
+WU/Vienna University of Economics and Business
+Austria
+
+
+	[[alternative HTML version deleted]]
+
+
+From giuseppe.amatulli at gmail.com  Thu Mar 24 20:04:16 2016
+From: giuseppe.amatulli at gmail.com (Giuseppe Amatulli)
+Date: Thu, 24 Mar 2016 15:04:16 -0400
+Subject: [R-sig-Geo] customize tick in plot(raster)
+Message-ID: <CAKoiDHLFj-uX_LSpw00T1g+GNxw9tEutgO08nMrreNEprJQjjA@mail.gmail.com>
+
+Hi,
+I'm trying to customize xlabel and relative ticks for a raster plot
+
+library(raster)
+raster=raster(matrix(runif(100)))
+plot(raster ,  xlab="" , ylab=""  ,  yaxt="n" ,  xaxt="n" ,  xpd=NA  )
+
+using
+
+axis(side = 1, tck = -0.1, xpd=NA)
+
+the ticks does not appear outside the plotting region rather if I use
+
+axis(side=1, tck=0.1 , xpd=NA)
+
+the ticks appear inside the plotting region
+
+The same procedure works fine for a normal plot
+
+plot(c(1,1) ,  xlab="", ylab="",  yaxt="n",  xaxt="n",  xpd=NA  )
+axis(side = 1,    tck = -0.1 , xpd=NA )
+
+Does anyone know how to customize the par() settings in order to be able to
+plot outside the raster-plotting region?
+
+Thanks in advance
+
+-- 
+Giuseppe Amatulli, Ph.D.
+
+Department of Ecology and Evolutionary Biology, Yale University.
+Jetz Lab, OML Room 405
+
+P.O. Box 208106
+165 PROSPECT ST
+New Haven, CT 06520-8106
+Teaching: spatial-ecology.net
+Work:  http://sbsc.yale.edu/giuseppe-amatulli
+<http://www.spatial-ecology.net>
+
+	[[alternative HTML version deleted]]
+
+
+From kmb56 at berkeley.edu  Thu Mar 24 21:40:29 2016
+From: kmb56 at berkeley.edu (Kenny Bell)
+Date: Thu, 24 Mar 2016 13:40:29 -0700
+Subject: [R-sig-Geo] raster package feature suggestion: give more detailed
+	error output in stack()
+Message-ID: <CALOjXYTsoy_LmDdfJx3987XrdG3OZdQGQqi5=A8MgAJ24mzOKA@mail.gmail.com>
+
+I am running ``stack()`` on a large number of ``.bil`` files, of which many
+are corrupted in the download process. I'd like to be able to extract which
+file fails from the error output and automatically redownload it.
+
+I run:
+
+    stack(many_bil_files)
+
+    Error in .local(.Object, ...) :
+      '<file name here>' not recognised as a supported file format.
+
+
+    Error in .rasterObjectFromFile(x, band = band, objecttype =
+"RasterLayer",  :
+      Cannot create a RasterLayer object from this file.
+
+The first error is thrown by ``raster:::.rasterFromGDAL()`` and contains
+the file name, but a ``tryCatch`` call retrieves the second error message,
+which doesn't contain the file name.
+
+So, an easy solution is to change the error message in
+``.rasterObjectFromFile`` to:
+
+    stop(paste("Cannot create a RasterLayer object from file: ", x))
+
+Which would then give the file name as part of the error message that users
+can retrieve.
+
+A more complicated, but user friendly, solution would output a vector of
+failed files from the stack() call itself.
+
+Hope this helps,
+Kenny
+
+	[[alternative HTML version deleted]]
+
+
+From roberto.patuelli at unibo.it  Fri Mar 25 11:06:33 2016
+From: roberto.patuelli at unibo.it (Roberto Patuelli)
+Date: Fri, 25 Mar 2016 10:06:33 +0000
+Subject: [R-sig-Geo] Standard deviational ellipses (like in Crimestat)
+Message-ID: <028130E49C2E834289109CA52C4C898D01C98599F8@E10-MBX1-CS.personale.dir.unibo.it>
+
+Dear All,
+
+Many years ago I used CrimeStat to generate standard deviational ellipses relating location of a certain points (say banks) to the location of other points (say Internet providers - ISPs). The software allowed me to generate an ellipse for each ISP of the dispersion of banks around them.
+
+I was wondering: is it possible to have a similar analysis in R?
+I found the command calc_sde from package aspace, which appears to compute such ellipse, but only one, given the set of points. Are there alternatives out there which would allow to have an ellipse per centre (per ISP, in my example), given the whole set of points (banks, in my example)?
+
+Thanks in advance,
+Roberto
+
+********************
+Roberto Patuelli, Ph.D.
+Editor, REGION
+Department of Economics
+University of Bologna
+Rimini campus
+via Angher? 22
+47921 Rimini
+Italy
+Phone: +39-0541-434276
+Fax: +39-02-700419665
+Email: roberto.patuelli at unibo.it
+Homepage: http://www.unibo.it/docenti/roberto.patuelli
+********************
+
+
+5x1000 AI GIOVANI RICERCATORI
+DELL'UNIVERSIT? DI BOLOGNA
+Codice Fiscale: 80007010376
+
+
+From Roger.Bivand at nhh.no  Fri Mar 25 11:53:31 2016
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Fri, 25 Mar 2016 11:53:31 +0100
+Subject: [R-sig-Geo] Problems with read.gal
+In-Reply-To: <56F42207.3040504@gmail.com>
+References: <56F42207.3040504@gmail.com>
+Message-ID: <alpine.LFD.2.20.1603251151550.24510@reclus.nhh.no>
+
+On Thu, 24 Mar 2016, Ann Hartell wrote:
+
+> Hello All,
+>
+> I'm having issues getting R to properly read a GAL file.  GeoDa is
+> reading the file and correctly assigning neighbors, calculating various
+> spatial statistics, etc.  I've checked the GAL file for any coding
+> anomolies (using a short Perl program), and all seems well.
+>
+> After the usual preliminaries of loading packages (e.g. spdep v.
+> 0.5-92), setting a working directory, reading in the SHP file . .  .
+>
+> ##  read into R as an nb object following the Usage in the spdep help file:
+>
+> queen.nb <- read.gal("MyShapeFile.GAL", region.id=NULL, override.id=FALSE)
+>
+>
+> ##Returns this error:
+>
+> Error in read.gal("MyShapeFile.GAL", region.id = NULL, override.id =
+> FALSE) : GAL file IDs and region.id differ
+
+Assuming that you constructed the file in GeoDa (which?), could you make 
+it available off-list for forensics? Maybe a small change somewhere is 
+creating problems?
+
+Roger
+
+>
+> ##In the past, I have had success following the example
+> ## from Anselin linked in the spdep help at <
+> https://geodacenter.asu.edu/system/files/rex1.pdf  >
+>
+> queen.nb <- read.gal("MyShapeFile.GAL", override.id=TRUE)
+> queen.listW <- nb2listw(queen.nb, style="W", zero.policy = TRUE)
+> class(queen.listW)
+>
+> [1] "listw" "nb"
+>
+> summary(queen.listW)
+>
+>
+> Characteristics of weights list object:
+> Neighbour list object:
+> Number of regions: 39361
+> Number of nonzero links: 238004
+> Percentage nonzero weights: 0.01536215
+> Average number of links: 6.046696
+> Non-symmetric neighbours list
+> Link number distribution:
+>
+>    1    2    3    4    5    6    7    8    9   10   11   12   13   14   15   16   17
+>  217  640 2041 4804 8062 8752 7196 4194 1863
+>
+>
+> ###. . . .  and so on . . . .
+>
+> ## Plotting a contiguity map reveals the trouble
+>
+> plot(data, border="grey60")
+> title(main="Queen contiguity")
+> plot(queen.listW, coord, add=TRUE, col="green", pch=19, cex=0.6)
+>
+> ### Far flung spatial units are linked as neighbors, which is incorrect.
+> ###  I get the same jumble results using:
+>
+> queen.nb <- read.gal("MyShapeFile.GAL", region.id = NULL, override.id=TRUE)
+>
+> ### Then, following the example provided here:
+> http://cran.at.r-project.org/web/packages/spdep/vignettes/nb.pdf
+>
+> MyFile <- readShapeSpatial("MyShapeFile")
+> library(spdep)
+> queen.nb <- read.gal("MyShapeFile.GAL", region.id = row.names(MyFile))
+>
+> ## Returns:
+>
+> Error in read.gal("MyShapeFile.GAL", region.id = row.names(test)) : GAL
+> file IDs and region.id differ
+>
+>
+> #######End
+>
+> So, an issue with the id variables between the two files, but I cannot
+> work out how to resolve it.
+> Any insights or elaboration on the Usage and Arguments provided in the
+> spdep help most appreciated.
+> Thanks,
+> Ann Hartell
+>
+>
+
+-- 
+Roger Bivand
+Department of Economics, Norwegian School of Economics,
+Helleveien 30, N-5045 Bergen, Norway.
+voice: +47 55 95 93 55; fax +47 55 95 91 00
+e-mail: Roger.Bivand at nhh.no
+http://orcid.org/0000-0003-2392-6140
+https://scholar.google.no/citations?user=AWeghB0AAAAJ&hl=en
+http://depsy.org/person/434412
+
+
+From marco.helbich at gmx.at  Fri Mar 25 12:10:51 2016
+From: marco.helbich at gmx.at (Marco Helbich)
+Date: Fri, 25 Mar 2016 12:10:51 +0100
+Subject: [R-sig-Geo] Standard deviational ellipses (like in Crimestat)
+In-Reply-To: <mailman.11.1458903602.23011.r-sig-geo@r-project.org>
+References: <mailman.11.1458903602.23011.r-sig-geo@r-project.org>
+Message-ID: <56F51CBB.3060609@gmx.at>
+
+Hi Roberto,
+
+Have a look at the aspace package 
+(https://cran.r-project.org/web/packages/aspace/index.html). If I 
+remember correctly, the authors have also published a paper about the 
+package in Geographical Systems (or was it Geographical Analyses).
+
+Cheers,
+Marco
+
+Am 25.03.2016 12:00, schrieb r-sig-geo-request at r-project.org:
+> Send R-sig-Geo mailing list submissions to
+> 	r-sig-geo at r-project.org
+>
+> To subscribe or unsubscribe via the World Wide Web, visit
+> 	https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> or, via email, send a message with subject or body 'help' to
+> 	r-sig-geo-request at r-project.org
+>
+> You can reach the person managing the list at
+> 	r-sig-geo-owner at r-project.org
+>
+> When replying, please edit your Subject line so it is more specific
+> than "Re: Contents of R-sig-Geo digest..."
+>
+>
+> Today's Topics:
+>
+>     1. Problems with read.gal (Ann Hartell)
+>     2. customize tick in plot(raster) (Giuseppe Amatulli)
+>     3. raster package feature suggestion: give more detailed	error
+>        output in stack() (Kenny Bell)
+>     4. Standard deviational ellipses (like in Crimestat)
+>        (Roberto Patuelli)
+>     5. Re: Problems with read.gal (Roger Bivand)
+>
+>
+> ----------------------------------------------------------------------
+>
+> Message: 1
+> Date: Thu, 24 Mar 2016 18:21:11 +0100
+> From: Ann Hartell <ahartell at gmail.com>
+> To: r-sig-geo at r-project.org
+> Subject: [R-sig-Geo] Problems with read.gal
+> Message-ID: <56F42207.3040504 at gmail.com>
+> Content-Type: text/plain; charset="UTF-8"
+>
+> Hello All,
+>
+> I'm having issues getting R to properly read a GAL file.  GeoDa is
+> reading the file and correctly assigning neighbors, calculating various
+> spatial statistics, etc.  I've checked the GAL file for any coding
+> anomolies (using a short Perl program), and all seems well.
+>
+> After the usual preliminaries of loading packages (e.g. spdep v.
+> 0.5-92), setting a working directory, reading in the SHP file . .  .
+>
+> ##  read into R as an nb object following the Usage in the spdep help file:
+>
+> queen.nb <- read.gal("MyShapeFile.GAL", region.id=NULL, override.id=FALSE)
+>
+>
+> ##Returns this error:
+>
+> Error in read.gal("MyShapeFile.GAL", region.id = NULL, override.id =
+> FALSE) : GAL file IDs and region.id differ
+>
+> ##In the past, I have had success following the example
+> ## from Anselin linked in the spdep help at <
+> https://geodacenter.asu.edu/system/files/rex1.pdf  >
+>
+> queen.nb <- read.gal("MyShapeFile.GAL", override.id=TRUE)
+> queen.listW <- nb2listw(queen.nb, style="W", zero.policy = TRUE)
+> class(queen.listW)
+>
+> [1] "listw" "nb"
+>
+> summary(queen.listW)
+>
+>
+> Characteristics of weights list object:
+> Neighbour list object:
+> Number of regions: 39361
+> Number of nonzero links: 238004
+> Percentage nonzero weights: 0.01536215
+> Average number of links: 6.046696
+> Non-symmetric neighbours list
+> Link number distribution:
+>
+>      1    2    3    4    5    6    7    8    9   10   11   12   13   14   15   16   17
+>    217  640 2041 4804 8062 8752 7196 4194 1863
+>
+>
+> ###. . . .  and so on . . . .
+>
+> ## Plotting a contiguity map reveals the trouble
+>
+> plot(data, border="grey60")
+> title(main="Queen contiguity")
+> plot(queen.listW, coord, add=TRUE, col="green", pch=19, cex=0.6)
+>
+> ### Far flung spatial units are linked as neighbors, which is incorrect.
+> ###  I get the same jumble results using:
+>
+> queen.nb <- read.gal("MyShapeFile.GAL", region.id = NULL, override.id=TRUE)
+>
+> ### Then, following the example provided here:
+> http://cran.at.r-project.org/web/packages/spdep/vignettes/nb.pdf
+>
+> MyFile <- readShapeSpatial("MyShapeFile")
+> library(spdep)
+> queen.nb <- read.gal("MyShapeFile.GAL", region.id = row.names(MyFile))
+>
+> ## Returns:
+>
+> Error in read.gal("MyShapeFile.GAL", region.id = row.names(test)) : GAL
+> file IDs and region.id differ
+>
+>
+> #######End
+>
+> So, an issue with the id variables between the two files, but I cannot
+> work out how to resolve it.
+> Any insights or elaboration on the Usage and Arguments provided in the
+> spdep help most appreciated.
+> Thanks,
+> Ann Hartell
+>
+
+
+From tkeitt at utexas.edu  Fri Mar 25 20:06:07 2016
+From: tkeitt at utexas.edu (Tim Keitt)
+Date: Fri, 25 Mar 2016 15:06:07 -0400
+Subject: [R-sig-Geo] Geospatial Data Analysis in R Workshop
+Message-ID: <CANnL8grL3--wm2XLAfOzEErXqn8hbJtT5HmPiXckgTv1+DbeGQ@mail.gmail.com>
+
+I am again offering my "Geospatial Data Analysis in R" course as part of
+UT's Summer Statistics Institute. You can sign up here:
+https://stat.utexas.edu/training/ssi
+
+Hope you can join us.
+
+Cheers,
+THK
+
+http://www.keittlab.org/
+
+	[[alternative HTML version deleted]]
+
+
+From mdsumner at gmail.com  Wed Mar 30 06:50:47 2016
+From: mdsumner at gmail.com (Michael Sumner)
+Date: Wed, 30 Mar 2016 04:50:47 +0000
+Subject: [R-sig-Geo] default hole-status of sp::Polygon
+Message-ID: <CAAcGz9_Cd8gdsC=B4QxxyC8Xz_9+uGxcq0VrQF_AsMsN968gqg@mail.gmail.com>
+
+Hello,
+
+help(Polygon) (sp version 1.2-2) says that if `hole` is unspecified
+then anti-clockwise ring direction means hole = TRUE. The
+ring-direction detection can be over-ridden by explicitly setting
+`hole` to TRUE or FALSE, and if necessary this reorders the
+coordinates to align to the rule,
+
+Polygon() will accept a n-row or (n+1)-row matrix as input, and simply
+appends the first coordinate if it's not there.
+
+The anti-clockwise=hole rule holds true if we leave out the final
+closing coordinate for a 4-vertex shape (square), but not a 3-vertex
+shape (triangle).
+
+(For the purpose of this email, "is a hole" and "is not a hole" refers to
+the
+logical attribute actually set on the object.)
+
+Is this expected? Is it discussed somewhere?
+
+Cheers, Mike.
+
+library(sp)
+## 1) the rule is followed for a square no matter if the closing coordinate
+included
+
+## square with repeated first coord
+xs <- c(0, 1, 1, 0, 0)
+ys <- c(0, 0, 1, 1, 0)
+## this is a hole
+Polygon(cbind(xs, ys))
+## this is not a hole
+Polygon(cbind(xs, ys)[rev(seq_along(xs)), ])
+
+## square with 4 unique coords
+xs0 <- c(0, 1, 1, 0)
+ys0 <- c(0, 0, 1, 1)
+## this is a hole
+Polygon(cbind(xs0, ys0))
+## this is not a hole
+Polygon(cbind(xs0, ys0)[rev(seq_along(xs0)), ])
+
+## 2) rule is followed for a triangle with fourth closing coordinate
+
+## triangle with repeated first coord
+x <- c(0, 1, 1, 0)
+y <- c(0, 0, 1, 0)
+
+## this is a hole
+Polygon(cbind(x, y))
+## this is not a hole
+Polygon(cbind(x, y)[rev(seq_along(x)), ])
+
+## triangle with 3 unique coords
+x0 <- c(0, 1, 1)
+y0 <- c(0, 0, 1)
+## this is a NOT a hole ## <- expected a hole -> ##
+Polygon(cbind(x0, y0))
+## this is not a hole
+Polygon(cbind(x0, y0)[rev(seq_along(x0)), ])
+
+
+-- 
+Dr. Michael Sumner
+Software and Database Engineer
+Australian Antarctic Division
+203 Channel Highway
+Kingston Tasmania 7050 Australia
+
+	[[alternative HTML version deleted]]
+
+
+From edzer.pebesma at uni-muenster.de  Wed Mar 30 12:08:25 2016
+From: edzer.pebesma at uni-muenster.de (Edzer Pebesma)
+Date: Wed, 30 Mar 2016 12:08:25 +0200
+Subject: [R-sig-Geo] default hole-status of sp::Polygon
+In-Reply-To: <CAAcGz9_Cd8gdsC=B4QxxyC8Xz_9+uGxcq0VrQF_AsMsN968gqg@mail.gmail.com>
+References: <CAAcGz9_Cd8gdsC=B4QxxyC8Xz_9+uGxcq0VrQF_AsMsN968gqg@mail.gmail.com>
+Message-ID: <56FBA599.8070204@uni-muenster.de>
+
+Thanks Mike, this is now fixed on github.
+
+On 30/03/16 06:50, Michael Sumner wrote:
+> Hello,
+> 
+> help(Polygon) (sp version 1.2-2) says that if `hole` is unspecified
+> then anti-clockwise ring direction means hole = TRUE. The
+> ring-direction detection can be over-ridden by explicitly setting
+> `hole` to TRUE or FALSE, and if necessary this reorders the
+> coordinates to align to the rule,
+> 
+> Polygon() will accept a n-row or (n+1)-row matrix as input, and simply
+> appends the first coordinate if it's not there.
+> 
+> The anti-clockwise=hole rule holds true if we leave out the final
+> closing coordinate for a 4-vertex shape (square), but not a 3-vertex
+> shape (triangle).
+> 
+> (For the purpose of this email, "is a hole" and "is not a hole" refers to
+> the
+> logical attribute actually set on the object.)
+> 
+> Is this expected? Is it discussed somewhere?
+> 
+> Cheers, Mike.
+> 
+> library(sp)
+> ## 1) the rule is followed for a square no matter if the closing coordinate
+> included
+> 
+> ## square with repeated first coord
+> xs <- c(0, 1, 1, 0, 0)
+> ys <- c(0, 0, 1, 1, 0)
+> ## this is a hole
+> Polygon(cbind(xs, ys))
+> ## this is not a hole
+> Polygon(cbind(xs, ys)[rev(seq_along(xs)), ])
+> 
+> ## square with 4 unique coords
+> xs0 <- c(0, 1, 1, 0)
+> ys0 <- c(0, 0, 1, 1)
+> ## this is a hole
+> Polygon(cbind(xs0, ys0))
+> ## this is not a hole
+> Polygon(cbind(xs0, ys0)[rev(seq_along(xs0)), ])
+> 
+> ## 2) rule is followed for a triangle with fourth closing coordinate
+> 
+> ## triangle with repeated first coord
+> x <- c(0, 1, 1, 0)
+> y <- c(0, 0, 1, 0)
+> 
+> ## this is a hole
+> Polygon(cbind(x, y))
+> ## this is not a hole
+> Polygon(cbind(x, y)[rev(seq_along(x)), ])
+> 
+> ## triangle with 3 unique coords
+> x0 <- c(0, 1, 1)
+> y0 <- c(0, 0, 1)
+> ## this is a NOT a hole ## <- expected a hole -> ##
+> Polygon(cbind(x0, y0))
+> ## this is not a hole
+> Polygon(cbind(x0, y0)[rev(seq_along(x0)), ])
+> 
+> 
+
+-- 
+Edzer Pebesma
+Institute for Geoinformatics  (ifgi),  University of M?nster
+Heisenbergstra?e 2, 48149 M?nster, Germany; +49 251 83 33081
+Journal of Statistical Software:   http://www.jstatsoft.org/
+Computers & Geosciences:   http://elsevier.com/locate/cageo/
+Spatial Statistics Society http://www.spatialstatistics.info
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: signature.asc
+Type: application/pgp-signature
+Size: 490 bytes
+Desc: OpenPGP digital signature
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20160330/fdd53810/attachment.bin>
+
+From paolo.piras at uniroma3.it  Wed Mar 30 19:03:56 2016
+From: paolo.piras at uniroma3.it (Paolo Piras)
+Date: Wed, 30 Mar 2016 17:03:56 +0000
+Subject: [R-sig-Geo] Generate isotropic noised data in 3d
+In-Reply-To: <56FBA599.8070204@uni-muenster.de>
+References: <CAAcGz9_Cd8gdsC=B4QxxyC8Xz_9+uGxcq0VrQF_AsMsN968gqg@mail.gmail.com>,
+	<56FBA599.8070204@uni-muenster.de>
+Message-ID: <HE1PR04MB1161EEB01EF51CDE2CAC384DB3980@HE1PR04MB1161.eurprd04.prod.outlook.com>
+
+Hi folks,
+I have a 3D shape identified by n points in x,y,z, space.
+I want to generate, says 1000, random shapes, each  identified by n points, whose points are random isotropic fluctuations of original points. 
+I have in my mind some ways to do that but it would be helpful to have, if any, some advice from the community.
+Thankyou very much in advance
+best 
+paolo
+
+
+From englishchristophera at gmail.com  Thu Mar 31 19:04:19 2016
+From: englishchristophera at gmail.com (chris english)
+Date: Thu, 31 Mar 2016 20:04:19 +0300
+Subject: [R-sig-Geo] default hole-status of sp::Polygon
+In-Reply-To: <56FBA599.8070204@uni-muenster.de>
+References: <CAAcGz9_Cd8gdsC=B4QxxyC8Xz_9+uGxcq0VrQF_AsMsN968gqg@mail.gmail.com>
+	<56FBA599.8070204@uni-muenster.de>
+Message-ID: <CAASFQpT6UhS_XF9qeO7COUKOyYA2c1JhDK6oyQeYcNG=6ckBWA@mail.gmail.com>
+
+Thanks Micheal for the clear explication and Edzer for fixing. Triangles
+specifically were not being created or assessed properly (anti or not). ?
+couldn't figure out why and assumed it was me or my approach. But it did
+cause me to drop sp and friends from parts of my tool chain relating to
+triangles as differential in saccade inflection detection, so I'm happy
+this is sorted out. Now to github.
+Cheers,
+Chris
+On Mar 30, 2016 15:00, "Edzer Pebesma" <edzer.pebesma at uni-muenster.de>
+wrote:
+
+> Thanks Mike, this is now fixed on github.
+>
+> On 30/03/16 06:50, Michael Sumner wrote:
+> > Hello,
+> >
+> > help(Polygon) (sp version 1.2-2) says that if `hole` is unspecified
+> > then anti-clockwise ring direction means hole = TRUE. The
+> > ring-direction detection can be over-ridden by explicitly setting
+> > `hole` to TRUE or FALSE, and if necessary this reorders the
+> > coordinates to align to the rule,
+> >
+> > Polygon() will accept a n-row or (n+1)-row matrix as input, and simply
+> > appends the first coordinate if it's not there.
+> >
+> > The anti-clockwise=hole rule holds true if we leave out the final
+> > closing coordinate for a 4-vertex shape (square), but not a 3-vertex
+> > shape (triangle).
+> >
+> > (For the purpose of this email, "is a hole" and "is not a hole" refers to
+> > the
+> > logical attribute actually set on the object.)
+> >
+> > Is this expected? Is it discussed somewhere?
+> >
+> > Cheers, Mike.
+> >
+> > library(sp)
+> > ## 1) the rule is followed for a square no matter if the closing
+> coordinate
+> > included
+> >
+> > ## square with repeated first coord
+> > xs <- c(0, 1, 1, 0, 0)
+> > ys <- c(0, 0, 1, 1, 0)
+> > ## this is a hole
+> > Polygon(cbind(xs, ys))
+> > ## this is not a hole
+> > Polygon(cbind(xs, ys)[rev(seq_along(xs)), ])
+> >
+> > ## square with 4 unique coords
+> > xs0 <- c(0, 1, 1, 0)
+> > ys0 <- c(0, 0, 1, 1)
+> > ## this is a hole
+> > Polygon(cbind(xs0, ys0))
+> > ## this is not a hole
+> > Polygon(cbind(xs0, ys0)[rev(seq_along(xs0)), ])
+> >
+> > ## 2) rule is followed for a triangle with fourth closing coordinate
+> >
+> > ## triangle with repeated first coord
+> > x <- c(0, 1, 1, 0)
+> > y <- c(0, 0, 1, 0)
+> >
+> > ## this is a hole
+> > Polygon(cbind(x, y))
+> > ## this is not a hole
+> > Polygon(cbind(x, y)[rev(seq_along(x)), ])
+> >
+> > ## triangle with 3 unique coords
+> > x0 <- c(0, 1, 1)
+> > y0 <- c(0, 0, 1)
+> > ## this is a NOT a hole ## <- expected a hole -> ##
+> > Polygon(cbind(x0, y0))
+> > ## this is not a hole
+> > Polygon(cbind(x0, y0)[rev(seq_along(x0)), ])
+> >
+> >
+>
+> --
+> Edzer Pebesma
+> Institute for Geoinformatics  (ifgi),  University of M?nster
+> Heisenbergstra?e 2, 48149 M?nster, Germany; +49 251 83 33081
+> Journal of Statistical Software:   http://www.jstatsoft.org/
+> Computers & Geosciences:   http://elsevier.com/locate/cageo/
+> Spatial Statistics Society http://www.spatialstatistics.info
+>
+>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>
+
+	[[alternative HTML version deleted]]
+
+

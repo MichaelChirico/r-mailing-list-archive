@@ -1,0 +1,2783 @@
+From stanimura-ngs at umin.ac.jp  Wed Aug  3 08:40:17 2005
+From: stanimura-ngs at umin.ac.jp (Susumu Tanimura)
+Date: Wed, 3 Aug 2005 15:40:17 +0900
+Subject: [R-sig-Geo] Grids clipped with polygon
+Message-ID: <20050803154017.4f1bda81.stanimura-ngs@umin.ac.jp>
+
+Hi there,
+
+Grids clipped with polygon is just required for my kriging analysis,
+but I could not succeed so far.  I probed into gpclib, inside.owin() in
+spatstat, inpip() in splancs, symbolsInPoly() in maptools.
+
+> library(maptools)
+> V.poly <- Map2poly(read.shape("vietnam-utm48n.shp"))
+Shapefile Type: Polygon   # of Shapes: 61
+> np <- sapply(V.poly, function(x) attr(x, "nPart"))
+> np
+ [1]   1 510   3   2   1   1   2   7   4   1   2   1   1   1   1   1   1 105   2
+[20]   5   1 682   1   1   1   2   7   8   3   2   3  46   1   3   8   7 138   1
+[39]   1   3   1   1   1   1   1   3   1   3  15   1   1   1   3   1   1  41   1
+[58]   2   1   1   1
+> try1 <- symbolsInPolys(V.poly, 5000)
+
+Spatial Point Pattern Analysis Code in S-Plus
+
+ Version 2 - Spatial and Space-Time analysis
+Error in if (counts[[i]] > 0) { : missing value where TRUE/FALSE needed
+In addition: There were 32 warnings (use warnings() to see them)
+
+It is very happy if someone give me some advice about the error or
+alternative approach.  I just want to have grid trimmed by polygon
+boundary like meuse.grid in gstat.
+
+--
+Susumu Tanimura
+Dept. of Socio-environmental Medicine
+Inst. of Tropical Medicine, Nagasaki University
+e-mail stanimura-ngs at umin.ac.jp
+
+
+
+From Roger.Bivand at nhh.no  Wed Aug  3 15:23:45 2005
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Wed, 3 Aug 2005 15:23:45 +0200 (CEST)
+Subject: [R-sig-Geo] Grids clipped with polygon
+In-Reply-To: <20050803154017.4f1bda81.stanimura-ngs@umin.ac.jp>
+Message-ID: <Pine.LNX.4.44.0508031450530.31761-100000@reclus.nhh.no>
+
+On Wed, 3 Aug 2005, Susumu Tanimura wrote:
+
+> Hi there,
+> 
+> Grids clipped with polygon is just required for my kriging analysis,
+> but I could not succeed so far.  I probed into gpclib, inside.owin() in
+> spatstat, inpip() in splancs, symbolsInPoly() in maptools.
+> 
+> > library(maptools)
+> > V.poly <- Map2poly(read.shape("vietnam-utm48n.shp"))
+> Shapefile Type: Polygon   # of Shapes: 61
+> > np <- sapply(V.poly, function(x) attr(x, "nPart"))
+> > np
+>  [1]   1 510   3   2   1   1   2   7   4   1   2   1   1   1   1   1   1 105   2
+> [20]   5   1 682   1   1   1   2   7   8   3   2   3  46   1   3   8   7 138   1
+> [39]   1   3   1   1   1   1   1   3   1   3  15   1   1   1   3   1   1  41   1
+> [58]   2   1   1   1
+> > try1 <- symbolsInPolys(V.poly, 5000)
+
+Although you could use symbolsInPolys() for this, the function was written 
+for display purposes. If you need to have a regular grid to cover the area 
+of a shapefile of polygons, clipped to the polygon rings, I suggest using 
+functions from the sp package:
+
+> library(maptools)
+Loading required package: foreign
+> library(sp)
+> x <- read.shape(system.file("shapes/sids.shp", package="maptools")[1])
+Shapefile Type: Polygon   # of Shapes: 100 
+> xSR <- as.SpatialRings.Shapes(x$Shapes, 
++ IDs=as.character(x$att.data$FIPS), proj4string=CRS(as.character(NA)))
+> bbox(xSR)
+         min       max
+r1 -84.32385 -75.45698
+r2  33.88199  36.58965
+> grid <- GridTopology(cellcentre.offset=c(-85.4, 33.8), 
++ cellsize=c(0.1, 0.1), cells.dim=c(100, 40))
+> grid.SP <- SpatialPoints(coordinates(grid), 
++ proj4string = CRS(as.character(NA)))
+> summary(grid.SP)
+Object of class SpatialPoints
+Coordinates:
+     min   max
+s1 -85.4 -75.5
+s2  33.8  37.7
+Is projected: NA 
+proj4string : [NA]
+Number of points: 4000
+> res <- overlay(grid.SP, xSR)
+> summary(res)
+   Min. 1st Qu.  Median    Mean 3rd Qu.    Max.    NA's 
+   1.00   25.00   51.00   50.54   76.00  100.00 2734.00 
+> plot(xSR)
+> points(coordinates(grid.SP), pch=".", col="grey")
+> points(coordinates(grid.SP)[!is.na(res),], pch=".", col="black", cex=2)
+
+with coordinates(grid.SP)[!is.na(res),] being the matrix of grid 
+coordinates within the polygons. Because GridTopology() lets you set the 
+grid resolution directly, I think it will be better for non-display 
+purposes than the function in the maptools package. By the way, gstat is 
+using the classes and methods from the sp package in some cases, but this 
+solution gives coordinates you can use generally. The sp package will also 
+let you make SpatialPixels out of your points, which can next be filled in 
+with missing data, and written out as an ArcInfo ASCII grid, if that is 
+any help.
+
+Best wishes,
+
+Roger
+
+> 
+> Spatial Point Pattern Analysis Code in S-Plus
+> 
+>  Version 2 - Spatial and Space-Time analysis
+> Error in if (counts[[i]] > 0) { : missing value where TRUE/FALSE needed
+> In addition: There were 32 warnings (use warnings() to see them)
+> 
+> It is very happy if someone give me some advice about the error or
+> alternative approach.  I just want to have grid trimmed by polygon
+> boundary like meuse.grid in gstat.
+> 
+> --
+> Susumu Tanimura
+> Dept. of Socio-environmental Medicine
+> Inst. of Tropical Medicine, Nagasaki University
+> e-mail stanimura-ngs at umin.ac.jp
+> 
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From adrian at maths.uwa.edu.au  Thu Aug  4 06:01:48 2005
+From: adrian at maths.uwa.edu.au (Adrian Baddeley)
+Date: Thu, 4 Aug 2005 12:01:48 +0800
+Subject: [R-sig-Geo] Grids clipped with polygon
+Message-ID: <17137.37676.812054.16483@maths.uwa.edu.au>
+
+Susumu Tanimura <stanimura-ngs at umin.ac.jp> writes:
+
+> Grids clipped with polygon is just required for my kriging analysis,
+> but I could not succeed so far. 
+
+If your grid points have coordinate vectors xg, yg
+and the polygon's vertices have coordinate vectors xp, yp
+(in anticlockwise order without repetition)
+then the following will work
+
+      library(spatstat)
+      g <- ppp(xg,yg, range(xg), range(yg))
+      w <- owin(poly=list(x=xp,y=yp))
+      gsub <- g[ , w]
+
+Then gsub consists of the grid points within the polygon.
+The coordinates can be extracted as gsub$x and gsub$y.
+
+HTH
+Adrian Baddeley
+
+
+
+From stanimura-ngs at umin.ac.jp  Thu Aug  4 07:44:44 2005
+From: stanimura-ngs at umin.ac.jp (Susumu Tanimura)
+Date: Thu, 4 Aug 2005 14:44:44 +0900
+Subject: [R-sig-Geo] Grids clipped with polygon
+In-Reply-To: <Pine.LNX.4.44.0508031450530.31761-100000@reclus.nhh.no>
+References: <20050803154017.4f1bda81.stanimura-ngs@umin.ac.jp>
+	<Pine.LNX.4.44.0508031450530.31761-100000@reclus.nhh.no>
+Message-ID: <20050804144444.19ea16dc.stanimura-ngs@umin.ac.jp>
+
+Dear Roger and Alisa
+
+Thank you very much for your help.  Finally I succeeded to have the
+grid I wanted after following Roger's procedure.  The sp package is
+very nice and strong!  I should probe more about sp package for my
+happy life.
+
+My institute has ArcGIS 8.2 (ArcInfo), but it does not work on my
+Linux machine.  Anyway, my trial with ArcInfo on Windows machine had
+been also failed with some reason.
+
+--
+Susumu Tanimura
+
+
+
+From dag.johan.steinskog at nersc.no  Fri Aug 12 09:45:14 2005
+From: dag.johan.steinskog at nersc.no (Dag Johan Steinskog)
+Date: Fri, 12 Aug 2005 09:45:14 +0200
+Subject: [R-sig-Geo] Plotting an image on a stereographic grid orientation
+Message-ID: <42FC538A.2060009@nersc.no>
+
+Dear all
+
+First of all, I am sorry for all inconvinience I am causing you, but I 
+have a problem on plotting some data on stereographic grids.
+
+Say I have data given to be (for simplicity):
+lon<-seq(-180,180,2.5)
+lat<-seq(50,90,2.5)
+data<-matrix(rnorm(145*17,sd=10),ncol=17,nrow=145)
+
+And this I want to plot on a map like this (maps and mapproj package 
+needed):
+map("world",proj="stereographic",xlim=c(-180,180),ylim=c(50,90),interior=FALSE,lwd=1)
+map.grid(lim=c(-180,180,50,90),nx=5,ny=3,pretty=TRUE,col=1,label=FALSE)
+
+I would like to have a colour presentation of the data. Before I have 
+used the image command to plot a datamatrix when there is no specific 
+projection, and I would like to use the image command on this problem too.
+
+I hope someone have time to help me.
+
+Best Wishes
+Dag Johan Steinskog
+
+
+
+From B.Rowlingson at lancaster.ac.uk  Fri Aug 12 11:58:29 2005
+From: B.Rowlingson at lancaster.ac.uk (Barry Rowlingson)
+Date: Fri, 12 Aug 2005 10:58:29 +0100
+Subject: [R-sig-Geo] Plotting an image on a stereographic grid
+	orientation
+In-Reply-To: <42FC538A.2060009@nersc.no>
+References: <42FC538A.2060009@nersc.no>
+Message-ID: <42FC72C5.6020301@lancaster.ac.uk>
+
+Dag Johan Steinskog wrote:
+
+> I would like to have a colour presentation of the data. Before I have 
+> used the image command to plot a datamatrix when there is no specific 
+> projection, and I would like to use the image command on this problem too.
+> 
+> I hope someone have time to help me.
+
+  I think you'd have to loop over every cell in your matrix, get the 
+projected coordinates of the cell and intermediate points along the 
+edges, then draw a filled polygon in a colour relating to the value you 
+want to display.
+
+  The code in map.grid might help, since it shows how to compute 
+projected coordinates, but the 'grid' is only a set of latitude and 
+longitude lines. You'd need to work out coordinates for each cell in 
+order to fill it in.
+
+  I could probably bash out a function to do it in half a day, sadly I 
+dont have half a day free at the moment!
+
+Barry
+
+
+
+From Roger.Bivand at nhh.no  Fri Aug 12 12:33:44 2005
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Fri, 12 Aug 2005 12:33:44 +0200 (CEST)
+Subject: [R-sig-Geo] Plotting an image on a stereographic grid
+	orientation
+In-Reply-To: <42FC72C5.6020301@lancaster.ac.uk>
+Message-ID: <Pine.LNX.4.44.0508121203000.16267-100000@reclus.nhh.no>
+
+On Fri, 12 Aug 2005, Barry Rowlingson wrote:
+
+> Dag Johan Steinskog wrote:
+> 
+> > I would like to have a colour presentation of the data. Before I have 
+> > used the image command to plot a datamatrix when there is no specific 
+> > projection, and I would like to use the image command on this problem too.
+> > 
+> > I hope someone have time to help me.
+> 
+>   I think you'd have to loop over every cell in your matrix, get the 
+> projected coordinates of the cell and intermediate points along the 
+> edges, then draw a filled polygon in a colour relating to the value you 
+> want to display.
+> 
+>   The code in map.grid might help, since it shows how to compute 
+> projected coordinates, but the 'grid' is only a set of latitude and 
+> longitude lines. You'd need to work out coordinates for each cell in 
+> order to fill it in.
+> 
+>   I could probably bash out a function to do it in half a day, sadly I 
+> dont have half a day free at the moment!
+> 
+
+I'd got as far as:
+
+This is about warping a raster (note that 180 and -180 in lon overlap) to
+the polar stereographic projection, or possibly faking a warp by
+projecting the raster cells as polygons (this doesn't give the two curved
+edges, but avoids resampling the data).
+
+A further issue is that map() from the maps package imposes its own
+display coordinate system.
+
+And:
+
+> map("world", proj="stereographic", xlim=c(-180,180), ylim=c(50,90), 
++ interior=FALSE, lwd=1)
+> polygon(mapproject(c(0,0,2.5,2.5,0), c(87.5,90,90,87.5,87.5), 
++ proj="stereographic"), col="red", border=NA)
+> polygon(mapproject(c(0,0,2.5,2.5,0), c(57.5,60,60,57.5,57.5), 
++ proj="stereographic"), col="blue", border=NA)
+
+does work, but the polygons would need plotting first, so as not to 
+overwrite the coastlines. Curiously, 
+
+> mapproject(c(60,60,62.5,62.5,60), c(57.5,60,60,57.5,57.5),proj="stereographic")
+
+gives the same coordinates as x=c(0,0,2.5,2.5,0), so maybe it isn't so 
+easy.
+
+as("GridTopology", "SpatialRings"), anyone? 
+
+Dag, when do you need this (apart from yesterday)?
+
+This from project() in spproj (not yet on CRAN):
+
+> project(cbind(c(60,60,62.5,62.5,60), c(57.5,60,60,57.5,57.5)), 
+"+proj=stere +lat_ts=-90 +lat_0=90 +lon_0=0 +k_0=1.0 +datum=WGS84")
+ +proj=stere +lat_ts=-90 +lat_0=90 +lon_0=0 +k_0=1.0 +datum=WGS84 
++ellps=WGS84 +towgs84=0,0,0
+        [,1]     [,2]
+[1,] 3227409 -1863346
+[2,] 2967384 -1713220
+[3,] 3039289 -1582154
+[4,] 3305616 -1720795
+[5,] 3227409 -1863346
+> project(cbind(c(-60,-60,-62.5,-62.5,-60), c(57.5,60,60,57.5,57.5)), 
+"+proj=stere +lat_ts=-90 +lat_0=90 +lon_0=0 +k_0=1.0 +datum=WGS84")
+ +proj=stere +lat_ts=-90 +lat_0=90 +lon_0=0 +k_0=1.0 +datum=WGS84 
++ellps=WGS84 +towgs84=0,0,0
+         [,1]     [,2]
+[1,] -3227409 -1863346
+[2,] -2967384 -1713220
+[3,] -3039289 -1582154
+[4,] -3305616 -1720795
+[5,] -3227409 -1863346
+> project(cbind(c(0,0,2.5,2.5,0), c(57.5,60,60,57.5,57.5)), "+proj=stere 
++lat_ts=-90 +lat_0=90 +lon_0=0 +k_0=1.0 +datum=WGS84")
+ +proj=stere +lat_ts=-90 +lat_0=90 +lon_0=0 +k_0=1.0 +datum=WGS84 
++ellps=WGS84 +towgs84=0,0,0
+         [,1]     [,2]
+[1,]      0.0 -3726691
+[2,]      0.0 -3426439
+[3,] 149459.2 -3423178
+[4,] 162556.0 -3723144
+[5,]      0.0 -3726691
+
+looks promising (project() is based on Barry's code).
+
+Roger
+
+
+
+> Barry
+> 
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From dag.johan.steinskog at nersc.no  Fri Aug 12 13:42:54 2005
+From: dag.johan.steinskog at nersc.no (Dag Johan Steinskog)
+Date: Fri, 12 Aug 2005 13:42:54 +0200
+Subject: [R-sig-Geo] Plotting an image on a stereographic grid
+	orientation
+In-Reply-To: <Pine.LNX.4.44.0508121203000.16267-100000@reclus.nhh.no>
+References: <Pine.LNX.4.44.0508121203000.16267-100000@reclus.nhh.no>
+Message-ID: <42FC8B3E.20301@nersc.no>
+
+Dear Roger and Barry (and rest of you)
+
+I need this as soon as possible I think. I am working with climate 
+analysis, and this need is quite urgent in general, not only for me. I 
+will do some testing on the things you have written down, but I feel 
+this is something that should be done.
+
+All the best
+Dag Johan
+
+Roger Bivand skrev:
+
+>On Fri, 12 Aug 2005, Barry Rowlingson wrote:
+>
+>  
+>
+>>Dag Johan Steinskog wrote:
+>>
+>>    
+>>
+>>>I would like to have a colour presentation of the data. Before I have 
+>>>used the image command to plot a datamatrix when there is no specific 
+>>>projection, and I would like to use the image command on this problem too.
+>>>
+>>>I hope someone have time to help me.
+>>>      
+>>>
+>>  I think you'd have to loop over every cell in your matrix, get the 
+>>projected coordinates of the cell and intermediate points along the 
+>>edges, then draw a filled polygon in a colour relating to the value you 
+>>want to display.
+>>
+>>  The code in map.grid might help, since it shows how to compute 
+>>projected coordinates, but the 'grid' is only a set of latitude and 
+>>longitude lines. You'd need to work out coordinates for each cell in 
+>>order to fill it in.
+>>
+>>  I could probably bash out a function to do it in half a day, sadly I 
+>>dont have half a day free at the moment!
+>>
+>>    
+>>
+>
+>I'd got as far as:
+>
+>This is about warping a raster (note that 180 and -180 in lon overlap) to
+>the polar stereographic projection, or possibly faking a warp by
+>projecting the raster cells as polygons (this doesn't give the two curved
+>edges, but avoids resampling the data).
+>
+>A further issue is that map() from the maps package imposes its own
+>display coordinate system.
+>
+>And:
+>
+>  
+>
+>>map("world", proj="stereographic", xlim=c(-180,180), ylim=c(50,90), 
+>>    
+>>
+>+ interior=FALSE, lwd=1)
+>  
+>
+>>polygon(mapproject(c(0,0,2.5,2.5,0), c(87.5,90,90,87.5,87.5), 
+>>    
+>>
+>+ proj="stereographic"), col="red", border=NA)
+>  
+>
+>>polygon(mapproject(c(0,0,2.5,2.5,0), c(57.5,60,60,57.5,57.5), 
+>>    
+>>
+>+ proj="stereographic"), col="blue", border=NA)
+>
+>does work, but the polygons would need plotting first, so as not to 
+>overwrite the coastlines. Curiously, 
+>
+>  
+>
+>>mapproject(c(60,60,62.5,62.5,60), c(57.5,60,60,57.5,57.5),proj="stereographic")
+>>    
+>>
+>
+>gives the same coordinates as x=c(0,0,2.5,2.5,0), so maybe it isn't so 
+>easy.
+>
+>as("GridTopology", "SpatialRings"), anyone? 
+>
+>Dag, when do you need this (apart from yesterday)?
+>
+>This from project() in spproj (not yet on CRAN):
+>
+>  
+>
+>>project(cbind(c(60,60,62.5,62.5,60), c(57.5,60,60,57.5,57.5)), 
+>>    
+>>
+>"+proj=stere +lat_ts=-90 +lat_0=90 +lon_0=0 +k_0=1.0 +datum=WGS84")
+> +proj=stere +lat_ts=-90 +lat_0=90 +lon_0=0 +k_0=1.0 +datum=WGS84 
+>+ellps=WGS84 +towgs84=0,0,0
+>        [,1]     [,2]
+>[1,] 3227409 -1863346
+>[2,] 2967384 -1713220
+>[3,] 3039289 -1582154
+>[4,] 3305616 -1720795
+>[5,] 3227409 -1863346
+>  
+>
+>>project(cbind(c(-60,-60,-62.5,-62.5,-60), c(57.5,60,60,57.5,57.5)), 
+>>    
+>>
+>"+proj=stere +lat_ts=-90 +lat_0=90 +lon_0=0 +k_0=1.0 +datum=WGS84")
+> +proj=stere +lat_ts=-90 +lat_0=90 +lon_0=0 +k_0=1.0 +datum=WGS84 
+>+ellps=WGS84 +towgs84=0,0,0
+>         [,1]     [,2]
+>[1,] -3227409 -1863346
+>[2,] -2967384 -1713220
+>[3,] -3039289 -1582154
+>[4,] -3305616 -1720795
+>[5,] -3227409 -1863346
+>  
+>
+>>project(cbind(c(0,0,2.5,2.5,0), c(57.5,60,60,57.5,57.5)), "+proj=stere 
+>>    
+>>
+>+lat_ts=-90 +lat_0=90 +lon_0=0 +k_0=1.0 +datum=WGS84")
+> +proj=stere +lat_ts=-90 +lat_0=90 +lon_0=0 +k_0=1.0 +datum=WGS84 
+>+ellps=WGS84 +towgs84=0,0,0
+>         [,1]     [,2]
+>[1,]      0.0 -3726691
+>[2,]      0.0 -3426439
+>[3,] 149459.2 -3423178
+>[4,] 162556.0 -3723144
+>[5,]      0.0 -3726691
+>
+>looks promising (project() is based on Barry's code).
+>
+>Roger
+>
+>
+>
+>  
+>
+>>Barry
+>>
+>>_______________________________________________
+>>R-sig-Geo mailing list
+>>R-sig-Geo at stat.math.ethz.ch
+>>https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>>
+>>    
+>>
+>
+>  
+>
+
+
+
+From White.Denis at epamail.epa.gov  Fri Aug 12 20:15:36 2005
+From: White.Denis at epamail.epa.gov (White.Denis at epamail.epa.gov)
+Date: Fri, 12 Aug 2005 11:15:36 -0700
+Subject: [R-sig-Geo] Plotting an image on a stereographic grid
+	orientation
+In-Reply-To: <42FC538A.2060009@nersc.no>
+Message-ID: <OFEB661049.ACD0C8C6-ON8825705B.00639650-8825705B.00644E5B@epamail.epa.gov>
+
+Here is a script using two functions.  I hope this helps.  Note that
+this version of the stereographic projection uses a spherical model of
+the earth not an ellipsoidal, and is set up for the north polar aspect
+of the projection, since that appears to be most appropriate for the
+kind of data you have in your example.  (I also included a function for
+the equatorial aspect of the projection in case you have use for that.
+Both the north polar and the equatorial are special cases of the more
+general oblique aspect which is what mapproject and most projection
+functions would use.)
+
+best wishes,
+Denis White
+
+-------------------------
+stereo <- function (lon, lat) # north polar aspect
+{
+    R <- 6371 # ~ GRS80 Authalic sphere
+    v <- tan (pi / 4 - lat * pi / 180 / 2)
+    x <- 2 * R * v * sin (lon * pi / 180)
+    y <- -2 * R * v * cos (lon * pi / 180)
+    x[is.na (lat)] <- lon[is.na (lat)]
+    xy <- cbind (x=x, y=y)
+    xy
+}
+
+stereo.equator <- function (lon, lat) # equatorial aspect
+{
+    R <- 6371 # ~ GRS80 Authalic sphere
+    coslat <- cos (lat * pi / 180)
+    k <- 2 / (1 + coslat * cos (lon * pi / 180))
+    x <- R * k * coslat * sin (lon * pi / 180)
+    y <- R * k * sin (lat * pi / 180)
+    x[is.na (lat)] <- lon[is.na (lat)]
+    xy <- cbind (x=x, y=y)
+    xy
+}
+
+graticule <- function (east=180, west=-180, north=90, south=-90,
+    ginc=10, dinc=1)
+{
+    ew <- east - west
+    ns <- north - south
+    nr <- (ew / dinc + 1) * (ns / ginc + 1) +
+        (ns / dinc + 1) * (ew / ginc + 1) +
+        ew / ginc + ns / ginc + 2
+    geo <- matrix (0, nrow=nr, ncol=2)
+    i <- n <- 0
+
+    for (lon in seq (west, east, by=ginc))
+    {
+        i <- i + 1
+        n <- n + 1
+        geo[i, 1] <- n
+        geo[i, 2] <- NA
+        for (lat in seq (south, north, by=dinc))
+        {
+            i <- i + 1
+            geo[i, 1] <- lon
+            geo[i, 2] <- lat
+        }
+    }
+    for (lat in seq (south, north, by=ginc))
+    {
+        i <- i + 1
+        n <- n + 1
+        geo[i, 1] <- n
+        geo[i, 2] <- NA
+        for (lon in seq (west, east, by=dinc))
+        {
+            i <- i + 1
+            geo[i, 1] <- lon
+            geo[i, 2] <- lat
+        }
+    }
+    geo
+}
+
+east <- 180
+west <- -180
+north <- 90
+south <- 50
+ginc <- 2.5
+dinc <- 0.5
+
+grat <- graticule (east, west, north, south, ginc, dinc)
+grat <- stereo (grat[,1], grat[,2])
+
+lon <- seq (west, east, ginc)
+lat <- seq (south, north, ginc)
+pts <- expand.grid (lon, lat)
+pts <- stereo (pts[,1], pts[,2])
+val <- rnorm (nrow (pts), sd=10)
+val <- cut (val, breaks=7, include.lowest=TRUE, labels=FALSE)
+kol <- rainbow (7)
+
+plot.map (grat[,1], grat[,2])
+lines (grat)
+points (pts, col=kol[val], pch=20)
+-------------------------
+
+r-sig-geo-bounces at stat.math.ethz.ch wrote on 2005-08-12 00:45:14:
+
+> Dear all
+>
+> First of all, I am sorry for all inconvinience I am causing you, but I
+
+> have a problem on plotting some data on stereographic grids.
+>
+> Say I have data given to be (for simplicity):
+> lon<-seq(-180,180,2.5)
+> lat<-seq(50,90,2.5)
+> data<-matrix(rnorm(145*17,sd=10),ncol=17,nrow=145)
+>
+> And this I want to plot on a map like this (maps and mapproj package
+> needed):
+> map("world",proj="stereographic",xlim=c(-180,180),ylim=c(50,90),
+> interior=FALSE,lwd=1)
+>
+map.grid(lim=c(-180,180,50,90),nx=5,ny=3,pretty=TRUE,col=1,label=FALSE)
+>
+> I would like to have a colour presentation of the data. Before I have
+> used the image command to plot a datamatrix when there is no specific
+> projection, and I would like to use the image command on this problem
+too.
+>
+> I hope someone have time to help me.
+>
+> Best Wishes
+> Dag Johan Steinskog
+>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+
+
+
+From hi_ono2001 at yahoo.co.jp  Sat Aug 20 16:28:44 2005
+From: hi_ono2001 at yahoo.co.jp (Hisaji ONO)
+Date: Sat, 20 Aug 2005 23:28:44 +0900 (JST)
+Subject: [R-sig-Geo] When will be WIn binaires available for spgwr and others
+Message-ID: <20050820142844.20461.qmail@web1701.mail.yahoo.co.jp>
+
+Hello.
+
+ Latest spgwr seems to be very attractive.
+
+ However it will only release in source.
+
+ When will be this and other(spmaptools etc.) win binaries
+available?
+
+
+ Regards.
+
+
+
+From maechler at stat.math.ethz.ch  Sat Aug 20 22:51:46 2005
+From: maechler at stat.math.ethz.ch (Martin Maechler)
+Date: Sat, 20 Aug 2005 22:51:46 +0200
+Subject: [R-sig-Geo] When will be WIn binaires available for spgwr and
+	others
+In-Reply-To: <20050820142844.20461.qmail@web1701.mail.yahoo.co.jp>
+References: <20050820142844.20461.qmail@web1701.mail.yahoo.co.jp>
+Message-ID: <17159.38882.427419.890702@stat.math.ethz.ch>
+
+>>>>> "Hisaji" == Hisaji ONO <hi_ono2001 at yahoo.co.jp>
+>>>>>     on Sat, 20 Aug 2005 23:28:44 +0900 (JST) writes:
+
+    Hisaji> Hello.
+    Hisaji> Latest spgwr seems to be very attractive.
+
+    Hisaji> However it will only release in source.
+
+    Hisaji> When will be this and other(spmaptools etc.) win binaries
+    Hisaji> available?
+
+I don't know for sure.
+But if the authors would submit the packages to CRAN 
+(as I think they should),
+Windows and Mac binaries would be built almost automatically ----
+unless special external libraries (I'm not talking of R >>packages<< !)
+are required.
+
+Martin Maechler, ETH Zurich
+
+
+
+From stanimura-ngs at umin.ac.jp  Mon Aug 22 11:20:46 2005
+From: stanimura-ngs at umin.ac.jp (Susumu Tanimura)
+Date: Mon, 22 Aug 2005 18:20:46 +0900
+Subject: [R-sig-Geo] How to obtain name of Map object on graphic device?
+Message-ID: <20050822182046.3cf17740.stanimura-ngs@umin.ac.jp>
+
+Hi there,
+
+My question is how to obtain a name of Map object currently on graphic
+device.  I had a look at help, documents, or web sites, however, it is
+still unclear. 
+
+It is obvious when I myself plot Map object, but I would like to
+obtain it automatically inside my function.
+
+Thank you very much in advance.
+
+--
+Susumu Tanimura
+
+
+
+From Roger.Bivand at nhh.no  Mon Aug 22 20:16:14 2005
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Mon, 22 Aug 2005 20:16:14 +0200 (CEST)
+Subject: [R-sig-Geo] When will be WIn binaires available for spgwr and
+ others
+In-Reply-To: <17159.38882.427419.890702@stat.math.ethz.ch>
+Message-ID: <Pine.LNX.4.44.0508222001010.14027-100000@reclus.nhh.no>
+
+On Sat, 20 Aug 2005, Martin Maechler wrote:
+
+> >>>>> "Hisaji" == Hisaji ONO <hi_ono2001 at yahoo.co.jp>
+> >>>>>     on Sat, 20 Aug 2005 23:28:44 +0900 (JST) writes:
+> 
+>     Hisaji> Hello.
+>     Hisaji> Latest spgwr seems to be very attractive.
+> 
+>     Hisaji> However it will only release in source.
+> 
+>     Hisaji> When will be this and other(spmaptools etc.) win binaries
+>     Hisaji> available?
+> 
+> I don't know for sure.
+> But if the authors would submit the packages to CRAN 
+> (as I think they should),
+> Windows and Mac binaries would be built almost automatically ----
+> unless special external libraries (I'm not talking of R >>packages<< !)
+> are required.
+
+Since R 2.1 was released, there is an excellent mechanism for supporting 
+off-CRAN repositories including source and if available binary packages. 
+Our repository on sourceforge has been running since R-News 5 (1) 
+described how to "open up shop". The details for access are on 
+http://r-spatial.sourceforge.net -> Download, and include:
+
+> rSpatial <- "http://r-spatial.sourceforge.net/R"
+> install.packages("spgwr", repos=rSpatial)
+
+which certainly works for me, also for the Windows binary package (but not
+Mac OSX). You do need to install the sp package first from CRAN.
+
+This mechanism does provide a very useful way of making available packages 
+that are not quite ready for CRAN, and also allow for providing binaries 
+for packages needing special external libraries, which maintainers can 
+build against. The disadvantage is that packages on alternative 
+repositories are not checked nightly against current R installations, 
+unless the maintainers do this themselves.
+
+Note that this release mechanism is more up-to-date than the regular 
+sourceforge project page file releases.
+
+Roger
+
+> 
+> Martin Maechler, ETH Zurich
+> 
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From Thomas.Adams at noaa.gov  Mon Aug 22 22:19:16 2005
+From: Thomas.Adams at noaa.gov (Thomas Adams)
+Date: Mon, 22 Aug 2005 16:19:16 -0400
+Subject: [R-sig-Geo] Unable to read GRASS6 data using gstat 2.4.5
+In-Reply-To: <Pine.LNX.4.44.0508222001010.14027-100000@reclus.nhh.no>
+References: <Pine.LNX.4.44.0508222001010.14027-100000@reclus.nhh.no>
+Message-ID: <430A3344.4050507@noaa.gov>
+
+List:
+
+I have point temperature data in GRASS6 (as vectors); I'm using GSTAT 
+2.4.5 which I have compiled with GRASS support (and confirmed with gstat 
+-v). I have:
+
+# file: gstat.cmd.temps
+#
+# gstat command file
+#
+data(temp_20050101_08): 'temp_20050101_08', x=1, y=2, v=1;
+variogram(temp_20050101_08): 0.2772 Nug(0) + 0.85 Sph(987521);
+
+ From the GRASS6 prompt, when I try to execute:
+
+gstat gstat.cmd.temps
+
+I get:
+
+data(temp_20050801_08): WARNING: Vector used instead of sites
+WARNING: Invalid absolute datetime format
+Memory fault
+
+I understand "WARNING: Vector used instead of sites", but I am not sure 
+of the implication since in GRASS6 sites are vectors. The 2nd message 
+followed by the Memory Fault is very puzzling.
+
+Regards,
+Tom
+
+-- 
+Thomas E Adams
+National Weather Service
+Ohio River Forecast Center
+1901 South State Route 134
+Wilmington, OH 45177
+
+EMAIL:	thomas.adams at noaa.gov
+
+VOICE:	937-383-0528
+FAX:	937-383-0033
+
+
+
+From hi_ono2001 at yahoo.co.jp  Tue Aug 23 08:30:47 2005
+From: hi_ono2001 at yahoo.co.jp (Hisaji ONO)
+Date: Tue, 23 Aug 2005 15:30:47 +0900 (JST)
+Subject: [R-sig-Geo] How to get each bandwidth values on observation points
+	using adaptive kernel in spgwr ?
+In-Reply-To: <Pine.LNX.4.44.0508222001010.14027-100000@reclus.nhh.no>
+Message-ID: <20050823063047.46622.qmail@web1703.mail.yahoo.co.jp>
+
+Hello.
+
+ I have two question about latest spgwr package.
+
+ First, I've modified gwr function's example a little and
+tried to get each bandwidth values on observation points
+using adaptive kernel in spgwr as follows.
+
+  col.bw <- gwr.sel(crime ~ income + housing,
+data=columbus,adapt=0.5,
+    coords=cbind(columbus$x, columbus$y))
+  col.gauss <- gwr(crime ~ income + housing,
+data=columbus,adapt=0.5,
+    coords=cbind(columbus$x, columbus$y),
+bandwidth=col.bw, hatmatrix=TRUE)
+
+  I've got a value of "col.gauss$bandwidth."
+
+  However this result was "null."
+
+  How to get bandwidth values on observation points?
+
+
+  And another question about spgwr. How to use
+gwr.morantest function? It can work?
+
+
+ Regards.
+
+
+
+From maechler at stat.math.ethz.ch  Tue Aug 23 08:32:36 2005
+From: maechler at stat.math.ethz.ch (Martin Maechler)
+Date: Tue, 23 Aug 2005 08:32:36 +0200
+Subject: [R-sig-Geo] When will be WIn binaires available for spgwr and
+ others
+In-Reply-To: <Pine.LNX.4.44.0508222001010.14027-100000@reclus.nhh.no>
+References: <17159.38882.427419.890702@stat.math.ethz.ch>
+	<Pine.LNX.4.44.0508222001010.14027-100000@reclus.nhh.no>
+Message-ID: <17162.49924.49444.172654@stat.math.ethz.ch>
+
+Hi Roger,
+
+I'm sorry, I didn't want to bash the "R-spatial" project at all.
+I think it's great that you do lead and coordinate this
+initiative, with such a high quality.
+
+I somewhat got carried away by the fact (more general) that
+people "publish R packages" but are too lazy to make them pass R
+CMD check.  
+BTW, I don't think a package needs to pass "R-devel CMD check"
+to be accepted for CRAN.
+
+Regards,
+and thanks once more to the initiatiors and maintainers of the
+R-spatial projects!
+
+Martin Maechler, ETH Zurich
+
+
+
+From Roger.Bivand at nhh.no  Tue Aug 23 11:40:56 2005
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Tue, 23 Aug 2005 11:40:56 +0200 (CEST)
+Subject: [R-sig-Geo] How to get each bandwidth values on observation
+ points using adaptive kernel in spgwr ?
+In-Reply-To: <20050823063047.46622.qmail@web1703.mail.yahoo.co.jp>
+Message-ID: <Pine.LNX.4.44.0508231103320.16290-100000@reclus.nhh.no>
+
+On Tue, 23 Aug 2005, Hisaji ONO wrote:
+
+> Hello.
+> 
+>  I have two question about latest spgwr package.
+> 
+>  First, I've modified gwr function's example a little and
+> tried to get each bandwidth values on observation points
+> using adaptive kernel in spgwr as follows.
+> 
+>   col.bw <- gwr.sel(crime ~ income + housing,
+> data=columbus,adapt=0.5,
+>     coords=cbind(columbus$x, columbus$y))
+>   col.gauss <- gwr(crime ~ income + housing,
+> data=columbus,adapt=0.5,
+>     coords=cbind(columbus$x, columbus$y),
+> bandwidth=col.bw, hatmatrix=TRUE)
+> 
+>   I've got a value of "col.gauss$bandwidth."
+> 
+>   However this result was "null."
+> 
+>   How to get bandwidth values on observation points?
+> 
+
+Well, in the gwr.sel() call, adapt= should be either TRUE or FALSE, not a
+non-logical value (a test will be added to the next release o trap this).  
+You then pass the adaptive quantile returned from gwr.sel() to adapt=, not 
+to bandwidth= (which is ignored if adapt= is not NULL). Given an adaptive 
+quantile:
+
+> res <- gw.adapt(cbind(columbus$x, columbus$y), cbind(columbus$x, 
++ columbus$y), quant=0.5)
+> str(res)
+ num [1:49] 12.81 10.76  9.06 10.60 13.48 ...
+
+gives the distance equivalents used, and I'm adding it to the list of 
+returned values from the function.
+
+Note that gwr.sel(..., adapt=TRUE) for the columbus data for the default 
+Gaussian kernel gives nonsense results (only including 4% of the data 
+points), the Bisquare gives about 65% of the points.
+
+> 
+>   And another question about spgwr. How to use
+> gwr.morantest function? It can work?
+> 
+
+If we use the spdep package, and the columbus dataset there:
+
+> library(spdep)
+> data(columbus)
+> col.bw <- gwr.sel(CRIME ~ INC + HOVAL, data=columbus,
++ coords=cbind(columbus$X, columbus$Y), adapt=TRUE, gweight=gwr.bisquare)
+> col.bisq <- gwr(CRIME ~ INC + HOVAL, data=columbus,
++ coords=cbind(columbus$X, columbus$Y), adapt=col.bw, 
++ gweight=gwr.bisquare, hatmatrix=TRUE)
+> res <- gwr.morantest(x=col.bisq, listw=nb2listw(col.gal.nb))
+
+        Leung et al. 2000 three moment approximation for Moran's I
+
+data:  GWR residuals 
+statistic = 10.6783, df = 30.912, p-value = 0.0002680
+sample estimates:
+        I 
+0.1194597 
+
+but I agree, the documentation is far from complete. Please use the test 
+with care, see for example:
+
+> moran.test(res$GWRresids[,1], listw=nb2listw(col.gal.nb))
+
+        Moran's I test under randomisation
+
+data:  res$GWRresids[, 1]  
+weights: nb2listw(col.gal.nb)  
+ 
+Moran I statistic standard deviate = 1.2615, p-value = 0.1036
+alternative hypothesis: greater 
+sample estimates:
+Moran I statistic       Expectation          Variance 
+      0.097195544      -0.020833333       0.008754355 
+
+where res is the object returned by gwr.morantest() with the GWR 
+residuals. I don't know which is credible.
+
+Roger
+
+> 
+>  Regards.
+> 
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From neteler at itc.it  Tue Aug 23 14:08:52 2005
+From: neteler at itc.it (Markus Neteler)
+Date: Tue, 23 Aug 2005 14:08:52 +0200
+Subject: [R-sig-Geo] Unable to read GRASS6 data using gstat 2.4.5
+In-Reply-To: <430A3344.4050507@noaa.gov>
+References: <Pine.LNX.4.44.0508222001010.14027-100000@reclus.nhh.no>
+	<430A3344.4050507@noaa.gov>
+Message-ID: <20050823120852.GK17401@thuille.itc.it>
+
+On Mon, Aug 22, 2005 at 04:19:16PM -0400, Thomas Adams wrote:
+> List:
+> 
+> I have point temperature data in GRASS6 (as vectors); I'm using GSTAT 
+> 2.4.5 which I have compiled with GRASS support (and confirmed with gstat 
+> -v). I have:
+> 
+> # file: gstat.cmd.temps
+> #
+> # gstat command file
+> #
+> data(temp_20050101_08): 'temp_20050101_08', x=1, y=2, v=1;
+> variogram(temp_20050101_08): 0.2772 Nug(0) + 0.85 Sph(987521);
+> 
+> From the GRASS6 prompt, when I try to execute:
+> 
+> gstat gstat.cmd.temps
+> 
+> I get:
+> 
+> data(temp_20050801_08): WARNING: Vector used instead of sites
+> WARNING: Invalid absolute datetime format
+> Memory fault
+> 
+> I understand "WARNING: Vector used instead of sites", but I am not sure 
+> of the implication since in GRASS6 sites are vectors. The 2nd message 
+> followed by the Memory Fault is very puzzling.
+> 
+> Regards,
+> Tom
+
+Tom,
+
+could you send the temp_20050101_08 files to me. Since it is
+vector, I would need the mapset/vector/temp_20050101_08/ directory
+and the output of 
+ g.proj -wef > /tmp/temp_gstat.prj
+to recreate the location here.
+
+Markus
+
+
+
+From tkeitt at mail.utexas.edu  Tue Aug 23 15:17:46 2005
+From: tkeitt at mail.utexas.edu (Tim Keitt)
+Date: Tue, 23 Aug 2005 08:17:46 -0500
+Subject: [R-sig-Geo] When will be WIn binaires available for spgwr
+	and	others
+In-Reply-To: <17162.49924.49444.172654@stat.math.ethz.ch>
+References: <17159.38882.427419.890702@stat.math.ethz.ch>
+	<Pine.LNX.4.44.0508222001010.14027-100000@reclus.nhh.no>
+	<17162.49924.49444.172654@stat.math.ethz.ch>
+Message-ID: <1124803066.30432.4.camel@localhost>
+
+Its better than no package at all, right? I think this is a metadata
+issue. If packages were keyworded a la Gentoo, users could mask out
+packages that don't pass R package checks, etc. (Maybe that's already in
+place. I haven't tracked closely recent changes in R.)
+
+THK
+
+On Tue, 2005-08-23 at 08:32 +0200, Martin Maechler wrote:
+> Hi Roger,
+> 
+> I'm sorry, I didn't want to bash the "R-spatial" project at all.
+> I think it's great that you do lead and coordinate this
+> initiative, with such a high quality.
+> 
+> I somewhat got carried away by the fact (more general) that
+> people "publish R packages" but are too lazy to make them pass R
+> CMD check.  
+> BTW, I don't think a package needs to pass "R-devel CMD check"
+> to be accepted for CRAN.
+> 
+> Regards,
+> and thanks once more to the initiatiors and maintainers of the
+> R-spatial projects!
+> 
+> Martin Maechler, ETH Zurich
+> 
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+
+
+
+From sotosko at yahoo.gr  Wed Aug 24 11:34:56 2005
+From: sotosko at yahoo.gr (Sotos)
+Date: Wed, 24 Aug 2005 10:34:56 +0100 (BST)
+Subject: [R-sig-Geo] Moran I and General Trend
+Message-ID: <20050824093456.92800.qmail@web25401.mail.ukl.yahoo.com>
+
+Dear All,
+
+I am a bit confused regarding the use of Global Moran
+and I hope you can help me clarify the following:
+
+Moran's I, should not be used if the mean and the
+variance are not constant in the layer. So, if there
+is a trend (first order effect) in the data  (i.e. a
+north - south divide) Moran's I should not be used. 
+
+However isn't that a positive autocorrelation in the
+data (low with low and high with high)? Isn't that
+what Moran is actually measuring?
+
+I understand that in this case local moran is more
+proper to use, but what about Global Moran in the
+above situation?
+
+Any thoughts?
+Thanks in advance
+s.
+
+
+
+
+	
+
+	
+		
+___________________________________________________________ 
+
+
+???????? ??? ???????? ?????? ????????? ???? ??? ??????????? 
+????????? http://login.yahoo.com/config/mail?.intl=gr
+
+
+
+From e.pebesma at geog.uu.nl  Wed Aug 24 12:00:25 2005
+From: e.pebesma at geog.uu.nl (Edzer J. Pebesma)
+Date: Wed, 24 Aug 2005 12:00:25 +0200
+Subject: [R-sig-Geo] How to obtain name of Map object on graphic device?
+In-Reply-To: <20050822182046.3cf17740.stanimura-ngs@umin.ac.jp>
+References: <20050822182046.3cf17740.stanimura-ngs@umin.ac.jp>
+Message-ID: <430C4539.80802@geog.uu.nl>
+
+Susumu Tanimura wrote:
+
+>Hi there,
+>
+>My question is how to obtain a name of Map object currently on graphic
+>device.  I had a look at help, documents, or web sites, however, it is
+>still unclear. 
+>
+>It is obvious when I myself plot Map object, but I would like to
+>obtain it automatically inside my function.
+>
+>Thank you very much in advance.
+>
+>--
+>Susumu Tanimura
+>
+>_______________________________________________
+>R-sig-Geo mailing list
+>R-sig-Geo at stat.math.ethz.ch
+>https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>  
+>
+Susuma, I think you can find the answer in the example section
+of the help page for substitute:
+
+     myplot <- function(x, y)
+         plot(x, y, xlab=deparse(substitute(x)),
+              ylab=deparse(substitute(y)))
+
+So, try for instance:
+
+mplot=function(x) { plot(x); title(deparse(substitute(x))) }
+--
+Edzer
+
+
+
+From nikko at hailmail.net  Wed Aug 24 15:35:02 2005
+From: nikko at hailmail.net (Nicholas Lewin-Koh)
+Date: Wed, 24 Aug 2005 08:35:02 -0500
+Subject: [R-sig-Geo] Moran I and General Trend
+Message-ID: <1124890502.26933.241374618@webmail.messagingengine.com>
+
+Hi
+If you have a first order effect like that then you can 
+try fitting a linear model to the data and the use
+the residuals for checking autocorrelation. This will
+introduce some bias but it is small relative to the gain if
+the residuals are stationary. 
+
+Nicholas
+
+
+
+From neteler at itc.it  Wed Aug 24 16:08:58 2005
+From: neteler at itc.it (Markus Neteler)
+Date: Wed, 24 Aug 2005 16:08:58 +0200
+Subject: [R-sig-Geo] Unable to read GRASS6 data using gstat 2.4.5
+In-Reply-To: <430C780A.2020201@noaa.gov>
+References: <Pine.LNX.4.44.0508222001010.14027-100000@reclus.nhh.no>
+	<430A3344.4050507@noaa.gov> <20050823120852.GK17401@thuille.itc.it>
+	<430B15A6.1060802@noaa.gov> <20050824120138.GC11211@thuille.itc.it>
+	<430C780A.2020201@noaa.gov>
+Message-ID: <20050824140857.GB26422@thuille.itc.it>
+
+Tom,
+
+I have generated the location and imported the file:
+
+cat temp_20050801_08 | v.in.ascii -z out=temp_20050801_08 x=3 y=2 z=4 col='id varchar(3), y double, x double, elevation double, temperature double' skip=1
+
+# file: gstat.cmd.temps
+#
+# gstat command file
+#
+data(temp_20050801_08): 'temp_20050801_08', x=1, y=2, v=1;
+variogram(temp_20050801_08): 0.2772 Nug(0) + 0.85 Sph(987521);
+
+Running that:
+
+gstat gstat.inp
+gstat: Linux version 2.4.5 (17 June 2005)
+Copyright (C) 1992, 2004 Edzer J. Pebesma
+using Marsaglia's random number generator
+data(temp_20050801_08): WARNING: Vector used instead of sites.
+WARNING: Illegal TimeStamp string
+GRASS site list temp_20050801_08: 0 cat, 3 dim, 1 str, 4 dbl.
+Warning: gstat/grass: specify z coordinate if you want to use it
+
+gstat/grass: 117 sites read successfully.
+temp_20050801_08     (GRASS site list)
+attribute:             col[1]     [x:] x_1        : [       -91,       -78]
+n:                        117     [y:] y_2        : [        35,        43]
+sample mean:          39.8882     sample std.:          1.84532
+[starting interactive mode]
+
+cat temp_20050801_08.est
+#gstat Linux 2.4.5 (17 June 2005) [gstat gstat.inp]
+#sample semivariogram
+#Wed Aug 24 15:45:39 2005
+#data(temp_20050801_08): 'temp_20050801_08', x=1, y=2, v=1;
+#[1] mean: 39.8882 variance: 3.4052
+#cutoff: 5.08806 interval width: 0.339204
+#direction: total
+#   from       to  n_pairs  av_dist semivariogram
+       0 0.339204       30 0.247674 0.0128483
+0.339204 0.678408       89 0.527931 0.0741331
+0.678408  1.01761      142 0.847027 0.174927
+ 1.01761  1.35682      175  1.18733 0.294193
+[...]
+
+
+No crash so far (I used 6.1 on Linux).
+
+Disussion of the warnings:
+
+data(temp_20050801_08): WARNING: Vector used instead of sites.
+ -> that's correct since sites are treated as vectors in GRASS 6
+
+WARNING: Illegal TimeStamp string
+   I have fixed that (bug in siteslib) in 6.1-CVS and
+   6.0-CVS (will appear in a potential 6.0.2)
+   This or similar messages no longer appear.
+
+GRASS site list temp_20050801_08: 0 cat, 3 dim, 1 str, 4 dbl.
+Warning: gstat/grass: specify z coordinate if you want to use it
+-> depends on you, the user.
+
+I suggest to update to 6.1-CVS.
+
+A new run with GRASS' siteslib recompiled leads to:
+
+Copyright (C) 1992, 2004 Edzer J. Pebesma
+using Marsaglia's random number generator
+data(temp_20050801_08): WARNING: Vector used instead of sites.
+GRASS site list temp_20050801_08: 0 cat, 3 dim, 1 str, 4 dbl.
+Warning: gstat/grass: specify z coordinate if you want to use it
+gstat/grass: 117 sites read successfully.
+
+which looks good (to me).
+
+
+Markus
+
+
+On Wed, Aug 24, 2005 at 09:37:14AM -0400, Thomas Adams wrote:
+> Markus,
+> 
+> Not the v.in.ascii command, but the columns are:
+> 
+> ID|latitude|longitude|elevation|temperature
+> 
+> elevation in feet MSL
+> temperature in deg F
+> 
+> Tom
+> 
+> 
+> Markus Neteler wrote:
+> 
+> >Tom,
+> >
+> >[location created]
+> >before guessing, please send the v.in.ascii command to me
+> >(or tell me what the columns represent)
+> >
+> >Markus
+> >
+> >On Tue, Aug 23, 2005 at 08:25:10AM -0400, Thomas Adams wrote:
+> > 
+> >
+> >>Markus,
+> >>
+> >>Attached are the files you requested. I have also attached the ascii 
+> >>vector file as well.
+> >>
+> >>Thanks so much for your help!
+> >>
+> >>Regards,
+> >>Tom
+> >>
+> >>
+> >>Markus Neteler wrote:
+> >>
+> >>   
+> >>
+> >>>On Mon, Aug 22, 2005 at 04:19:16PM -0400, Thomas Adams wrote:
+> >>>
+> >>>
+> >>>     
+> >>>
+> >>>>List:
+> >>>>
+> >>>>I have point temperature data in GRASS6 (as vectors); I'm using GSTAT 
+> >>>>2.4.5 which I have compiled with GRASS support (and confirmed with 
+> >>>>gstat -v). I have:
+> >>>>
+> >>>># file: gstat.cmd.temps
+> >>>>#
+> >>>># gstat command file
+> >>>>#
+> >>>>data(temp_20050101_08): 'temp_20050101_08', x=1, y=2, v=1;
+> >>>>variogram(temp_20050101_08): 0.2772 Nug(0) + 0.85 Sph(987521);
+> >>>>
+> >>>>       
+> >>>>
+> >>>>From the GRASS6 prompt, when I try to execute:
+> >>>     
+> >>>
+> >>>>gstat gstat.cmd.temps
+> >>>>
+> >>>>I get:
+> >>>>
+> >>>>data(temp_20050801_08): WARNING: Vector used instead of sites
+> >>>>WARNING: Invalid absolute datetime format
+> >>>>Memory fault
+> >>>>
+> >>>>I understand "WARNING: Vector used instead of sites", but I am not sure 
+> >>>>of the implication since in GRASS6 sites are vectors. The 2nd message 
+> >>>>followed by the Memory Fault is very puzzling.
+> >>>>
+> >>>>Regards,
+> >>>>Tom
+> >>>> 
+> >>>>
+> >>>>       
+> >>>>
+> >>>Tom,
+> >>>
+> >>>could you send the temp_20050101_08 files to me. Since it is
+> >>>vector, I would need the mapset/vector/temp_20050101_08/ directory
+> >>>and the output of 
+> >>>g.proj -wef > /tmp/temp_gstat.prj
+> >>>to recreate the location here.
+> >>>
+> >>>Markus
+> >>>
+> >>>
+> >>>
+> >>>     
+> >>>
+> >>-- 
+> >>Thomas E Adams
+> >>National Weather Service
+> >>Ohio River Forecast Center
+> >>1901 South State Route 134
+> >>Wilmington, OH 45177
+> >>
+> >>EMAIL:	thomas.adams at noaa.gov
+> >>
+> >>VOICE:	937-383-0528
+> >>FAX:	937-383-0033
+> >>
+> >>   
+> >>
+> >
+> >
+> > 
+> >
+> >>PROJCS["Lambert Conformal 
+> >>Conic",GEOGCS["wgs84",DATUM["D_WGS_1984",SPHEROID["wgs84",6378137,298.257223563]],PRIMEM["Greenwich",0],UNIT["Degree",0.017453292519943295]],PROJECTION["Lambert_Conformal_Conic"],PARAMETER["standard_parallel_1",60],PARAMETER["standard_parallel_2",30],PARAMETER["latitude_of_origin",39],PARAMETER["central_meridian",-86],PARAMETER["false_easting",0],PARAMETER["false_northing",0],UNIT["Meter",1]]
+> >>   
+> >>
+> >
+> > 
+> >
+> >>ALN|38.9|-90.05|545.|64.0
+> >>ARR|41.77|-88.47|705.|63.0
+> >>BLV|38.55|-89.95|460.|68.0
+> >>BMI|40.48|-88.92|880.|69.0
+> >>CMI|40.04|-88.27|750.|68.0
+> >>CPS|38.57|-90.15|415.|67.0
+> >>DEC|39.87|-88.92|670.|66.0
+> >>DPA|41.91|-88.24|760.|66.0
+> >>LWV|38.76|-87.61|430.|71.0
+> >>MDH|37.78|-89.25|410.|64.0
+> >>MDW|41.79|-87.75|615.|73.0
+> >>MLI|41.45|-90.51|590.|66.0
+> >>MTO|39.48|-88.28|720.|67.0
+> >>MVN|38.32|-88.87|480.|66.0
+> >>MWA|37.75|-89.01|470.|66.0
+> >>ORD|41.98|-87.9|665.|72.0
+> >>PIA|40.66|-89.69|660.|70.0
+> >>PWK|42.11|-87.9|645.|70.0
+> >>RFD|42.2|-89.09|735.|64.0
+> >>SPI|39.84|-89.68|600.|68.0
+> >>SQI|41.75|-89.67|645.|63.0
+> >>UGN|42.42|-87.87|730.|70.0
+> >>AID|40.1|-85.62|920.|64.0
+> >>BAK|39.27|-85.9|655.|70.0
+> >>BMG|39.14|-86.61|840.|67.0
+> >>EKM|41.72|-86.|780.|70.0
+> >>EVV|37.97|-87.57|384.|71.0
+> >>EYE|39.83|-86.3|820.|70.0
+> >>FWA|41.|-85.2|791.|66.0
+> >>GSH|41.52|-85.79|830.|72.0
+> >>GYY|41.62|-87.42|590.|70.0
+> >>HNB|38.25|-86.95|530.|68.0
+> >>HUF|39.45|-87.3|500.|67.0
+> >>IND|39.73|-86.28|792.|73.0
+> >>LAF|40.42|-86.9|600.|68.0
+> >>MIE|40.24|-85.4|935.|67.0
+> >>SBN|41.7|-86.32|773.|68.0
+> >>VPZ|41.45|-87.01|770.|67.0
+> >>BWG|37.|-86.43|535.|70.0
+> >>FFT|38.18|-84.9|800.|71.0
+> >>JKL|37.6|-83.32|1365.|70.0
+> >>LEX|38.03|-84.6|966.|70.0
+> >>LNP|36.98|-82.53|2680.|66.0
+> >>LOU|38.23|-85.66|545.|72.0
+> >>LOZ|37.08|-84.08|1211.|68.0
+> >>PAH|37.03|-88.58|325.|65.0
+> >>SDF|38.18|-85.73|477.|74.0
+> >>ARB|42.22|-83.75|835.|67.0
+> >>AZO|42.23|-85.55|870.|71.0
+> >>BEH|42.13|-86.42|645.|70.0
+> >>BTL|42.3|-85.25|950.|71.0
+> >>DET|42.42|-83.02|625.|74.0
+> >>DTW|42.23|-83.33|640.|71.0
+> >>IRS|41.81|-85.44|925.|64.0
+> >>JXN|42.27|-84.47|998.|69.0
+> >>OEB|41.93|-85.05|960.|66.0
+> >>RMY|42.25|-84.96|940.|70.0
+> >>TTF|41.94|-83.43|615.|68.0
+> >>YIP|42.24|-83.53|715.|71.0
+> >>DKK|42.49|-79.27|690.|71.0
+> >>JHW|42.15|-79.27|1720.|63.0
+> >>AOH|40.71|-84.03|975.|67.0
+> >>BJJ|40.87|-81.88|1135.|66.0
+> >>BKL|41.52|-81.68|585.|73.0
+> >>CAK|40.92|-81.43|1208.|69.0
+> >>CGF|41.57|-81.48|880.|72.0
+> >>CLE|41.4|-81.85|777.|69.0
+> >>CMH|40.05|-82.88|812.|68.0
+> >>CVG|39.07|-84.67|869.|74.0
+> >>DAY|39.75|-84.23|1002.|68.0
+> >>DFI|41.34|-84.43|705.|65.0
+> >>FDY|41.02|-83.67|797.|65.0
+> >>ILN|39.42|-83.82|1075.|67.0
+> >>LCK|39.82|-82.93|745.|66.0
+> >>LHQ|39.76|-82.66|865.|65.0
+> >>LUK|39.1|-84.43|480.|68.0
+> >>MFD|40.82|-82.52|1295.|68.0
+> >>MGY|39.59|-84.22|960.|72.0
+> >>MNN|40.62|-83.06|995.|66.0
+> >>OSU|40.08|-83.07|900.|69.0
+> >>PHD|40.47|-81.42|890.|66.0
+> >>TDZ|41.56|-83.48|620.|66.0
+> >>TOL|41.6|-83.82|669.|69.0
+> >>YNG|41.27|-80.67|1178.|67.0
+> >>ZZV|39.95|-81.9|881.|66.0
+> >>AGC|40.35|-79.92|1250.|68.0
+> >>AOO|40.3|-78.32|1469.|67.0
+> >>BFD|41.8|-78.63|2142.|60.0
+> >>BTP|40.78|-79.95|1250.|63.0
+> >>DUJ|41.18|-78.9|1824.|66.0
+> >>ERI|42.08|-80.17|732.|71.0
+> >>GKJ|41.63|-80.21|1400.|68.0
+> >>JST|40.32|-78.83|2285.|66.0
+> >>LBE|40.28|-79.4|1050.|70.0
+> >>PIT|40.5|-80.22|1137.|66.0
+> >>BNA|36.17|-86.7|590.|72.0
+> >>CSV|35.95|-85.08|1810.|70.0
+> >>MQY|36.02|-86.52|545.|73.0
+> >>TRI|36.48|-82.4|1525.|67.0
+> >>TYS|35.82|-83.98|980.|70.0
+> >>BCB|37.22|-80.42|2130.|64.0
+> >>HLX|36.77|-80.82|2740.|64.0
+> >>HSP|37.95|-79.82|3790.|63.0
+> >>MKJ|36.9|-81.35|2560.|68.0
+> >>PSK|37.13|-80.68|2110.|64.0
+> >>ROA|37.32|-79.97|1149.|68.0
+> >>SHD|38.27|-78.85|1200.|63.0
+> >>VJI|36.68|-82.03|2070.|68.0
+> >>BKW|37.78|-81.12|2504.|64.0
+> >>BLF|37.3|-81.2|2870.|67.0
+> >>CKB|39.29|-80.23|1200.|70.0
+> >>CRW|38.35|-81.63|939.|65.0
+> >>EKN|38.88|-79.85|1992.|63.0
+> >>HLG|40.17|-80.64|1190.|66.0
+> >>HTS|38.37|-82.55|827.|67.0
+> >>LWB|37.87|-80.4|2303.|61.0
+> >>MGW|39.65|-79.92|1240.|67.0
+> >>PKB|39.27|-81.57|615.|67.0
+> >>   
+> >>
+> >
+> >
+> > 
+> >
+> 
+> 
+> -- 
+> Thomas E Adams
+> National Weather Service
+> Ohio River Forecast Center
+> 1901 South State Route 134
+> Wilmington, OH 45177
+> 
+> EMAIL:	thomas.adams at noaa.gov
+> 
+> VOICE:	937-383-0528
+> FAX:	937-383-0033
+> 
+
+-- 
+Markus Neteler     <neteler itc it>       http://mpa.itc.it
+ITC-irst -  Centro per la Ricerca Scientifica e Tecnologica
+MPBA - Predictive Models for Biol. & Environ. Data Analysis
+Via Sommarive, 18        -       38050 Povo (Trento), Italy
+
+
+
+From Thomas.Adams at noaa.gov  Wed Aug 24 17:05:42 2005
+From: Thomas.Adams at noaa.gov (Thomas Adams)
+Date: Wed, 24 Aug 2005 11:05:42 -0400
+Subject: [R-sig-Geo] [STATSGRASS] Re: Unable to read GRASS6 data using
+ gstat 2.4.5
+In-Reply-To: <20050824140857.GB26422@thuille.itc.it>
+References: <Pine.LNX.4.44.0508222001010.14027-100000@reclus.nhh.no>
+	<430A3344.4050507@noaa.gov> <20050823120852.GK17401@thuille.itc.it>
+	<430B15A6.1060802@noaa.gov> <20050824120138.GC11211@thuille.itc.it>
+	<430C780A.2020201@noaa.gov> <20050824140857.GB26422@thuille.itc.it>
+Message-ID: <430C8CC6.4060205@noaa.gov>
+
+Markus,
+
+I have a problem with ./configure with 6.1-CVS 
+(grass-6.1.cvs_src_snapshot_2005_08_20.tar.gz) ? I have not had previous 
+problems configuring & compiling. I get a configure error:
+
+Unable to locate nad2bin.
+
+I've been compiling against proj-4.4.9 previously for GRASS 6.0.1, etc. 
+just fine.
+
+Tom
+
+
+Markus Neteler wrote:
+
+>Tom,
+>
+>I have generated the location and imported the file:
+>
+>cat temp_20050801_08 | v.in.ascii -z out=temp_20050801_08 x=3 y=2 z=4 col='id varchar(3), y double, x double, elevation double, temperature double' skip=1
+>
+># file: gstat.cmd.temps
+>#
+># gstat command file
+>#
+>data(temp_20050801_08): 'temp_20050801_08', x=1, y=2, v=1;
+>variogram(temp_20050801_08): 0.2772 Nug(0) + 0.85 Sph(987521);
+>
+>Running that:
+>
+>gstat gstat.inp
+>gstat: Linux version 2.4.5 (17 June 2005)
+>Copyright (C) 1992, 2004 Edzer J. Pebesma
+>using Marsaglia's random number generator
+>data(temp_20050801_08): WARNING: Vector used instead of sites.
+>WARNING: Illegal TimeStamp string
+>GRASS site list temp_20050801_08: 0 cat, 3 dim, 1 str, 4 dbl.
+>Warning: gstat/grass: specify z coordinate if you want to use it
+>
+>gstat/grass: 117 sites read successfully.
+>temp_20050801_08     (GRASS site list)
+>attribute:             col[1]     [x:] x_1        : [       -91,       -78]
+>n:                        117     [y:] y_2        : [        35,        43]
+>sample mean:          39.8882     sample std.:          1.84532
+>[starting interactive mode]
+>
+>cat temp_20050801_08.est
+>#gstat Linux 2.4.5 (17 June 2005) [gstat gstat.inp]
+>#sample semivariogram
+>#Wed Aug 24 15:45:39 2005
+>#data(temp_20050801_08): 'temp_20050801_08', x=1, y=2, v=1;
+>#[1] mean: 39.8882 variance: 3.4052
+>#cutoff: 5.08806 interval width: 0.339204
+>#direction: total
+>#   from       to  n_pairs  av_dist semivariogram
+>       0 0.339204       30 0.247674 0.0128483
+>0.339204 0.678408       89 0.527931 0.0741331
+>0.678408  1.01761      142 0.847027 0.174927
+> 1.01761  1.35682      175  1.18733 0.294193
+>[...]
+>
+>
+>No crash so far (I used 6.1 on Linux).
+>
+>Disussion of the warnings:
+>
+>data(temp_20050801_08): WARNING: Vector used instead of sites.
+> -> that's correct since sites are treated as vectors in GRASS 6
+>
+>WARNING: Illegal TimeStamp string
+>   I have fixed that (bug in siteslib) in 6.1-CVS and
+>   6.0-CVS (will appear in a potential 6.0.2)
+>   This or similar messages no longer appear.
+>
+>GRASS site list temp_20050801_08: 0 cat, 3 dim, 1 str, 4 dbl.
+>Warning: gstat/grass: specify z coordinate if you want to use it
+>-> depends on you, the user.
+>
+>I suggest to update to 6.1-CVS.
+>
+>A new run with GRASS' siteslib recompiled leads to:
+>
+>Copyright (C) 1992, 2004 Edzer J. Pebesma
+>using Marsaglia's random number generator
+>data(temp_20050801_08): WARNING: Vector used instead of sites.
+>GRASS site list temp_20050801_08: 0 cat, 3 dim, 1 str, 4 dbl.
+>Warning: gstat/grass: specify z coordinate if you want to use it
+>gstat/grass: 117 sites read successfully.
+>
+>which looks good (to me).
+>
+>
+>Markus
+>
+>
+>On Wed, Aug 24, 2005 at 09:37:14AM -0400, Thomas Adams wrote:
+>  
+>
+>>Markus,
+>>
+>>Not the v.in.ascii command, but the columns are:
+>>
+>>ID|latitude|longitude|elevation|temperature
+>>
+>>elevation in feet MSL
+>>temperature in deg F
+>>
+>>Tom
+>>
+>>
+>>Markus Neteler wrote:
+>>
+>>    
+>>
+>>>Tom,
+>>>
+>>>[location created]
+>>>before guessing, please send the v.in.ascii command to me
+>>>(or tell me what the columns represent)
+>>>
+>>>Markus
+>>>
+>>>On Tue, Aug 23, 2005 at 08:25:10AM -0400, Thomas Adams wrote:
+>>>
+>>>
+>>>      
+>>>
+>>>>Markus,
+>>>>
+>>>>Attached are the files you requested. I have also attached the ascii 
+>>>>vector file as well.
+>>>>
+>>>>Thanks so much for your help!
+>>>>
+>>>>Regards,
+>>>>Tom
+>>>>
+>>>>
+>>>>Markus Neteler wrote:
+>>>>
+>>>>  
+>>>>
+>>>>        
+>>>>
+>>>>>On Mon, Aug 22, 2005 at 04:19:16PM -0400, Thomas Adams wrote:
+>>>>>
+>>>>>
+>>>>>    
+>>>>>
+>>>>>          
+>>>>>
+>>>>>>List:
+>>>>>>
+>>>>>>I have point temperature data in GRASS6 (as vectors); I'm using GSTAT 
+>>>>>>2.4.5 which I have compiled with GRASS support (and confirmed with 
+>>>>>>gstat -v). I have:
+>>>>>>
+>>>>>># file: gstat.cmd.temps
+>>>>>>#
+>>>>>># gstat command file
+>>>>>>#
+>>>>>>data(temp_20050101_08): 'temp_20050101_08', x=1, y=2, v=1;
+>>>>>>variogram(temp_20050101_08): 0.2772 Nug(0) + 0.85 Sph(987521);
+>>>>>>
+>>>>>>      
+>>>>>>
+>>>>>>            
+>>>>>>
+>>>>>>From the GRASS6 prompt, when I try to execute:
+>>>>>    
+>>>>>
+>>>>>          
+>>>>>
+>>>>>>gstat gstat.cmd.temps
+>>>>>>
+>>>>>>I get:
+>>>>>>
+>>>>>>data(temp_20050801_08): WARNING: Vector used instead of sites
+>>>>>>WARNING: Invalid absolute datetime format
+>>>>>>Memory fault
+>>>>>>
+>>>>>>I understand "WARNING: Vector used instead of sites", but I am not sure 
+>>>>>>of the implication since in GRASS6 sites are vectors. The 2nd message 
+>>>>>>followed by the Memory Fault is very puzzling.
+>>>>>>
+>>>>>>Regards,
+>>>>>>Tom
+>>>>>>
+>>>>>>
+>>>>>>      
+>>>>>>
+>>>>>>            
+>>>>>>
+>>>>>Tom,
+>>>>>
+>>>>>could you send the temp_20050101_08 files to me. Since it is
+>>>>>vector, I would need the mapset/vector/temp_20050101_08/ directory
+>>>>>and the output of 
+>>>>>g.proj -wef > /tmp/temp_gstat.prj
+>>>>>to recreate the location here.
+>>>>>
+>>>>>Markus
+>>>>>
+>>>>>
+>>>>>
+>>>>>    
+>>>>>
+>>>>>          
+>>>>>
+>>>>-- 
+>>>>Thomas E Adams
+>>>>National Weather Service
+>>>>Ohio River Forecast Center
+>>>>1901 South State Route 134
+>>>>Wilmington, OH 45177
+>>>>
+>>>>EMAIL:	thomas.adams at noaa.gov
+>>>>
+>>>>VOICE:	937-383-0528
+>>>>FAX:	937-383-0033
+>>>>
+>>>>  
+>>>>
+>>>>        
+>>>>
+>>>
+>>>
+>>>      
+>>>
+>>>>PROJCS["Lambert Conformal 
+>>>>Conic",GEOGCS["wgs84",DATUM["D_WGS_1984",SPHEROID["wgs84",6378137,298.257223563]],PRIMEM["Greenwich",0],UNIT["Degree",0.017453292519943295]],PROJECTION["Lambert_Conformal_Conic"],PARAMETER["standard_parallel_1",60],PARAMETER["standard_parallel_2",30],PARAMETER["latitude_of_origin",39],PARAMETER["central_meridian",-86],PARAMETER["false_easting",0],PARAMETER["false_northing",0],UNIT["Meter",1]]
+>>>>  
+>>>>
+>>>>        
+>>>>
+>>>
+>>>      
+>>>
+>>>>ALN|38.9|-90.05|545.|64.0
+>>>>ARR|41.77|-88.47|705.|63.0
+>>>>BLV|38.55|-89.95|460.|68.0
+>>>>BMI|40.48|-88.92|880.|69.0
+>>>>CMI|40.04|-88.27|750.|68.0
+>>>>CPS|38.57|-90.15|415.|67.0
+>>>>DEC|39.87|-88.92|670.|66.0
+>>>>DPA|41.91|-88.24|760.|66.0
+>>>>LWV|38.76|-87.61|430.|71.0
+>>>>MDH|37.78|-89.25|410.|64.0
+>>>>MDW|41.79|-87.75|615.|73.0
+>>>>MLI|41.45|-90.51|590.|66.0
+>>>>MTO|39.48|-88.28|720.|67.0
+>>>>MVN|38.32|-88.87|480.|66.0
+>>>>MWA|37.75|-89.01|470.|66.0
+>>>>ORD|41.98|-87.9|665.|72.0
+>>>>PIA|40.66|-89.69|660.|70.0
+>>>>PWK|42.11|-87.9|645.|70.0
+>>>>RFD|42.2|-89.09|735.|64.0
+>>>>SPI|39.84|-89.68|600.|68.0
+>>>>SQI|41.75|-89.67|645.|63.0
+>>>>UGN|42.42|-87.87|730.|70.0
+>>>>AID|40.1|-85.62|920.|64.0
+>>>>BAK|39.27|-85.9|655.|70.0
+>>>>BMG|39.14|-86.61|840.|67.0
+>>>>EKM|41.72|-86.|780.|70.0
+>>>>EVV|37.97|-87.57|384.|71.0
+>>>>EYE|39.83|-86.3|820.|70.0
+>>>>FWA|41.|-85.2|791.|66.0
+>>>>GSH|41.52|-85.79|830.|72.0
+>>>>GYY|41.62|-87.42|590.|70.0
+>>>>HNB|38.25|-86.95|530.|68.0
+>>>>HUF|39.45|-87.3|500.|67.0
+>>>>IND|39.73|-86.28|792.|73.0
+>>>>LAF|40.42|-86.9|600.|68.0
+>>>>MIE|40.24|-85.4|935.|67.0
+>>>>SBN|41.7|-86.32|773.|68.0
+>>>>VPZ|41.45|-87.01|770.|67.0
+>>>>BWG|37.|-86.43|535.|70.0
+>>>>FFT|38.18|-84.9|800.|71.0
+>>>>JKL|37.6|-83.32|1365.|70.0
+>>>>LEX|38.03|-84.6|966.|70.0
+>>>>LNP|36.98|-82.53|2680.|66.0
+>>>>LOU|38.23|-85.66|545.|72.0
+>>>>LOZ|37.08|-84.08|1211.|68.0
+>>>>PAH|37.03|-88.58|325.|65.0
+>>>>SDF|38.18|-85.73|477.|74.0
+>>>>ARB|42.22|-83.75|835.|67.0
+>>>>AZO|42.23|-85.55|870.|71.0
+>>>>BEH|42.13|-86.42|645.|70.0
+>>>>BTL|42.3|-85.25|950.|71.0
+>>>>DET|42.42|-83.02|625.|74.0
+>>>>DTW|42.23|-83.33|640.|71.0
+>>>>IRS|41.81|-85.44|925.|64.0
+>>>>JXN|42.27|-84.47|998.|69.0
+>>>>OEB|41.93|-85.05|960.|66.0
+>>>>RMY|42.25|-84.96|940.|70.0
+>>>>TTF|41.94|-83.43|615.|68.0
+>>>>YIP|42.24|-83.53|715.|71.0
+>>>>DKK|42.49|-79.27|690.|71.0
+>>>>JHW|42.15|-79.27|1720.|63.0
+>>>>AOH|40.71|-84.03|975.|67.0
+>>>>BJJ|40.87|-81.88|1135.|66.0
+>>>>BKL|41.52|-81.68|585.|73.0
+>>>>CAK|40.92|-81.43|1208.|69.0
+>>>>CGF|41.57|-81.48|880.|72.0
+>>>>CLE|41.4|-81.85|777.|69.0
+>>>>CMH|40.05|-82.88|812.|68.0
+>>>>CVG|39.07|-84.67|869.|74.0
+>>>>DAY|39.75|-84.23|1002.|68.0
+>>>>DFI|41.34|-84.43|705.|65.0
+>>>>FDY|41.02|-83.67|797.|65.0
+>>>>ILN|39.42|-83.82|1075.|67.0
+>>>>LCK|39.82|-82.93|745.|66.0
+>>>>LHQ|39.76|-82.66|865.|65.0
+>>>>LUK|39.1|-84.43|480.|68.0
+>>>>MFD|40.82|-82.52|1295.|68.0
+>>>>MGY|39.59|-84.22|960.|72.0
+>>>>MNN|40.62|-83.06|995.|66.0
+>>>>OSU|40.08|-83.07|900.|69.0
+>>>>PHD|40.47|-81.42|890.|66.0
+>>>>TDZ|41.56|-83.48|620.|66.0
+>>>>TOL|41.6|-83.82|669.|69.0
+>>>>YNG|41.27|-80.67|1178.|67.0
+>>>>ZZV|39.95|-81.9|881.|66.0
+>>>>AGC|40.35|-79.92|1250.|68.0
+>>>>AOO|40.3|-78.32|1469.|67.0
+>>>>BFD|41.8|-78.63|2142.|60.0
+>>>>BTP|40.78|-79.95|1250.|63.0
+>>>>DUJ|41.18|-78.9|1824.|66.0
+>>>>ERI|42.08|-80.17|732.|71.0
+>>>>GKJ|41.63|-80.21|1400.|68.0
+>>>>JST|40.32|-78.83|2285.|66.0
+>>>>LBE|40.28|-79.4|1050.|70.0
+>>>>PIT|40.5|-80.22|1137.|66.0
+>>>>BNA|36.17|-86.7|590.|72.0
+>>>>CSV|35.95|-85.08|1810.|70.0
+>>>>MQY|36.02|-86.52|545.|73.0
+>>>>TRI|36.48|-82.4|1525.|67.0
+>>>>TYS|35.82|-83.98|980.|70.0
+>>>>BCB|37.22|-80.42|2130.|64.0
+>>>>HLX|36.77|-80.82|2740.|64.0
+>>>>HSP|37.95|-79.82|3790.|63.0
+>>>>MKJ|36.9|-81.35|2560.|68.0
+>>>>PSK|37.13|-80.68|2110.|64.0
+>>>>ROA|37.32|-79.97|1149.|68.0
+>>>>SHD|38.27|-78.85|1200.|63.0
+>>>>VJI|36.68|-82.03|2070.|68.0
+>>>>BKW|37.78|-81.12|2504.|64.0
+>>>>BLF|37.3|-81.2|2870.|67.0
+>>>>CKB|39.29|-80.23|1200.|70.0
+>>>>CRW|38.35|-81.63|939.|65.0
+>>>>EKN|38.88|-79.85|1992.|63.0
+>>>>HLG|40.17|-80.64|1190.|66.0
+>>>>HTS|38.37|-82.55|827.|67.0
+>>>>LWB|37.87|-80.4|2303.|61.0
+>>>>MGW|39.65|-79.92|1240.|67.0
+>>>>PKB|39.27|-81.57|615.|67.0
+>>>>  
+>>>>
+>>>>        
+>>>>
+>>>
+>>>
+>>>      
+>>>
+>>-- 
+>>Thomas E Adams
+>>National Weather Service
+>>Ohio River Forecast Center
+>>1901 South State Route 134
+>>Wilmington, OH 45177
+>>
+>>EMAIL:	thomas.adams at noaa.gov
+>>
+>>VOICE:	937-383-0528
+>>FAX:	937-383-0033
+>>
+>>    
+>>
+>
+>  
+>
+
+
+-- 
+Thomas E Adams
+National Weather Service
+Ohio River Forecast Center
+1901 South State Route 134
+Wilmington, OH 45177
+
+EMAIL:	thomas.adams at noaa.gov
+
+VOICE:	937-383-0528
+FAX:	937-383-0033
+
+
+
+From neteler at itc.it  Wed Aug 24 17:19:08 2005
+From: neteler at itc.it (Markus Neteler)
+Date: Wed, 24 Aug 2005 17:19:08 +0200
+Subject: [R-sig-Geo] [STATSGRASS] Re: Unable to read GRASS6 data using
+	gstat 2.4.5
+In-Reply-To: <430C8CC6.4060205@noaa.gov>
+References: <Pine.LNX.4.44.0508222001010.14027-100000@reclus.nhh.no>
+	<430A3344.4050507@noaa.gov> <20050823120852.GK17401@thuille.itc.it>
+	<430B15A6.1060802@noaa.gov> <20050824120138.GC11211@thuille.itc.it>
+	<430C780A.2020201@noaa.gov> <20050824140857.GB26422@thuille.itc.it>
+	<430C8CC6.4060205@noaa.gov>
+Message-ID: <20050824151908.GD30342@thuille.itc.it>
+
+[.,, maybe we should take
+ statsgrass at grass.itc.it, r-sig-geo at stat.math.ethz.ch
+ out of the loop as it is unrelated there.
+]
+
+http://grass.itc.it/pipermail/grass-commit/2005-May/017534.html
+ Check for nad2bin in configure script, so that if PROJ isn't installed
+ properly the user hears about it before compilation fails in lib/proj
+
+
+What does
+ which nad2bin
+say? Maybe 'nad2bin' is not in path.
+
+nad2bin needs to be in path for installing datum gridshift files.
+
+Markus
+
+On Wed, Aug 24, 2005 at 11:05:42AM -0400, Thomas Adams wrote:
+> Markus,
+> 
+> I have a problem with ./configure with 6.1-CVS 
+> (grass-6.1.cvs_src_snapshot_2005_08_20.tar.gz) ? I have not had previous 
+> problems configuring & compiling. I get a configure error:
+> 
+> Unable to locate nad2bin.
+> 
+> I've been compiling against proj-4.4.9 previously for GRASS 6.0.1, etc. 
+> just fine.
+> 
+> Tom
+> 
+> 
+> Markus Neteler wrote:
+> 
+> >Tom,
+> >
+> >I have generated the location and imported the file:
+> >
+> >cat temp_20050801_08 | v.in.ascii -z out=temp_20050801_08 x=3 y=2 z=4 
+> >col='id varchar(3), y double, x double, elevation double, temperature 
+> >double' skip=1
+> >
+> ># file: gstat.cmd.temps
+> >#
+> ># gstat command file
+> >#
+> >data(temp_20050801_08): 'temp_20050801_08', x=1, y=2, v=1;
+> >variogram(temp_20050801_08): 0.2772 Nug(0) + 0.85 Sph(987521);
+> >
+> >Running that:
+> >
+> >gstat gstat.inp
+> >gstat: Linux version 2.4.5 (17 June 2005)
+> >Copyright (C) 1992, 2004 Edzer J. Pebesma
+> >using Marsaglia's random number generator
+> >data(temp_20050801_08): WARNING: Vector used instead of sites.
+> >WARNING: Illegal TimeStamp string
+> >GRASS site list temp_20050801_08: 0 cat, 3 dim, 1 str, 4 dbl.
+> >Warning: gstat/grass: specify z coordinate if you want to use it
+> >
+> >gstat/grass: 117 sites read successfully.
+> >temp_20050801_08     (GRASS site list)
+> >attribute:             col[1]     [x:] x_1        : [       -91,       -78]
+> >n:                        117     [y:] y_2        : [        35,        43]
+> >sample mean:          39.8882     sample std.:          1.84532
+> >[starting interactive mode]
+> >
+> >cat temp_20050801_08.est
+> >#gstat Linux 2.4.5 (17 June 2005) [gstat gstat.inp]
+> >#sample semivariogram
+> >#Wed Aug 24 15:45:39 2005
+> >#data(temp_20050801_08): 'temp_20050801_08', x=1, y=2, v=1;
+> >#[1] mean: 39.8882 variance: 3.4052
+> >#cutoff: 5.08806 interval width: 0.339204
+> >#direction: total
+> >#   from       to  n_pairs  av_dist semivariogram
+> >      0 0.339204       30 0.247674 0.0128483
+> >0.339204 0.678408       89 0.527931 0.0741331
+> >0.678408  1.01761      142 0.847027 0.174927
+> >1.01761  1.35682      175  1.18733 0.294193
+> >[...]
+> >
+> >
+> >No crash so far (I used 6.1 on Linux).
+> >
+> >Disussion of the warnings:
+> >
+> >data(temp_20050801_08): WARNING: Vector used instead of sites.
+> >-> that's correct since sites are treated as vectors in GRASS 6
+> >
+> >WARNING: Illegal TimeStamp string
+> >  I have fixed that (bug in siteslib) in 6.1-CVS and
+> >  6.0-CVS (will appear in a potential 6.0.2)
+> >  This or similar messages no longer appear.
+> >
+> >GRASS site list temp_20050801_08: 0 cat, 3 dim, 1 str, 4 dbl.
+> >Warning: gstat/grass: specify z coordinate if you want to use it
+> >-> depends on you, the user.
+> >
+> >I suggest to update to 6.1-CVS.
+> >
+> >A new run with GRASS' siteslib recompiled leads to:
+> >
+> >Copyright (C) 1992, 2004 Edzer J. Pebesma
+> >using Marsaglia's random number generator
+> >data(temp_20050801_08): WARNING: Vector used instead of sites.
+> >GRASS site list temp_20050801_08: 0 cat, 3 dim, 1 str, 4 dbl.
+> >Warning: gstat/grass: specify z coordinate if you want to use it
+> >gstat/grass: 117 sites read successfully.
+> >
+> >which looks good (to me).
+> >
+> >
+> >Markus
+> >
+> >
+> >On Wed, Aug 24, 2005 at 09:37:14AM -0400, Thomas Adams wrote:
+> > 
+> >
+> >>Markus,
+> >>
+> >>Not the v.in.ascii command, but the columns are:
+> >>
+> >>ID|latitude|longitude|elevation|temperature
+> >>
+> >>elevation in feet MSL
+> >>temperature in deg F
+> >>
+> >>Tom
+> >>
+> >>
+> >>Markus Neteler wrote:
+> >>
+> >>   
+> >>
+> >>>Tom,
+> >>>
+> >>>[location created]
+> >>>before guessing, please send the v.in.ascii command to me
+> >>>(or tell me what the columns represent)
+> >>>
+> >>>Markus
+> >>>
+> >>>On Tue, Aug 23, 2005 at 08:25:10AM -0400, Thomas Adams wrote:
+> >>>
+> >>>
+> >>>     
+> >>>
+> >>>>Markus,
+> >>>>
+> >>>>Attached are the files you requested. I have also attached the ascii 
+> >>>>vector file as well.
+> >>>>
+> >>>>Thanks so much for your help!
+> >>>>
+> >>>>Regards,
+> >>>>Tom
+> >>>>
+> >>>>
+> >>>>Markus Neteler wrote:
+> >>>>
+> >>>> 
+> >>>>
+> >>>>       
+> >>>>
+> >>>>>On Mon, Aug 22, 2005 at 04:19:16PM -0400, Thomas Adams wrote:
+> >>>>>
+> >>>>>
+> >>>>>   
+> >>>>>
+> >>>>>         
+> >>>>>
+> >>>>>>List:
+> >>>>>>
+> >>>>>>I have point temperature data in GRASS6 (as vectors); I'm using GSTAT 
+> >>>>>>2.4.5 which I have compiled with GRASS support (and confirmed with 
+> >>>>>>gstat -v). I have:
+> >>>>>>
+> >>>>>># file: gstat.cmd.temps
+> >>>>>>#
+> >>>>>># gstat command file
+> >>>>>>#
+> >>>>>>data(temp_20050101_08): 'temp_20050101_08', x=1, y=2, v=1;
+> >>>>>>variogram(temp_20050101_08): 0.2772 Nug(0) + 0.85 Sph(987521);
+> >>>>>>
+> >>>>>>     
+> >>>>>>
+> >>>>>>           
+> >>>>>>
+> >>>>>>From the GRASS6 prompt, when I try to execute:
+> >>>>>   
+> >>>>>
+> >>>>>         
+> >>>>>
+> >>>>>>gstat gstat.cmd.temps
+> >>>>>>
+> >>>>>>I get:
+> >>>>>>
+> >>>>>>data(temp_20050801_08): WARNING: Vector used instead of sites
+> >>>>>>WARNING: Invalid absolute datetime format
+> >>>>>>Memory fault
+> >>>>>>
+> >>>>>>I understand "WARNING: Vector used instead of sites", but I am not 
+> >>>>>>sure of the implication since in GRASS6 sites are vectors. The 2nd 
+> >>>>>>message followed by the Memory Fault is very puzzling.
+> >>>>>>
+> >>>>>>Regards,
+> >>>>>>Tom
+> >>>>>>
+> >>>>>>
+> >>>>>>     
+> >>>>>>
+> >>>>>>           
+> >>>>>>
+> >>>>>Tom,
+> >>>>>
+> >>>>>could you send the temp_20050101_08 files to me. Since it is
+> >>>>>vector, I would need the mapset/vector/temp_20050101_08/ directory
+> >>>>>and the output of 
+> >>>>>g.proj -wef > /tmp/temp_gstat.prj
+> >>>>>to recreate the location here.
+> >>>>>
+> >>>>>Markus
+> >>>>>
+> >>>>>
+> >>>>>
+> >>>>>   
+> >>>>>
+> >>>>>         
+> >>>>>
+> >>>>-- 
+> >>>>Thomas E Adams
+> >>>>National Weather Service
+> >>>>Ohio River Forecast Center
+> >>>>1901 South State Route 134
+> >>>>Wilmington, OH 45177
+> >>>>
+> >>>>EMAIL:	thomas.adams at noaa.gov
+> >>>>
+> >>>>VOICE:	937-383-0528
+> >>>>FAX:	937-383-0033
+> >>>>
+> >>>> 
+> >>>>
+> >>>>       
+> >>>>
+> >>>
+> >>>
+> >>>     
+> >>>
+> >>>>PROJCS["Lambert Conformal 
+> >>>>Conic",GEOGCS["wgs84",DATUM["D_WGS_1984",SPHEROID["wgs84",6378137,298.257223563]],PRIMEM["Greenwich",0],UNIT["Degree",0.017453292519943295]],PROJECTION["Lambert_Conformal_Conic"],PARAMETER["standard_parallel_1",60],PARAMETER["standard_parallel_2",30],PARAMETER["latitude_of_origin",39],PARAMETER["central_meridian",-86],PARAMETER["false_easting",0],PARAMETER["false_northing",0],UNIT["Meter",1]]
+> >>>> 
+> >>>>
+> >>>>       
+> >>>>
+> >>>
+> >>>     
+> >>>
+> >>>>ALN|38.9|-90.05|545.|64.0
+> >>>>ARR|41.77|-88.47|705.|63.0
+> >>>>BLV|38.55|-89.95|460.|68.0
+> >>>>BMI|40.48|-88.92|880.|69.0
+> >>>>CMI|40.04|-88.27|750.|68.0
+> >>>>CPS|38.57|-90.15|415.|67.0
+> >>>>DEC|39.87|-88.92|670.|66.0
+> >>>>DPA|41.91|-88.24|760.|66.0
+> >>>>LWV|38.76|-87.61|430.|71.0
+> >>>>MDH|37.78|-89.25|410.|64.0
+> >>>>MDW|41.79|-87.75|615.|73.0
+> >>>>MLI|41.45|-90.51|590.|66.0
+> >>>>MTO|39.48|-88.28|720.|67.0
+> >>>>MVN|38.32|-88.87|480.|66.0
+> >>>>MWA|37.75|-89.01|470.|66.0
+> >>>>ORD|41.98|-87.9|665.|72.0
+> >>>>PIA|40.66|-89.69|660.|70.0
+> >>>>PWK|42.11|-87.9|645.|70.0
+> >>>>RFD|42.2|-89.09|735.|64.0
+> >>>>SPI|39.84|-89.68|600.|68.0
+> >>>>SQI|41.75|-89.67|645.|63.0
+> >>>>UGN|42.42|-87.87|730.|70.0
+> >>>>AID|40.1|-85.62|920.|64.0
+> >>>>BAK|39.27|-85.9|655.|70.0
+> >>>>BMG|39.14|-86.61|840.|67.0
+> >>>>EKM|41.72|-86.|780.|70.0
+> >>>>EVV|37.97|-87.57|384.|71.0
+> >>>>EYE|39.83|-86.3|820.|70.0
+> >>>>FWA|41.|-85.2|791.|66.0
+> >>>>GSH|41.52|-85.79|830.|72.0
+> >>>>GYY|41.62|-87.42|590.|70.0
+> >>>>HNB|38.25|-86.95|530.|68.0
+> >>>>HUF|39.45|-87.3|500.|67.0
+> >>>>IND|39.73|-86.28|792.|73.0
+> >>>>LAF|40.42|-86.9|600.|68.0
+> >>>>MIE|40.24|-85.4|935.|67.0
+> >>>>SBN|41.7|-86.32|773.|68.0
+> >>>>VPZ|41.45|-87.01|770.|67.0
+> >>>>BWG|37.|-86.43|535.|70.0
+> >>>>FFT|38.18|-84.9|800.|71.0
+> >>>>JKL|37.6|-83.32|1365.|70.0
+> >>>>LEX|38.03|-84.6|966.|70.0
+> >>>>LNP|36.98|-82.53|2680.|66.0
+> >>>>LOU|38.23|-85.66|545.|72.0
+> >>>>LOZ|37.08|-84.08|1211.|68.0
+> >>>>PAH|37.03|-88.58|325.|65.0
+> >>>>SDF|38.18|-85.73|477.|74.0
+> >>>>ARB|42.22|-83.75|835.|67.0
+> >>>>AZO|42.23|-85.55|870.|71.0
+> >>>>BEH|42.13|-86.42|645.|70.0
+> >>>>BTL|42.3|-85.25|950.|71.0
+> >>>>DET|42.42|-83.02|625.|74.0
+> >>>>DTW|42.23|-83.33|640.|71.0
+> >>>>IRS|41.81|-85.44|925.|64.0
+> >>>>JXN|42.27|-84.47|998.|69.0
+> >>>>OEB|41.93|-85.05|960.|66.0
+> >>>>RMY|42.25|-84.96|940.|70.0
+> >>>>TTF|41.94|-83.43|615.|68.0
+> >>>>YIP|42.24|-83.53|715.|71.0
+> >>>>DKK|42.49|-79.27|690.|71.0
+> >>>>JHW|42.15|-79.27|1720.|63.0
+> >>>>AOH|40.71|-84.03|975.|67.0
+> >>>>BJJ|40.87|-81.88|1135.|66.0
+> >>>>BKL|41.52|-81.68|585.|73.0
+> >>>>CAK|40.92|-81.43|1208.|69.0
+> >>>>CGF|41.57|-81.48|880.|72.0
+> >>>>CLE|41.4|-81.85|777.|69.0
+> >>>>CMH|40.05|-82.88|812.|68.0
+> >>>>CVG|39.07|-84.67|869.|74.0
+> >>>>DAY|39.75|-84.23|1002.|68.0
+> >>>>DFI|41.34|-84.43|705.|65.0
+> >>>>FDY|41.02|-83.67|797.|65.0
+> >>>>ILN|39.42|-83.82|1075.|67.0
+> >>>>LCK|39.82|-82.93|745.|66.0
+> >>>>LHQ|39.76|-82.66|865.|65.0
+> >>>>LUK|39.1|-84.43|480.|68.0
+> >>>>MFD|40.82|-82.52|1295.|68.0
+> >>>>MGY|39.59|-84.22|960.|72.0
+> >>>>MNN|40.62|-83.06|995.|66.0
+> >>>>OSU|40.08|-83.07|900.|69.0
+> >>>>PHD|40.47|-81.42|890.|66.0
+> >>>>TDZ|41.56|-83.48|620.|66.0
+> >>>>TOL|41.6|-83.82|669.|69.0
+> >>>>YNG|41.27|-80.67|1178.|67.0
+> >>>>ZZV|39.95|-81.9|881.|66.0
+> >>>>AGC|40.35|-79.92|1250.|68.0
+> >>>>AOO|40.3|-78.32|1469.|67.0
+> >>>>BFD|41.8|-78.63|2142.|60.0
+> >>>>BTP|40.78|-79.95|1250.|63.0
+> >>>>DUJ|41.18|-78.9|1824.|66.0
+> >>>>ERI|42.08|-80.17|732.|71.0
+> >>>>GKJ|41.63|-80.21|1400.|68.0
+> >>>>JST|40.32|-78.83|2285.|66.0
+> >>>>LBE|40.28|-79.4|1050.|70.0
+> >>>>PIT|40.5|-80.22|1137.|66.0
+> >>>>BNA|36.17|-86.7|590.|72.0
+> >>>>CSV|35.95|-85.08|1810.|70.0
+> >>>>MQY|36.02|-86.52|545.|73.0
+> >>>>TRI|36.48|-82.4|1525.|67.0
+> >>>>TYS|35.82|-83.98|980.|70.0
+> >>>>BCB|37.22|-80.42|2130.|64.0
+> >>>>HLX|36.77|-80.82|2740.|64.0
+> >>>>HSP|37.95|-79.82|3790.|63.0
+> >>>>MKJ|36.9|-81.35|2560.|68.0
+> >>>>PSK|37.13|-80.68|2110.|64.0
+> >>>>ROA|37.32|-79.97|1149.|68.0
+> >>>>SHD|38.27|-78.85|1200.|63.0
+> >>>>VJI|36.68|-82.03|2070.|68.0
+> >>>>BKW|37.78|-81.12|2504.|64.0
+> >>>>BLF|37.3|-81.2|2870.|67.0
+> >>>>CKB|39.29|-80.23|1200.|70.0
+> >>>>CRW|38.35|-81.63|939.|65.0
+> >>>>EKN|38.88|-79.85|1992.|63.0
+> >>>>HLG|40.17|-80.64|1190.|66.0
+> >>>>HTS|38.37|-82.55|827.|67.0
+> >>>>LWB|37.87|-80.4|2303.|61.0
+> >>>>MGW|39.65|-79.92|1240.|67.0
+> >>>>PKB|39.27|-81.57|615.|67.0
+> >>>> 
+> >>>>
+> >>>>       
+> >>>>
+> >>>
+> >>>
+> >>>     
+> >>>
+> >>-- 
+> >>Thomas E Adams
+> >>National Weather Service
+> >>Ohio River Forecast Center
+> >>1901 South State Route 134
+> >>Wilmington, OH 45177
+> >>
+> >>EMAIL:	thomas.adams at noaa.gov
+> >>
+> >>VOICE:	937-383-0528
+> >>FAX:	937-383-0033
+> >>
+> >>   
+> >>
+> >
+> > 
+> >
+> 
+> 
+> -- 
+> Thomas E Adams
+> National Weather Service
+> Ohio River Forecast Center
+> 1901 South State Route 134
+> Wilmington, OH 45177
+> 
+> EMAIL:	thomas.adams at noaa.gov
+> 
+> VOICE:	937-383-0528
+> FAX:	937-383-0033
+> 
+
+-- 
+Markus Neteler     <neteler itc it>       http://mpa.itc.it
+ITC-irst -  Centro per la Ricerca Scientifica e Tecnologica
+MPBA - Predictive Models for Biol. & Environ. Data Analysis
+Via Sommarive, 18        -       38050 Povo (Trento), Italy
+
+
+
+From sotosko at yahoo.gr  Wed Aug 24 22:36:39 2005
+From: sotosko at yahoo.gr (Sotos)
+Date: Wed, 24 Aug 2005 21:36:39 +0100 (BST)
+Subject: [R-sig-Geo] =?iso-8859-7?q?=C8=DD=EC=E1=3A_Moran_I_and_General_Tr?=
+	=?iso-8859-7?q?end?=
+In-Reply-To: <1124890502.26933.241374618@webmail.messagingengine.com>
+Message-ID: <20050824203639.97139.qmail@web25401.mail.ukl.yahoo.com>
+
+Many thanks for you reply, 
+
+But wouldn't Local moran be better for checking for
+autocorellation and local clusters?
+
+Also I read that in SIDS dataset, Freeman-Tuckey
+square root transformation was used because the
+variance was not constant. Would this be appropriate
+to use for crime rates with non constant mean? I guess
+that a lot depends on the actual data, but are methods
+appropriate or am I missing something?
+
+Cheers,
+S.
+
+
+
+--- Nicholas Lewin-Koh <nikko at hailmail.net> ??????:
+
+> Hi
+> If you have a first order effect like that then you
+> can 
+> try fitting a linear model to the data and the use
+> the residuals for checking autocorrelation. This
+> will
+> introduce some bias but it is small relative to the
+> gain if
+> the residuals are stationary. 
+> 
+> Nicholas
+> 
+
+
+
+
+	
+
+	
+		
+___________________________________________________________ 
+
+
+???????? ??? ???????? ?????? ????????? ???? ??? ??????????? 
+????????? http://login.yahoo.com/config/mail?.intl=gr
+
+
+
+From nikko at hailmail.net  Wed Aug 24 22:57:33 2005
+From: nikko at hailmail.net (Nicholas Lewin-Koh)
+Date: Wed, 24 Aug 2005 15:57:33 -0500
+Subject: [R-sig-Geo] : Moran I and General Trend
+In-Reply-To: <20050824203639.97139.qmail@web25401.mail.ukl.yahoo.com>
+References: <20050824203639.97139.qmail@web25401.mail.ukl.yahoo.com>
+Message-ID: <1124917053.9175.241410879@webmail.messagingengine.com>
+
+Hi,
+Non-constant mean is a very different beast from nonconstant variance
+(heteroscedasticity).
+Non-constant mean can be fixed by detrending and working on the
+residuals,
+and thinking not to deeply about it I would imagine that as long as the 
+mean wasn't to "jumpy" across the region global Moran would preform
+perfectly 
+well for decribing how correlated neighboring rates are.
+
+Nicholas
+On Wed, 24 Aug 2005 21:36:39 +0100 (BST), "Sotos" <sotosko at yahoo.gr>
+said:
+> Many thanks for you reply, 
+> 
+> But wouldn't Local moran be better for checking for
+> autocorellation and local clusters?
+> 
+> Also I read that in SIDS dataset, Freeman-Tuckey
+> square root transformation was used because the
+> variance was not constant. Would this be appropriate
+> to use for crime rates with non constant mean? I guess
+> that a lot depends on the actual data, but are methods
+> appropriate or am I missing something?
+> 
+> Cheers,
+> S.
+> 
+> 
+> 
+> --- Nicholas Lewin-Koh <nikko at hailmail.net> &#941;&#947;&#961;&#945;&#968;&#949;:
+> 
+> > Hi
+> > If you have a first order effect like that then you
+> > can 
+> > try fitting a linear model to the data and the use
+> > the residuals for checking autocorrelation. This
+> > will
+> > introduce some bias but it is small relative to the
+> > gain if
+> > the residuals are stationary. 
+> > 
+> > Nicholas
+> > 
+> 
+> 
+> 
+> 
+> 	
+> 
+> 	
+> 		
+> ___________________________________________________________ 
+> &#935;&#961;&#951;&#963;&#953;&#956;&#959;&#960;&#959;&#953;&#949;&#943;&#964;&#949; Yahoo!; 
+> &#914;&#945;&#961;&#949;&#952;&#942;&#954;&#945;&#964;&#949; &#964;&#945; &#949;&#957;&#959;&#967;&#955;&#951;&#964;&#953;&#954;&#940; &#956;&#951;&#957;&#973;&#956;&#945;&#964;&#945; (spam); &#932;&#959; Yahoo! Mail 
+> &#948;&#953;&#945;&#952;&#941;&#964;&#949;&#953; &#964;&#951;&#957; &#954;&#945;&#955;&#973;&#964;&#949;&#961;&#951; &#948;&#965;&#957;&#945;&#964;&#942; &#960;&#961;&#959;&#963;&#964;&#945;&#963;&#943;&#945; &#954;&#945;&#964;&#940; &#964;&#969;&#957; &#949;&#957;&#959;&#967;&#955;&#951;&#964;&#953;&#954;&#974;&#957; 
+> &#956;&#951;&#957;&#965;&#956;&#940;&#964;&#969;&#957; http://login.yahoo.com/config/mail?.intl=gr 
+>
+
+
+
+From stanimura-ngs at umin.ac.jp  Thu Aug 25 11:09:15 2005
+From: stanimura-ngs at umin.ac.jp (Susumu Tanimura)
+Date: Thu, 25 Aug 2005 18:09:15 +0900
+Subject: [R-sig-Geo] How to obtain name of Map object on graphic device?
+In-Reply-To: <430C4539.80802@geog.uu.nl>
+References: <20050822182046.3cf17740.stanimura-ngs@umin.ac.jp>
+	<430C4539.80802@geog.uu.nl>
+Message-ID: <20050825180915.0aa2381e.stanimura-ngs@umin.ac.jp>
+
+Dear Edzer,
+
+Thank you for advice.
+
+> mplot=function(x) { plot(x); title(deparse(substitute(x))) }
+
+This is, I think, a good example of obtaining an object name. However, an
+argument, x, for this function have to be explicit as the name of object,
+even though what I want is the unknown name of (Map) object already
+plotted on graphic device.
+
+Since some commands like axis() understand an object on graphic device, I
+thought there is a commands to get property of graphic device, and maybe
+the name of object on graphic device is avaiable.
+
+Anyway, I modified my function that a user have to provide the name of Map
+object explicitly, because it is confusing when two or more Map objects
+have been plotted. So, I give up to know the name of Map object on graphic
+device.
+
+--
+Susumu Tanimura
+
+
+
+From ender78 at poczta.fm  Fri Aug 26 17:38:24 2005
+From: ender78 at poczta.fm (michal)
+Date: Fri, 26 Aug 2005 17:38:24 +0200
+Subject: [R-sig-Geo] uncertainty?, simulations?
+Message-ID: <1125070705.19506.45.camel@ecology.homenetwork>
+
+Hi List,
+
+I used ordinary kriging (gstat and R) to interpolate/evaluate spatial
+process (soil respiration rate).I measured points  in regular square
+lattice. Soil respiration rate can be various ( form very variable to
+very homogeneous) depends on many factors like temperature, humidity
+etc. I want to evaluate uncertainty of my scale of lattice. In other
+words I want to know if I chose correct dens for measured points
+(distance space between points) for certain situation.
+I hope I'm more-less clear :).
+
+How to investigate this? What should I read/use first?
+
+greetings,
+michal
+
+
+
+----------------------------------------------------------------------
+Startuj z INTERIA.PL! >>> http://link.interia.pl/f186c
+
+
+
+From naren_svk at yahoo.com  Fri Aug 26 23:23:25 2005
+From: naren_svk at yahoo.com (Narendran Kodandapani)
+Date: Fri, 26 Aug 2005 14:23:25 -0700 (PDT)
+Subject: [R-sig-Geo] reading thematic data in R
+Message-ID: <20050826212325.71970.qmail@web33313.mail.mud.yahoo.com>
+
+Hi All,
+
+I am modeling occurrence of forest fires in a
+landscape.  I am planning to apply logistic
+regressions.  I have a number of thematic layers, how
+do I import the data into R.  I am exploring rgdal,
+somehow the .tar.gz does not install properly.  
+
+Thanks,
+
+Naren
+
+
+
+From e.pebesma at geo.uu.nl  Sun Aug 28 20:53:28 2005
+From: e.pebesma at geo.uu.nl (Edzer J. Pebesma)
+Date: Sun, 28 Aug 2005 20:53:28 +0200
+Subject: [R-sig-Geo] reading thematic data in R
+In-Reply-To: <20050826212325.71970.qmail@web33313.mail.mud.yahoo.com>
+References: <20050826212325.71970.qmail@web33313.mail.mud.yahoo.com>
+Message-ID: <43120828.2000202@geo.uu.nl>
+
+
+
+Narendran Kodandapani wrote:
+> Hi All,
+> 
+> I am modeling occurrence of forest fires in a
+> landscape.  I am planning to apply logistic
+> regressions.  I have a number of thematic layers, how
+> do I import the data into R.  I am exploring rgdal,
+> somehow the .tar.gz does not install properly.  
+> 
+> Thanks,
+> 
+> Naren
+
+Which format are your data in, currently? On which
+platform do you try to install rgdal? Do you install
+from source, or binary? If you install from source,
+it is assumed that you installed the gdal library
+ahead of installing rgdal.
+
+If your data are in asciigrid format you can import
+them using function read.asciigrid() which is (currently)
+part of package sp.
+
+Best regards,
+-- 
+Edzer
+
+
+
+From e.pebesma at geo.uu.nl  Sun Aug 28 21:03:23 2005
+From: e.pebesma at geo.uu.nl (Edzer J. Pebesma)
+Date: Sun, 28 Aug 2005 21:03:23 +0200
+Subject: [R-sig-Geo] uncertainty?, simulations?
+In-Reply-To: <1125070705.19506.45.camel@ecology.homenetwork>
+References: <1125070705.19506.45.camel@ecology.homenetwork>
+Message-ID: <43120A7B.9070807@geo.uu.nl>
+
+
+
+michal wrote:
+> Hi List,
+> 
+> I used ordinary kriging (gstat and R) to interpolate/evaluate spatial
+> process (soil respiration rate).I measured points  in regular square
+> lattice. Soil respiration rate can be various ( form very variable to
+> very homogeneous) depends on many factors like temperature, humidity
+> etc. I want to evaluate uncertainty of my scale of lattice. In other
+> words I want to know if I chose correct dens for measured points
+> (distance space between points) for certain situation.
+> I hope I'm more-less clear :).
+> 
+> How to investigate this? What should I read/use first?
+> 
+> greetings,
+> michal
+> 
+
+Michal,
+
+you could look at kriging variances to start with, or at
+kriging standard errors, by taking the square root of the variance.
+
+If the standard errors are small enough, you're fine. If they are
+too large, try adding points at areas where points are sparse, just
+filling in nonsense values, and see how the kriging standard error
+decreases--kriging standard errors do not depend on data (measured)
+values otherwise than through the variogram.
+
+Packages gstat has a function, ossfim(), which let you vary sampling
+density (on a square grid) and block size to see how kriging errors
+results from a given combination of them, if you're only interested
+in point kriging, use zero block size.
+
+There are a couple of good introductory texts on geostatistics;
+you can find more about it on http://www.ai-geostats.org/
+
+Best regards,
+-- 
+Edzer
+
+
+

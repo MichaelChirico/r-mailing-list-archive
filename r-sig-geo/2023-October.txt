@@ -1,0 +1,1124 @@
+From n|ko@@tz|ok@@ @end|ng |rom gm@||@com  Sun Oct  1 11:20:42 2023
+From: n|ko@@tz|ok@@ @end|ng |rom gm@||@com (Nikolaos Tziokas)
+Date: Sun, 1 Oct 2023 10:20:42 +0100
+Subject: [R-sig-Geo] Spatial structure in the random forest (regression)
+ residuals
+Message-ID: <CAGg5H0ZQPAzK6cxqTEu7sbd_co1fgKV3y_Ee31VPfpKsQCj2QA@mail.gmail.com>
+
+I have a response variable which is the nighttime light luminosity (called
+*ntl* in the data.frame I am using). As you can see in the image attached
+(link below), it has some bright spots (highlighted in red) which are areas
+with high brightness (outliers in the data.frame). Also, I shared the
+histogram of the response. It's clear that the distribution is right-skewed
+(and possibly there is bimodality?).
+
+*Purpose of my analysis*
+My goal is to predict the *ntl* from the coarse spatial resolution to a
+higher. This means that, I need to maintain these bright spots (the
+outliers) in the predicted image. Because at a later stage, I will
+downscale the residuals of the regression using area-to-point Kriging, I
+need the residuals to be random (no spatial structure).
+
+*Analysis*
+Following this <https://juliasilge.com/blog/ikea-prices/>approach, the
+resulting RF residuals show clearly a spatial structure (i.e., the
+residuals do not show a random pattern), especially it seems that the model
+cannot capture the areas with high luminosity. This can also be seen if I
+plot the fitted vs residuals (please see the GDrive link below). Again, for
+a "good" model I would like to see a symmetric scatter of points around the
+horizontal like at zero, indicating random deviations of predictions from
+the observed values, but from the plot above I see that this isn't the case.
+
+My thought is that in the NTL image one can see where the bright areas are
+and were not, while in the covariates there is no such "variation" in these
+areas. This means that, the RFR model I use cannot capture this variability
+(I'm just thinking out loud).
+
+What are your thoughts on that? How can I improve the model in order to
+eliminate the spatial structure in residuals while mainting the bright
+areas in the predicted high resolution image? Here is the complete code:
+
+wd <- "path/"
+
+# this a projected CRS
+provoliko <- "EPSG:24313"
+
+# the data.frame of the variables
+df <- read.csv(paste0(wd, 'block.data.csv'))
+
+# here I extract the coordinates
+crds <- df[, 1:2]
+
+# here I remove the coordinates from the data.frame
+df <- df[, 3:12]
+
+# random forest regression
+library(tidymodels)
+set.seed(456)
+
+# splitting the data.frame into training and test set using stratified
+random sampling
+ikea_split <- initial_split(df, strata = ntl, prop = 0.80)
+ikea_train <- training(ikea_split)
+ikea_test <- testing(ikea_split)
+
+set.seed(567)
+ikea_folds <- bootstraps(ikea_train, strata = ntl)
+ikea_folds
+
+library(usemodels)
+eq1 <- ntl ~ .
+use_ranger(eq1, data = ikea_train)
+
+library(textrecipes)
+ranger_recipe <-
+  recipe(formula = eq1, data = ikea_train)
+
+ranger_spec <-
+  rand_forest(mtry = tune(), min_n = tune(), trees = 1001) %>%
+  set_mode("regression") %>%
+  set_engine("ranger")
+
+ranger_workflow <-
+  workflow() %>%
+  add_recipe(ranger_recipe) %>%
+  add_model(ranger_spec)
+
+set.seed(678)
+doParallel::registerDoParallel()
+ranger_tune <-
+  tune_grid(ranger_workflow,
+            resamples = ikea_folds,
+            grid = 10
+)
+
+show_best(ranger_tune, metric = "rsq")
+
+autoplot(ranger_tune)
+
+final_rf <- ranger_workflow %>%
+  finalize_workflow(select_best(ranger_tune, metric = "rsq"))
+
+final_rf
+
+ikea_fit <- last_fit(final_rf, ikea_split)
+ikea_fit
+
+collect_metrics(ikea_fit)
+
+collect_predictions(ikea_fit) %>%
+  ggplot(aes(ntl, .pred)) +
+  geom_abline(lty = 2, color = "gray50") +
+  geom_point(alpha = 0.5, color = "midnightblue") +
+  coord_fixed()
+
+predict(ikea_fit$.workflow[[1]], ikea_test[15, ])
+
+ikea_all <- predict(ikea_fit$.workflow[[1]], df[, 2:11])
+ikea_all <- as.data.frame(cbind(df$ntl, ikea_all))
+ikea_all$rsds <- ikea_all$`df$ntl` - ikea_all$.pred
+ikea_all <- as.data.frame(cbind(crds, ikea_all))
+ikea_all <- ikea_all[,-3:-4]
+
+# export the residuals as a raster
+library(terra)
+
+rsds <- rast(ikea_all, type = "xyz")
+crs(rsds) <- provoliko
+writeRaster(rsds, paste0(wd, "rsds.tif"), overwrite = TRUE)
+
+library(vip)
+
+imp_spec <- ranger_spec %>%
+  finalize_model(select_best(ranger_tune, metric = "rsq")) %>%
+  set_engine("ranger", importance = "permutation")
+
+workflow() %>%
+  add_recipe(ranger_recipe) %>%
+  add_model(imp_spec) %>%
+  fit(ikea_train) %>%
+  extract_fit_parsnip() %>%
+  vip(aesthetics = list(alpha = 0.8, fill = "midnightblue"))
+
+Because the csv I'm using has several thousands of rows, I can share it via
+a link, from here
+<https://drive.google.com/drive/folders/1V115zpdU2-5fXssI6iWv_F6aNu4E5qA7?usp=sharing>
+(also in the link you can see the spatial structure of residuals and
+histogram of the response variable). Just so you know, running and tuning a
+model takes ~ 2-3 minutes on my laptop (8 gigs of RAM, 4 cores processor
+(CPU: Intel(R) Core(TM) i5-4210U CPU @ 1.70GHz)). i am using R 4.3.1 and
+RStudio 2023.09.0 Build 463, Windows 11.
+
+-- 
+Tziokas Nikolaos
+Cartographer
+
+Tel:(+44)07561120302
+LinkedIn <http://linkedin.com/in/nikolaos-tziokas-896081130>
+
+	[[alternative HTML version deleted]]
+
+
+From m|ke@m@honey@218 @end|ng |rom gm@||@com  Sun Oct  1 13:36:48 2023
+From: m|ke@m@honey@218 @end|ng |rom gm@||@com (Michael Mahoney)
+Date: Sun, 1 Oct 2023 07:36:48 -0400
+Subject: [R-sig-Geo] Spatial structure in the random forest (regression)
+ residuals
+In-Reply-To: <CAGg5H0ZQPAzK6cxqTEu7sbd_co1fgKV3y_Ee31VPfpKsQCj2QA@mail.gmail.com>
+References: <CAGg5H0ZQPAzK6cxqTEu7sbd_co1fgKV3y_Ee31VPfpKsQCj2QA@mail.gmail.com>
+Message-ID: <CAKpp89v4_XPZVhJYciMDfh01xbU-cVuaOz-9pWXSXCkD-pc1Cg@mail.gmail.com>
+
+Looking at the plots you sent, I have no idea if you have **spatial**
+structure in your model residuals. You definitely have
+heteroskedasticity and huge residuals on the high end of fitted
+values, but these aren't necessarily due to spatial structure.
+
+My guess would be the core cause is that you're using an
+interpolation-ish method, random forests, and training it on data that
+effectively stops at ~75, looking at your histogram. Regular random
+forests are only going to predict within the range of values that they
+were trained with, and their predictions are going to be weighted
+towards the mean outcome value in the training set. The random forest
+then uses your input variables to predict values further away from
+that mean, but it's only able to identify relationships between the
+levels of predictors and outcomes in the training data. Given the high
+number of low NTL observations in your data, the random forest is able
+to build a decent model for the lower end of NTL; given that there are
+very few high NTL observations, the random forest mostly doesn't
+bother trying to predict them.
+
+You could attempt to add more predictors like land cover
+classification or to assign your high NTL observations higher case
+weights, in order to make the model more incentivized and more able to
+predict high NTL values. But probably, given the sheer rarity of these
+values, doing so will get you a model that's confidently wrong in
+predicting high values, with abrupt jumps in predicted NTL values in
+the map. I think the main way to improve this model would be to add
+more high NTL observations to the training set.
+
+As an aside, perhaps my favorite part of Edzer and Roger's new book is
+their discussion of spatial autocorrelation
+(https://r-spatial.org/book/15-Measures.html). The quote I use is "the
+important point [is] that spatial autocorrelation is not inherent in
+spatial phenomena, but often, is engendered by inappropriate
+entitation, by omitted variables and/or inappropriate functional
+form." My guess is that you're going to be best served here by
+focusing on the model, and not the spatial side of things -- any
+spatial structure you do see in your residuals can likely be addressed
+by considering what variables you're using in your model.
+
+Thanks,
+
+Michael Mahoney
+
+Michael Mahoney
+781-812-8842 | mike.mahoney.218 at gmail.com
+Website | LinkedIn | GitHub
+
+
+On Sun, Oct 1, 2023 at 5:21?AM Nikolaos Tziokas <nikos.tziokas at gmail.com> wrote:
+>
+> I have a response variable which is the nighttime light luminosity (called
+> *ntl* in the data.frame I am using). As you can see in the image attached
+> (link below), it has some bright spots (highlighted in red) which are areas
+> with high brightness (outliers in the data.frame). Also, I shared the
+> histogram of the response. It's clear that the distribution is right-skewed
+> (and possibly there is bimodality?).
+>
+> *Purpose of my analysis*
+> My goal is to predict the *ntl* from the coarse spatial resolution to a
+> higher. This means that, I need to maintain these bright spots (the
+> outliers) in the predicted image. Because at a later stage, I will
+> downscale the residuals of the regression using area-to-point Kriging, I
+> need the residuals to be random (no spatial structure).
+>
+> *Analysis*
+> Following this <https://juliasilge.com/blog/ikea-prices/>approach, the
+> resulting RF residuals show clearly a spatial structure (i.e., the
+> residuals do not show a random pattern), especially it seems that the model
+> cannot capture the areas with high luminosity. This can also be seen if I
+> plot the fitted vs residuals (please see the GDrive link below). Again, for
+> a "good" model I would like to see a symmetric scatter of points around the
+> horizontal like at zero, indicating random deviations of predictions from
+> the observed values, but from the plot above I see that this isn't the case.
+>
+> My thought is that in the NTL image one can see where the bright areas are
+> and were not, while in the covariates there is no such "variation" in these
+> areas. This means that, the RFR model I use cannot capture this variability
+> (I'm just thinking out loud).
+>
+> What are your thoughts on that? How can I improve the model in order to
+> eliminate the spatial structure in residuals while mainting the bright
+> areas in the predicted high resolution image? Here is the complete code:
+>
+> wd <- "path/"
+>
+> # this a projected CRS
+> provoliko <- "EPSG:24313"
+>
+> # the data.frame of the variables
+> df <- read.csv(paste0(wd, 'block.data.csv'))
+>
+> # here I extract the coordinates
+> crds <- df[, 1:2]
+>
+> # here I remove the coordinates from the data.frame
+> df <- df[, 3:12]
+>
+> # random forest regression
+> library(tidymodels)
+> set.seed(456)
+>
+> # splitting the data.frame into training and test set using stratified
+> random sampling
+> ikea_split <- initial_split(df, strata = ntl, prop = 0.80)
+> ikea_train <- training(ikea_split)
+> ikea_test <- testing(ikea_split)
+>
+> set.seed(567)
+> ikea_folds <- bootstraps(ikea_train, strata = ntl)
+> ikea_folds
+>
+> library(usemodels)
+> eq1 <- ntl ~ .
+> use_ranger(eq1, data = ikea_train)
+>
+> library(textrecipes)
+> ranger_recipe <-
+>   recipe(formula = eq1, data = ikea_train)
+>
+> ranger_spec <-
+>   rand_forest(mtry = tune(), min_n = tune(), trees = 1001) %>%
+>   set_mode("regression") %>%
+>   set_engine("ranger")
+>
+> ranger_workflow <-
+>   workflow() %>%
+>   add_recipe(ranger_recipe) %>%
+>   add_model(ranger_spec)
+>
+> set.seed(678)
+> doParallel::registerDoParallel()
+> ranger_tune <-
+>   tune_grid(ranger_workflow,
+>             resamples = ikea_folds,
+>             grid = 10
+> )
+>
+> show_best(ranger_tune, metric = "rsq")
+>
+> autoplot(ranger_tune)
+>
+> final_rf <- ranger_workflow %>%
+>   finalize_workflow(select_best(ranger_tune, metric = "rsq"))
+>
+> final_rf
+>
+> ikea_fit <- last_fit(final_rf, ikea_split)
+> ikea_fit
+>
+> collect_metrics(ikea_fit)
+>
+> collect_predictions(ikea_fit) %>%
+>   ggplot(aes(ntl, .pred)) +
+>   geom_abline(lty = 2, color = "gray50") +
+>   geom_point(alpha = 0.5, color = "midnightblue") +
+>   coord_fixed()
+>
+> predict(ikea_fit$.workflow[[1]], ikea_test[15, ])
+>
+> ikea_all <- predict(ikea_fit$.workflow[[1]], df[, 2:11])
+> ikea_all <- as.data.frame(cbind(df$ntl, ikea_all))
+> ikea_all$rsds <- ikea_all$`df$ntl` - ikea_all$.pred
+> ikea_all <- as.data.frame(cbind(crds, ikea_all))
+> ikea_all <- ikea_all[,-3:-4]
+>
+> # export the residuals as a raster
+> library(terra)
+>
+> rsds <- rast(ikea_all, type = "xyz")
+> crs(rsds) <- provoliko
+> writeRaster(rsds, paste0(wd, "rsds.tif"), overwrite = TRUE)
+>
+> library(vip)
+>
+> imp_spec <- ranger_spec %>%
+>   finalize_model(select_best(ranger_tune, metric = "rsq")) %>%
+>   set_engine("ranger", importance = "permutation")
+>
+> workflow() %>%
+>   add_recipe(ranger_recipe) %>%
+>   add_model(imp_spec) %>%
+>   fit(ikea_train) %>%
+>   extract_fit_parsnip() %>%
+>   vip(aesthetics = list(alpha = 0.8, fill = "midnightblue"))
+>
+> Because the csv I'm using has several thousands of rows, I can share it via
+> a link, from here
+> <https://drive.google.com/drive/folders/1V115zpdU2-5fXssI6iWv_F6aNu4E5qA7?usp=sharing>
+> (also in the link you can see the spatial structure of residuals and
+> histogram of the response variable). Just so you know, running and tuning a
+> model takes ~ 2-3 minutes on my laptop (8 gigs of RAM, 4 cores processor
+> (CPU: Intel(R) Core(TM) i5-4210U CPU @ 1.70GHz)). i am using R 4.3.1 and
+> RStudio 2023.09.0 Build 463, Windows 11.
+>
+> --
+> Tziokas Nikolaos
+> Cartographer
+>
+> Tel:(+44)07561120302
+> LinkedIn <http://linkedin.com/in/nikolaos-tziokas-896081130>
+>
+>         [[alternative HTML version deleted]]
+>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+
+
+From Roger@B|v@nd @end|ng |rom nhh@no  Tue Oct  3 10:15:38 2023
+From: Roger@B|v@nd @end|ng |rom nhh@no (Roger Bivand)
+Date: Tue, 3 Oct 2023 08:15:38 +0000
+Subject: [R-sig-Geo] maptools, rgdal, rgeos and rgrass7 retiring Monday,
+ October 16
+Message-ID: <SV0P279MB04756C25F6C3856F780245FFEEC4A@SV0P279MB0475.NORP279.PROD.OUTLOOK.COM>
+
+The legacy R spatial infrastructure packages maptools, rgdal and rgeos will be archived by CRAN on Monday, October 16, 2023; rgrass7 has  already been replaced by rgrass and will be archived with the retiring packages. 
+
+The choice of date matches the previously announced archiving during October 2023, and the specific date matches the release schedule of Bioconductor 3.18 (some Bioconductor packages depend on retiring packages).
+
+sp_2.1-0 was published October 2, 2023, dropping all dependencies on the retiring packages. sp will continue to be available and maintained, but not developed further. Users of sp classes may continue to make use of them, but will have to use sf or terra to read, write or manipulate objects with coercion (for a guide to coercion, see https://cran.r-project.org/web/packages/rgrass/vignettes/coerce.html).
+
+Information about the evolution project may be found in reports and resources at https://r-spatial.github.io/evolution/; a recent blog by Jakub Nowosad may also be useful as an overview of what has been going on: https://geocompx.org/post/2023/rgdal-retirement/. For more detail, see https://r-spatial.github.io/evolution/ogh23_bivand.html and a video recording of this presentation https://av.tib.eu/media/63141 (August 28).
+
+All directly affected package maintainers have been alerted to the impending changes, some in December 2022, most others in March-April 2023. Many have already updated their packages on CRAN - thank you for your understanding! The remainder received github issue comments and email reminders in the last ten days, and will receive final notices to update by October 9. 
+
+On R-universe, builds of packages archived on CRAN are dropped automatically (https://github.com/r-universe-org/help/issues/286). Read-only github mirrors of archived packages will remain available in principle while github exists (https://github.com/r-hub/rhub/issues/568), for example https://github.com/cran/rgdal. Other binary builds (Debian, Fedora, Ubuntu) have been alerted; support at Anaconda has been alerted.
+
+On CRAN, the retired packages will continue to be available as source packages on https://cran.r-project.org/src/contrib/Archive. maptools, rgdal and rgeos also retain their R-forge repositories, which may be used to retrieve functions for adding to other packages.
+
+A snapshot of Windows and macOS binary packages may be found on https://github.com/r-spatial/evolution/tree/main/backstore.
+
+Please raise questions by replying to this post, or as issues on https://github.com/r-spatial/evolution.
+
+
+--
+Roger Bivand
+Emeritus Professor
+Norwegian School of Economics
+Postboks 3490 Ytre Sandviken, 5045 Bergen, Norway
+Roger.Bivand at nhh.no
+
+From g||berto@c@m@r@ @end|ng |rom |npe@br  Tue Oct  3 10:32:16 2023
+From: g||berto@c@m@r@ @end|ng |rom |npe@br (Gilberto Camara)
+Date: Tue, 3 Oct 2023 10:32:16 +0200
+Subject: [R-sig-Geo] maptools, rgdal, rgeos and rgrass7 retiring Monday,
+ October 16
+In-Reply-To: <SV0P279MB04756C25F6C3856F780245FFEEC4A@SV0P279MB0475.NORP279.PROD.OUTLOOK.COM>
+References: <SV0P279MB04756C25F6C3856F780245FFEEC4A@SV0P279MB0475.NORP279.PROD.OUTLOOK.COM>
+Message-ID: <ED6EB55D-8C00-42DC-97CB-D0147F1C1489@inpe.br>
+
+Dear Roger
+
+Your enormous and generous dedication to R-spatial is amazing and a model to all of us!! Many, many thanks!
+
+All the best
+Gilberto
+============================
+Prof Dr Gilberto Camara
+Senior Researcher
+National Institute for Space Research (INPE), Brazil
+https://gilbertocamara.org/
+=============================
+
+
+> On 3 Oct 2023, at 10:15, Roger Bivand <Roger.Bivand at nhh.no> wrote:
+> 
+> The legacy R spatial infrastructure packages maptools, rgdal and rgeos will be archived by CRAN on Monday, October 16, 2023; rgrass7 has  already been replaced by rgrass and will be archived with the retiring packages. 
+> 
+> The choice of date matches the previously announced archiving during October 2023, and the specific date matches the release schedule of Bioconductor 3.18 (some Bioconductor packages depend on retiring packages).
+> 
+> sp_2.1-0 was published October 2, 2023, dropping all dependencies on the retiring packages. sp will continue to be available and maintained, but not developed further. Users of sp classes may continue to make use of them, but will have to use sf or terra to read, write or manipulate objects with coercion (for a guide to coercion, see https://cran.r-project.org/web/packages/rgrass/vignettes/coerce.html).
+> 
+> Information about the evolution project may be found in reports and resources at https://r-spatial.github.io/evolution/; a recent blog by Jakub Nowosad may also be useful as an overview of what has been going on: https://geocompx.org/post/2023/rgdal-retirement/. For more detail, see https://r-spatial.github.io/evolution/ogh23_bivand.html and a video recording of this presentation https://av.tib.eu/media/63141 (August 28).
+> 
+> All directly affected package maintainers have been alerted to the impending changes, some in December 2022, most others in March-April 2023. Many have already updated their packages on CRAN - thank you for your understanding! The remainder received github issue comments and email reminders in the last ten days, and will receive final notices to update by October 9. 
+> 
+> On R-universe, builds of packages archived on CRAN are dropped automatically (https://github.com/r-universe-org/help/issues/286). Read-only github mirrors of archived packages will remain available in principle while github exists (https://github.com/r-hub/rhub/issues/568), for example https://github.com/cran/rgdal. Other binary builds (Debian, Fedora, Ubuntu) have been alerted; support at Anaconda has been alerted.
+> 
+> On CRAN, the retired packages will continue to be available as source packages on https://cran.r-project.org/src/contrib/Archive. maptools, rgdal and rgeos also retain their R-forge repositories, which may be used to retrieve functions for adding to other packages.
+> 
+> A snapshot of Windows and macOS binary packages may be found on https://github.com/r-spatial/evolution/tree/main/backstore.
+> 
+> Please raise questions by replying to this post, or as issues on https://github.com/r-spatial/evolution.
+> 
+> 
+> --
+> Roger Bivand
+> Emeritus Professor
+> Norwegian School of Economics
+> Postboks 3490 Ytre Sandviken, 5045 Bergen, Norway
+> Roger.Bivand at nhh.no
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+
+
+From g||berto@c@m@r@ @end|ng |rom |npe@br  Tue Oct  3 11:22:03 2023
+From: g||berto@c@m@r@ @end|ng |rom |npe@br (Gilberto Camara)
+Date: Tue, 3 Oct 2023 11:22:03 +0200
+Subject: [R-sig-Geo] maptools, rgdal, rgeos and rgrass7 retiring Monday,
+ October 16
+In-Reply-To: <SV0P279MB04756C25F6C3856F780245FFEEC4A@SV0P279MB0475.NORP279.PROD.OUTLOOK.COM>
+References: <SV0P279MB04756C25F6C3856F780245FFEEC4A@SV0P279MB0475.NORP279.PROD.OUTLOOK.COM>
+Message-ID: <D9E18078-ECCE-493B-A8FF-338416049FC0@inpe.br>
+
+Dear Roger
+
+Your enormous and generous dedication to R-spatial is amazing and a model to all of us!! Many, many thanks!
+
+All the best
+Gilberto
+============================
+Prof Dr Gilberto Camara
+Senior Researcher
+National Institute for Space Research (INPE), Brazil
+https://gilbertocamara.org/
+=============================
+
+
+> On 3 Oct 2023, at 10:15, Roger Bivand <Roger.Bivand at nhh.no> wrote:
+> 
+> The legacy R spatial infrastructure packages maptools, rgdal and rgeos will be archived by CRAN on Monday, October 16, 2023; rgrass7 has  already been replaced by rgrass and will be archived with the retiring packages. 
+> 
+> The choice of date matches the previously announced archiving during October 2023, and the specific date matches the release schedule of Bioconductor 3.18 (some Bioconductor packages depend on retiring packages).
+> 
+> sp_2.1-0 was published October 2, 2023, dropping all dependencies on the retiring packages. sp will continue to be available and maintained, but not developed further. Users of sp classes may continue to make use of them, but will have to use sf or terra to read, write or manipulate objects with coercion (for a guide to coercion, see https://cran.r-project.org/web/packages/rgrass/vignettes/coerce.html).
+> 
+> Information about the evolution project may be found in reports and resources at https://r-spatial.github.io/evolution/; a recent blog by Jakub Nowosad may also be useful as an overview of what has been going on: https://geocompx.org/post/2023/rgdal-retirement/. For more detail, see https://r-spatial.github.io/evolution/ogh23_bivand.html and a video recording of this presentation https://av.tib.eu/media/63141 (August 28).
+> 
+> All directly affected package maintainers have been alerted to the impending changes, some in December 2022, most others in March-April 2023. Many have already updated their packages on CRAN - thank you for your understanding! The remainder received github issue comments and email reminders in the last ten days, and will receive final notices to update by October 9. 
+> 
+> On R-universe, builds of packages archived on CRAN are dropped automatically (https://github.com/r-universe-org/help/issues/286). Read-only github mirrors of archived packages will remain available in principle while github exists (https://github.com/r-hub/rhub/issues/568), for example https://github.com/cran/rgdal. Other binary builds (Debian, Fedora, Ubuntu) have been alerted; support at Anaconda has been alerted.
+> 
+> On CRAN, the retired packages will continue to be available as source packages on https://cran.r-project.org/src/contrib/Archive. maptools, rgdal and rgeos also retain their R-forge repositories, which may be used to retrieve functions for adding to other packages.
+> 
+> A snapshot of Windows and macOS binary packages may be found on https://github.com/r-spatial/evolution/tree/main/backstore.
+> 
+> Please raise questions by replying to this post, or as issues on https://github.com/r-spatial/evolution.
+> 
+> 
+> --
+> Roger Bivand
+> Emeritus Professor
+> Norwegian School of Economics
+> Postboks 3490 Ytre Sandviken, 5045 Bergen, Norway
+> Roger.Bivand at nhh.no
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+
+
+From yud @end|ng |rom m@||@montc|@|r@edu  Tue Oct  3 15:36:27 2023
+From: yud @end|ng |rom m@||@montc|@|r@edu (Danlin Yu)
+Date: Tue, 3 Oct 2023 09:36:27 -0400
+Subject: [R-sig-Geo] maptools, rgdal, rgeos and rgrass7 retiring Monday,
+ October 16
+In-Reply-To: <D9E18078-ECCE-493B-A8FF-338416049FC0@inpe.br>
+References: <SV0P279MB04756C25F6C3856F780245FFEEC4A@SV0P279MB0475.NORP279.PROD.OUTLOOK.COM>
+ <D9E18078-ECCE-493B-A8FF-338416049FC0@inpe.br>
+Message-ID: <c37aa80d-a6c3-aa0f-4b7c-e163e04dc124@mail.montclair.edu>
+
+Dear Dr. Roger Bivand:
+
+I echo this comment and sentiment.
+
+Dr. Roger Bivand is not only a great scholar and generous contributor, 
+maintainer to the R-spatial task force, but also a fantastic mentor to 
+us all.
+
+No amount of "thank you" would be sufficient.
+
+Best,
+
+Danlin
+
+On 10/3/2023 5:22 AM, Gilberto Camara wrote:
+> Dear Roger
+>
+> Your enormous and generous dedication to R-spatial is amazing and a model to all of us!! Many, many thanks!
+>
+> All the best
+> Gilberto
+> ============================
+> Prof Dr Gilberto Camara
+> Senior Researcher
+> National Institute for Space Research (INPE), Brazil
+> https://gilbertocamara.org/
+> =============================
+>
+>
+>> On 3 Oct 2023, at 10:15, Roger Bivand <Roger.Bivand at nhh.no> wrote:
+>>
+>> The legacy R spatial infrastructure packages maptools, rgdal and rgeos will be archived by CRAN on Monday, October 16, 2023; rgrass7 has  already been replaced by rgrass and will be archived with the retiring packages.
+>>
+>> The choice of date matches the previously announced archiving during October 2023, and the specific date matches the release schedule of Bioconductor 3.18 (some Bioconductor packages depend on retiring packages).
+>>
+>> sp_2.1-0 was published October 2, 2023, dropping all dependencies on the retiring packages. sp will continue to be available and maintained, but not developed further. Users of sp classes may continue to make use of them, but will have to use sf or terra to read, write or manipulate objects with coercion (for a guide to coercion, see https://cran.r-project.org/web/packages/rgrass/vignettes/coerce.html).
+>>
+>> Information about the evolution project may be found in reports and resources at https://r-spatial.github.io/evolution/; a recent blog by Jakub Nowosad may also be useful as an overview of what has been going on: https://geocompx.org/post/2023/rgdal-retirement/. For more detail, see https://r-spatial.github.io/evolution/ogh23_bivand.html and a video recording of this presentation https://av.tib.eu/media/63141 (August 28).
+>>
+>> All directly affected package maintainers have been alerted to the impending changes, some in December 2022, most others in March-April 2023. Many have already updated their packages on CRAN - thank you for your understanding! The remainder received github issue comments and email reminders in the last ten days, and will receive final notices to update by October 9.
+>>
+>> On R-universe, builds of packages archived on CRAN are dropped automatically (https://github.com/r-universe-org/help/issues/286). Read-only github mirrors of archived packages will remain available in principle while github exists (https://github.com/r-hub/rhub/issues/568), for example https://github.com/cran/rgdal. Other binary builds (Debian, Fedora, Ubuntu) have been alerted; support at Anaconda has been alerted.
+>>
+>> On CRAN, the retired packages will continue to be available as source packages on https://cran.r-project.org/src/contrib/Archive. maptools, rgdal and rgeos also retain their R-forge repositories, which may be used to retrieve functions for adding to other packages.
+>>
+>> A snapshot of Windows and macOS binary packages may be found on https://github.com/r-spatial/evolution/tree/main/backstore.
+>>
+>> Please raise questions by replying to this post, or as issues on https://github.com/r-spatial/evolution.
+>>
+>>
+>> --
+>> Roger Bivand
+>> Emeritus Professor
+>> Norwegian School of Economics
+>> Postboks 3490 Ytre Sandviken, 5045 Bergen, Norway
+>> Roger.Bivand at nhh.no
+>> _______________________________________________
+>> R-sig-Geo mailing list
+>> R-sig-Geo at r-project.org
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+
+-- 
+___________________________________________
+Danlin Yu, Ph.D.
+Professor of GIS and Urban Geography
+Department of Earth & Environmental Studies
+Montclair State University
+Montclair, NJ, 07043
+Tel: 973-655-4313
+Fax: 973-655-4072
+Office: CELS 314
+Email: yud at montclair.edu
+webpage: csam.montclair.edu/~yu
+Academic Editor and Editorial Board Member: Remote Sensing
+Special Issues: https://www.mdpi.com/journal/remotesensing/special_issues/UPES_Big_Data_ra
+Editor's Choice Articles:
+https://www.mdpi.com/journal/remotesensing/editors_choice
+  Most Cited & Viewed: https://www.mdpi.com/journal/remotesensing/most_cited
+Academic Editor and Editorial Board Member: International Journal of Environmental Research and Public Health
+Special Issues:
+Urban livability in the Big Data Era
+https://www.mdpi.com/journal/ijerph/special_issues/urban_environmental_management
+Heavy metal contamination in urban environment
+https://www.mdpi.com/journal/ijerph/special_issues/S61HUBE7B1
+Any submission to the special issues prior to Jan. 31, 2024 will receive a 25% discount of APC.
+
+
+From @trende @end|ng |rom re@|c|e@rpo||t|c@@com  Tue Oct  3 15:41:13 2023
+From: @trende @end|ng |rom re@|c|e@rpo||t|c@@com (Sean Trende)
+Date: Tue, 3 Oct 2023 13:41:13 +0000
+Subject: [R-sig-Geo] maptools, rgdal, rgeos and rgrass7 retiring Monday,
+ October 16
+In-Reply-To: <c37aa80d-a6c3-aa0f-4b7c-e163e04dc124@mail.montclair.edu>
+References: <SV0P279MB04756C25F6C3856F780245FFEEC4A@SV0P279MB0475.NORP279.PROD.OUTLOOK.COM>
+ <D9E18078-ECCE-493B-A8FF-338416049FC0@inpe.br>
+ <c37aa80d-a6c3-aa0f-4b7c-e163e04dc124@mail.montclair.edu>
+Message-ID: <BLAPR20MB393898003700C71FE732D4AABEC4A@BLAPR20MB3938.namprd20.prod.outlook.com>
+
+Agreed 100%.  I'm blown away by the amount of work and care that you put into helping people use these packages. I never would have completed my dissertation without the willingness to respond thoughtfully to my obviously "noob" questions on this forum.
+
+-----Original Message-----
+From: R-sig-Geo <r-sig-geo-bounces at r-project.org> On Behalf Of Danlin Yu
+Sent: Tuesday, October 3, 2023 9:36 AM
+To: r-sig-geo at r-project.org
+Subject: Re: [R-sig-Geo] maptools, rgdal, rgeos and rgrass7 retiring Monday, October 16
+
+Dear Dr. Roger Bivand:
+
+I echo this comment and sentiment.
+
+Dr. Roger Bivand is not only a great scholar and generous contributor, maintainer to the R-spatial task force, but also a fantastic mentor to us all.
+
+No amount of "thank you" would be sufficient.
+
+Best,
+
+Danlin
+
+On 10/3/2023 5:22 AM, Gilberto Camara wrote:
+> Dear Roger
+>
+> Your enormous and generous dedication to R-spatial is amazing and a model to all of us!! Many, many thanks!
+>
+> All the best
+> Gilberto
+> ============================
+> Prof Dr Gilberto Camara
+> Senior Researcher
+> National Institute for Space Research (INPE), Brazil 
+> https://gilbertocamara.org/ =============================
+>
+>
+>> On 3 Oct 2023, at 10:15, Roger Bivand <Roger.Bivand at nhh.no> wrote:
+>>
+>> The legacy R spatial infrastructure packages maptools, rgdal and rgeos will be archived by CRAN on Monday, October 16, 2023; rgrass7 has  already been replaced by rgrass and will be archived with the retiring packages.
+>>
+>> The choice of date matches the previously announced archiving during October 2023, and the specific date matches the release schedule of Bioconductor 3.18 (some Bioconductor packages depend on retiring packages).
+>>
+>> sp_2.1-0 was published October 2, 2023, dropping all dependencies on the retiring packages. sp will continue to be available and maintained, but not developed further. Users of sp classes may continue to make use of them, but will have to use sf or terra to read, write or manipulate objects with coercion (for a guide to coercion, see https://cran.r-project.org/web/packages/rgrass/vignettes/coerce.html).
+>>
+>> Information about the evolution project may be found in reports and resources at https://r-spatial.github.io/evolution/; a recent blog by Jakub Nowosad may also be useful as an overview of what has been going on: https://geocompx.org/post/2023/rgdal-retirement/. For more detail, see https://r-spatial.github.io/evolution/ogh23_bivand.html and a video recording of this presentation https://av.tib.eu/media/63141 (August 28).
+>>
+>> All directly affected package maintainers have been alerted to the impending changes, some in December 2022, most others in March-April 2023. Many have already updated their packages on CRAN - thank you for your understanding! The remainder received github issue comments and email reminders in the last ten days, and will receive final notices to update by October 9.
+>>
+>> On R-universe, builds of packages archived on CRAN are dropped automatically (https://github.com/r-universe-org/help/issues/286). Read-only github mirrors of archived packages will remain available in principle while github exists (https://github.com/r-hub/rhub/issues/568), for example https://github.com/cran/rgdal. Other binary builds (Debian, Fedora, Ubuntu) have been alerted; support at Anaconda has been alerted.
+>>
+>> On CRAN, the retired packages will continue to be available as source packages on https://cran.r-project.org/src/contrib/Archive. maptools, rgdal and rgeos also retain their R-forge repositories, which may be used to retrieve functions for adding to other packages.
+>>
+>> A snapshot of Windows and macOS binary packages may be found on https://github.com/r-spatial/evolution/tree/main/backstore.
+>>
+>> Please raise questions by replying to this post, or as issues on https://github.com/r-spatial/evolution.
+>>
+>>
+>> --
+>> Roger Bivand
+>> Emeritus Professor
+>> Norwegian School of Economics
+>> Postboks 3490 Ytre Sandviken, 5045 Bergen, Norway Roger.Bivand at nhh.no 
+>> _______________________________________________
+>> R-sig-Geo mailing list
+>> R-sig-Geo at r-project.org
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+
+--
+___________________________________________
+Danlin Yu, Ph.D.
+Professor of GIS and Urban Geography
+Department of Earth & Environmental Studies Montclair State University Montclair, NJ, 07043
+Tel: 973-655-4313
+Fax: 973-655-4072
+Office: CELS 314
+Email: yud at montclair.edu
+webpage: csam.montclair.edu/~yu
+Academic Editor and Editorial Board Member: Remote Sensing Special Issues: https://www.mdpi.com/journal/remotesensing/special_issues/UPES_Big_Data_ra
+Editor's Choice Articles:
+https://www.mdpi.com/journal/remotesensing/editors_choice
+  Most Cited & Viewed: https://www.mdpi.com/journal/remotesensing/most_cited
+Academic Editor and Editorial Board Member: International Journal of Environmental Research and Public Health Special Issues:
+Urban livability in the Big Data Era
+https://www.mdpi.com/journal/ijerph/special_issues/urban_environmental_management
+Heavy metal contamination in urban environment
+https://www.mdpi.com/journal/ijerph/special_issues/S61HUBE7B1
+Any submission to the special issues prior to Jan. 31, 2024 will receive a 25% discount of APC.
+
+_______________________________________________
+R-sig-Geo mailing list
+R-sig-Geo at r-project.org
+https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+
+
+From m@p|no|@10 @end|ng |rom gm@||@com  Tue Oct  3 15:46:58 2023
+From: m@p|no|@10 @end|ng |rom gm@||@com (=?UTF-8?Q?Manuel_Sp=C3=ADnola?=)
+Date: Tue, 3 Oct 2023 07:46:58 -0600
+Subject: [R-sig-Geo] maptools, rgdal, rgeos and rgrass7 retiring Monday,
+ October 16
+In-Reply-To: <BLAPR20MB393898003700C71FE732D4AABEC4A@BLAPR20MB3938.namprd20.prod.outlook.com>
+References: <SV0P279MB04756C25F6C3856F780245FFEEC4A@SV0P279MB0475.NORP279.PROD.OUTLOOK.COM>
+ <D9E18078-ECCE-493B-A8FF-338416049FC0@inpe.br>
+ <c37aa80d-a6c3-aa0f-4b7c-e163e04dc124@mail.montclair.edu>
+ <BLAPR20MB393898003700C71FE732D4AABEC4A@BLAPR20MB3938.namprd20.prod.outlook.com>
+Message-ID: <CABkCotSdVv1nAL2jN6R0w_kMGzbXvWkRfCMeaWiEzJ8p3-sjmQ@mail.gmail.com>
+
+I also echo all this comments.
+
+Very grateful for Roger Bivand effort.
+
+Manuel
+
+On Tue, 3 Oct 2023 at 07:41 Sean Trende via R-sig-Geo <
+r-sig-geo at r-project.org> wrote:
+
+> Agreed 100%.  I'm blown away by the amount of work and care that you put
+> into helping people use these packages. I never would have completed my
+> dissertation without the willingness to respond thoughtfully to my
+> obviously "noob" questions on this forum.
+>
+> -----Original Message-----
+> From: R-sig-Geo <r-sig-geo-bounces at r-project.org> On Behalf Of Danlin Yu
+> Sent: Tuesday, October 3, 2023 9:36 AM
+> To: r-sig-geo at r-project.org
+> Subject: Re: [R-sig-Geo] maptools, rgdal, rgeos and rgrass7 retiring
+> Monday, October 16
+>
+> Dear Dr. Roger Bivand:
+>
+> I echo this comment and sentiment.
+>
+> Dr. Roger Bivand is not only a great scholar and generous contributor,
+> maintainer to the R-spatial task force, but also a fantastic mentor to us
+> all.
+>
+> No amount of "thank you" would be sufficient.
+>
+> Best,
+>
+> Danlin
+>
+> On 10/3/2023 5:22 AM, Gilberto Camara wrote:
+> > Dear Roger
+> >
+> > Your enormous and generous dedication to R-spatial is amazing and a
+> model to all of us!! Many, many thanks!
+> >
+> > All the best
+> > Gilberto
+> > ============================
+> > Prof Dr Gilberto Camara
+> > Senior Researcher
+> > National Institute for Space Research (INPE), Brazil
+> > https://gilbertocamara.org/ =============================
+> >
+> >
+> >> On 3 Oct 2023, at 10:15, Roger Bivand <Roger.Bivand at nhh.no> wrote:
+> >>
+> >> The legacy R spatial infrastructure packages maptools, rgdal and rgeos
+> will be archived by CRAN on Monday, October 16, 2023; rgrass7 has  already
+> been replaced by rgrass and will be archived with the retiring packages.
+> >>
+> >> The choice of date matches the previously announced archiving during
+> October 2023, and the specific date matches the release schedule of
+> Bioconductor 3.18 (some Bioconductor packages depend on retiring packages).
+> >>
+> >> sp_2.1-0 was published October 2, 2023, dropping all dependencies on
+> the retiring packages. sp will continue to be available and maintained, but
+> not developed further. Users of sp classes may continue to make use of
+> them, but will have to use sf or terra to read, write or manipulate objects
+> with coercion (for a guide to coercion, see
+> https://cran.r-project.org/web/packages/rgrass/vignettes/coerce.html).
+> >>
+> >> Information about the evolution project may be found in reports and
+> resources at https://r-spatial.github.io/evolution/; a recent blog by
+> Jakub Nowosad may also be useful as an overview of what has been going on:
+> https://geocompx.org/post/2023/rgdal-retirement/. For more detail, see
+> https://r-spatial.github.io/evolution/ogh23_bivand.html and a video
+> recording of this presentation https://av.tib.eu/media/63141 (August 28).
+> >>
+> >> All directly affected package maintainers have been alerted to the
+> impending changes, some in December 2022, most others in March-April 2023.
+> Many have already updated their packages on CRAN - thank you for your
+> understanding! The remainder received github issue comments and email
+> reminders in the last ten days, and will receive final notices to update by
+> October 9.
+> >>
+> >> On R-universe, builds of packages archived on CRAN are dropped
+> automatically (https://github.com/r-universe-org/help/issues/286).
+> Read-only github mirrors of archived packages will remain available in
+> principle while github exists (https://github.com/r-hub/rhub/issues/568),
+> for example https://github.com/cran/rgdal. Other binary builds (Debian,
+> Fedora, Ubuntu) have been alerted; support at Anaconda has been alerted.
+> >>
+> >> On CRAN, the retired packages will continue to be available as source
+> packages on https://cran.r-project.org/src/contrib/Archive. maptools,
+> rgdal and rgeos also retain their R-forge repositories, which may be used
+> to retrieve functions for adding to other packages.
+> >>
+> >> A snapshot of Windows and macOS binary packages may be found on
+> https://github.com/r-spatial/evolution/tree/main/backstore.
+> >>
+> >> Please raise questions by replying to this post, or as issues on
+> https://github.com/r-spatial/evolution.
+> >>
+> >>
+> >> --
+> >> Roger Bivand
+> >> Emeritus Professor
+> >> Norwegian School of Economics
+> >> Postboks 3490 Ytre Sandviken, 5045 Bergen, Norway Roger.Bivand at nhh.no
+> >> _______________________________________________
+> >> R-sig-Geo mailing list
+> >> R-sig-Geo at r-project.org
+> >> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> > _______________________________________________
+> > R-sig-Geo mailing list
+> > R-sig-Geo at r-project.org
+> > https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>
+> --
+> ___________________________________________
+> Danlin Yu, Ph.D.
+> Professor of GIS and Urban Geography
+> Department of Earth & Environmental Studies Montclair State University
+> Montclair, NJ, 07043
+> Tel: 973-655-4313
+> Fax: 973-655-4072
+> Office: CELS 314
+> Email: yud at montclair.edu
+> webpage: csam.montclair.edu/~yu
+> Academic Editor and Editorial Board Member: Remote Sensing Special Issues:
+> https://www.mdpi.com/journal/remotesensing/special_issues/UPES_Big_Data_ra
+> Editor's Choice Articles:
+> https://www.mdpi.com/journal/remotesensing/editors_choice
+>   Most Cited & Viewed:
+> https://www.mdpi.com/journal/remotesensing/most_cited
+> Academic Editor and Editorial Board Member: International Journal of
+> Environmental Research and Public Health Special Issues:
+> Urban livability in the Big Data Era
+>
+> https://www.mdpi.com/journal/ijerph/special_issues/urban_environmental_management
+> Heavy metal contamination in urban environment
+> https://www.mdpi.com/journal/ijerph/special_issues/S61HUBE7B1
+> Any submission to the special issues prior to Jan. 31, 2024 will receive a
+> 25% discount of APC.
+>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>
+
+	[[alternative HTML version deleted]]
+
+
+From Roger@B|v@nd @end|ng |rom nhh@no  Mon Oct 16 10:53:04 2023
+From: Roger@B|v@nd @end|ng |rom nhh@no (Roger Bivand)
+Date: Mon, 16 Oct 2023 10:53:04 +0200 (CEST)
+Subject: [R-sig-Geo] maptools, rgdal, rgeos and rgrass7 retiring Monday,
+ October 16
+In-Reply-To: <SV0P279MB04756C25F6C3856F780245FFEEC4A@SV0P279MB0475.NORP279.PROD.OUTLOOK.COM>
+References: <SV0P279MB04756C25F6C3856F780245FFEEC4A@SV0P279MB0475.NORP279.PROD.OUTLOOK.COM>
+Message-ID: <19c9da0-9ec2-6390-abe6-dadfbc7ad182@reclus2.nhh.no>
+
+As previously announced, maptools, rgdal, rgeos and rgrass7 have been 
+archived by CRAN at my request. Some turbulence may be expected as about 
+80 packages with remaining strong dependencies on the archived packages 
+also are archived. I'm very grateful to many maintainers who have 
+responded to requests to update in time.
+
+Going forward, sp 2.1-1 will be submitted shortly removing on-load 
+messages, and about 70 non-updated packages with remaining weak 
+dependencies on the archived packages will be warned to update.
+
+Any issues arising from the evolution process should be reported here or 
+at https://github.com/r-spatial/evolution/issues.
+
+Roger
+
+On Tue, 3 Oct 2023, Roger Bivand wrote:
+
+> The legacy R spatial infrastructure packages maptools, rgdal and rgeos 
+> will be archived by CRAN on Monday, October 16, 2023; rgrass7 has 
+> already been replaced by rgrass and will be archived with the retiring 
+> packages.
+>
+> The choice of date matches the previously announced archiving during 
+> October 2023, and the specific date matches the release schedule of 
+> Bioconductor 3.18 (some Bioconductor packages depend on retiring 
+> packages).
+>
+> sp_2.1-0 was published October 2, 2023, dropping all dependencies on the 
+> retiring packages. sp will continue to be available and maintained, but 
+> not developed further. Users of sp classes may continue to make use of 
+> them, but will have to use sf or terra to read, write or manipulate 
+> objects with coercion (for a guide to coercion, see 
+> https://cran.r-project.org/web/packages/rgrass/vignettes/coerce.html).
+>
+> Information about the evolution project may be found in reports and 
+> resources at 
+> https://r-spatial.github.io/evolution/; 
+> a recent blog by Jakub Nowosad may also be useful as an overview of what 
+> has been going on: 
+> https://geocompx.org/post/2023/rgdal-retirement/. 
+> For more detail, see 
+> https://r-spatial.github.io/evolution/ogh23_bivand.html 
+> and a video recording of this presentation 
+> https://av.tib.eu/media/63141 
+> (August 28).
+>
+> All directly affected package maintainers have been alerted to the 
+> impending changes, some in December 2022, most others in March-April 
+> 2023. Many have already updated their packages on CRAN - thank you for 
+> your understanding! The remainder received github issue comments and 
+> email reminders in the last ten days, and will receive final notices to 
+> update by October 9.
+>
+> On R-universe, builds of packages archived on CRAN are dropped 
+> automatically 
+> (https://github.com/r-universe-org/help/issues/286). 
+> Read-only github mirrors of archived packages will remain available in 
+> principle while github exists 
+> (https://github.com/r-hub/rhub/issues/568), 
+> for example 
+> https://github.com/cran/rgdal. 
+> Other binary builds (Debian, Fedora, Ubuntu) have been alerted; support 
+> at Anaconda has been alerted.
+>
+> On CRAN, the retired packages will continue to be available as source 
+> packages on 
+> https://cran.r-project.org/src/contrib/Archive. 
+> maptools, rgdal and rgeos also retain their R-forge repositories, which 
+> may be used to retrieve functions for adding to other packages.
+>
+> A snapshot of Windows and macOS binary packages may be found on 
+> https://github.com/r-spatial/evolution/tree/main/backstore.
+>
+> Please raise questions by replying to this post, or as issues on 
+> https://github.com/r-spatial/evolution.
+>
+>
+> --
+> Roger Bivand
+> Emeritus Professor
+> Norwegian School of Economics
+> Postboks 3490 Ytre Sandviken, 5045 Bergen, Norway
+> Roger.Bivand at nhh.no
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>
+
+-- 
+Roger Bivand
+Emeritus Professor
+Department of Economics, Norwegian School of Economics,
+Postboks 3490 Ytre Sandviken, 5045 Bergen, Norway.
+e-mail: Roger.Bivand at nhh.no
+
+
+From jo@|@h@p@rry @end|ng |rom gm@||@com  Mon Oct 16 15:00:35 2023
+From: jo@|@h@p@rry @end|ng |rom gm@||@com (Josiah Parry)
+Date: Mon, 16 Oct 2023 09:00:35 -0400
+Subject: [R-sig-Geo] maptools, rgdal, rgeos and rgrass7 retiring Monday,
+ October 16
+In-Reply-To: <19c9da0-9ec2-6390-abe6-dadfbc7ad182@reclus2.nhh.no>
+References: <SV0P279MB04756C25F6C3856F780245FFEEC4A@SV0P279MB0475.NORP279.PROD.OUTLOOK.COM>
+ <19c9da0-9ec2-6390-abe6-dadfbc7ad182@reclus2.nhh.no>
+Message-ID: <CAL3ufU+REFARgPBShKucVX5n6k5nq+DzSxKNgCvBQU-cKjUMAA@mail.gmail.com>
+
+Congratulations and thank you so much for your hard work here!
+
+On Mon, Oct 16, 2023 at 4:53?AM Roger Bivand <Roger.Bivand at nhh.no> wrote:
+
+> As previously announced, maptools, rgdal, rgeos and rgrass7 have been
+> archived by CRAN at my request. Some turbulence may be expected as about
+> 80 packages with remaining strong dependencies on the archived packages
+> also are archived. I'm very grateful to many maintainers who have
+> responded to requests to update in time.
+>
+> Going forward, sp 2.1-1 will be submitted shortly removing on-load
+> messages, and about 70 non-updated packages with remaining weak
+> dependencies on the archived packages will be warned to update.
+>
+> Any issues arising from the evolution process should be reported here or
+> at https://github.com/r-spatial/evolution/issues.
+>
+> Roger
+>
+> On Tue, 3 Oct 2023, Roger Bivand wrote:
+>
+> > The legacy R spatial infrastructure packages maptools, rgdal and rgeos
+> > will be archived by CRAN on Monday, October 16, 2023; rgrass7 has
+> > already been replaced by rgrass and will be archived with the retiring
+> > packages.
+> >
+> > The choice of date matches the previously announced archiving during
+> > October 2023, and the specific date matches the release schedule of
+> > Bioconductor 3.18 (some Bioconductor packages depend on retiring
+> > packages).
+> >
+> > sp_2.1-0 was published October 2, 2023, dropping all dependencies on the
+> > retiring packages. sp will continue to be available and maintained, but
+> > not developed further. Users of sp classes may continue to make use of
+> > them, but will have to use sf or terra to read, write or manipulate
+> > objects with coercion (for a guide to coercion, see
+> > https://cran.r-project.org/web/packages/rgrass/vignettes/coerce.html).
+> >
+> > Information about the evolution project may be found in reports and
+> > resources at
+> > https://r-spatial.github.io/evolution/;
+> > a recent blog by Jakub Nowosad may also be useful as an overview of what
+> > has been going on:
+> > https://geocompx.org/post/2023/rgdal-retirement/.
+> > For more detail, see
+> > https://r-spatial.github.io/evolution/ogh23_bivand.html
+> > and a video recording of this presentation
+> > https://av.tib.eu/media/63141
+> > (August 28).
+> >
+> > All directly affected package maintainers have been alerted to the
+> > impending changes, some in December 2022, most others in March-April
+> > 2023. Many have already updated their packages on CRAN - thank you for
+> > your understanding! The remainder received github issue comments and
+> > email reminders in the last ten days, and will receive final notices to
+> > update by October 9.
+> >
+> > On R-universe, builds of packages archived on CRAN are dropped
+> > automatically
+> > (https://github.com/r-universe-org/help/issues/286).
+> > Read-only github mirrors of archived packages will remain available in
+> > principle while github exists
+> > (https://github.com/r-hub/rhub/issues/568),
+> > for example
+> > https://github.com/cran/rgdal.
+> > Other binary builds (Debian, Fedora, Ubuntu) have been alerted; support
+> > at Anaconda has been alerted.
+> >
+> > On CRAN, the retired packages will continue to be available as source
+> > packages on
+> > https://cran.r-project.org/src/contrib/Archive.
+> > maptools, rgdal and rgeos also retain their R-forge repositories, which
+> > may be used to retrieve functions for adding to other packages.
+> >
+> > A snapshot of Windows and macOS binary packages may be found on
+> > https://github.com/r-spatial/evolution/tree/main/backstore.
+> >
+> > Please raise questions by replying to this post, or as issues on
+> > https://github.com/r-spatial/evolution.
+> >
+> >
+> > --
+> > Roger Bivand
+> > Emeritus Professor
+> > Norwegian School of Economics
+> > Postboks 3490 Ytre Sandviken, 5045 Bergen, Norway
+> > Roger.Bivand at nhh.no
+> > _______________________________________________
+> > R-sig-Geo mailing list
+> > R-sig-Geo at r-project.org
+> > https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> >
+>
+> --
+> Roger Bivand
+> Emeritus Professor
+> Department of Economics, Norwegian School of Economics,
+> Postboks 3490 Ytre Sandviken, 5045 Bergen, Norway.
+> e-mail: Roger.Bivand at nhh.no
+>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>
+
+	[[alternative HTML version deleted]]
+
+

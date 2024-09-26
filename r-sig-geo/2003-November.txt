@@ -1,0 +1,1579 @@
+From B.Rowlingson at lancaster.ac.uk  Mon Nov  3 12:23:12 2003
+From: B.Rowlingson at lancaster.ac.uk (Barry Rowlingson)
+Date: Mon, 03 Nov 2003 11:23:12 +0000
+Subject: [R-sig-Geo] Re: [R] A package for spatial data classes: request for
+	comments
+In-Reply-To: <3FA247AC.5000405@geog.uu.nl>
+References: <3FA247AC.5000405@geog.uu.nl>
+Message-ID: <3FA63AA0.5000607@lancaster.ac.uk>
+
+
+> To be really useful, the class should include vector (polygon) data,
+> and probably line elements. For this, I need help. The simples approach
+> would be to extend SpatialDataFrame to SpatialDataFramePolygon,
+> and add for each row add the corresponding polygon.
+
+  I think you need to stop thinking about building classes at the 
+moment, and to think about specifying _interfaces_. What methods do we 
+want for spatial data? How will functions get the spatial data out of 
+the objects? Then we can build classes that implement these interfaces.
+
+  For example, the rasp library uses sp.coords(foo) whenever it needs a 
+set of point locations for analysis. It doesn't care what 'foo' is, as 
+long as sp.coords(foo) returns a 2-column matrix.
+
+  rasp provides spatial.data.frame as a class for when your data is 
+conveniently stored in a data frame, but each row has an associated 
+coordinate. Suppose your data is a varying number of measurements of 
+soil acidity over time at a number of locations - this would be better 
+stored as a list with foo[[i]] being a 2-column matrix (or data frame) 
+of time and acidity, and a single associated coordinate. This could then 
+be made into a spatial.list class. As long as there's an 
+sp.coords.spatial.list then you can use rasp analysis functions using 
+this object and it will get the coordinates.
+
+  Typical methods that spatial location data will have would be things 
+like sp.coords() to get point locations, bbox() for bounding box, and 
+ummm, I cant really think of anything else at that level.
+
+  Lat-long geographic data needs a slightly different set of interface 
+methods, to cope with projections, and this might implement a 
+'project<-' function, for example:
+
+sp.coords(foo) # returns cbind(Lat, Long)
+project(foo) <- '+proj=merc +lat0=35'
+
+now sp.coords(foo) returns the projected coordinates.
+
+  Any objects with lat-long coordinates (points, polygons, lines) need 
+to implement the 'project<-' function, and whatever 'foo' is, it gets 
+projected properly. The object can decide whether to do the projection 
+calculations at 'project(foo)<-' time or save it until 'sp.coords(foo)' 
+time.
+
+  So, I'll wrap up this ramble with the thought that we need to consider 
+interfaces rather than classes, and I might just have another bash at S4 
+classes with this :)
+
+Baz
+
+
+
+From e.pebesma at geog.uu.nl  Mon Nov  3 16:08:17 2003
+From: e.pebesma at geog.uu.nl (Edzer J. Pebesma)
+Date: Mon, 03 Nov 2003 16:08:17 +0100
+Subject: [R-sig-Geo] Re: [R] A package for spatial data classes: request for
+	comments
+In-Reply-To: <3FA63AA0.5000607@lancaster.ac.uk>
+References: <3FA247AC.5000405@geog.uu.nl> <3FA63AA0.5000607@lancaster.ac.uk>
+Message-ID: <3FA66F61.2000505@geog.uu.nl>
+
+Barry Rowlingson wrote:
+
+>
+>> To be really useful, the class should include vector (polygon) data,
+>> and probably line elements. For this, I need help. The simples approach
+>> would be to extend SpatialDataFrame to SpatialDataFramePolygon,
+>> and add for each row add the corresponding polygon.
+>
+>
+>  I think you need to stop thinking about building classes at the 
+> moment, and to think about specifying _interfaces_. What methods do we 
+> want for spatial data? How will functions get the spatial data out of 
+> the objects? Then we can build classes that implement these interfaces.
+
+Baz, I agree that interfaces are important. Still, concentrating on 
+interfaces _only_
+does encourage package writers to come up each with a new set of spatial 
+classes
+-- something I would like to discourage: sharing more code makes the 
+code more
+reliable.
+
+I did build upon your idea of sp.coords, but called it coordinates, and 
+used reference (column name/numbers) instead of actual values:
+
+coordinates(meuse) = c("x", "y")
+
+I prefer coordinates because at some stage the S3 method mechanism may
+interpret sp.coords as an sp method for a coords class.
+
+My question, in your perspective, would be: which methods do we need for
+a generic class containing vector/polygon data?
+
+E.g. how is,
+
+polygons(world) # gets or sets the polygons, as a list of 2 col matrices
+polygonAttributes(world) # gets or sets the polygon attributes, as data 
+frame
+--
+Edzer
+
+
+
+From anselin at uiuc.edu  Mon Nov  3 17:45:48 2003
+From: anselin at uiuc.edu (Luc Anselin)
+Date: Mon, 3 Nov 2003 10:45:48 -0600
+Subject: [R-sig-Geo] Re: [R] A package for spatial data classes: request
+	for comments
+In-Reply-To: <3FA66F61.2000505@geog.uu.nl>
+Message-ID: <2D5C8BE5-0E1D-11D8-990B-000393C8EF0E@uiuc.edu>
+
+As I mentioned to Roger Bivand a few days ago, it might be a good
+idea to take a look at the spatial classes in ESRI's ArcGIS. In my
+view they are not 100% ready for statistical analysis, but the vector
+classes are very well structured. What is missing is an efficient
+way to incorporate "topology" (contiguity structure) to provide
+an easy way to construct spatial weights. In GeoDa, we build this
+from scratch, using the shape files, but  that's not the way it
+should be (although very fast).
+L.
+
+On Monday, November 3, 2003, at 09:08 AM, Edzer J. Pebesma wrote:
+
+> Barry Rowlingson wrote:
+>
+>>
+>>> To be really useful, the class should include vector (polygon) data,
+>>> and probably line elements. For this, I need help. The simples 
+>>> approach
+>>> would be to extend SpatialDataFrame to SpatialDataFramePolygon,
+>>> and add for each row add the corresponding polygon.
+>>
+>>
+>>  I think you need to stop thinking about building classes at the 
+>> moment, and to think about specifying _interfaces_. What methods do 
+>> we want for spatial data? How will functions get the spatial data out 
+>> of the objects? Then we can build classes that implement these 
+>> interfaces.
+>
+> Baz, I agree that interfaces are important. Still, concentrating on 
+> interfaces _only_
+> does encourage package writers to come up each with a new set of 
+> spatial classes
+> -- something I would like to discourage: sharing more code makes the 
+> code more
+> reliable.
+>
+> I did build upon your idea of sp.coords, but called it coordinates, 
+> and used reference (column name/numbers) instead of actual values:
+>
+> coordinates(meuse) = c("x", "y")
+>
+> I prefer coordinates because at some stage the S3 method mechanism may
+> interpret sp.coords as an sp method for a coords class.
+>
+> My question, in your perspective, would be: which methods do we need 
+> for
+> a generic class containing vector/polygon data?
+>
+> E.g. how is,
+>
+> polygons(world) # gets or sets the polygons, as a list of 2 col 
+> matrices
+> polygonAttributes(world) # gets or sets the polygon attributes, as 
+> data frame
+> --
+> Edzer
+>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://www.stat.math.ethz.ch/mailman/listinfo/r-sig-geo
+>
+>
+----------------------------------------------------------------
+Luc Anselin, PhD.
+Faculty Excellence Professor and Director
+Spatial Analysis Laboratory
+Dept. Agricultural and Consumer Economics
+University of Illinois at Urbana-Champaign
+http://sal.agecon.uiuc.edu/
+
+
+
+From Roger.Bivand at nhh.no  Tue Nov  4 09:50:03 2003
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Tue, 4 Nov 2003 09:50:03 +0100 (CET)
+Subject: [R-sig-Geo] Re: [R] A package for spatial data classes: request
+	for comments
+In-Reply-To: <2D5C8BE5-0E1D-11D8-990B-000393C8EF0E@uiuc.edu>
+Message-ID: <Pine.LNX.4.44.0311040936350.22483-100000@reclus.nhh.no>
+
+On Mon, 3 Nov 2003, Luc Anselin wrote:
+
+> As I mentioned to Roger Bivand a few days ago, it might be a good
+> idea to take a look at the spatial classes in ESRI's ArcGIS. In my
+> view they are not 100% ready for statistical analysis, but the vector
+> classes are very well structured. What is missing is an efficient
+> way to incorporate "topology" (contiguity structure) to provide
+> an easy way to construct spatial weights. In GeoDa, we build this
+> from scratch, using the shape files, but  that's not the way it
+> should be (although very fast).
+> L.
+
+Yes, it's the topology/no topology that emerges as a question. It will be 
+worth looking at one or more of the following too: Terralib 
+(www.terralib.org) - work going on in Brazil is really well done and 
+exciting (which is why I've CC'd to Paulo Ribeiro), the GRASS 5.7 
+experimental vector engine, now approaching a draft alpha release but very 
+promising (grass.itc.it), maybe OpenGIS GML - which doesn't do topology, 
+and finally the newly released map* packages, which do topology using the 
+original Bell Labs Geographical Database model. Terralib and GRASS are 
+open source, the map* packages are mixed (2 OS, 1 non-commercial) and 
+don't include methods for ingesting other data, which needs to go through 
+an external tool topologising train (I think). Other users will be 
+grateful for a route from shapefile through topology to map().
+
+I think Barry has an important point about methods, but which may expand 
+fast - as Edzer wrote - if the number of input object types also grows - 
+so to do methods right, we still need more consistency in the input 
+objects. From there on, methods can rule, perhaps.
+
+Roger
+
+> 
+> On Monday, November 3, 2003, at 09:08 AM, Edzer J. Pebesma wrote:
+> 
+> > Barry Rowlingson wrote:
+> >
+> >>
+> >>> To be really useful, the class should include vector (polygon) data,
+> >>> and probably line elements. For this, I need help. The simples 
+> >>> approach
+> >>> would be to extend SpatialDataFrame to SpatialDataFramePolygon,
+> >>> and add for each row add the corresponding polygon.
+> >>
+> >>
+> >>  I think you need to stop thinking about building classes at the 
+> >> moment, and to think about specifying _interfaces_. What methods do 
+> >> we want for spatial data? How will functions get the spatial data out 
+> >> of the objects? Then we can build classes that implement these 
+> >> interfaces.
+> >
+> > Baz, I agree that interfaces are important. Still, concentrating on 
+> > interfaces _only_
+> > does encourage package writers to come up each with a new set of 
+> > spatial classes
+> > -- something I would like to discourage: sharing more code makes the 
+> > code more
+> > reliable.
+> >
+> > I did build upon your idea of sp.coords, but called it coordinates, 
+> > and used reference (column name/numbers) instead of actual values:
+> >
+> > coordinates(meuse) = c("x", "y")
+> >
+> > I prefer coordinates because at some stage the S3 method mechanism may
+> > interpret sp.coords as an sp method for a coords class.
+> >
+> > My question, in your perspective, would be: which methods do we need 
+> > for
+> > a generic class containing vector/polygon data?
+> >
+> > E.g. how is,
+> >
+> > polygons(world) # gets or sets the polygons, as a list of 2 col 
+> > matrices
+> > polygonAttributes(world) # gets or sets the polygon attributes, as 
+> > data frame
+> > --
+> > Edzer
+> >
+> > _______________________________________________
+> > R-sig-Geo mailing list
+> > R-sig-Geo at stat.math.ethz.ch
+> > https://www.stat.math.ethz.ch/mailman/listinfo/r-sig-geo
+> >
+> >
+> ----------------------------------------------------------------
+> Luc Anselin, PhD.
+> Faculty Excellence Professor and Director
+> Spatial Analysis Laboratory
+> Dept. Agricultural and Consumer Economics
+> University of Illinois at Urbana-Champaign
+> http://sal.agecon.uiuc.edu/
+> 
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://www.stat.math.ethz.ch/mailman/listinfo/r-sig-geo
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Breiviksveien 40, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 93 93
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From hi_ono2001 at ybb.ne.jp  Tue Nov  4 14:32:59 2003
+From: hi_ono2001 at ybb.ne.jp (Hisaji Ono)
+Date: Tue, 4 Nov 2003 22:32:59 +0900
+Subject: [R-sig-Geo] multivariate moran & lisa for spdep
+References: <Pine.LNX.4.44.0311040936350.22483-100000@reclus.nhh.no>
+Message-ID: <004101c3a2d8$2a0ebb30$818001db@webgis>
+
+Hi.
+
+ GeoDA supports multivariate(two variables) moran & lisa for spdep, while
+spdep only support univariate ones.
+
+ I've never read multivariate moran & lisa in human geography's
+bibliography.
+
+ Could you tell me whether adding these methods into spdep is possible or
+not.
+
+ Regards.
+
+
+
+From nikko at hailmail.net  Tue Nov  4 15:43:39 2003
+From: nikko at hailmail.net (Nicholas Lewin-Koh)
+Date: Tue, 04 Nov 2003 22:43:39 +0800
+Subject: [R-sig-Geo] RE: A package for spatial data classes: request for
+	comments
+In-Reply-To: <200311041130.hA4BU7PX024722@hypatia.math.ethz.ch>
+References: <200311041130.hA4BU7PX024722@hypatia.math.ethz.ch>
+Message-ID: <20031104144339.A043240490@server1.messagingengine.com>
+
+Hi,
+I couldn't agree more with Barry Rowlingson. The initial set of basic
+interfaces should be set up first then start building in the methods.
+Without the underlying data structures well defined 
+this could turn into a nightmare.
+
+regarding topology, I am not sure that that is the most efficient set of
+information necessary for
+statistical computation. I think some sort of spatial indexing for fast
+neighborhood calculation and spatial joins is important. I could see
+topology being important for network modeling, where flow through the
+network would be important, however that could be tackled again with
+efficient contiguity calculations and a method to convert a map to a
+graph data structure. A quad tree (or octtree for 3d data) or perhaps an
+R-tree structure would be most effective. I was thinking about the
+implementation this morning, and I thought this might be a good use of
+the external pointer mechanism, with the option to write the data
+structure as an R object to save and restore on startup (home grown
+pickling).
+
+my 2c
+
+Nicholas
+
+
+
+From anselin at uiuc.edu  Tue Nov  4 15:47:59 2003
+From: anselin at uiuc.edu (Luc Anselin)
+Date: Tue, 4 Nov 2003 08:47:59 -0600
+Subject: [R-sig-Geo] multivariate moran & lisa for spdep
+In-Reply-To: <004101c3a2d8$2a0ebb30$818001db@webgis>
+Message-ID: <E21A3270-0ED5-11D8-A1E4-000393C8EF0E@uiuc.edu>
+
+Multivariate Moran was first (as far as I know) described in an article
+by Dan Wartenberg in Geographical Analysis (1985?). The implementation
+of this idea in a Moran scatterplot and in LISA maps is described in
+a conference proceedings by Anselin, Syabri and Smirnov (2002)
+http://sal.agecon.uiuc.edu/users/anselin/papers.html#dynesda2
+as well as in several powerpoint presentations.
+A slightly revised version is to appear  in a forthcoming special issue
+of Computers and Geosciences.
+I believe it would be fairly straightforward to add this to spdep,
+it just a matter of time (having time, that is ...).
+L.
+
+
+On Tuesday, November 4, 2003, at 07:32 AM, Hisaji Ono wrote:
+
+> Hi.
+>
+>  GeoDA supports multivariate(two variables) moran & lisa for spdep, 
+> while
+> spdep only support univariate ones.
+>
+>  I've never read multivariate moran & lisa in human geography's
+> bibliography.
+>
+>  Could you tell me whether adding these methods into spdep is possible 
+> or
+> not.
+>
+>  Regards.
+>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://www.stat.math.ethz.ch/mailman/listinfo/r-sig-geo
+>
+
+
+
+From dray at biomserv.univ-lyon1.fr  Tue Nov  4 16:15:23 2003
+From: dray at biomserv.univ-lyon1.fr (Stephane DRAY)
+Date: Tue, 04 Nov 2003 10:15:23 -0500
+Subject: [R-sig-Geo] multivariate moran & lisa for spdep
+In-Reply-To: <004101c3a2d8$2a0ebb30$818001db@webgis>
+References: <Pine.LNX.4.44.0311040936350.22483-100000@reclus.nhh.no>
+Message-ID: <5.2.1.1.0.20031104100041.038e6448@biomserv.univ-lyon1.fr>
+
+An embedded and charset-unspecified text was scrubbed...
+Name: not available
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20031104/c7d60cd1/attachment.pl>
+
+From nikko at hailmail.net  Tue Nov  4 16:59:58 2003
+From: nikko at hailmail.net (Nicholas Lewin-Koh)
+Date: Tue, 04 Nov 2003 23:59:58 +0800
+Subject: [R-sig-Geo] Re:multivariate moran & lisa for spdep
+Message-ID: <20031104155958.AD7D33C98C@server1.messagingengine.com>
+
+Hi,
+I remember in the Wartenberg paper there being a big problems;
+1) The moran matrix is not symetric
+2) The matrix can be non-positive definite, and I think not even
+non-negative definite.
+
+I believe Robin Reich worked out a bivariate Moran's I, and I think there
+is a
+publication in Environmental and Ecological Statistics, I don't remember
+which issue.
+I worked on the probelm a bit and came up with a combination grand-tour
+and Moran Scatter plot.
+In otherwords, project into 1-dimension using a random orthonormal basis,
+calculate Moran's I on 
+the projected data. The derivatives can be easily derived (quadratic
+form) and the function can be optimized ocver projections to
+maximize/minimize Moran's I. I had some other thoughts on this at the
+time, but I would have to dig out my notes. There is an interactive
+implementation of this in java nested in the ORCA libraries.
+
+Also along these lines William Christensen did some really nice work on
+spatial factor analysis:
+
+Christensen, W. F., and Amemiya, Y. (2001).  "Generalized shifted-factor
+analysis method for multivariate geo-referenced data," Mathematical
+Geology, 33, 801-824
+
+Christensen, W. F., and Amemiya, Y. (2002).  "Latent variable analysis of
+multivariate spatial data," Journal of the American Statistical
+Association, 97, 302-317.
+
+I think ther solution was in the cases where the spatial covariance was
+not pd they nudged the matrix until it was. I think aysymptotically there
+is no bias.
+
+Anyway if i am wrong about the multivariate Moran's I, I am sure Luc will
+set me straight.
+
+My 2c
+
+Nicholas
+
+
+
+From nikko at hailmail.net  Tue Nov  4 17:08:37 2003
+From: nikko at hailmail.net (Nicholas Lewin-Koh)
+Date: Wed, 05 Nov 2003 00:08:37 +0800
+Subject: [R-sig-Geo] multivariate moran & lisa for spdep (again)
+Message-ID: <20031104160837.B51D33CCBF@server1.messagingengine.com>
+
+Hi again,
+Here are the Robin Reich papers I was thinking of:
+
+Czaplewski, R. L. and R. M. Reich. 1993. Expected value and variance of
+Moran's bivariate spatial autocorrelation statistic under permutation.
+Res. Pap. Rm-309. U. S. Department of Agriculture, Rocky Mountain Forest
+and Range Experiment Station, Fort Collins, CO. 13p.
+
+and
+
+Reich, R. M., R. L. Czaplewski, and W. A. Bechtold. 1994. Spatial
+cross-correlation in growth of undisturbed natural shortleaf pine stands
+in northern Georgia. Journal of Environmental and Ecological Statistics.
+1:201-217.
+
+and
+
+Reich, R. M. and R. L. Czaplewski. 1995. Bivariate spatial
+autocorrelation: A new technique for assessing spatial patterns. pp
+91-100. In: Proc., 1993 IUFRO S4.11 Conference on Stochastic Spatial
+Models in Forestry, May 18-21, 1993, Thessaloniki, Greece.
+
+Nicholas
+
+
+
+From anselin at uiuc.edu  Tue Nov  4 17:19:09 2003
+From: anselin at uiuc.edu (Luc Anselin)
+Date: Tue, 4 Nov 2003 10:19:09 -0600
+Subject: [R-sig-Geo] Re:multivariate moran & lisa for spdep
+In-Reply-To: <20031104155958.AD7D33C98C@server1.messagingengine.com>
+Message-ID: <9E871ED0-0EE2-11D8-A1E4-000393C8EF0E@uiuc.edu>
+
+no, you're right about the Wartenberg approach :)
+The implementation in GeoDa doesn't follow Wartenberg,
+only in spirit. It is simply Wy on x where both y and x have
+been standardized (mean zero, sd = 1). I'm not sure it's
+always that meaningful in a general bivariate sense, but
+for space-time analysis it is. Here, y and x would be the
+same variable but one time period apart (how is x at i
+correlated with its neighbors at another point in time).
+Best not to make  too much of these bivariate associations
+thought, they often hide more complex multivariate
+relationships.
+Thanks for the pointer on the grand tour Moran scatterplot
+idea. That is indeed very interesting.
+L.
+
+
+
+On Tuesday, November 4, 2003, at 09:59 AM, Nicholas Lewin-Koh wrote:
+
+> Hi,
+> I remember in the Wartenberg paper there being a big problems;
+> 1) The moran matrix is not symetric
+> 2) The matrix can be non-positive definite, and I think not even
+> non-negative definite.
+>
+> I believe Robin Reich worked out a bivariate Moran's I, and I think 
+> there
+> is a
+> publication in Environmental and Ecological Statistics, I don't 
+> remember
+> which issue.
+> I worked on the probelm a bit and came up with a combination grand-tour
+> and Moran Scatter plot.
+> In otherwords, project into 1-dimension using a random orthonormal 
+> basis,
+> calculate Moran's I on
+> the projected data. The derivatives can be easily derived (quadratic
+> form) and the function can be optimized ocver projections to
+> maximize/minimize Moran's I. I had some other thoughts on this at the
+> time, but I would have to dig out my notes. There is an interactive
+> implementation of this in java nested in the ORCA libraries.
+>
+> Also along these lines William Christensen did some really nice work on
+> spatial factor analysis:
+>
+> Christensen, W. F., and Amemiya, Y. (2001).  "Generalized 
+> shifted-factor
+> analysis method for multivariate geo-referenced data," Mathematical
+> Geology, 33, 801-824
+>
+> Christensen, W. F., and Amemiya, Y. (2002).  "Latent variable analysis 
+> of
+> multivariate spatial data," Journal of the American Statistical
+> Association, 97, 302-317.
+>
+> I think ther solution was in the cases where the spatial covariance was
+> not pd they nudged the matrix until it was. I think aysymptotically 
+> there
+> is no bias.
+>
+> Anyway if i am wrong about the multivariate Moran's I, I am sure Luc 
+> will
+> set me straight.
+>
+> My 2c
+>
+> Nicholas
+>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://www.stat.math.ethz.ch/mailman/listinfo/r-sig-geo
+>
+
+
+
+From e.pebesma at geog.uu.nl  Thu Nov  6 09:59:49 2003
+From: e.pebesma at geog.uu.nl (Edzer J. Pebesma)
+Date: Thu, 06 Nov 2003 09:59:49 +0100
+Subject: [R-sig-Geo] Re: [R] A package for spatial data classes: request
+	for comments
+In-Reply-To: <2D5C8BE5-0E1D-11D8-990B-000393C8EF0E@uiuc.edu>
+References: <2D5C8BE5-0E1D-11D8-990B-000393C8EF0E@uiuc.edu>
+Message-ID: <3FAA0D85.7060405@geog.uu.nl>
+
+Luc Anselin wrote:
+
+> As I mentioned to Roger Bivand a few days ago, it might be a good
+> idea to take a look at the spatial classes in ESRI's ArcGIS. In my
+> view they are not 100% ready for statistical analysis, but the vector
+> classes are very well structured. 
+
+Luc, are you referring to the "Geometry" section in the second paper
+(arcob81post.pdf) of the incredibly hart to read poster at
+
+http://www.esri.com/library/whitepapers/ao_lit.html
+or is there some more accessible information to these classes?
+
+> What is missing is an efficient
+> way to incorporate "topology" (contiguity structure) to provide
+> an easy way to construct spatial weights. In GeoDa, we build this
+> from scratch, using the shape files, but  that's not the way it
+> should be (although very fast).
+
+If constructing it is very fast, why should we incorporate it in the
+class definition, instead of creating it on the fly? Package gstat
+builds PR bucket quadtrees for fast neighbourhood selections,
+which makes the program scalable to large interpolation or
+simulation jobs, but it never stores them.
+We recently found out that if you want to apply
+gstat to say 1e9 points (so many that you will never be able to
+hold them in RAM), even then quadtree _building_ does take so
+little time (minutes, maybe) that it does not reward storing it.
+
+When constructing topology from prohibitively large spatial data
+bases in R, another route to investigate would be Postgress/PostGIS;
+It can deal with tree search indexes, and I think it uses the GEOS
+geometry toolkit.
+--
+Edzer
+
+
+
+From anselin at uiuc.edu  Thu Nov  6 13:49:13 2003
+From: anselin at uiuc.edu (Luc Anselin)
+Date: Thu, 6 Nov 2003 06:49:13 -0600
+Subject: [R-sig-Geo] Re: [R] A package for spatial data classes: request
+	for comments
+In-Reply-To: <3FAA0D85.7060405@geog.uu.nl>
+Message-ID: <9FC7CA46-1057-11D8-B1CE-000393C8EF0E@uiuc.edu>
+
+There is better documentation, I'll look for a digital form
+or maybe somebody else has found it already.
+The construction of topology is a tradeoff. It is (can be)
+fast, so it can be done on the fly. This is actually what
+ArcGIS 8.2 and later does, topology is no longer "stored".
+I have found that in spatial regression when the same
+weights object is used over and over (e.g., 3000+ US
+counties, or multiples of 100 000 in real estate transactions),
+it makes sense to store it and to somehow
+relate it back to the original coverage. This doesn't
+necessarily mean it has to be part of the class design
+for that object, but the connection should be there.
+Also, this is a one to many relationship, in that multiple
+weights can be constructed for the same coverage.
+L.
+
+
+On Thursday, November 6, 2003, at 02:59 AM, Edzer J. Pebesma wrote:
+
+> Luc Anselin wrote:
+>
+>> As I mentioned to Roger Bivand a few days ago, it might be a good
+>> idea to take a look at the spatial classes in ESRI's ArcGIS. In my
+>> view they are not 100% ready for statistical analysis, but the vector
+>> classes are very well structured.
+>
+> Luc, are you referring to the "Geometry" section in the second paper
+> (arcob81post.pdf) of the incredibly hart to read poster at
+>
+> http://www.esri.com/library/whitepapers/ao_lit.html
+> or is there some more accessible information to these classes?
+>
+>> What is missing is an efficient
+>> way to incorporate "topology" (contiguity structure) to provide
+>> an easy way to construct spatial weights. In GeoDa, we build this
+>> from scratch, using the shape files, but  that's not the way it
+>> should be (although very fast).
+>
+> If constructing it is very fast, why should we incorporate it in the
+> class definition, instead of creating it on the fly? Package gstat
+> builds PR bucket quadtrees for fast neighbourhood selections,
+> which makes the program scalable to large interpolation or
+> simulation jobs, but it never stores them.
+> We recently found out that if you want to apply
+> gstat to say 1e9 points (so many that you will never be able to
+> hold them in RAM), even then quadtree _building_ does take so
+> little time (minutes, maybe) that it does not reward storing it.
+>
+> When constructing topology from prohibitively large spatial data
+> bases in R, another route to investigate would be Postgress/PostGIS;
+> It can deal with tree search indexes, and I think it uses the GEOS
+> geometry toolkit.
+> --
+> Edzer
+>
+
+
+
+From giovanna.jonalasinio at uniroma1.it  Thu Nov  6 16:26:25 2003
+From: giovanna.jonalasinio at uniroma1.it (giovanna jona lasinio)
+Date: Thu, 6 Nov 2003 16:26:25 +0100
+Subject: [R-sig-Geo] plot.xvalid, simple question
+Message-ID: <LIENKNHCFMLBLEDKGJHKMEIICCAA.giovanna.jonalasinio@uniroma1.it>
+
+When plotting results from a crossvalidation done via xvalid (in geoR) it is
+not clear the coloring code used for the coordinate plots. Can anyone
+clarify what corresponds to each color? (red and blue in my plots).
+
+Thanks
+Giovanna Jona Lasinio
+
+
+
+From olefc at daimi.au.dk  Thu Nov  6 18:46:38 2003
+From: olefc at daimi.au.dk (Ole F. Christensen)
+Date: Thu, 06 Nov 2003 18:46:38 +0100
+Subject: [R-sig-Geo] plot.xvalid, simple question
+In-Reply-To: <LIENKNHCFMLBLEDKGJHKMEIICCAA.giovanna.jonalasinio@uniroma1.it>
+References: <LIENKNHCFMLBLEDKGJHKMEIICCAA.giovanna.jonalasinio@uniroma1.it>
+Message-ID: <3FAA88FE.3060002@daimi.au.dk>
+
+Hi
+
+Blue corresponds to error being positive and red to error being 
+negative. The size of the symbols correspond to the absolute value of 
+the error.
+
+Here ``error''  =  'data - predicted'.
+
+Hope this helps.
+
+Ole
+
+[To Paulo : should  this and the other plots produced by this function 
+be documented ?]
+
+
+giovanna jona lasinio wrote:
+
+>When plotting results from a crossvalidation done via xvalid (in geoR) it is
+>not clear the coloring code used for the coordinate plots. Can anyone
+>clarify what corresponds to each color? (red and blue in my plots).
+>
+>Thanks
+>Giovanna Jona Lasinio
+>
+>_______________________________________________
+>R-sig-Geo mailing list
+>R-sig-Geo at stat.math.ethz.ch
+>https://www.stat.math.ethz.ch/mailman/listinfo/r-sig-geo
+>
+>
+>  
+>
+
+-- 
+Ole F. Christensen
+Center for Bioinformatik
+Datalogisk Institut
+Aarhus Universitet
+Ny Munkegade, Bygning 540
+8000 Aarhus C
+Denmark
+
+
+
+From giovanna.jonalasinio at uniroma1.it  Fri Nov  7 09:23:52 2003
+From: giovanna.jonalasinio at uniroma1.it (giovanna jona lasinio)
+Date: Fri, 7 Nov 2003 09:23:52 +0100
+Subject: R: [R-sig-Geo] plot.xvalid, plo.geodata  and color  coding
+In-Reply-To: <3FAA88FE.3060002@daimi.au.dk>
+Message-ID: <LIENKNHCFMLBLEDKGJHKCEIKCCAA.giovanna.jonalasinio@uniroma1.it>
+
+Thanks for the explanation!
+
+I believe it would be very useful to document at least the color coding of
+plots in geoR, colors perception is very subjective, to me red is positive
+and blue negative, while in the plot.xvalid the color coding is the
+opposite. In the plot.geodata the spatial locations plot is color coded
+without a legend, then it's a useful plot which  can be only partially
+used...
+
+ Giovanna Jona Lasinio
+
+-----Messaggio originale-----
+Da: Ole F. Christensen [mailto:olefc at daimi.au.dk]
+Inviato: Thursday, November 06, 2003 6:47 PM
+A: giovanna jona lasinio
+Cc: r-sig-geo at stat.math.ethz.ch; Paulo Ribeiro
+Oggetto: Re: [R-sig-Geo] plot.xvalid, simple question
+
+
+Hi
+
+Blue corresponds to error being positive and red to error being
+negative. The size of the symbols correspond to the absolute value of
+the error.
+
+Here ``error''  =  'data - predicted'.
+
+Hope this helps.
+
+Ole
+
+[To Paulo : should  this and the other plots produced by this function
+be documented ?]
+
+
+giovanna jona lasinio wrote:
+
+>When plotting results from a crossvalidation done via xvalid (in geoR) it
+is
+>not clear the coloring code used for the coordinate plots. Can anyone
+>clarify what corresponds to each color? (red and blue in my plots).
+>
+>Thanks
+>Giovanna Jona Lasinio
+>
+>_______________________________________________
+>R-sig-Geo mailing list
+>R-sig-Geo at stat.math.ethz.ch
+>https://www.stat.math.ethz.ch/mailman/listinfo/r-sig-geo
+>
+>
+>
+>
+
+--
+Ole F. Christensen
+Center for Bioinformatik
+Datalogisk Institut
+Aarhus Universitet
+Ny Munkegade, Bygning 540
+8000 Aarhus C
+Denmark
+
+
+
+From umberto.picchini at biomatematica.it  Mon Nov 10 15:40:07 2003
+From: umberto.picchini at biomatematica.it (Umberto Picchini)
+Date: Mon, 10 Nov 2003 15:40:07 +0100
+Subject: [R-sig-Geo] geographical barycentre
+Message-ID: <000901c3a798$8906fcf0$8a01240a@Trauma2>
+
+Dear R users,
+I need the coordinates of the geographical barycentre of each italian region
+(Toscana, Lazio, ecc.): do you know some internet address to consult?
+Best regards.
+
+=================================
+Umberto Picchini (Dr. Statistics)
+   Biomathematics Laboratory
+CNR  IASI    Fisiopatologia Shock
+         Universita`  Cattolica
+Largo A. Gemelli, 8 -  00168 Rome (Italy)
+Tel. +390630155389
+umberto.picchini at biomatematica.it
+           www.biomatematica.it
+
+
+
+From giovanna.jonalasinio at uniroma1.it  Wed Nov 12 14:39:48 2003
+From: giovanna.jonalasinio at uniroma1.it (giovanna jona lasinio)
+Date: Wed, 12 Nov 2003 14:39:48 +0100
+Subject: [R-sig-Geo] R:geographical barycentre
+In-Reply-To: <200311111101.hABB19PY018119@hypatia.math.ethz.ch>
+Message-ID: <LIENKNHCFMLBLEDKGJHKKEJLCCAA.giovanna.jonalasinio@uniroma1.it>
+
+
+You may try the following site http://www.leti-messina.it/ and follow the
+link to Italia Lat/Long and UTM. This is useful if you already know the name
+of a village or town which corresponds to the region barycentre.
+
+Giovanna JOna Lasinio
+-----Messaggio originale-----
+Da: r-sig-geo-bounces at stat.math.ethz.ch
+[mailto:r-sig-geo-bounces at stat.math.ethz.ch]Per conto di
+r-sig-geo-request at stat.math.ethz.ch
+Inviato: Tuesday, November 11, 2003 12:01 PM
+A: r-sig-geo at stat.math.ethz.ch
+Oggetto: R-sig-Geo Digest, Vol 3, Issue 6
+
+
+Send R-sig-Geo mailing list submissions to
+	r-sig-geo at stat.math.ethz.ch
+
+To subscribe or unsubscribe via the World Wide Web, visit
+	https://www.stat.math.ethz.ch/mailman/listinfo/r-sig-geo
+or, via email, send a message with subject or body 'help' to
+	r-sig-geo-request at stat.math.ethz.ch
+
+You can reach the person managing the list at
+	r-sig-geo-owner at stat.math.ethz.ch
+
+When replying, please edit your Subject line so it is more specific
+than "Re: Contents of R-sig-Geo digest..."
+
+
+Today's Topics:
+
+   1. geographical barycentre (Umberto Picchini)
+
+
+----------------------------------------------------------------------
+
+Message: 1
+Date: Mon, 10 Nov 2003 15:40:07 +0100
+From: "Umberto Picchini" <umberto.picchini at biomatematica.it>
+Subject: [R-sig-Geo] geographical barycentre
+To: "r-sig-geo" <r-sig-geo at stat.math.ethz.ch>
+Message-ID: <000901c3a798$8906fcf0$8a01240a at Trauma2>
+Content-Type: text/plain;	charset="iso-8859-1"
+
+Dear R users,
+I need the coordinates of the geographical barycentre of each italian region
+(Toscana, Lazio, ecc.): do you know some internet address to consult?
+Best regards.
+
+=================================
+Umberto Picchini (Dr. Statistics)
+   Biomathematics Laboratory
+CNR  IASI    Fisiopatologia Shock
+         Universita`  Cattolica
+Largo A. Gemelli, 8 -  00168 Rome (Italy)
+Tel. +390630155389
+umberto.picchini at biomatematica.it
+           www.biomatematica.it
+
+
+
+------------------------------
+
+_______________________________________________
+R-sig-Geo mailing list
+R-sig-Geo at stat.math.ethz.ch
+https://www.stat.math.ethz.ch/mailman/listinfo/r-sig-geo
+
+
+End of R-sig-Geo Digest, Vol 3, Issue 6
+
+
+
+From hi_ono2001 at ybb.ne.jp  Sat Nov 15 10:27:47 2003
+From: hi_ono2001 at ybb.ne.jp (Hisaji Ono)
+Date: Sat, 15 Nov 2003 18:27:47 +0900
+Subject: [R-sig-Geo] Standard Geo-Spatial Format for R
+Message-ID: <003e01c3ab5a$bb3d7800$818001db@webgis>
+
+Hello.
+
+ I have a plan to create R interface Package for Refraction's "nice" GOES.
+
+ In doing this, I'd like to know there's any plan to make Standard
+Geo-Spatial Objects Format for R geo-space communities? Because current
+available R's map packages' formats seems to be various and each
+independent, so passing data will require to create each  export function
+among packages.
+
+ Does anyone know?
+
+ Regards.
+
+
+
+From Roger.Bivand at nhh.no  Sat Nov 15 12:34:11 2003
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Sat, 15 Nov 2003 12:34:11 +0100 (CET)
+Subject: [R-sig-Geo] Standard Geo-Spatial Format for R
+In-Reply-To: <003e01c3ab5a$bb3d7800$818001db@webgis>
+Message-ID: <Pine.LNX.4.44.0311151225380.16670-100000@reclus.nhh.no>
+
+On Sat, 15 Nov 2003, Hisaji Ono wrote:
+
+> Hello.
+> 
+>  I have a plan to create R interface Package for Refraction's "nice" GOES.
+> 
+>  In doing this, I'd like to know there's any plan to make Standard
+> Geo-Spatial Objects Format for R geo-space communities? Because current
+> available R's map packages' formats seems to be various and each
+> independent, so passing data will require to create each  export function
+> among packages.
+> 
+>  Does anyone know?
+
+Not really. I think what we have is a layered structure with the analysis 
+packages doing their own things - this is reviewed in my presentation at 
+DSC03: 
+
+http://www.ci.tuwien.ac.at/Conferences/DSC-2003/Proceedings/Bivand.pdf
+
+What we have on the other end are interface packages and bindings like 
+Rmap, GDAL, maptools, shapefiles, RArcInfo, and other ad-hoc ways of 
+reading files, together with Albrecht Gebhardt's look at PostGIS - see the 
+Rgeo website. 
+
+Then come Edzer Pebesma's spatial classes in the middle, they seem to me
+to be exactly the kinds of abstract containers that the interfaces need to
+be able to write to and read from, and then the analysis packages can
+either convert to using them directly, or use them through methods as
+Barry Rowlingson suggested. Could we try to write a draft specification 
+for this and put it on the website, I think this a lot to be gained by 
+thinking aloud about this. 
+
+Thanks for bringing this up, I agree that GEOS is worth following up, and 
+would be very useful if matched to the SpatialCls package.
+
+Roger
+
+> 
+>  Regards.
+> 
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://www.stat.math.ethz.ch/mailman/listinfo/r-sig-geo
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Breiviksveien 40, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 93 93
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From B.Rowlingson at lancaster.ac.uk  Mon Nov 17 11:08:47 2003
+From: B.Rowlingson at lancaster.ac.uk (Barry Rowlingson)
+Date: Mon, 17 Nov 2003 10:08:47 +0000
+Subject: [R-sig-Geo] Standard Geo-Spatial Format for R
+In-Reply-To: <Pine.LNX.4.44.0311151225380.16670-100000@reclus.nhh.no>
+References: <Pine.LNX.4.44.0311151225380.16670-100000@reclus.nhh.no>
+Message-ID: <3FB89E2F.9060906@lancaster.ac.uk>
+
+Roger Bivand wrote:
+
+>> I have a plan to create R interface Package for Refraction's "nice" GOES.
+
+> Thanks for bringing this up, I agree that GEOS is worth following up, and 
+> would be very useful if matched to the SpatialCls package.
+
+  What exactly is "Refraction's 'nice' GOES" (or is it GEOS?)? Google is 
+no help, these terms are too common!
+
+Baz
+
+
+
+From e.pebesma at geog.uu.nl  Mon Nov 17 11:16:16 2003
+From: e.pebesma at geog.uu.nl (Edzer J. Pebesma)
+Date: Mon, 17 Nov 2003 11:16:16 +0100
+Subject: [R-sig-Geo] Standard Geo-Spatial Format for R
+In-Reply-To: <3FB89E2F.9060906@lancaster.ac.uk>
+References: <Pine.LNX.4.44.0311151225380.16670-100000@reclus.nhh.no>
+	<3FB89E2F.9060906@lancaster.ac.uk>
+Message-ID: <3FB89FF0.4010204@geog.uu.nl>
+
+
+
+Barry Rowlingson wrote:
+
+> Roger Bivand wrote:
+>
+>>> I have a plan to create R interface Package for Refraction's "nice" 
+>>> GOES.
+>>
+>
+>> Thanks for bringing this up, I agree that GEOS is worth following up, 
+>> and would be very useful if matched to the SpatialCls package.
+>
+>
+>  What exactly is "Refraction's 'nice' GOES" (or is it GEOS?)? Google 
+> is no help, these terms are too common! 
+
+
+Barry, see
+http://geos.refractions.net/
+
+I wondered -- is this the same library that underlies PostGIS?
+--
+Edzer
+
+
+
+From nikko at hailmail.net  Mon Nov 17 15:26:19 2003
+From: nikko at hailmail.net (Nicholas Lewin-Koh)
+Date: Mon, 17 Nov 2003 22:26:19 +0800
+Subject: [R-sig-Geo] Re: Standard Geo-Spatial Format for R
+In-Reply-To: <200311171102.hAHB2cPX006202@hypatia.math.ethz.ch>
+References: <200311171102.hAHB2cPX006202@hypatia.math.ethz.ch>
+Message-ID: <20031117142619.9C69A40B78@server1.messagingengine.com>
+
+Hi,
+No, as it says, it is a C++ port of the java topology suite. JTS is a
+nice
+library, it just happens to be in java (oh well, I like real coffee). I
+do not
+think it is the same library as in postGIS. It looks really nice, but
+make sure
+there are no dependencies on LEDA or one of the common geometry
+libraries, the
+license on those is difficult since they are practically commercial.
+
+Nicholas
+
+
+
+From hi_ono2001 at ybb.ne.jp  Thu Nov 20 14:15:55 2003
+From: hi_ono2001 at ybb.ne.jp (Hisaji Ono)
+Date: Thu, 20 Nov 2003 22:15:55 +0900
+Subject: [R-sig-Geo] How to extract part of Map object using maptools
+Message-ID: <003c01c3af68$7061e7f0$818001db@webgis>
+
+Hi.
+
+ Rmap can extract parts of Map object as follows.
+
+ columbus<- shapefile("columbus.shp") " load shapefile
+
+ plot(columbus[columbus$CRIME > mean(columbus$CRIME)]) # filter by attribute
+& plot
+
+ But I don't know how to do this by maptools.
+
+ Regards.
+
+
+
+From Roger.Bivand at nhh.no  Thu Nov 20 14:25:41 2003
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Thu, 20 Nov 2003 14:25:41 +0100 (CET)
+Subject: [R-sig-Geo] How to extract part of Map object using maptools
+In-Reply-To: <003c01c3af68$7061e7f0$818001db@webgis>
+Message-ID: <Pine.LNX.4.44.0311201420330.32416-100000@reclus.nhh.no>
+
+On Thu, 20 Nov 2003, Hisaji Ono wrote:
+
+> Hi.
+> 
+>  Rmap can extract parts of Map object as follows.
+
+Rmap has a nice "proxy" view of the data file, which is not read in until 
+needed. So it implements subsetting during the read action (shapefile() 
+just checks that the file exists and can be opened by the declared 
+driver).
+
+> 
+>  columbus<- shapefile("columbus.shp") " load shapefile
+> 
+>  plot(columbus[columbus$CRIME > mean(columbus$CRIME)]) # filter by attribute
+> & plot
+> 
+>  But I don't know how to do this by maptools.
+> 
+
+In maptools it could be implemented by writing a subset tool for either 
+Map or polylist objects, but just running subset() on a polylist will not 
+work directly, because the new list does not have the correct class. But 
+it isn't difficult, I'll add it to the next maptools release. How should 
+the bounding box be handled, should it be left as is, or reduced to suit 
+the subset?
+
+Roger
+
+>  Regards.
+> 
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://www.stat.math.ethz.ch/mailman/listinfo/r-sig-geo
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Breiviksveien 40, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 93 93
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From e.pebesma at geog.uu.nl  Thu Nov 20 15:21:47 2003
+From: e.pebesma at geog.uu.nl (Edzer J. Pebesma)
+Date: Thu, 20 Nov 2003 15:21:47 +0100
+Subject: [R-sig-Geo] How to extract part of Map object using maptools
+In-Reply-To: <Pine.LNX.4.44.0311201420330.32416-100000@reclus.nhh.no>
+References: <Pine.LNX.4.44.0311201420330.32416-100000@reclus.nhh.no>
+Message-ID: <3FBCCDFB.3060207@geog.uu.nl>
+
+Roger Bivand wrote:
+
+>How should 
+>the bounding box be handled, should it be left as is, or reduced to suit 
+>the subset?
+>
+This is (more or less) a question about interfacing. I'd suggest to modify
+the bounding box such that it suits the subset. First I thought about a
+way to expand it, as in
+
+bbox(europe) <- bbox(world)
+
+but the more I think about it, the less I like it: expanded bounding boxes
+do not describe the data in the object, and probably are only of use to
+extend the plotting area -- a trick. For that purpose we'd better pass a
+bbox to generic plotting functions, as in
+
+plot(europe, bbox=bbox(world))
+--
+Edzer
+
+
+
+From B.Rowlingson at lancaster.ac.uk  Thu Nov 20 15:26:30 2003
+From: B.Rowlingson at lancaster.ac.uk (Barry Rowlingson)
+Date: Thu, 20 Nov 2003 14:26:30 +0000
+Subject: [R-sig-Geo] How to extract part of Map object using maptools
+In-Reply-To: <3FBCCDFB.3060207@geog.uu.nl>
+References: <Pine.LNX.4.44.0311201420330.32416-100000@reclus.nhh.no>
+	<3FBCCDFB.3060207@geog.uu.nl>
+Message-ID: <3FBCCF16.70202@lancaster.ac.uk>
+
+Edzer J. Pebesma wrote:
+
+
+> but the more I think about it, the less I like it: expanded bounding boxes
+> do not describe the data in the object, and probably are only of use to
+> extend the plotting area -- a trick. For that purpose we'd better pass a
+> bbox to generic plotting functions, as in
+> 
+> plot(europe, bbox=bbox(world))
+
+   plot((1:10)[1:5]) doesn't give you a bounds from 1 to 10, so I dont 
+see why the bounds of a subsetted map should be those of the parent.
+
+  A subset of a map object is a map in its own right, and if that means 
+recalculating its bounding box, then you better recalculate it!
+
+Baz
+
+
+
+From hi_ono2001 at ybb.ne.jp  Thu Nov 20 15:29:50 2003
+From: hi_ono2001 at ybb.ne.jp (Hisaji Ono)
+Date: Thu, 20 Nov 2003 23:29:50 +0900
+Subject: [R-sig-Geo] About  map projection of world map
+Message-ID: <007901c3af72$c1cf0b90$818001db@webgis>
+
+Hello.
+
+ I've tried to use map projection of world map shape file(which has latitude
+& longitude coordinates) in many setting( +proj=merc +lon_0=0 etc.).
+
+ However I couldn't get good results of projections of world map, all points
+on edges of map extent of the world map were linked and broke maps in map
+drawing.
+
+ Regards.
+
+
+
+From B.Rowlingson at lancaster.ac.uk  Thu Nov 20 15:49:48 2003
+From: B.Rowlingson at lancaster.ac.uk (Barry Rowlingson)
+Date: Thu, 20 Nov 2003 14:49:48 +0000
+Subject: [R-sig-Geo] About  map projection of world map
+In-Reply-To: <007901c3af72$c1cf0b90$818001db@webgis>
+References: <007901c3af72$c1cf0b90$818001db@webgis>
+Message-ID: <3FBCD48C.4000705@lancaster.ac.uk>
+
+
+>  I've tried to use map projection of world map shape file(which has latitude
+> & longitude coordinates) in many setting( +proj=merc +lon_0=0 etc.).
+> 
+>  However I couldn't get good results of projections of world map, all points
+> on edges of map extent of the world map were linked and broke maps in map
+> drawing.
+> 
+
+ Yes, this is a known problem with Rmap and projections, and nothing I
+can do about it at the moment.
+
+ Because the map data is just a vector with two end-points, for example:
+ (179E, 10N) to (179W,10N), there's no way of knowing if that line is
+the short line that goes over the 180E line or goes the other way around
+the world. This is because there are two straight lines between any two
+points on a sphere.
+
+ You could take a heuristic approach, and draw the shortest of the two
+lines, and this would work for world country data. The plotting code
+would still then have to split the line into two parts, broken at the
+edge of the mercator projection. But this might not be what you want if
+you are mapping arbitrary vectors on a sphere.
+
+ What we really need is a way to disambiguate the geometry. One possible
+way is to specify an origin point and a distance and direction vector on
+the sphere. This then uniquely identifies the destination point and the
+set of locations on the line. However, most geo data sets are stuck in
+the origin coord-destination coord paradigm...
+
+ I've only ever wanted Rmap to draw maps of small areas, up to continent
+size, and so I've not been motivated to fix the meridian problem. Sorry!
+
+Baz
+
+
+
+From kgleditsch at ucsd.edu  Fri Nov 21 01:36:01 2003
+From: kgleditsch at ucsd.edu (Kristian Skrede Gleditsch)
+Date: Thu, 20 Nov 2003 16:36:01 -0800
+Subject: [R-sig-Geo] Questions on calculating minimum distance between
+	polygons and map attributes after m.in.e00
+Message-ID: <HMEAKPEGMCEDLNICJDIHIEJJDDAA.kgleditsch@ucsd.edu>
+
+Dear all,
+
+I have a research project for which I would like to find the minimum
+distance between nation states. I have previously developed a data set on
+minimum distances for states within 1000 km based on manual coding (see
+http://weber.ucsd.edu/~kgledits/mindist.html).
+
+However, since manual coding may suffer from measurement error and I ideally
+would like to have data for pairs of state more than 1000 km apart I would
+like to generate a new version of the minimum distance data from GIS
+software and cartographic data.
+
+What I would like to do is to try to use an algorithm to determine the
+shortest distance between points on two states? outer boundaries, with each
+state defined either as a polygon or union of polygons. I would appreciate
+any suggestions comments from list members on whether the project is
+technically feasible in GRASS and R. I am running GRASS 5.0 under Redhat
+Linux 7.0, will upgrade to newer versions if need be.
+
+At this point I have ARC info coverages for boundary changes from 1945 to
+the present. I have tried to import this into GRASS with m.in.e00 with
+somewhat mixed results. Although I am able to display the vector map, it is
+not clear to me how I can identify attributes or polygons. As far as I
+understand these must be imported separately, but so far I have not been
+able to figure out how to do this. I tried to follow Netler and Mitasova
+book, but I was not able to get the procedure that they listed to work.
+
+I would be grateful if anyone could point me to practical introductions or
+examples in the use of m.in.e00 and how to retrieve the map attributes from
+the ArcInfo coverages in GRASS.
+
+Sincerely,
+Kristian Skrede Gleditsch
+Assistant Professor
+Department of Political Science
+University of California, San Diego
+La Jolla, CA 92093-0521, USA
+Tel: (858) 822 0535, Fax: (858) 534 7130
+Email: kgleditsch at ucsd.edu  http://weber.ucsd.edu/~kgledits/
+
+
+
+From kgleditsch at ucsd.edu  Fri Nov 21 02:31:00 2003
+From: kgleditsch at ucsd.edu (Kristian Skrede Gleditsch)
+Date: Thu, 20 Nov 2003 17:31:00 -0800
+Subject: [R-sig-Geo] FW: [STATSGRASS] Questions on calculating minimum
+	distance between polygons and map attributes after m.in.e00
+Message-ID: <HMEAKPEGMCEDLNICJDIHAEJMDDAA.kgleditsch@ucsd.edu>
+
+Just to clarify my previous post: For contiguous countries the distance at
+the boundary will be 0, but this is not the case for non-contiguous
+countries.
+
+For example, I have estinated a minimum distance between Germany and Italy
+of about 175 km. For the UK and China it would clearly be more than 1000 km.
+Although this could be measured by hand, finding a good estimate of the
+shortest distance is increasingly more difficult the further appart the two
+states are.
+
+sincerely,
+
+Kristian Skrede Gleditsch
+Assistant Professor
+Department of Political Science
+University of California, San Diego
+La Jolla, CA 92093-0521, USA
+Tel: (858) 822 0535, Fax: (858) 534 7130
+Email: kgleditsch at ucsd.edu  http://weber.ucsd.edu/~kgledits/
+
+> -----Original Message-----
+> From: Rich Shepard [mailto:rshepard at appl-ecosys.com]
+> Sent: Thursday, November 20, 2003 16:58
+> To: Kristian Skrede Gleditsch
+> Subject: Re: [STATSGRASS] Questions on calculating minimum distance
+> between polygons and map attributes after m.in.e00
+>
+>
+> On Thu, 20 Nov 2003, Kristian Skrede Gleditsch wrote:
+>
+> > I have a research project for which I would like to find the minimum
+> > distance between nation states.
+>
+> Kristian,
+>
+>   Wouldn't this distance be 0 (zero) at the border between them?
+>
+> Rich
+>
+> --
+> Dr. Richard B. Shepard, President
+> Applied Ecosystem Services, Inc. (TM)
+> <http://www.appl-ecosys.com>
+>
+>
+
+
+
+From si-opz at dsv.su.se  Wed Nov 26 13:30:02 2003
+From: si-opz at dsv.su.se (Orlando Zacarias)
+Date: Wed, 26 Nov 2003 13:30:02 +0100 (W. Europe Standard Time)
+Subject: [R-sig-Geo] RE: [R] adjacency matrix
+References: <NGBBKLJCOLPAFMJIEMHCAEEKCMAA.cdeclercq@nordnet.fr>
+Message-ID: <3FC49CC9.000001.01740@sida-opz.dsv.su.se>
+
+Dear list friends,
+I should have written this msg before, but so many things happened in
+between that made it impossible.... So, i have to thank everybody for the
+help, suggestion and discussion on this issue. I have solved the problem by
+using GeoDa to produce the adj. matrix and loaded the results of WinBugs run
+into arcview to produce my maps. Anyway, i will continue to learn R-software
+to avoid all these complications.
+Regards,
+orlando.
+
+-------Original Message-------
+
+From: cdeclercq at nordnet.fr
+Date: 27 October 2003 10:43:00
+To: Roger.Bivand at nhh.no; Orlando Zacarias
+Cc: r-sig-geo at stat.math.ethz.ch; yuecui at biostat.umn.edu
+Subject: RE: [R-sig-Geo] RE: [R] adjacency matrix
+
+
+> -----Message d'origine-----
+> De : r-sig-geo-bounces at stat.math.ethz.ch
+> [mailto:r-sig-geo-bounces at stat.math.ethz.ch]De la part de Roger Bivand
+> Envoy? : vendredi 24 octobre 2003 22:19
+
+[...]
+
+> > It's easy to get the adjacency data as WinBUGS want them.
+> > Something along the lines of (if 'cantons' is a 'polylist' object):
+> >
+> > > cantons.nb<-poly2nb(cantons, bb=cantons.bb) # calculate the
+> neighbourhood
+> > > data<-list(N = length(cantons),
+> > + O=lungcanc$o, E=lungcanc$e,
+> > + num=sapply(cantons.nb, length),
+> > + adj=unlist(cantons.nb),
+> > + sumNumNeigh=length(unlist(cantons.nb))
+> > +)
+>
+> Would it be useful for a function doing this to be put into spdep,
+> including checking that things "add up"? Should the function write data
+> out to a file - probably not, if you are using bugsR as the interface?
+
+Something generic would be useful but not that simple if you want to take
+care of:
+- the different models we can use (a simple example is the case where we
+have an X variable for ecological regression)
+- the different ways to connect R and WinBUGS:
+   - export all the data from R in a format WinBUGS can read and do all the
+work in WinBUGS
+   - driving completely the WinBUGS engine from R (the bugsR approach)
+   - a semi-interactive way using some of the bugsR functions to write text
+files with data and inits, launching WinBUGS script from R (with something
+as 'system("C:/\"Program Files\"/WinBUGS14/WinBUGS14 /par script.txt")', do
+what you want in WinBUGS: more iterations, MCMC diagnostics... and save what
+you want, get back in R when closing WinBUGS, read the saved files you need
+in R to map estimates... It's the way I use now.
+>
+> Would a similar function to output the polygon boundaries in a
+> GeoBUGS-friendly format be helpful - should that rather be in maptools?
+
+I don't use GeoBUGS mapping functions at all for the moment (I use
+plotpolys()... and poly2nb()...) but, yes, it should be useful. As I
+understand it, GeoBUGS read the S maps format: would converting polylist
+from/to S maps be useful?
+
+> This is a very fruitful thread - please keep up the flow of
+> ideas, because
+> the need for data exchange with WinBUGS is clear and if we can get it
+> right, should be useful for quite a large (and growing) group of people.
+> Could some of us try to do a very rough mini-HOWTO, possibly with the
+> author of convert.r (cc to Yue Cui, thread "adjacency matrix" on r-help
+> and r-sig-help)?
+
+Good idea! I can try to write a rough HOW-I sketch if you want. I hope
+Orlando has eventually been sucessful in his work and so his experience will
+be useful.
+
+Christophe
+--
+Christophe DECLERCQ, MD
+Observatoire R?gional de la Sant? Nord-Pas-de-Calais
+13, rue Faidherbe 59046 LILLE Cedex FRANCE
+Phone +33 3 20 15 49 24
+Fax +33 3 20 55 92 30
+E-mail c.declercq at orsnpdc.org
+
+
+
+.
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20031126/88cc70f8/attachment.html>
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: not available
+Type: image/gif
+Size: 494 bytes
+Desc: not available
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20031126/88cc70f8/attachment.gif>
+
+From e.pebesma at geog.uu.nl  Fri Nov 28 17:17:52 2003
+From: e.pebesma at geog.uu.nl (Edzer J. Pebesma)
+Date: Fri, 28 Nov 2003 17:17:52 +0100
+Subject: [R-sig-Geo] SpatialCls
+Message-ID: <3FC77530.60205@geog.uu.nl>
+
+Hi Barry, Roger, r-sig-geo gang,
+
+I just checked in updates to SpatialCls on
+http://sourceforge.net/projects/r-spatial/ --
+I completed documentation, added tests and examples. The
+whole package should pass R CMD check. Even the S4 classes
+are now documented, slots and all. No vignettes yet,
+still have to get into them.
+
+The interfaces used so far are:
+
+# The following three promote a data.frame to a SpatialDataFrame
+
+coordinates(meuse) = ~x+y # or
+coordinates(meuse) = c("x", "y") # or
+coordinates(meuse) = cbind(x,y)
+
+# after which
+
+coordinates(meuse)
+
+# retrieves coordinates; also:
+
+coordinates(meuse.grid) = ~x+y # followed by
+gridded(meuse.grid) = TRUE
+
+# promotes meuse.grid to a SpatialDataFrameGrid, which has
+# (and auto-detects) grid topology; it has an image method.
+
+# then,
+
+polygons(x) = list(pol1, pol2, pol3)
+
+# promotes data.frame x to a SpatialPolygons, adding the
+# polygon information to it, doing some basic checks
+# (e.g. pol1..3 should be 2column matrix with at least 4 points,
+# first and last being the same);
+
+polygons(x)     # retrieves the polygon list
+data.frame(x)    # retrieves the attribute values data.frame
+
+# some elementary plot, show, formula and summary methods are present.
+
+What else do we need, when it comes to interfaces/methods?
+
+Enjoy the weekend,
+--
+Edzer
+
+
+

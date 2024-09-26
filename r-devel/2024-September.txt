@@ -1272,3 +1272,1571 @@ Thank you so much for your help with this.  I shall implement this for the rest 
 Simon.
 
 
+From therne@u @end|ng |rom m@yo@edu  Sun Sep 15 02:43:31 2024
+From: therne@u @end|ng |rom m@yo@edu (Therneau, Terry M., Ph.D.)
+Date: Sun, 15 Sep 2024 00:43:31 +0000
+Subject: [Rd] Possible update to survival
+Message-ID: <BL0PR01MB4658BCF7EF86EAD903545CD7AE672@BL0PR01MB4658.prod.exchangelabs.com>
+
+I got good feedback from the list about a scope issue, so I am coming back for more.
+Prior issue:   users who type survival::coxph(survival::Surv(time, status) ~ x1 + x2 + surv ival::strata(group), data=mydata)
+This messes up the character string matching for strata, done via   tt <- terms(formula, specials= ?strata?).  The code runs, and gives the wrong answer (group is treated as an ordinary covariate).
+
+The solution
+
+  1.  Add code very early that rewrites the formula without the offendinge survival:: string
+  2.  Before calling model.frame(), insert my copy of strata into the calling chain
+    coxenv <- new.env(parent= environment(formula))
+    assign("strata", survival::strata, envir= coxenv)
+    environment(formula) <- coxenv
+
+The second part of this deals with those who want to use survival functions but not use library(survival).
+
+
+Now to the question.
+I had always (naively) assumed that the Surv(), strata(), etc calls within a coxph formula would be resolved first within the survival namespace.  I realize now that this is not true: they get resoloved within model.frame.  If a user has their own Surv, it will get used.
+For ultimate safety, I am thinking of extending the above to all of the internal survival functions that might be used in a formula: Surv, strata, pspline, cluster, ratetable  (I think that?s all).   An intitial limited test looks okay, but before anything migrates to CRAN I am looking for any feedback.   The current test version also prints a warning when removing the extraneous ?survival::? modifier, which I will retain for at least a little while although I personally detest receiving such messages.
+
+Terry T.
+
+	[[alternative HTML version deleted]]
+
+
+From tdhock5 @end|ng |rom gm@||@com  Mon Sep 16 16:47:20 2024
+From: tdhock5 @end|ng |rom gm@||@com (Toby Hocking)
+Date: Mon, 16 Sep 2024 10:47:20 -0400
+Subject: [Rd] numerical issue with t.test
+Message-ID: <CALK03d1EgjSDw69yKHyqO2y=-7-NVW58LikosoxrNqJhUmZ8OQ@mail.gmail.com>
+
+Hi! I expected that t.test should report a very large p-value (close
+to 1), even when using paired=TRUE, for the data below (which are very
+similar). However, I observe p-value = 0.02503 which indicates a
+significant difference, even though there is none. Can this be fixed
+please? This is with R-4.4.1. For reference below I use paired=FALSE
+with the same data, and I get p-value = 1 as expected.
+
+> err1 = c(-1.6076199373862132, -1.658521185520103, -1.6549424312339873, -1.5887767975086149, -1.634129577540383, -1.7442711937982249)
+> err2 = c(-1.6076199373862132, -1.6585211855201032, -1.6549424312339875, -1.5887767975086149, -1.6341295775403832, -1.7442711937982252)
+> t.test(err1,err2,paired=TRUE)
+
+    Paired t-test
+
+data:  err1 and err2
+t = 3.1623, df = 5, p-value = 0.02503
+alternative hypothesis: true mean difference is not equal to 0
+95 percent confidence interval:
+ 2.769794e-17 2.683615e-16
+sample estimates:
+mean difference
+   1.480297e-16
+
+> t.test(err1,err2,paired=FALSE)
+
+    Welch Two Sample t-test
+
+data:  err1 and err2
+t = 0, df = 10, p-value = 1
+alternative hypothesis: true difference in means is not equal to 0
+95 percent confidence interval:
+ -0.06988771  0.06988771
+sample estimates:
+mean of x mean of y
+-1.648044 -1.648044
+
+
+From ||@t@ @end|ng |rom dewey@myzen@co@uk  Mon Sep 16 16:54:11 2024
+From: ||@t@ @end|ng |rom dewey@myzen@co@uk (Michael Dewey)
+Date: Mon, 16 Sep 2024 15:54:11 +0100
+Subject: [Rd] numerical issue with t.test
+In-Reply-To: <CALK03d1EgjSDw69yKHyqO2y=-7-NVW58LikosoxrNqJhUmZ8OQ@mail.gmail.com>
+References: <CALK03d1EgjSDw69yKHyqO2y=-7-NVW58LikosoxrNqJhUmZ8OQ@mail.gmail.com>
+Message-ID: <2e646d2d-5ad3-052f-3b24-1de9d3eb8596@dewey.myzen.co.uk>
+
+Dear Toby
+
+I see no problem there. If you compute the mean and variance of err1 - 
+err2 which is what the paired test is working on then that might help to 
+see what is going on.
+
+Michael
+
+On 16/09/2024 15:47, Toby Hocking wrote:
+> Hi! I expected that t.test should report a very large p-value (close
+> to 1), even when using paired=TRUE, for the data below (which are very
+> similar). However, I observe p-value = 0.02503 which indicates a
+> significant difference, even though there is none. Can this be fixed
+> please? This is with R-4.4.1. For reference below I use paired=FALSE
+> with the same data, and I get p-value = 1 as expected.
+> 
+>> err1 = c(-1.6076199373862132, -1.658521185520103, -1.6549424312339873, -1.5887767975086149, -1.634129577540383, -1.7442711937982249)
+>> err2 = c(-1.6076199373862132, -1.6585211855201032, -1.6549424312339875, -1.5887767975086149, -1.6341295775403832, -1.7442711937982252)
+>> t.test(err1,err2,paired=TRUE)
+> 
+>      Paired t-test
+> 
+> data:  err1 and err2
+> t = 3.1623, df = 5, p-value = 0.02503
+> alternative hypothesis: true mean difference is not equal to 0
+> 95 percent confidence interval:
+>   2.769794e-17 2.683615e-16
+> sample estimates:
+> mean difference
+>     1.480297e-16
+> 
+>> t.test(err1,err2,paired=FALSE)
+> 
+>      Welch Two Sample t-test
+> 
+> data:  err1 and err2
+> t = 0, df = 10, p-value = 1
+> alternative hypothesis: true difference in means is not equal to 0
+> 95 percent confidence interval:
+>   -0.06988771  0.06988771
+> sample estimates:
+> mean of x mean of y
+> -1.648044 -1.648044
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+> 
+
+-- 
+Michael
+
+
+From bbo|ker @end|ng |rom gm@||@com  Mon Sep 16 16:57:29 2024
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Mon, 16 Sep 2024 10:57:29 -0400
+Subject: [Rd] numerical issue with t.test
+In-Reply-To: <2e646d2d-5ad3-052f-3b24-1de9d3eb8596@dewey.myzen.co.uk>
+References: <CALK03d1EgjSDw69yKHyqO2y=-7-NVW58LikosoxrNqJhUmZ8OQ@mail.gmail.com>
+ <2e646d2d-5ad3-052f-3b24-1de9d3eb8596@dewey.myzen.co.uk>
+Message-ID: <0af3164f-c5f5-4dfb-b1b8-c950fef3b925@gmail.com>
+
+   To be more specific, this replicates the computations that t.test is 
+doing (stripped of all the different cases that stats:::t.test.default 
+handles)
+
+z <- err1-err2
+se <- sqrt(var(z)/length(z))
+mz <- mean(z)
+tstat <- mz/se
+2*pt(tstat, df= length(z)-1, lower.tail = FALSE)
+
+On 2024-09-16 10:54 a.m., Michael Dewey wrote:
+> Dear Toby
+> 
+> I see no problem there. If you compute the mean and variance of err1 - 
+> err2 which is what the paired test is working on then that might help to 
+> see what is going on.
+> 
+> Michael
+> 
+> On 16/09/2024 15:47, Toby Hocking wrote:
+>> Hi! I expected that t.test should report a very large p-value (close
+>> to 1), even when using paired=TRUE, for the data below (which are very
+>> similar). However, I observe p-value = 0.02503 which indicates a
+>> significant difference, even though there is none. Can this be fixed
+>> please? This is with R-4.4.1. For reference below I use paired=FALSE
+>> with the same data, and I get p-value = 1 as expected.
+>>
+>>> err1 = c(-1.6076199373862132, -1.658521185520103, 
+>>> -1.6549424312339873, -1.5887767975086149, -1.634129577540383, 
+>>> -1.7442711937982249)
+>>> err2 = c(-1.6076199373862132, -1.6585211855201032, 
+>>> -1.6549424312339875, -1.5887767975086149, -1.6341295775403832, 
+>>> -1.7442711937982252)
+>>> t.test(err1,err2,paired=TRUE)
+>>
+>> ???? Paired t-test
+>>
+>> data:? err1 and err2
+>> t = 3.1623, df = 5, p-value = 0.02503
+>> alternative hypothesis: true mean difference is not equal to 0
+>> 95 percent confidence interval:
+>> ? 2.769794e-17 2.683615e-16
+>> sample estimates:
+>> mean difference
+>> ??? 1.480297e-16
+>>
+>>> t.test(err1,err2,paired=FALSE)
+>>
+>> ???? Welch Two Sample t-test
+>>
+>> data:? err1 and err2
+>> t = 0, df = 10, p-value = 1
+>> alternative hypothesis: true difference in means is not equal to 0
+>> 95 percent confidence interval:
+>> ? -0.06988771? 0.06988771
+>> sample estimates:
+>> mean of x mean of y
+>> -1.648044 -1.648044
+>>
+>> ______________________________________________
+>> R-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-devel
+>>
+> 
+
+-- 
+Dr. Benjamin Bolker
+Professor, Mathematics & Statistics and Biology, McMaster University
+Director, School of Computational Science and Engineering
+ > E-mail is sent at my convenience; I don't expect replies outside of 
+working hours.
+
+
+From ggrothend|eck @end|ng |rom gm@||@com  Mon Sep 16 17:21:55 2024
+From: ggrothend|eck @end|ng |rom gm@||@com (Gabor Grothendieck)
+Date: Mon, 16 Sep 2024 11:21:55 -0400
+Subject: [Rd] findInterval
+Message-ID: <CAP01uRk6m9yzFBRNwybY85-XFMjq850+MREtAF_Oo=4TdshEVw@mail.gmail.com>
+
+Suppose we have `dat` shown below and we want to find the the `y` value
+corresponding to the last value in `x` equal to the corresponding component
+of `seek` and we wish to return an output the same length as `seek` using
+`findInterval` to perform  the search.  This returns the correct result:
+
+  dat <- data.frame(x = c(2, 2, 3, 4, 4, 4),
+    y = c(37, 12, 19, 30, 6, 15),
+    seek = 1:6)
+
+  zero2na <- function(x) replace(x, x == 0, NA)
+  dat |>
+    transform(dat, result = y[ zero2na(findInterval(seek, x)) ] ) |>
+    _$result
+   ## [1] NA 12 19 15 15 15
+
+Since `findInterval` returns an index it is natural that the next step be
+to use the index and it is also common that we want a result that is the
+same length as the input.
+
+The extra step here is to convert the 0 which `findInterval`
+hard codes as missing to NA.
+
+If, like `match`, the `findInterval` function had a `nomatch=` argument we
+could have written this as follows which is shorter, more understandable
+and avoids the need for zero2na:
+
+  # if nomatch= were implemented
+  seek |>
+    transform(result = y[ findInterval(x, nomatch = NA) ] ) |>
+    _$result
+
+-- 
+Statistics & Software Consulting
+GKX Group, GKX Associates Inc.
+tel: 1-877-GKX-GROUP
+email: ggrothendieck at gmail.com
+
+
+From |jj0731 @end|ng |rom gm@||@com  Tue Sep 17 04:58:25 2024
+From: |jj0731 @end|ng |rom gm@||@com (LJJ)
+Date: Tue, 17 Sep 2024 10:58:25 +0800
+Subject: [Rd] Degree of freedom issue on chi-square test of goodness of fit
+Message-ID: <CAJnvaVdz31unfGmMbcX6_4Ta17mO0Q_rhdFttHEmW10xib+vGw@mail.gmail.com>
+
+I am running chi-square test of goodness of fit, the observation data was
+well groupped to observation freq. I assume the data obey the normal
+distribution N(? ?^2), while ? and ?^2 are unknown. So I use their
+estimation. Consequently, I calculated out the probabilities and input in
+vector p
+
+>x<-c(6,13,14,27,25,19,10,6)  #observation freq>p<-c(0.0505, 0.0874, 0.1533, 0.2088, 0.2088, 0.1533, 0.0874, 0.0505)
+                                 #probabilities from normal distribution
+test_result<-chisq.test(x=x,p=p)
+test_result
+
+    Chi-squared test for given probabilities
+
+data:  x
+X-squared = 1.8468, df = 7, p-value = 0.9678
+
+
+from the out put, the degree of freedon is 7 (df=7),  because the data
+was in 8 groups so df=8-1=7
+
+That is perfect if the parameters (? and ?^2) in normal distribution is
+precise. However, in this case, they are unknow and I used ther
+estimations.
+
+ If the observation group is n, number of unknow parameters in distribution
+is r, then in chi-square test, the degree of freedom should be n-r-1. But
+in chisq.test() output, it is always n-1.
+
+In this case, the degree of freedom should be 8-2-1=5 (there are two unknow
+parameters). I have to run function pchisq() for rest calculation manually.
+
+I propose to enhance function chisq.test() in degree of freedom. In
+practice, there are unknow parameters in distribution function.
+
+	[[alternative HTML version deleted]]
+
+
+From |@go@bonn|c| @end|ng |rom umontpe|||er@|r  Tue Sep 17 12:28:19 2024
+From: |@go@bonn|c| @end|ng |rom umontpe|||er@|r (Iago Bonnici)
+Date: Tue, 17 Sep 2024 12:28:19 +0200
+Subject: [Rd] Wrong/incomplete documentation regarding the 100-bytes path
+ length limit.
+Message-ID: <070e35bd-8f13-4a54-b76a-cedf003f5a25@umontpellier.fr>
+
+Hello @r-devel,
+
+ ??? From what I read in the following thread:
+
+https://stat.ethz.ch/pipermail/r-package-devel/2023q4/010197.html
+
+ ??? The major reason to limit paths lengths in R packages is to help 
+support MS Windows 260-chars paths lengths limit (pre-W10).
+
+ ??? However, the official documentation at this address:
+
+https://cran.r-project.org/doc/manuals/R-exts.html#Package-structure-1
+
+ ??? States:
+
+ > /packages are normally distributed as tarballs, and these have a 
+limit on path lengths: for maximal portability 100 bytes.
+
+/??? This is the wrong explanation. Tar has been supporting 256-chars 
+paths since POSIX.1-1988 and unlimited paths since POSIX.1-2001. The 
+limitation should be deferred to MS Windows instead of tar.
+
+ ??? Considering that the manuals are ? /edited by the R Development 
+Core Team /? <https://cran.r-project.org/manuals.html>, I suppose that 
+this is the right list to point out this inconsistency? How can I help 
+in fixing this? Should I open a bug at R Bugzilla?
+
+ ??? Note: I am not discussing whether the limit itself should be 
+reconsidered. That discussion seems yet covered by the aforementioned 
+thread (but it's non-official), and by bug #18637 
+<https://bugs.r-project.org/show_bug.cgi?id=18637> (but it's stale). In 
+any case, I think there is no blocker to clarifying the situation in the 
+documentation.
+
+ ??? Best regards,
+
+--
+Iago-lito
+	[[alternative HTML version deleted]]
+
+
+From tom@@@k@||ber@ @end|ng |rom gm@||@com  Tue Sep 17 14:45:01 2024
+From: tom@@@k@||ber@ @end|ng |rom gm@||@com (Tomas Kalibera)
+Date: Tue, 17 Sep 2024 14:45:01 +0200
+Subject: [Rd] 
+ Wrong/incomplete documentation regarding the 100-bytes path
+ length limit.
+In-Reply-To: <070e35bd-8f13-4a54-b76a-cedf003f5a25@umontpellier.fr>
+References: <070e35bd-8f13-4a54-b76a-cedf003f5a25@umontpellier.fr>
+Message-ID: <c296a460-0a8e-473a-849a-3b40687cd40c@gmail.com>
+
+On 9/17/24 12:28, Iago Bonnici via R-devel wrote:
+> Hello @r-devel,
+>
+>   ??? From what I read in the following thread:
+>
+> https://stat.ethz.ch/pipermail/r-package-devel/2023q4/010197.html
+>
+>   ??? The major reason to limit paths lengths in R packages is to help
+> support MS Windows 260-chars paths lengths limit (pre-W10).
+Not really, the limit on Windows is a reason why path length is a scarce 
+resource in portable applications. And it exists also on Windows 10 and 
+newer - it is a limitation now in Windows applications, inherited by a 
+limit in early versions of Windows operating system. R itself doesn't 
+have this limitation anymore.
+>   ??? However, the official documentation at this address:
+>
+> https://cran.r-project.org/doc/manuals/R-exts.html#Package-structure-1
+>
+>   ??? States:
+>
+>   > /packages are normally distributed as tarballs, and these have a
+> limit on path lengths: for maximal portability 100 bytes.
+>
+> /??? This is the wrong explanation. Tar has been supporting 256-chars
+> paths since POSIX.1-1988 and unlimited paths since POSIX.1-2001. The
+> limitation should be deferred to MS Windows instead of tar.
+>
+>   ??? Considering that the manuals are ? /edited by the R Development
+> Core Team /? <https://cran.r-project.org/manuals.html>, I suppose that
+> this is the right list to point out this inconsistency? How can I help
+> in fixing this? Should I open a bug at R Bugzilla?
+>
+>   ??? Note: I am not discussing whether the limit itself should be
+> reconsidered. That discussion seems yet covered by the aforementioned
+> thread (but it's non-official), and by bug #18637
+> <https://bugs.r-project.org/show_bug.cgi?id=18637> (but it's stale). In
+> any case, I think there is no blocker to clarifying the situation in the
+> documentation.
+
+I have added a sentence to R-exts mentioning Windows is also a reason 
+why it makes sense to keep paths short.
+
+Best
+Tomas
+
+>
+>   ??? Best regards,
+>
+> --
+> Iago-lito
+> 	[[alternative HTML version deleted]]
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Tue Sep 17 18:14:56 2024
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Tue, 17 Sep 2024 18:14:56 +0200
+Subject: [Rd] findInterval
+In-Reply-To: <CAP01uRk6m9yzFBRNwybY85-XFMjq850+MREtAF_Oo=4TdshEVw@mail.gmail.com>
+References: <CAP01uRk6m9yzFBRNwybY85-XFMjq850+MREtAF_Oo=4TdshEVw@mail.gmail.com>
+Message-ID: <26345.43776.640449.934216@stat.math.ethz.ch>
+
+>>>>> Gabor Grothendieck 
+>>>>>     on Mon, 16 Sep 2024 11:21:55 -0400 writes:
+
+    > Suppose we have `dat` shown below and we want to find the the `y` value
+    > corresponding to the last value in `x` equal to the corresponding component
+    > of `seek` and we wish to return an output the same length as `seek` using
+    > `findInterval` to perform  the search.  This returns the correct result:
+
+    > dat <- data.frame(x = c(2, 2, 3, 4, 4, 4),
+    > 	     		y = c(37, 12, 19, 30, 6, 15),
+    >                  seek = 1:6)
+
+    > zero2na <- function(x) replace(x, x == 0, NA)
+
+    > dat |>
+    > transform(dat, result = y[ zero2na(findInterval(seek, x)) ] ) |>
+    > _$result
+    > ## [1] NA 12 19 15 15 15
+
+I'd write that as
+
+    with(dat, y[ zero2na(findInterval(seek, x)) ] )
+
+so I can read it with jumping hoops and stand on my head ...
+
+    > Since `findInterval` returns an index it is natural that the next step be
+    > to use the index and it is also common that we want a result that is the
+    > same length as the input.
+
+I think your example where x and y are of the same length
+not typical.
+
+Not that the design of   findInterval(x, vec, ..)  is indeed to always return
+an index, but there isn't any "nomatch", but rather a
+- "left of the leftmost", i.e.,  an x[i] < vec[1]  (as 'vec' must be
+  sorted increasingly) or
+- "right of rightmost"  , i.e.,  an x[i] > vec[length(vec)]
+
+and these should give *different* results (and not both the
+same).
+
+I don't think 'nomatch' would improve the relatively clean  findInterval()
+behavior.
+
+There are  three logical switches  ... which allow   2^3
+variants of which I now guess only 6  differ:
+
+Here's some R code showing the possibilities:
+
+
+(argsTF <- names(formals(findInterval))[-(1:2)]) # "rightmost.closed"  "all.inside" "left.open"       
+FT <- c(FALSE, TRUE)
+allFT <- as.matrix(expand.grid(rightmost.closed = FT,
+                               all.inside       = FT,
+                               left.open        = FT))
+allFT
+(cn <- substr(colnames(allFT), 1,1)) #  "r" "a" "l"
+
+x <- 2:18
+v <- c(5, 10, 15) # create two bins [5,10) and [10,15)
+
+fiAll <- apply(allFT, 1, function(r.a.f)
+    do.call(findInterval, c(list(x, v), as.list(r.a.f))))
+
+cbind(x, fiAll) # has all info
+
+## must find cool 'column names' for fiAll: construct from r.., a.., l.. = F / T
+(cn1 <- apply(`dim<-`(c(".","|")[allFT+1L], dim(allFT)), 1, paste0, collapse=""))
+##  "..." "|.." ".|." "||." "..|" "|.|" ".||" "|||"
+colnames(fiAll) <- cn1
+cbind(x, fiAll) ## --> col. 3 == 4  and  7 == 8
+##==> show only unique columns:
+cbind(x, t(unique(t(fiAll))))
+ ##  x ... |.. .|. ..| |.| .||
+ ##  2   0   0   1   0   0   1
+ ##  3   0   0   1   0   0   1
+ ##  4   0   0   1   0   0   1
+ ##  5   1   1   1   0   1   1
+ ##  6   1   1   1   1   1   1
+ ##  7   1   1   1   1   1   1
+ ##  8   1   1   1   1   1   1
+ ##  9   1   1   1   1   1   1
+ ## 10   2   2   2   1   1   1
+ ## 11   2   2   2   2   2   2
+ ## 12   2   2   2   2   2   2
+ ## 13   2   2   2   2   2   2
+ ## 14   2   2   2   2   2   2
+ ## 15   3   2   2   2   2   2
+ ## 16   3   3   2   3   3   2
+ ## 17   3   3   2   3   3   2
+ ## 18   3   3   2   3   3   2
+  
+
+Martin
+
+
+From ggrothend|eck @end|ng |rom gm@||@com  Tue Sep 17 19:27:35 2024
+From: ggrothend|eck @end|ng |rom gm@||@com (Gabor Grothendieck)
+Date: Tue, 17 Sep 2024 13:27:35 -0400
+Subject: [Rd] findInterval
+In-Reply-To: <26345.43776.640449.934216@stat.math.ethz.ch>
+References: <CAP01uRk6m9yzFBRNwybY85-XFMjq850+MREtAF_Oo=4TdshEVw@mail.gmail.com>
+ <26345.43776.640449.934216@stat.math.ethz.ch>
+Message-ID: <CAP01uRnhW1XebRd5TaQd-C24KhepRX++weMwaJW5oyEhwMr1Yg@mail.gmail.com>
+
+The other problem in this example is setting NA's.
+
+   replace(x, x == 0, NA)
+
+requires two instances of x making it not very pipe friendly.  In
+dplyr there is na_if
+to address that problem and base R might have something that addresses this
+so we don't have to define our own zero2na as the base of R now has pipes.
+
+
+On Tue, Sep 17, 2024 at 12:14?PM Martin Maechler
+<maechler at stat.math.ethz.ch> wrote:
+>
+> >>>>> Gabor Grothendieck
+> >>>>>     on Mon, 16 Sep 2024 11:21:55 -0400 writes:
+>
+>     > Suppose we have `dat` shown below and we want to find the the `y` value
+>     > corresponding to the last value in `x` equal to the corresponding component
+>     > of `seek` and we wish to return an output the same length as `seek` using
+>     > `findInterval` to perform  the search.  This returns the correct result:
+>
+>     > dat <- data.frame(x = c(2, 2, 3, 4, 4, 4),
+>     >                   y = c(37, 12, 19, 30, 6, 15),
+>     >                  seek = 1:6)
+>
+>     > zero2na <- function(x) replace(x, x == 0, NA)
+>
+>     > dat |>
+>     > transform(dat, result = y[ zero2na(findInterval(seek, x)) ] ) |>
+>     > _$result
+>     > ## [1] NA 12 19 15 15 15
+>
+> I'd write that as
+>
+>     with(dat, y[ zero2na(findInterval(seek, x)) ] )
+>
+> so I can read it with jumping hoops and stand on my head ...
+>
+>     > Since `findInterval` returns an index it is natural that the next step be
+>     > to use the index and it is also common that we want a result that is the
+>     > same length as the input.
+>
+> I think your example where x and y are of the same length
+> not typical.
+>
+> Not that the design of   findInterval(x, vec, ..)  is indeed to always return
+> an index, but there isn't any "nomatch", but rather a
+> - "left of the leftmost", i.e.,  an x[i] < vec[1]  (as 'vec' must be
+>   sorted increasingly) or
+> - "right of rightmost"  , i.e.,  an x[i] > vec[length(vec)]
+>
+> and these should give *different* results (and not both the
+> same).
+>
+> I don't think 'nomatch' would improve the relatively clean  findInterval()
+> behavior.
+>
+> There are  three logical switches  ... which allow   2^3
+> variants of which I now guess only 6  differ:
+>
+> Here's some R code showing the possibilities:
+>
+>
+> (argsTF <- names(formals(findInterval))[-(1:2)]) # "rightmost.closed"  "all.inside" "left.open"
+> FT <- c(FALSE, TRUE)
+> allFT <- as.matrix(expand.grid(rightmost.closed = FT,
+>                                all.inside       = FT,
+>                                left.open        = FT))
+> allFT
+> (cn <- substr(colnames(allFT), 1,1)) #  "r" "a" "l"
+>
+> x <- 2:18
+> v <- c(5, 10, 15) # create two bins [5,10) and [10,15)
+>
+> fiAll <- apply(allFT, 1, function(r.a.f)
+>     do.call(findInterval, c(list(x, v), as.list(r.a.f))))
+>
+> cbind(x, fiAll) # has all info
+>
+> ## must find cool 'column names' for fiAll: construct from r.., a.., l.. = F / T
+> (cn1 <- apply(`dim<-`(c(".","|")[allFT+1L], dim(allFT)), 1, paste0, collapse=""))
+> ##  "..." "|.." ".|." "||." "..|" "|.|" ".||" "|||"
+> colnames(fiAll) <- cn1
+> cbind(x, fiAll) ## --> col. 3 == 4  and  7 == 8
+> ##==> show only unique columns:
+> cbind(x, t(unique(t(fiAll))))
+>  ##  x ... |.. .|. ..| |.| .||
+>  ##  2   0   0   1   0   0   1
+>  ##  3   0   0   1   0   0   1
+>  ##  4   0   0   1   0   0   1
+>  ##  5   1   1   1   0   1   1
+>  ##  6   1   1   1   1   1   1
+>  ##  7   1   1   1   1   1   1
+>  ##  8   1   1   1   1   1   1
+>  ##  9   1   1   1   1   1   1
+>  ## 10   2   2   2   1   1   1
+>  ## 11   2   2   2   2   2   2
+>  ## 12   2   2   2   2   2   2
+>  ## 13   2   2   2   2   2   2
+>  ## 14   2   2   2   2   2   2
+>  ## 15   3   2   2   2   2   2
+>  ## 16   3   3   2   3   3   2
+>  ## 17   3   3   2   3   3   2
+>  ## 18   3   3   2   3   3   2
+>
+>
+> Martin
+
+
+
+-- 
+Statistics & Software Consulting
+GKX Group, GKX Associates Inc.
+tel: 1-877-GKX-GROUP
+email: ggrothendieck at gmail.com
+
+
+From j|ox @end|ng |rom mcm@@ter@c@  Fri Sep 20 18:49:00 2024
+From: j|ox @end|ng |rom mcm@@ter@c@ (John Fox)
+Date: Fri, 20 Sep 2024 12:49:00 -0400
+Subject: [Rd] model.matrix() may be misleading for "lme" models
+Message-ID: <a7d44ccb-10b4-4fbb-b34c-154aaa687ef7@mcmaster.ca>
+
+Dear r-devel list members,
+
+I'm posting this message here because it concerns the nlme package, 
+which is maintained by R-core. The problem I'm about to describe is 
+somewhere between a bug and a feature request, and so I thought it a 
+good idea to ask here rather posting a bug report to the R bugzilla.
+
+I was made aware (by Ben Bolker) that the car::Anova() method for "lme" 
+models reports unreasonable results and warnings for mixed models in 
+which non-default contrasts are used for factors. I traced the problem 
+to a call to model.matrix() on "lme" objects, which was introduced into 
+car:::Anova.lme() a couple of years ago to check for problems in the 
+model matrix. That invokes model.matrix.default(), which ignores the 
+contrasts defined in a call to lme().
+
+Here's a simple direct example:
+
+------- snip -------
+
+ > library(nlme)
+ > m <- lme(distance ~ Sex, random = ~ 1 | Subject,
++          data=Orthodont, contrasts=list(Sex = "contr.sum"))
+ > m
+
+Linear mixed-effects model fit by REML
+   Data: Orthodont
+   Log-restricted-likelihood: -253.629
+   Fixed: distance ~ Sex
+(Intercept)        Sex1
+   23.808239    1.160511
+
+Random effects:
+  Formula: ~1 | Subject
+         (Intercept) Residual
+StdDev:    1.595838 2.220312
+
+Number of Observations: 108
+Number of Groups: 27
+
+ > model.matrix(m, data=Orthodont)
+
+     (Intercept) SexFemale
+1             1         0
+2             1         0
+3             1         0
+
+. . .
+
+106           1         1
+107           1         1
+108           1         1
+attr(,"assign")
+[1] 0 1
+attr(,"contrasts")
+attr(,"contrasts")$Sex
+[1] "contr.treatment"
+
+--------- snip ---------
+
+So model.matrix() constructs the model matrix using contr.treatment() 
+even though contr.sum() was used by lme() to fit the model.
+
+In contrast (pun intended), model.matrix() works as expected with an 
+"lm" model (via model.matrix.lm()):
+
+--------- snip ---------
+
+ > m.lm <- lm(distance ~ Sex, data=Orthodont,
++            contrasts=list(Sex = "contr.sum"))
+ > m.lm
+
+Call:
+lm(formula = distance ~ Sex, data = Orthodont,
+    contrasts = list(Sex = "contr.sum"))
+
+Coefficients:
+(Intercept)         Sex1
+      23.808        1.161
+
+ > model.matrix(m.lm)
+     (Intercept) Sex1
+1             1    1
+2             1    1
+3             1    1
+
+. . .
+
+106           1   -1
+107           1   -1
+108           1   -1
+attr(,"assign")
+[1] 0 1
+attr(,"contrasts")
+attr(,"contrasts")$Sex
+[1] "contr.sum"
+
+--------- snip ---------
+
+I was able to get around this problem by defining a model.matrix.lme() 
+method, which is used internally in the car package but not registered:
+
+--------- snip ---------
+
+model.matrix.lme <- function(object, ...){
+
+   data <- object$data
+   contrasts <- object$contrasts
+
+   if (length(contrasts) == 0) {
+     xlev <- NULL
+   } else {
+     xlev <- vector(length(contrasts), mode="list")
+     names(xlev) <- names <- names(contrasts)
+     for (name in names){
+       xlev[[name]] <- rownames(contrasts[[name]])
+     }
+   }
+
+   if (is.null(data)){
+     NextMethod(formula(object), data=eval(object$call$data),
+                  contrasts.arg=contrasts, xlev=xlev, ...)
+   } else {
+     NextMethod(formula(object), data=data,
+                     contrasts.arg=contrasts, xlev=xlev, ...)
+   }
+}
+
+--------- snip ---------
+
+This function is a bit awkward, particularly the part that constructs 
+the xlev argument, but it does appear to work as intended (note, 
+however, that the contrast matrix for Sex rather than "contr.sum" is 
+reported in the "contrasts" attribute):
+
+--------- snip ---------
+
+ > model.matrix(m)
+     (Intercept) Sex1
+1             1    1
+2             1    1
+3             1    1
+
+. . .
+
+106           1   -1
+107           1   -1
+108           1   -1
+attr(,"assign")
+[1] 0 1
+attr(,"contrasts")
+attr(,"contrasts")$Sex
+        [,1]
+Male      1
+Female   -1
+
+ > sessionInfo()
+R version 4.4.1 (2024-06-14)
+Platform: aarch64-apple-darwin20
+Running under: macOS Sonoma 14.6.1
+
+Matrix products: default
+BLAS: 
+/System/Library/Frameworks/Accelerate.framework/Versions/A/Frameworks/vecLib.framework/Versions/A/libBLAS.dylib 
+
+LAPACK: 
+/Library/Frameworks/R.framework/Versions/4.4-arm64/Resources/lib/libRlapack.dylib; 
+  LAPACK version 3.12.0
+
+locale:
+[1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+
+time zone: America/Toronto
+tzcode source: internal
+
+attached base packages:
+[1] stats     graphics  grDevices utils     datasets  methods   base
+
+other attached packages:
+[1] nlme_3.1-165
+
+loaded via a namespace (and not attached):
+[1] compiler_4.4.1 tools_4.4.1    grid_4.4.1     lattice_0.22-6
+
+--------- snip ---------
+
+Although this apparently solves the problem for car::Anova(), the 
+problem is likely more general. For example, insight::get_modelmatrix() 
+also reports the wrong model matrix for the "lme" model m above.
+
+My suggestion: Include a correct model.matrix.lme() method in the nlme 
+package. That could be my version, but I expect that R-core could come 
+up with something better.
+
+Thank you,
+  John
+-- 
+John Fox, Professor Emeritus
+McMaster University
+Hamilton, Ontario, Canada
+web: https://www.john-fox.ca/
+--
+
+
+From j|ox @end|ng |rom mcm@@ter@c@  Sat Sep 21 18:47:49 2024
+From: j|ox @end|ng |rom mcm@@ter@c@ (John Fox)
+Date: Sat, 21 Sep 2024 12:47:49 -0400
+Subject: [Rd] model.matrix() may be misleading for "lme" models
+In-Reply-To: <a7d44ccb-10b4-4fbb-b34c-154aaa687ef7@mcmaster.ca>
+References: <a7d44ccb-10b4-4fbb-b34c-154aaa687ef7@mcmaster.ca>
+Message-ID: <b60df077-eab0-451c-a8c5-67e5e333b2da@mcmaster.ca>
+
+Dear list members,
+
+After further testing, I found that the following simplified version of 
+model.matrix.lme(), which omits passing xlev to the default method, is 
+more robust. The previous version generated spurious warnings in some 
+circumstances.
+
+model.matrix.lme <- function(object, ...){
+   data <- object$data
+   if (is.null(data)){
+     NextMethod(formula(object),  data=eval(object$call$data),
+                contrasts.arg=object$contrasts)
+   } else {
+     NextMethod(formula(object), data=data,
+                contrasts.arg=object$contrasts)
+   }
+}
+
+Best,
+  John
+
+
+On 2024-09-20 12:49 p.m., John Fox wrote:
+> Caution: External email.
+> 
+> 
+> Dear r-devel list members,
+> 
+> I'm posting this message here because it concerns the nlme package,
+> which is maintained by R-core. The problem I'm about to describe is
+> somewhere between a bug and a feature request, and so I thought it a
+> good idea to ask here rather posting a bug report to the R bugzilla.
+> 
+> I was made aware (by Ben Bolker) that the car::Anova() method for "lme"
+> models reports unreasonable results and warnings for mixed models in
+> which non-default contrasts are used for factors. I traced the problem
+> to a call to model.matrix() on "lme" objects, which was introduced into
+> car:::Anova.lme() a couple of years ago to check for problems in the
+> model matrix. That invokes model.matrix.default(), which ignores the
+> contrasts defined in a call to lme().
+> 
+> Here's a simple direct example:
+> 
+> ------- snip -------
+> 
+>  > library(nlme)
+>  > m <- lme(distance ~ Sex, random = ~ 1 | Subject,
+> +????????? data=Orthodont, contrasts=list(Sex = "contr.sum"))
+>  > m
+> 
+> Linear mixed-effects model fit by REML
+>  ? Data: Orthodont
+>  ? Log-restricted-likelihood: -253.629
+>  ? Fixed: distance ~ Sex
+> (Intercept)??????? Sex1
+>  ? 23.808239??? 1.160511
+> 
+> Random effects:
+>  ?Formula: ~1 | Subject
+>  ??????? (Intercept) Residual
+> StdDev:??? 1.595838 2.220312
+> 
+> Number of Observations: 108
+> Number of Groups: 27
+> 
+>  > model.matrix(m, data=Orthodont)
+> 
+>  ??? (Intercept) SexFemale
+> 1???????????? 1???????? 0
+> 2???????????? 1???????? 0
+> 3???????????? 1???????? 0
+> 
+> . . .
+> 
+> 106?????????? 1???????? 1
+> 107?????????? 1???????? 1
+> 108?????????? 1???????? 1
+> attr(,"assign")
+> [1] 0 1
+> attr(,"contrasts")
+> attr(,"contrasts")$Sex
+> [1] "contr.treatment"
+> 
+> --------- snip ---------
+> 
+> So model.matrix() constructs the model matrix using contr.treatment()
+> even though contr.sum() was used by lme() to fit the model.
+> 
+> In contrast (pun intended), model.matrix() works as expected with an
+> "lm" model (via model.matrix.lm()):
+> 
+> --------- snip ---------
+> 
+>  > m.lm <- lm(distance ~ Sex, data=Orthodont,
+> +??????????? contrasts=list(Sex = "contr.sum"))
+>  > m.lm
+> 
+> Call:
+> lm(formula = distance ~ Sex, data = Orthodont,
+>  ?? contrasts = list(Sex = "contr.sum"))
+> 
+> Coefficients:
+> (Intercept)???????? Sex1
+>  ???? 23.808??????? 1.161
+> 
+>  > model.matrix(m.lm)
+>  ??? (Intercept) Sex1
+> 1???????????? 1??? 1
+> 2???????????? 1??? 1
+> 3???????????? 1??? 1
+> 
+> . . .
+> 
+> 106?????????? 1?? -1
+> 107?????????? 1?? -1
+> 108?????????? 1?? -1
+> attr(,"assign")
+> [1] 0 1
+> attr(,"contrasts")
+> attr(,"contrasts")$Sex
+> [1] "contr.sum"
+> 
+> --------- snip ---------
+> 
+> I was able to get around this problem by defining a model.matrix.lme()
+> method, which is used internally in the car package but not registered:
+> 
+> --------- snip ---------
+> 
+> model.matrix.lme <- function(object, ...){
+> 
+>  ? data <- object$data
+>  ? contrasts <- object$contrasts
+> 
+>  ? if (length(contrasts) == 0) {
+>  ??? xlev <- NULL
+>  ? } else {
+>  ??? xlev <- vector(length(contrasts), mode="list")
+>  ??? names(xlev) <- names <- names(contrasts)
+>  ??? for (name in names){
+>  ????? xlev[[name]] <- rownames(contrasts[[name]])
+>  ??? }
+>  ? }
+> 
+>  ? if (is.null(data)){
+>  ??? NextMethod(formula(object), data=eval(object$call$data),
+>  ???????????????? contrasts.arg=contrasts, xlev=xlev, ...)
+>  ? } else {
+>  ??? NextMethod(formula(object), data=data,
+>  ??????????????????? contrasts.arg=contrasts, xlev=xlev, ...)
+>  ? }
+> }
+> 
+> --------- snip ---------
+> 
+> This function is a bit awkward, particularly the part that constructs
+> the xlev argument, but it does appear to work as intended (note,
+> however, that the contrast matrix for Sex rather than "contr.sum" is
+> reported in the "contrasts" attribute):
+> 
+> --------- snip ---------
+> 
+>  > model.matrix(m)
+>  ??? (Intercept) Sex1
+> 1???????????? 1??? 1
+> 2???????????? 1??? 1
+> 3???????????? 1??? 1
+> 
+> . . .
+> 
+> 106?????????? 1?? -1
+> 107?????????? 1?? -1
+> 108?????????? 1?? -1
+> attr(,"assign")
+> [1] 0 1
+> attr(,"contrasts")
+> attr(,"contrasts")$Sex
+>  ?????? [,1]
+> Male????? 1
+> Female?? -1
+> 
+>  > sessionInfo()
+> R version 4.4.1 (2024-06-14)
+> Platform: aarch64-apple-darwin20
+> Running under: macOS Sonoma 14.6.1
+> 
+> Matrix products: default
+> BLAS:
+> /System/Library/Frameworks/Accelerate.framework/Versions/A/Frameworks/ 
+> vecLib.framework/Versions/A/libBLAS.dylib
+> 
+> LAPACK:
+> /Library/Frameworks/R.framework/Versions/4.4-arm64/Resources/lib/ 
+> libRlapack.dylib;
+>  ?LAPACK version 3.12.0
+> 
+> locale:
+> [1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+> 
+> time zone: America/Toronto
+> tzcode source: internal
+> 
+> attached base packages:
+> [1] stats???? graphics? grDevices utils???? datasets? methods?? base
+> 
+> other attached packages:
+> [1] nlme_3.1-165
+> 
+> loaded via a namespace (and not attached):
+> [1] compiler_4.4.1 tools_4.4.1??? grid_4.4.1???? lattice_0.22-6
+> 
+> --------- snip ---------
+> 
+> Although this apparently solves the problem for car::Anova(), the
+> problem is likely more general. For example, insight::get_modelmatrix()
+> also reports the wrong model matrix for the "lme" model m above.
+> 
+> My suggestion: Include a correct model.matrix.lme() method in the nlme
+> package. That could be my version, but I expect that R-core could come
+> up with something better.
+> 
+> Thank you,
+>  ?John
+> -- 
+> John Fox, Professor Emeritus
+> McMaster University
+> Hamilton, Ontario, Canada
+> web: https://www.john-fox.ca/
+> -- 
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From |kry|ov @end|ng |rom d|@root@org  Sat Sep 21 20:51:56 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Sat, 21 Sep 2024 21:51:56 +0300
+Subject: [Rd] model.matrix() may be misleading for "lme" models
+In-Reply-To: <b60df077-eab0-451c-a8c5-67e5e333b2da@mcmaster.ca>
+References: <a7d44ccb-10b4-4fbb-b34c-154aaa687ef7@mcmaster.ca>
+ <b60df077-eab0-451c-a8c5-67e5e333b2da@mcmaster.ca>
+Message-ID: <20240921215156.1c65b61a@trisector>
+
+Dear Prof. John Fox,
+
+? Sat, 21 Sep 2024 12:47:49 -0400
+John Fox <jfox at mcmaster.ca> ?????:
+
+>      NextMethod(formula(object),  data=eval(object$call$data),
+>                 contrasts.arg=object$contrasts)
+
+The use of NextMethod worries me a bit. It will work as intended as
+long as everyone gives fully-named arguments to the generic, without
+relying on positional or partial matching, but may give unexpected
+results otherwise:
+
+foo <- \(x, ...) UseMethod('foo')
+foo.default <- \(x, foo = 'default', baz = 'baz', ...)
+ list(foo = foo, baz = baz, '...' = list(...))
+# try to override the argument to the default method
+foo.bar <- \(x, ...) NextMethod(x, foo = 'override')
+x <- structure(list(), class = 'bar')
+foo(x) # works, gives the right argument to foo.default
+# $foo
+# [1] "override"
+# 
+# $baz
+# [1] "baz"
+# 
+# $...
+# list()
+
+# this used to work with foo.default, but now doesn't:
+foo(x, fo = 'bar') # not matched to foo=
+# $foo
+# [1] "override"
+# 
+# $baz
+# [1] "baz"
+# 
+# $...
+# $...$fo
+# [1] "bar"
+
+foo(x, 'bar') # not matched to foo=, given to baz=
+# $foo
+# [1] "override"
+# 
+# $baz
+# [1] "bar"
+# 
+# $...
+# list()
+
+This happens because NextMethod() overwrites named arguments already
+present in the call, but any other arguments just get appended, without
+any regard to whether they had already matched an argument before the
+call was modified. In fact, I'm not seeing a way to safely override
+some of the arguments for the next S3 method. The "attempt 4" described
+by Henrik Bengtsson at [1] seems to work only if an argument is given
+as part of the call:
+
+foo.bar <- \(x, foo, ...) { foo <- 'override'; NextMethod() }
+foo(x) # doesn't work
+# $foo
+# [1] "default"
+# 
+# $baz
+# [1] "baz"
+# 
+# $...
+# list()
+
+foo(x, 1) # does work
+# $foo
+# [1] "override"
+# 
+# $baz
+# [1] "baz"
+#
+# $...
+# list()
+
+Evaluating object$call$data in the environment of the suggested
+nlme:::model.matrix.lme function may also not work right. Without an
+explicit copy of the data, the best environment to evaluate it in would
+be parent.frame().
+
+-- 
+Best regards,
+Ivan
+
+[1] https://github.com/HenrikBengtsson/Wishlist-for-R/issues/44
+
+
+From j|ox @end|ng |rom mcm@@ter@c@  Sun Sep 22 16:23:50 2024
+From: j|ox @end|ng |rom mcm@@ter@c@ (John Fox)
+Date: Sun, 22 Sep 2024 10:23:50 -0400
+Subject: [Rd] model.matrix() may be misleading for "lme" models
+In-Reply-To: <20240921215156.1c65b61a@trisector>
+References: <a7d44ccb-10b4-4fbb-b34c-154aaa687ef7@mcmaster.ca>
+ <b60df077-eab0-451c-a8c5-67e5e333b2da@mcmaster.ca>
+ <20240921215156.1c65b61a@trisector>
+Message-ID: <ee50e3bd-364a-4f37-ba03-62aed1df5a8e@mcmaster.ca>
+
+Dear Ivan,
+
+Thank you for addressing my questions with your usual thoroughness. 
+Please see below:
+
+On 2024-09-21 2:51 p.m., Ivan Krylov wrote:
+> [You don't often get email from ikrylov at disroot.org. Learn why this is important at https://aka.ms/LearnAboutSenderIdentification ]
+> 
+> Caution: External email.
+> 
+> 
+> Dear Prof. John Fox,
+> 
+> ? Sat, 21 Sep 2024 12:47:49 -0400
+> John Fox <jfox at mcmaster.ca> ?????:
+> 
+>>       NextMethod(formula(object),  data=eval(object$call$data),
+>>                  contrasts.arg=object$contrasts)
+> 
+> The use of NextMethod worries me a bit. It will work as intended as
+> long as everyone gives fully-named arguments to the generic, without
+> relying on positional or partial matching, but may give unexpected
+> results otherwise:
+
+That's not an issue for car:::model.matrix.lme(), which isn't registered 
+and so isn't accessible to users, but could be a problem if 
+model.matrix.lme() is incorporated in the nlme package, as I suggested. 
+An alternative that I think should work would be to call
+
+     model.matrix(formula(object),  data=eval(object$call$data), 
+
+                  contrasts.arg=object$contrasts, ...)
+
+rather than NextMethod() from model.matrix.lme().
+
+. . .
+
+> Evaluating object$call$data in the environment of the suggested
+> nlme:::model.matrix.lme function may also not work right. Without an
+> explicit copy of the data, the best environment to evaluate it in would
+> be parent.frame().
+
+I'm afraid that I don't understand the suggestion. Isn't parent.frame() 
+the default for the envir argument of eval()? Do you mean the parent 
+frame of the call to model.matrix.lme()?
+
+I tested car:::Anova.lme()/model.matrix.lme() with models fit to data in 
+the global environment, in an attach()ed data frame, and within another 
+function(), and didn't encounter any problems. For example:
+
+------ snip -----
+
+ > f <- function(){
++   OD <- Orthodont
++   m7 <- with(OD, lme(distance ~ Sex, random = ~ 1 | Subject,
++                      contrasts=list(Sex=contr.sum)))
++   Anova(m7, type=3)
++ }
+
+ > f()
+Analysis of Deviance Table (Type III tests)
+
+Response: distance
+                 Chisq Df Pr(>Chisq)
+(Intercept) 3910.8377  1  < 2.2e-16
+Sex            9.2921  1   0.002301
+
+------ snip -----
+
+Best,
+  John
+
+> 
+> --
+> Best regards,
+> Ivan
+> 
+> [1] https://github.com/HenrikBengtsson/Wishlist-for-R/issues/44
+
+
+From |kry|ov @end|ng |rom d|@root@org  Mon Sep 23 21:54:17 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Mon, 23 Sep 2024 22:54:17 +0300
+Subject: [Rd] model.matrix() may be misleading for "lme" models
+In-Reply-To: <ee50e3bd-364a-4f37-ba03-62aed1df5a8e@mcmaster.ca>
+References: <a7d44ccb-10b4-4fbb-b34c-154aaa687ef7@mcmaster.ca>
+ <b60df077-eab0-451c-a8c5-67e5e333b2da@mcmaster.ca>
+ <20240921215156.1c65b61a@trisector>
+ <ee50e3bd-364a-4f37-ba03-62aed1df5a8e@mcmaster.ca>
+Message-ID: <20240923225417.08fef4c1@Tarkus>
+
+? Sun, 22 Sep 2024 10:23:50 -0400
+John Fox <jfox at mcmaster.ca> ?????:
+
+> > Evaluating object$call$data in the environment of the suggested
+> > nlme:::model.matrix.lme function may also not work right. Without an
+> > explicit copy of the data, the best environment to evaluate it in
+> > would be parent.frame().  
+> 
+> I'm afraid that I don't understand the suggestion. Isn't
+> parent.frame() the default for the envir argument of eval()? Do you
+> mean the parent frame of the call to model.matrix.lme()?
+
+Yes, I do mean the parent frame of the model.matrix.lme() function
+call. While eval()'s default for the 'envir' argument is
+parent.frame(), this default value is evaluated in the context of the
+eval() call. Letting model.matrix.lme() call eval() results in the
+'envir' being the eval()'s parent, the model.matrix.lme() call frame.
+
+In most cases, model.matrix.lme() works as intended: either lme() has
+been given the 'data' argument, so object$data is not NULL and the
+branch to eval() is not taken, or 'data' has not been given, so both
+object$data and object$call$data are NULL, and NULL doesn't cause any
+harm when evaluated in any environment. In the latter case
+model.matrix.default() can access the variables in the environment of
+the formula.
+
+With keep.data = FALSE, the function may evaluate object$call$data in
+the wrong environment:
+
+maybe_model_matrix <- function(X)
+ model.matrix(lme(distance ~ Sex, random = ~ 1 | Subject, X,
+                  contrasts=list(Sex=contr.sum), keep.data=FALSE))
+
+maybe_model_matrix(Orthodont)
+# Error in eval(object$call$data) : object 'X' not found
+
+...but then model.matrix.default doesn't work on such objects either,
+and if the user wanted the data to be accessible, they could have set
+keep.data = TRUE. I can't tell whether evaluating object$call$data in
+environment(object$formula) is a better or worse idea than
+parent.frame().
+
+-- 
+Best regards,
+Ivan
+
+
+From bbo|ker @end|ng |rom gm@||@com  Mon Sep 23 22:25:46 2024
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Mon, 23 Sep 2024 16:25:46 -0400
+Subject: [Rd] model.matrix() may be misleading for "lme" models
+In-Reply-To: <20240923225417.08fef4c1@Tarkus>
+References: <a7d44ccb-10b4-4fbb-b34c-154aaa687ef7@mcmaster.ca>
+ <b60df077-eab0-451c-a8c5-67e5e333b2da@mcmaster.ca>
+ <20240921215156.1c65b61a@trisector>
+ <ee50e3bd-364a-4f37-ba03-62aed1df5a8e@mcmaster.ca>
+ <20240923225417.08fef4c1@Tarkus>
+Message-ID: <CABghstTfAjaU+D-GkN19J6eb-V=6Sc234jEV085PgQR2vTc+qg@mail.gmail.com>
+
+>  I can't tell whether evaluating object$call$data in
+environment(object$formula) is a better or worse idea than parent.frame().
+
+I have struggled with this a lot over the years. There is a bunch of
+wonky code in lme4, e.g. here
+<https://github.com/lme4/lme4/blob/master/R/lmer.R#L814-L838>, that
+tries to look for data in different possible locations, but I don't
+think anything works perfectly/robustly.
+
+https://stackoverflow.com/questions/14945274/determine-whether-evaluation-of-an-argument-will-fail-due-to-non-existence
+
+On Mon, Sep 23, 2024 at 3:54?PM Ivan Krylov via R-devel
+<r-devel at r-project.org> wrote:
+>
+> ? Sun, 22 Sep 2024 10:23:50 -0400
+> John Fox <jfox at mcmaster.ca> ?????:
+>
+> > > Evaluating object$call$data in the environment of the suggested
+> > > nlme:::model.matrix.lme function may also not work right. Without an
+> > > explicit copy of the data, the best environment to evaluate it in
+> > > would be parent.frame().
+> >
+> > I'm afraid that I don't understand the suggestion. Isn't
+> > parent.frame() the default for the envir argument of eval()? Do you
+> > mean the parent frame of the call to model.matrix.lme()?
+>
+> Yes, I do mean the parent frame of the model.matrix.lme() function
+> call. While eval()'s default for the 'envir' argument is
+> parent.frame(), this default value is evaluated in the context of the
+> eval() call. Letting model.matrix.lme() call eval() results in the
+> 'envir' being the eval()'s parent, the model.matrix.lme() call frame.
+>
+> In most cases, model.matrix.lme() works as intended: either lme() has
+> been given the 'data' argument, so object$data is not NULL and the
+> branch to eval() is not taken, or 'data' has not been given, so both
+> object$data and object$call$data are NULL, and NULL doesn't cause any
+> harm when evaluated in any environment. In the latter case
+> model.matrix.default() can access the variables in the environment of
+> the formula.
+>
+> With keep.data = FALSE, the function may evaluate object$call$data in
+> the wrong environment:
+>
+> maybe_model_matrix <- function(X)
+>  model.matrix(lme(distance ~ Sex, random = ~ 1 | Subject, X,
+>                   contrasts=list(Sex=contr.sum), keep.data=FALSE))
+>
+> maybe_model_matrix(Orthodont)
+> # Error in eval(object$call$data) : object 'X' not found
+>
+> ...but then model.matrix.default doesn't work on such objects either,
+> and if the user wanted the data to be accessible, they could have set
+> keep.data = TRUE. I can't tell whether evaluating object$call$data in
+> environment(object$formula) is a better or worse idea than
+> parent.frame().
+>
+> --
+> Best regards,
+> Ivan
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From j|ox @end|ng |rom mcm@@ter@c@  Mon Sep 23 23:31:10 2024
+From: j|ox @end|ng |rom mcm@@ter@c@ (John Fox)
+Date: Mon, 23 Sep 2024 17:31:10 -0400
+Subject: [Rd] model.matrix() may be misleading for "lme" models
+In-Reply-To: <CABghstTfAjaU+D-GkN19J6eb-V=6Sc234jEV085PgQR2vTc+qg@mail.gmail.com>
+References: <a7d44ccb-10b4-4fbb-b34c-154aaa687ef7@mcmaster.ca>
+ <b60df077-eab0-451c-a8c5-67e5e333b2da@mcmaster.ca>
+ <20240921215156.1c65b61a@trisector>
+ <ee50e3bd-364a-4f37-ba03-62aed1df5a8e@mcmaster.ca>
+ <20240923225417.08fef4c1@Tarkus>
+ <CABghstTfAjaU+D-GkN19J6eb-V=6Sc234jEV085PgQR2vTc+qg@mail.gmail.com>
+Message-ID: <dbef8aa6-8e59-43bd-ae6f-7f127c1f5756@mcmaster.ca>
+
+Thank you Ivan and Ben for your recent further comments.
+
+I think that the current code for the unregistered model.matrix.lme() in 
+the development version of the car package is pretty robust and 
+certainly an improvement over what was there before (which returned 
+incorrect results for non-default contrasts!).
+
+I expect that if someone in R-core picks up the task of writing a 
+model.matrix.lme() for the nlme package, they would do a better job than 
+I did, and I'd then be able to retire the version in the car package.
+
+Again, thanks,
+  John
+
+On 2024-09-23 4:25 p.m., Ben Bolker wrote:
+> Caution: External email.
+> 
+> 
+>>   I can't tell whether evaluating object$call$data in
+> environment(object$formula) is a better or worse idea than parent.frame().
+> 
+> I have struggled with this a lot over the years. There is a bunch of
+> wonky code in lme4, e.g. here
+> <https://github.com/lme4/lme4/blob/master/R/lmer.R#L814-L838>, that
+> tries to look for data in different possible locations, but I don't
+> think anything works perfectly/robustly.
+> 
+> https://stackoverflow.com/questions/14945274/determine-whether-evaluation-of-an-argument-will-fail-due-to-non-existence
+> 
+> On Mon, Sep 23, 2024 at 3:54?PM Ivan Krylov via R-devel
+> <r-devel at r-project.org> wrote:
+>>
+>> ? Sun, 22 Sep 2024 10:23:50 -0400
+>> John Fox <jfox at mcmaster.ca> ?????:
+>>
+>>>> Evaluating object$call$data in the environment of the suggested
+>>>> nlme:::model.matrix.lme function may also not work right. Without an
+>>>> explicit copy of the data, the best environment to evaluate it in
+>>>> would be parent.frame().
+>>>
+>>> I'm afraid that I don't understand the suggestion. Isn't
+>>> parent.frame() the default for the envir argument of eval()? Do you
+>>> mean the parent frame of the call to model.matrix.lme()?
+>>
+>> Yes, I do mean the parent frame of the model.matrix.lme() function
+>> call. While eval()'s default for the 'envir' argument is
+>> parent.frame(), this default value is evaluated in the context of the
+>> eval() call. Letting model.matrix.lme() call eval() results in the
+>> 'envir' being the eval()'s parent, the model.matrix.lme() call frame.
+>>
+>> In most cases, model.matrix.lme() works as intended: either lme() has
+>> been given the 'data' argument, so object$data is not NULL and the
+>> branch to eval() is not taken, or 'data' has not been given, so both
+>> object$data and object$call$data are NULL, and NULL doesn't cause any
+>> harm when evaluated in any environment. In the latter case
+>> model.matrix.default() can access the variables in the environment of
+>> the formula.
+>>
+>> With keep.data = FALSE, the function may evaluate object$call$data in
+>> the wrong environment:
+>>
+>> maybe_model_matrix <- function(X)
+>>   model.matrix(lme(distance ~ Sex, random = ~ 1 | Subject, X,
+>>                    contrasts=list(Sex=contr.sum), keep.data=FALSE))
+>>
+>> maybe_model_matrix(Orthodont)
+>> # Error in eval(object$call$data) : object 'X' not found
+>>
+>> ...but then model.matrix.default doesn't work on such objects either,
+>> and if the user wanted the data to be accessible, they could have set
+>> keep.data = TRUE. I can't tell whether evaluating object$call$data in
+>> environment(object$formula) is a better or worse idea than
+>> parent.frame().
+>>
+>> --
+>> Best regards,
+>> Ivan
+>>
+>> ______________________________________________
+>> R-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From |kry|ov @end|ng |rom d|@root@org  Tue Sep 24 16:11:30 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Tue, 24 Sep 2024 17:11:30 +0300
+Subject: [Rd] Possible update to survival
+In-Reply-To: <BL0PR01MB4658BCF7EF86EAD903545CD7AE672@BL0PR01MB4658.prod.exchangelabs.com>
+References: <BL0PR01MB4658BCF7EF86EAD903545CD7AE672@BL0PR01MB4658.prod.exchangelabs.com>
+Message-ID: <20240924171130.4627a70e@arachnoid>
+
+? Sun, 15 Sep 2024 00:43:31 +0000
+"Therneau, Terry M., Ph.D. via R-devel" <r-devel at r-project.org> ?????:
+
+>   2.  Before calling model.frame(), insert my copy of strata into the
+> calling chain coxenv <- new.env(parent= environment(formula))
+>     assign("strata", survival::strata, envir= coxenv)
+>     environment(formula) <- coxenv
+
+<...>
+
+> For ultimate safety, I am thinking of extending the above to all of
+> the internal survival functions that might be used in a formula:
+> Surv, strata, pspline, cluster, ratetable  (I think that_s all).   An
+> intitial limited test looks okay, but before anything migrates to
+> CRAN I am looking for any feedback.
+
+What do you think of the following approach?
+
+When changing the environment of the formula, construct the following
+environment chain:
+
+1. Top: your 'coxenv' environment with the special survival functions
+2. Enclosing environment: list2env(data)
+3. Enclosing^2 environment: original environment(formula)
+
+Since the environment chain constructed by eval() when called by
+model.frame() looks different (top: data -> enclosure:
+environment(formula)), someone truly determined to shoot themselves in
+the foot could still sneak a 'strata' function inside their 'data'
+argument.
+
+Having said that, what you are planning to implement may be already
+reliable enough.
+
+-- 
+Best regards,
+Ivan
+
+

@@ -1,0 +1,727 @@
+From Roger.Bivand at nhh.no  Sun Jan 11 18:42:44 2004
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Sun, 11 Jan 2004 18:42:44 +0100 (CET)
+Subject: [R-sig-Geo] Re: SpatialCls
+In-Reply-To: <3FC77530.60205@geog.uu.nl>
+Message-ID: <Pine.LNX.4.44.0401111832320.20286-100000@reclus.nhh.no>
+
+Dear Edzer,
+
+Happy New Year!
+
+I'm just muddling, but would it be OK to try to put my proj4R CRS class in 
+SpatialCls for proj4string? This may mean setting proj4string as NA until 
+the CRS has been set, and as.projected as NULL until proj4string is 
+identified as latlong or !latlong? How should we handle this with regard 
+to commiting to sourceforge, is this a situation where I need to do this 
+locally, and send you a tarball to avoid introducing changes you'd prefer 
+not to have?
+
+A little question - does coordinates() preserve sdf row names as a way of 
+keeping point IDs stuck to both objects?
+
+I'm a bit worried about holes too in the polygon setting, the original
+compiled code in maptools for finding ring direction seems buggy, and ring
+direction seems to be a typical way of flagging holes as against
+boundaries for fill.
+
+Best wishes,
+
+Roger
+
+On Fri, 28 Nov 2003, Edzer J. Pebesma wrote:
+
+> Hi Barry, Roger, r-sig-geo gang,
+> 
+> I just checked in updates to SpatialCls on
+> http://sourceforge.net/projects/r-spatial/ --
+> I completed documentation, added tests and examples. The
+> whole package should pass R CMD check. Even the S4 classes
+> are now documented, slots and all. No vignettes yet,
+> still have to get into them.
+> 
+> The interfaces used so far are:
+> 
+> # The following three promote a data.frame to a SpatialDataFrame
+> 
+> coordinates(meuse) = ~x+y # or
+> coordinates(meuse) = c("x", "y") # or
+> coordinates(meuse) = cbind(x,y)
+> 
+> # after which
+> 
+> coordinates(meuse)
+> 
+> # retrieves coordinates; also:
+> 
+> coordinates(meuse.grid) = ~x+y # followed by
+> gridded(meuse.grid) = TRUE
+> 
+> # promotes meuse.grid to a SpatialDataFrameGrid, which has
+> # (and auto-detects) grid topology; it has an image method.
+> 
+> # then,
+> 
+> polygons(x) = list(pol1, pol2, pol3)
+> 
+> # promotes data.frame x to a SpatialPolygons, adding the
+> # polygon information to it, doing some basic checks
+> # (e.g. pol1..3 should be 2column matrix with at least 4 points,
+> # first and last being the same);
+> 
+> polygons(x)     # retrieves the polygon list
+> data.frame(x)    # retrieves the attribute values data.frame
+> 
+> # some elementary plot, show, formula and summary methods are present.
+> 
+> What else do we need, when it comes to interfaces/methods?
+> 
+> Enjoy the weekend,
+> --
+> Edzer
+> 
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Breiviksveien 40, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 93 93
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From B.Rowlingson at lancaster.ac.uk  Mon Jan 12 12:02:27 2004
+From: B.Rowlingson at lancaster.ac.uk (Barry Rowlingson)
+Date: Mon, 12 Jan 2004 11:02:27 +0000
+Subject: [R-sig-Geo] Re: Holes
+In-Reply-To: <Pine.LNX.4.44.0401111832320.20286-100000@reclus.nhh.no>
+References: <Pine.LNX.4.44.0401111832320.20286-100000@reclus.nhh.no>
+Message-ID: <40027EC3.9050506@lancaster.ac.uk>
+
+
+> I'm a bit worried about holes too in the polygon setting, the original
+> compiled code in maptools for finding ring direction seems buggy, and ring
+> direction seems to be a typical way of flagging holes as against
+> boundaries for fill.
+
+  Typical it may be, but I think its the wrong way of doing things! This 
+sort of complex geometry would be better represented as a tree of rings. 
+  Each ring may have child rings that represent islands or holes within 
+the parent (depending on whether the parent is a hole or an island). In 
+this way both the island/hole nature is preserved as well as the way 
+each is embedded in the other.
+
+  I think you can reconstruct this tree from the rings+holeflag form, 
+but it involves doing point-in-poly tests using generated points 
+guaranteed to be in a given ring.
+
+  The tree structure leads to nice simple calculation of various 
+properties of the rings. Consider a lake with islands with perhaps lakes 
+- the area of water of the outer lake is the area(lake ring) minus 
+area(child rings), whereas the amount of water within the outer lake is 
+area(lake ring) minus amount of water within(child rings), a neat 
+tree-based algorithm.
+
+  Given that the tree can be reconstructed from the ring+holeflag 
+representation, I'd settle for that if a method for constructing the 
+tree is made available.
+
+  Of course in an object-oriented sense, the users shouldn't see the 
+representation - there shouldn't be a method for 'area' that returns a 
+negative number if the thing is a hole - there should be an 
+'isHole(x,y)' method or similar...
+
+  Anyone notice a typo in a recent R-news posting that referred to 
+'objection orientation' :)
+
+Baz
+
+
+
+From White.Denis at epamail.epa.gov  Mon Jan 12 22:38:27 2004
+From: White.Denis at epamail.epa.gov (White.Denis at epamail.epa.gov)
+Date: Mon, 12 Jan 2004 13:38:27 -0800
+Subject: [R-sig-Geo] Re: Holes
+Message-ID: <OFA14AD050.0A53A95D-ON88256E19.0075ADAD-88256E19.0076D9DC@epamail.epa.gov>
+
+
+
+
+
+> I'm a bit worried about holes too in the polygon setting, the original
+> compiled code in maptools for finding ring direction seems buggy, and
+ring
+> direction seems to be a typical way of flagging holes as against
+> boundaries for fill.
+
+If filling is the main concern, then it may not matter (which direction
+inner polygons are recorded).  If, in this script,
+
+p <- c(
+  1,1,
+  8,1,
+  8,8,
+  1,8,
+  1,1,
+      2,2,
+      7,2,
+      7,7,
+      2,7,
+      2,2,
+  1,1,
+          3,3,
+          6,3,
+          6,6,
+          3,6,
+          3,3,
+  1,1,
+              4,4,
+              5,4,
+              5,5,
+              4,5,
+              4,4,
+  1,1,
+  NA,NA)
+p <- matrix (p, nrow=2, ncol=length(p)/2)
+plot (p[1,], p[2,], type="n", axes=FALSE, xlab="", ylab="")
+polygon (p[1,], p[2,], col=1)
+
+the directions of the successive inner polygons are reversed, the
+graphic result is the same.  The fill algorithm evidently uses the
+parity feature (fill on, fill off, while crossing successive boundaries
+in the direction of shading).  The diagonal line showing from (2,2) to
+(3,3) is another matter.  I wrote Paul Murrell about this a couple of
+years ago and he referred me to Ross Ihaka who, Paul said, was working
+on new polygon routines.
+
+For topological applications, the tree structure suggested by Barry
+Rowlingson seems like an elegant method.
+
+Denis
+
+
+
+From nikko at hailmail.net  Tue Jan 13 15:11:33 2004
+From: nikko at hailmail.net (Nicholas Lewin-Koh)
+Date: Tue, 13 Jan 2004 22:11:33 +0800
+Subject: [R-sig-Geo] Re: holes
+In-Reply-To: <200401131115.i0DBFKki028347@hypatia.math.ethz.ch>
+References: <200401131115.i0DBFKki028347@hypatia.math.ethz.ch>
+Message-ID: <20040113141133.28BF44623D@server1.messagingengine.com>
+
+Hi Roger,
+I thought I fixed the polygon direction code, but I may not have worked
+it in to the version
+I passed over to you. Sorry. I rember that the original code that came
+with the shapelib library
+in the contrib section did not work properly, and gave screwy results. I
+remember replacing it with an algorithm from O'Rourke (Comp Geom in C)
+that worked much better. Let me look in my backups (I think that was 3
+computers and 2 jobs ago) and compare with the current maptools. If I
+didn't work it in I will send you the code.
+
+I think Barry's idea is great and not hard to implement. Essentially he
+is suggesting to store the polygons  ' parts in a red-black tree. You can
+refrence the polygon parts by id's and just suck them right out of the
+array when plotting.
+
+Nicholas 
+> 
+> Today's Topics:
+> 
+>    1. Re: Re: Holes (White.Denis at epamail.epa.gov)
+> 
+> 
+> ----------------------------------------------------------------------
+> 
+> Message: 1
+> Date: Mon, 12 Jan 2004 13:38:27 -0800
+> From: White.Denis at epamail.epa.gov
+> Subject: Re: [R-sig-Geo] Re: Holes
+> To: Roger.Bivand at nhh.no
+> Cc: r-sig-geo at stat.math.ethz.ch
+> Message-ID:
+> 	<OFA14AD050.0A53A95D-ON88256E19.0075ADAD-88256E19.0076D9DC at epamail.epa.gov>
+> 	
+> Content-Type: text/plain; charset=US-ASCII
+> 
+> 
+> 
+> 
+> 
+> > I'm a bit worried about holes too in the polygon setting, the original
+> > compiled code in maptools for finding ring direction seems buggy, and
+> ring
+> > direction seems to be a typical way of flagging holes as against
+> > boundaries for fill.
+> 
+> If filling is the main concern, then it may not matter (which direction
+> inner polygons are recorded).  If, in this script,
+> 
+> p <- c(
+>   1,1,
+>   8,1,
+>   8,8,
+>   1,8,
+>   1,1,
+>       2,2,
+>       7,2,
+>       7,7,
+>       2,7,
+>       2,2,
+>   1,1,
+>           3,3,
+>           6,3,
+>           6,6,
+>           3,6,
+>           3,3,
+>   1,1,
+>               4,4,
+>               5,4,
+>               5,5,
+>               4,5,
+>               4,4,
+>   1,1,
+>   NA,NA)
+> p <- matrix (p, nrow=2, ncol=length(p)/2)
+> plot (p[1,], p[2,], type="n", axes=FALSE, xlab="", ylab="")
+> polygon (p[1,], p[2,], col=1)
+> 
+> the directions of the successive inner polygons are reversed, the
+> graphic result is the same.  The fill algorithm evidently uses the
+> parity feature (fill on, fill off, while crossing successive boundaries
+> in the direction of shading).  The diagonal line showing from (2,2) to
+> (3,3) is another matter.  I wrote Paul Murrell about this a couple of
+> years ago and he referred me to Ross Ihaka who, Paul said, was working
+> on new polygon routines.
+> 
+> For topological applications, the tree structure suggested by Barry
+> Rowlingson seems like an elegant method.
+> 
+> Denis
+> 
+> 
+> 
+> ------------------------------
+> 
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://www.stat.math.ethz.ch/mailman/listinfo/r-sig-geo
+> 
+> 
+> End of R-sig-Geo Digest, Vol 5, Issue 2
+> ***************************************
+
+
+
+From e.pebesma at geog.uu.nl  Tue Jan 13 15:35:19 2004
+From: e.pebesma at geog.uu.nl (Edzer J. Pebesma)
+Date: Tue, 13 Jan 2004 15:35:19 +0100
+Subject: [R-sig-Geo] Re: SpatialCls
+In-Reply-To: <Pine.LNX.4.44.0401111832320.20286-100000@reclus.nhh.no>
+References: <Pine.LNX.4.44.0401111832320.20286-100000@reclus.nhh.no>
+Message-ID: <40040227.4040408@geog.uu.nl>
+
+Roger Bivand wrote:
+
+>Dear Edzer,
+>
+>Happy New Year!
+>
+>I'm just muddling, but would it be OK to try to put my proj4R CRS class in 
+>SpatialCls for proj4string? This may mean setting proj4string as NA until 
+>the CRS has been set, and as.projected as NULL until proj4string is 
+>identified as latlong or !latlong? How should we handle this with regard 
+>to commiting to sourceforge, is this a situation where I need to do this 
+>locally, and send you a tarball to avoid introducing changes you'd prefer 
+>not to have?
+>  
+>
+Please go ahead and commit; that's the idea of you being a developer.
+The idea of using cvs is that you can go back to previous versions.
+
+>A little question - does coordinates() preserve sdf row names as a way of 
+>keeping point IDs stuck to both objects?
+>
+Yes; it returns a data frame with only the (2 or 3) coordinate columns 
+selected.
+--
+Edzer
+
+
+
+From ocbruno at netscape.net  Tue Jan 13 16:27:44 2004
+From: ocbruno at netscape.net (Marcelo Bruno)
+Date: Tue, 13 Jan 2004 13:27:44 -0200
+Subject: [R-sig-Geo] output gstat and maps
+Message-ID: <40040E70.2000201@netscape.net>
+
+Hi, members
+
+I'm Marcelo, oceanographer from Brazil
+and actually work with fishery acoustical data
+of brazilian shelf. I'm using R, GMT, ArcView (windows)
+in Linux redhat 9.0 (Athlon Xp 1.6Ghz, 20Gb 540mb mem).
+I run kriging analysis using gstat (R1.8.1) in
+fishery acoustic data:
+
+x     y     sa (backscatering acoustic parameter)
+
+the output is ordinary kriging surface.
+I need overlap these output to a map of
+Brazil coastal shelf and slope but i don't
+make this. I have a file (ascii) of Brazil coastal,
+and shapefile. Someone can helps me with this
+problem? I try in gimp, kpaint and others but i
+need a better solution to learn more in R.
+
+Thanks in advance!
+Marcelo
+
+
+
+From ernesto at ipimar.pt  Wed Jan 14 13:39:14 2004
+From: ernesto at ipimar.pt (Ernesto Jardim)
+Date: Wed, 14 Jan 2004 12:39:14 +0000
+Subject: [R-sig-Geo] output gstat and maps
+In-Reply-To: <40040E70.2000201@netscape.net>
+References: <40040E70.2000201@netscape.net>
+Message-ID: <1074083954.4799.74.camel@gandalf.local>
+
+Hi Marcelo,
+
+If you have everything on the same coordenate system you can just plot
+the Brasilian coast with plot(..., type="l") and add kriging surface
+with points or something similar.
+
+Hope this helps
+
+EJ
+
+
+On Tue, 2004-01-13 at 15:27, Marcelo Bruno wrote:
+> Hi, members
+> 
+> I'm Marcelo, oceanographer from Brazil
+> and actually work with fishery acoustical data
+> of brazilian shelf. I'm using R, GMT, ArcView (windows)
+> in Linux redhat 9.0 (Athlon Xp 1.6Ghz, 20Gb 540mb mem).
+> I run kriging analysis using gstat (R1.8.1) in
+> fishery acoustic data:
+> 
+> x     y     sa (backscatering acoustic parameter)
+> 
+> the output is ordinary kriging surface.
+> I need overlap these output to a map of
+> Brazil coastal shelf and slope but i don't
+> make this. I have a file (ascii) of Brazil coastal,
+> and shapefile. Someone can helps me with this
+> problem? I try in gimp, kpaint and others but i
+> need a better solution to learn more in R.
+> 
+> Thanks in advance!
+> Marcelo
+> 
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://www.stat.math.ethz.ch/mailman/listinfo/r-sig-geo
+
+
+
+From hi_ono2001 at ybb.ne.jp  Wed Jan 14 18:29:23 2004
+From: hi_ono2001 at ybb.ne.jp (Hisaji Ono)
+Date: Thu, 15 Jan 2004 02:29:23 +0900
+Subject: [R-sig-Geo] About adaptive spatial kernel for spgwr
+References: <Pine.LNX.4.44.0401111832320.20286-100000@reclus.nhh.no>
+Message-ID: <003701c3dac3$f3ae7340$818001db@webgis>
+
+Hello, Professor Bivand.
+
+Currently I summaries GWR using Fotheringham et al. 's GWR book(Wiley).
+
+Although current spgwr has no support of adaptive spatial kernel, I'd like
+to add this kernel in it.
+
+But for me it's not enough to implement this only reading page 46's footnote
+in this books
+
+Could you give any hint for implementing adaptive spatial kernel to me?
+
+ Regards.
+
+
+
+From danlinyu at csd.uwm.edu  Wed Jan 14 22:39:32 2004
+From: danlinyu at csd.uwm.edu (Danlin Yu)
+Date: Wed, 14 Jan 2004 15:39:32 -0600 (CST)
+Subject: [R-sig-Geo] About adaptive spatial kernel for spgwr
+In-Reply-To: <003701c3dac3$f3ae7340$818001db@webgis>
+Message-ID: <Pine.OSF.3.96.1040114152034.24387A-100000@alpha1.csd.uwm.edu>
+
+Hi, Mr. Hisaji Ono and all:
+
+    I think Fortheringham and collegues are using the cross-validation to
+obtain an optimal number of nearest neighbor to replace the optimal
+bandwidth. This way, every data point will have the same number of
+observations participating the locally weighted regression.
+    I cannot actually implement the code in R myself, but I would like to
+list my understanding of using the cross-validation procedure to obtain
+the optimal number of nearest neighbors. If I am wrong in any aspect,
+please correct me:
+    1. Choose the weighting scheme (bi-squre, or similar ones like
+tri-cube);
+    2. Set the minimum number of nearest neighbor as the number of
+explanatory variables plus 2, and the maximum number as the number of
+observations (I guess for large number of observations, this may be very
+computational intensive);
+    3. Loop through the minimum to the maximum, and obtain a CV score for
+each number of nearest neighbor;
+    4. The smallest CV yields the optimal number of nearest neighbor.
+
+    I hope this will help.
+    
+
+On Thu, 15 Jan 2004, Hisaji Ono wrote:
+
+> Hello, Professor Bivand.
+> 
+> Currently I summaries GWR using Fotheringham et al. 's GWR book(Wiley).
+> 
+> Although current spgwr has no support of adaptive spatial kernel, I'd like
+> to add this kernel in it.
+> 
+> But for me it's not enough to implement this only reading page 46's footnote
+> in this books
+> 
+> Could you give any hint for implementing adaptive spatial kernel to me?
+> 
+>  Regards.
+> 
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://www.stat.math.ethz.ch/mailman/listinfo/r-sig-geo
+> 
+
+    Sincerely,
+    Danlin Yu, Ph.D. Candidate
+    Department of Geography
+    University of Wisconsin, Milwaukee
+    Tel: (414)229-5818
+    Fax: (414)229-3981
+    Email: danlinyu at uwm.edu
+
+
+
+From Roger.Bivand at nhh.no  Thu Jan 15 08:10:18 2004
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Thu, 15 Jan 2004 08:10:18 +0100 (CET)
+Subject: [R-sig-Geo] Re: About adaptive spatial kernel for spgwr
+Message-ID: <62413.129.177.44.24.1074150618.squirrel@webmail.nhh.no>
+
+> Hello, Professor Bivand.
+>
+> Currently I summaries GWR using Fotheringham et al. 's GWR
+> book(Wiley).
+>
+> Although current spgwr has no support of adaptive spatial kernel, I'd
+> like to add this kernel in it.
+>
+> But for me it's not enough to implement this only reading page 46's
+> footnote in this books
+>
+
+When Chris Brunsdon and I were in Lucca last September, some coding was
+done, although it isn't yet ready for release. Some more work needs to
+be done, also to introduce geographically weighted statistical summary
+measures. The code does include the k-nearest neighbours adaptive kernel
+used in GWR in some cases. If others would like to join in, I could
+start a sourceforge project if you like.
+
+Roger
+
+
+
+> Could you give any hint for implementing adaptive spatial kernel to
+> me?
+>
+>  Regards.
+
+
+-- 
+Roger Bivand
+NHH, Breiviksveien 40, N-5045 Bergen, Norway
+
+
+
+From e.pebesma at geog.uu.nl  Thu Jan 15 11:20:08 2004
+From: e.pebesma at geog.uu.nl (Edzer J. Pebesma)
+Date: Thu, 15 Jan 2004 11:20:08 +0100
+Subject: [R-sig-Geo] output gstat and maps
+In-Reply-To: <40040E70.2000201@netscape.net>
+References: <40040E70.2000201@netscape.net>
+Message-ID: <40066958.7080105@geog.uu.nl>
+
+Mmm, yeah, the trouble is that R is not a GIS, and
+GMT and ArcView are no statistics packages.
+
+I think you can import shapefiles using packages
+maptools, and perhaps Rmap (not on CRAN?).
+I imaging you can then plot the values with
+
+image(values.krige)
+
+and add polygons to the plot with the plot
+commands in maptools, using the add=TRUE
+argument.
+
+levelplot, which I like much more because it
+draws a legend, can currently not do this
+easily (i.e., without customizing panel functions);
+has anyone looked into this?
+--
+Edzer
+
+Marcelo Bruno wrote:
+
+> Hi, members
+>
+> I'm Marcelo, oceanographer from Brazil
+> and actually work with fishery acoustical data
+> of brazilian shelf. I'm using R, GMT, ArcView (windows)
+> in Linux redhat 9.0 (Athlon Xp 1.6Ghz, 20Gb 540mb mem).
+> I run kriging analysis using gstat (R1.8.1) in
+> fishery acoustic data:
+>
+> x     y     sa (backscatering acoustic parameter)
+>
+> the output is ordinary kriging surface.
+> I need overlap these output to a map of
+> Brazil coastal shelf and slope but i don't
+> make this. I have a file (ascii) of Brazil coastal,
+> and shapefile. Someone can helps me with this
+> problem? I try in gimp, kpaint and others but i
+> need a better solution to learn more in R.
+>
+> Thanks in advance!
+> Marcelo
+>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://www.stat.math.ethz.ch/mailman/listinfo/r-sig-geo
+
+
+
+From hi_ono2001 at ybb.ne.jp  Fri Jan 16 19:08:40 2004
+From: hi_ono2001 at ybb.ne.jp (Hisaji Ono)
+Date: Sat, 17 Jan 2004 03:08:40 +0900
+Subject: [R-sig-Geo] About adaptive spatial kernel for spgwr
+References: <Pine.OSF.3.96.1040114152034.24387A-100000@alpha1.csd.uwm.edu>
+Message-ID: <009801c3dc5b$c5715760$818001db@webgis>
+
+Thank you very much, Mr. Yu.
+
+> 
+>     I think Fortheringham and collegues are using the cross-validation to
+> obtain an optimal number of nearest neighbor to replace the optimal
+> bandwidth. This way, every data point will have the same number of
+> observations participating the locally weighted regression.
+>     I cannot actually implement the code in R myself, but I would like to
+> list my understanding of using the cross-validation procedure to obtain
+> the optimal number of nearest neighbors. If I am wrong in any aspect,
+> please correct me:
+>     1. Choose the weighting scheme (bi-squre, or similar ones like
+> tri-cube);
+>     2. Set the minimum number of nearest neighbor as the number of
+> explanatory variables plus 2, and the maximum number as the number of
+> observations (I guess for large number of observations, this may be very
+> computational intensive);
+>     3. Loop through the minimum to the maximum, and obtain a CV score for
+> each number of nearest neighbor;
+>     4. The smallest CV yields the optimal number of nearest neighbor.
+> 
+>     I hope this will help.
+
+ It's very helpful.
+
+
+
+From hi_ono2001 at ybb.ne.jp  Sat Jan 17 07:15:26 2004
+From: hi_ono2001 at ybb.ne.jp (Hisaji Ono)
+Date: Sat, 17 Jan 2004 15:15:26 +0900
+Subject: [R-sig-Geo] RGDAl & Map Algebra or Cartographic Modelling
+References: <40040E70.2000201@netscape.net> <40066958.7080105@geog.uu.nl>
+Message-ID: <008801c3dcc1$4c9974b0$818001db@webgis>
+
+Hi.
+
+ Against images imported by RGDAL, can R execute?Tomlin's Map Algebra or
+Cartographic
+Modelling(http://mutate.echiron.com/doc_center/library/pcraster/x30.htm)?
+
+ Regards.
+
+
+
+From Roger.Bivand at nhh.no  Sat Jan 17 12:36:11 2004
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Sat, 17 Jan 2004 12:36:11 +0100 (CET)
+Subject: [R-sig-Geo] RGDAl & Map Algebra or Cartographic Modelling
+In-Reply-To: <008801c3dcc1$4c9974b0$818001db@webgis>
+References: <40040E70.2000201@netscape.net> <40066958.7080105@geog.uu.nl>
+	<008801c3dcc1$4c9974b0$818001db@webgis>
+Message-ID: <61645.129.177.44.69.1074339371.squirrel@webmail.nhh.no>
+
+
+> Hi.
+>
+>  Against images imported by RGDAL, can R execute???Tomlin's Map Algebra
+> or
+> Cartographic
+> Modelling(http://mutate.echiron.com/doc_center/library/pcraster/x30.htm)?
+
+Cell by cell operations would work, because then you don't need to know
+where you are. Any other operations do need to know, and wouldn't work
+without functions being written. Maybe these are best handled in GIS - you
+refer to PCRaster, which is downloadable, although closed source, for
+Windows. GRASS is a cross-platform alternative, and its r.mapcalc gets you
+a long way - my choice would be to write a wrapper to convert the image to
+the structure needed to output to a GRASS raster, and do the work there.
+Perhaps it would help to be able to create a new GRASS LOCATION from
+within R running within GRASS?
+
+Roger
+
+>
+>  Regards.
+>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://www.stat.math.ethz.ch/mailman/listinfo/r-sig-geo
+
+
+-- 
+Roger Bivand
+NHH, Breiviksveien 40, N-5045 Bergen, Norway
+
+
+
+From e.pebesma at geog.uu.nl  Sat Jan 17 18:35:20 2004
+From: e.pebesma at geog.uu.nl (Edzer Pebesma)
+Date: Sat, 17 Jan 2004 18:35:20 +0100
+Subject: [R-sig-Geo] RGDAl & Map Algebra or Cartographic Modelling
+In-Reply-To: <61645.129.177.44.69.1074339371.squirrel@webmail.nhh.no>
+References: <40040E70.2000201@netscape.net>
+	<40066958.7080105@geog.uu.nl>	<008801c3dcc1$4c9974b0$818001db@webgis>
+	<61645.129.177.44.69.1074339371.squirrel@webmail.nhh.no>
+Message-ID: <40097258.1040609@geog.uu.nl>
+
+An embedded and charset-unspecified text was scrubbed...
+Name: not available
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20040117/adbb5e52/attachment.pl>
+

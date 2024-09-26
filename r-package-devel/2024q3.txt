@@ -11004,3 +11004,1514 @@ Iago-lito
 	[[alternative HTML version deleted]]
 
 
+From |kry|ov @end|ng |rom d|@root@org  Sat Sep 14 11:27:07 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Sat, 14 Sep 2024 12:27:07 +0300
+Subject: [R-pkg-devel] 
+ Justification and status of the 100-bytes path length limit.
+In-Reply-To: <ff1bda57-3603-448a-8947-6725669297dc@umontpellier.fr>
+References: <ff1bda57-3603-448a-8947-6725669297dc@umontpellier.fr>
+Message-ID: <20240914122707.082493e8@trisector>
+
+? Fri, 13 Sep 2024 15:00:06 +0200
+Iago Bonnici <iago.bonnici at umontpellier.fr> ?????:
+
+>  ??? - Is the 100-bytes paths limitation only supposed to ensure 
+> compatilbility with pre-POSIX.1-1998 `tar` files?
+
+There are also the Windows systems. While support for paths longer than
+260 characters appeared in Windows 10 build 1607 and exists in modern
+versions of R [*], it's not enabled by default on many current systems:
+
+d <- tempfile(); dir.create(d); setwd(d); d
+"C:\\Users\\[SNIP]\\AppData\\Local\\Temp\\3\\RtmpodtJLb\\file3fec5fce5feb"
+
+(path <- paste(
+ sample(
+  c('/', letters, LETTERS),
+  256, TRUE,
+  c(.05, rep((1-.05)/52, 52))
+ ),
+ collapse = ''
+))
+
+"nJpmTZvEleQsFrgjFzvaNRVHGzSIIgERElnFRRmVKpoZkBkfGJlUpnnPaWYhpELTCQ/djTwBiKCvuG/gEjjnRjisLG/sjfayxYXQCycnU/Uu/xcPhMUCwtFOlttgP/OfWKDZJSjmXgAvIyCVCQmIeUXjvGmntEiSqlUqzZOGQRASSMjUHUN/mdTFWuOlIxy/flbyKhKQnjFEIZrowuswFBWLmMmJNHOfRZLeLtDbOlpR/IdycTiIblkYQS/MYawp"
+
+
+(dir.create(path, recursive = TRUE))
+
+# [1] FALSE
+# Warning message:
+# In dir.create(path, recursive = TRUE) :
+#   cannot create dir
+'nJpmTZvEleQsFrgjFzvaNRVHGzSIIgERElnFRRmVKpoZkBkfGJlUpnnPaWYhpELTCQ\djTwBiKCvuG\gEjjnRjisLG\sjfayxYXQCycnU\Uu\xcPhMUCwtFOlttgP\OfWKDZJSjmXgAvIyCVCQmIeUXjvGmntEiSqlUqzZOGQRASSMjUHUN\mdTFWuOlIxy',
+reason 'No such file or directory'
+
+sessionInfo()
+# R version 4.3.2 (2023-10-31 ucrt)
+# Platform: x86_64-w64-mingw32/x64 (64-bit)
+# Running under: Windows Server 2022 x64 (build 20348)
+
+As a test, I have prepared a source package with an exactly 256-byte
+maximal path length:
+
+untar('foo_1.0.tar.gz', list = TRUE) |> nchar() |> max()
+# [1] 256
+
+I was not able to install it with the internal untar() ("ERROR:
+extracted multiple files from ?foo_1.0.tar.gz?" -- it seems to have
+extracted both the long path from the GNU extension and the "dummy"
+path stored in the 100-octet 'name' field), but it did work with the
+R_INSTALL_TAR='tar' environment variable on Linux. On Windows, it
+failed to extract the tarball in a manner similar to the first
+experiment when the total path length exceeded 260.
+
+-- 
+Best regards,
+Ivan
+
+[*]
+https://blog.r-project.org/2023/03/07/path-length-limit-on-windows/index.html
+
+
+From gb @end|ng |rom eh@r@@e  Fri Sep 20 13:44:44 2024
+From: gb @end|ng |rom eh@r@@e (=?UTF-8?Q?G=C3=B6ran_Brostr=C3=B6m?=)
+Date: Fri, 20 Sep 2024 13:44:44 +0200
+Subject: [R-pkg-devel] flang-new-18 complains: incompatiple object shapes
+Message-ID: <0dbc84e3-47c9-46da-85b0-425203e2d213@ehar.se>
+
+More specifically: I submitted a new version of eha to CRAN, but:
+"... does not pass the incoming checks automatically,..."
+
+I found warnings in
+
+https://win-builder.r-project.org/incoming_pretest/eha_2.11.5_20240919_123016/Debian/00install.out
+-----
+/getsums.f:65:16: warning: Reference to the procedure 'daxpy' has an 
+implicit interface that is distinct from another reference: incompatible 
+dummy argument #5: incompatible dummy data object shapes
+                  call daxpy(j2, tmp2, zma, 1, szz(index), 1)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+./getsums.f:51:10: previous reference to 'daxpy'
+            call daxpy(k, epy, zma, 1, sz, 1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+--------
+The arguments 'szz(index)' and 'sz' are compared and found to be 
+'incompatible'. szz and sz are both double vectors, szz is the upper 
+triangle of a symmetric covariance matrix, stored as a vector of length 
+n * (n + 1) / 2 (space saving, this is F77 code written some 40 years ago).
+
+This is the point of view of a compiler called 'flang-new-18' (Debian). 
+However, gfortran and myself disagree, and I am interested in hearing a 
+suggestion of what measures I should take.
+
+It is of course easy (but tedious) to cut the Gordian knot by explicitly 
+writing out the loops that defines 'daxpy', but is it necessary?
+
+Thanks, G?ran
+
+
+From |kry|ov @end|ng |rom d|@root@org  Fri Sep 20 14:07:10 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Fri, 20 Sep 2024 15:07:10 +0300
+Subject: [R-pkg-devel] 
+ flang-new-18 complains: incompatiple object shapes
+In-Reply-To: <0dbc84e3-47c9-46da-85b0-425203e2d213@ehar.se>
+References: <0dbc84e3-47c9-46da-85b0-425203e2d213@ehar.se>
+Message-ID: <20240920150710.0ef39219@arachnoid>
+
+? Fri, 20 Sep 2024 13:44:44 +0200
+G?ran Brostr?m <gb at ehar.se> ?????:
+
+> It is of course easy (but tedious) to cut the Gordian knot by
+> explicitly writing out the loops that defines 'daxpy', but is it
+> necessary?
+
+Definitely not. I think that flang will be satisfied if you provide an
+explicit interface for DAXPY. Do you need help testing your code with
+this compiler?
+
+-- 
+Best regards,
+Ivan
+
+
+From gb @end|ng |rom eh@r@@e  Fri Sep 20 14:41:31 2024
+From: gb @end|ng |rom eh@r@@e (=?UTF-8?Q?G=C3=B6ran_Brostr=C3=B6m?=)
+Date: Fri, 20 Sep 2024 14:41:31 +0200
+Subject: [R-pkg-devel] 
+ flang-new-18 complains: incompatiple object shapes
+In-Reply-To: <20240920150710.0ef39219@arachnoid>
+References: <0dbc84e3-47c9-46da-85b0-425203e2d213@ehar.se>
+ <20240920150710.0ef39219@arachnoid>
+Message-ID: <83dd8bae-9769-4d43-8eaa-0cdb04824fd2@ehar.se>
+
+Thanks for the reply, Ivan. I think that 'problem solved': I just 
+received a message from Uwe saying that the rejection was a mistake.
+
+Best, G?ran
+
+Den 2024-09-20 kl. 14:07, skrev Ivan Krylov:
+> ? Fri, 20 Sep 2024 13:44:44 +0200
+> G?ran Brostr?m <gb at ehar.se> ?????:
+> 
+>> It is of course easy (but tedious) to cut the Gordian knot by
+>> explicitly writing out the loops that defines 'daxpy', but is it
+>> necessary?
+> 
+> Definitely not. I think that flang will be satisfied if you provide an
+> explicit interface for DAXPY. Do you need help testing your code with
+> this compiler?
+>
+
+
+From H@|j|@ng133 @end|ng |rom out|ook@com  Fri Sep 20 10:46:08 2024
+From: H@|j|@ng133 @end|ng |rom out|ook@com (=?gb2312?B?x9gguqO9rQ==?=)
+Date: Fri, 20 Sep 2024 08:46:08 +0000
+Subject: [R-pkg-devel] Why all OK but fail to the incoming checks
+ automatically ?
+Message-ID: <SY0P300MB011233DFA65883A9398B3E21E66C2@SY0P300MB0112.AUSP300.PROD.OUTLOOK.COM>
+
+Hi All,
+
+
+I encountered an issue when submitting my R package: the incoming checks did not report any errors, warnings, or notes, but the submission still did not pass the incoming checks. Here is the email I received from ligges at statistik.tu-dortmund.de:
+
+
+Dear maintainer,
+
+package Qval_1.0.0.tar.gz does not pass the incoming checks automatically, please see the following pre-tests:
+Windows: <https://win-builder.r-project.org/incoming_pretest/Qval_1.0.0_20240920_094543/Windows/00check.log>
+Status: OK
+Debian: <https://win-builder.r-project.org/incoming_pretest/Qval_1.0.0_20240920_094543/Debian/00check.log>
+Status: OK
+
+Last released version's CRAN status: OK: 13
+See: <https://CRAN.R-project.org/web/checks/check_results_Qval.html<https://cran.r-project.org/web/checks/check_results_Qval.html>>
+
+CRAN Web: <https://cran.r-project.org/package=Qval>
+
+Please fix all problems and resubmit a fixed version via the webform.
+If you are not sure how to fix the problems shown, please ask for help on the R-package-devel mailing list:
+<https://stat.ethz.ch/mailman/listinfo/r-package-devel>
+If you are fairly certain the rejection is a false positive, please reply-all to this message and explain.
+
+More details are given in the directory:
+<https://win-builder.r-project.org/incoming_pretest/Qval_1.0.0_20240920_094543/>
+The files will be removed after roughly 7 days.
+
+No strong reverse dependencies to be checked.
+
+Best regards,
+CRAN teams' auto-check service
+
+And in the "00details.log" file, it only shows:
+
+Flavor: r-devel-linux-x86_64-debian-gcc, r-devel-windows-x86_64
+Check: * , Result: OK
+
+This is really confusing to me. Does anyone know why this happened? Thank you for your help!
+
+Best regards,
+Haijiang Qin
+
+	[[alternative HTML version deleted]]
+
+
+From ||gge@ @end|ng |rom @t@t|@t|k@tu-dortmund@de  Fri Sep 20 15:58:22 2024
+From: ||gge@ @end|ng |rom @t@t|@t|k@tu-dortmund@de (Uwe Ligges)
+Date: Fri, 20 Sep 2024 15:58:22 +0200
+Subject: [R-pkg-devel] Why all OK but fail to the incoming checks
+ automatically ?
+In-Reply-To: <SY0P300MB011233DFA65883A9398B3E21E66C2@SY0P300MB0112.AUSP300.PROD.OUTLOOK.COM>
+References: <SY0P300MB011233DFA65883A9398B3E21E66C2@SY0P300MB0112.AUSP300.PROD.OUTLOOK.COM>
+Message-ID: <b01de8dc-4f37-40cf-a34b-013b00fe9d10@statistik.tu-dortmund.de>
+
+A recent issue on CRAN, we are working on fixing it.
+
+Best,
+Uwe Ligges
+
+
+
+On 20.09.2024 10:46, ? ?? wrote:
+> Hi All,
+> 
+> 
+> I encountered an issue when submitting my R package: the incoming checks did not report any errors, warnings, or notes, but the submission still did not pass the incoming checks. Here is the email I received from ligges at statistik.tu-dortmund.de:
+> 
+> 
+> Dear maintainer,
+> 
+> package Qval_1.0.0.tar.gz does not pass the incoming checks automatically, please see the following pre-tests:
+> Windows: <https://win-builder.r-project.org/incoming_pretest/Qval_1.0.0_20240920_094543/Windows/00check.log>
+> Status: OK
+> Debian: <https://win-builder.r-project.org/incoming_pretest/Qval_1.0.0_20240920_094543/Debian/00check.log>
+> Status: OK
+> 
+> Last released version's CRAN status: OK: 13
+> See: <https://CRAN.R-project.org/web/checks/check_results_Qval.html<https://cran.r-project.org/web/checks/check_results_Qval.html>>
+> 
+> CRAN Web: <https://cran.r-project.org/package=Qval>
+> 
+> Please fix all problems and resubmit a fixed version via the webform.
+> If you are not sure how to fix the problems shown, please ask for help on the R-package-devel mailing list:
+> <https://stat.ethz.ch/mailman/listinfo/r-package-devel>
+> If you are fairly certain the rejection is a false positive, please reply-all to this message and explain.
+> 
+> More details are given in the directory:
+> <https://win-builder.r-project.org/incoming_pretest/Qval_1.0.0_20240920_094543/>
+> The files will be removed after roughly 7 days.
+> 
+> No strong reverse dependencies to be checked.
+> 
+> Best regards,
+> CRAN teams' auto-check service
+> 
+> And in the "00details.log" file, it only shows:
+> 
+> Flavor: r-devel-linux-x86_64-debian-gcc, r-devel-windows-x86_64
+> Check: * , Result: OK
+> 
+> This is really confusing to me. Does anyone know why this happened? Thank you for your help!
+> 
+> Best regards,
+> Haijiang Qin
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+From H@|j|@ng133 @end|ng |rom out|ook@com  Fri Sep 20 16:04:27 2024
+From: H@|j|@ng133 @end|ng |rom out|ook@com (=?gb2312?B?x9gguqO9rQ==?=)
+Date: Fri, 20 Sep 2024 14:04:27 +0000
+Subject: [R-pkg-devel] =?gb2312?b?u9i4tDogIFdoeSBhbGwgT0sgYnV0IGZhaWwg?=
+ =?gb2312?b?dG8gdGhlIGluY29taW5nIGNoZWNrcyBhdXRvbWF0aWNhbGx5ID8=?=
+In-Reply-To: <b01de8dc-4f37-40cf-a34b-013b00fe9d10@statistik.tu-dortmund.de>
+References: <SY0P300MB011233DFA65883A9398B3E21E66C2@SY0P300MB0112.AUSP300.PROD.OUTLOOK.COM>
+ <b01de8dc-4f37-40cf-a34b-013b00fe9d10@statistik.tu-dortmund.de>
+Message-ID: <SY8P300MB0104A2FB130C30C1B847BF3EE66C2@SY8P300MB0104.AUSP300.PROD.OUTLOOK.COM>
+
+Okay, I understand now. Thank you very much for response!
+
+Best,
+Haijiang Qin
+
+________________________________
+??????: Uwe Ligges
+?????: 2024 ?? 9 ?? 20 ?? ?????? 21:58
+?????: ?? ????; r-package-devel at r-project.org
+????: Re: [R-pkg-devel] Why all OK but fail to the incoming checks automatically ?
+
+A recent issue on CRAN, we are working on fixing it.
+
+Best,
+Uwe Ligges
+
+
+
+On 20.09.2024 10:46, ?? ???? wrote:
+> Hi All,
+>
+>
+> I encountered an issue when submitting my R package: the incoming checks did not report any errors, warnings, or notes, but the submission still did not pass the incoming checks. Here is the email I received from ligges at statistik.tu-dortmund.de:
+>
+>
+> Dear maintainer,
+>
+> package Qval_1.0.0.tar.gz does not pass the incoming checks automatically, please see the following pre-tests:
+> Windows: <https://win-builder.r-project.org/incoming_pretest/Qval_1.0.0_20240920_094543/Windows/00check.log>
+> Status: OK
+> Debian: <https://win-builder.r-project.org/incoming_pretest/Qval_1.0.0_20240920_094543/Debian/00check.log>
+> Status: OK
+>
+> Last released version's CRAN status: OK: 13
+> See: <https://CRAN.R-project.org/web/checks/check_results_Qval.html<https://cran.r-project.org/web/checks/check_results_Qval.html>>
+>
+> CRAN Web: <https://cran.r-project.org/package=Qval>
+>
+> Please fix all problems and resubmit a fixed version via the webform.
+> If you are not sure how to fix the problems shown, please ask for help on the R-package-devel mailing list:
+> <https://stat.ethz.ch/mailman/listinfo/r-package-devel>
+> If you are fairly certain the rejection is a false positive, please reply-all to this message and explain.
+>
+> More details are given in the directory:
+> <https://win-builder.r-project.org/incoming_pretest/Qval_1.0.0_20240920_094543/>
+> The files will be removed after roughly 7 days.
+>
+> No strong reverse dependencies to be checked.
+>
+> Best regards,
+> CRAN teams' auto-check service
+>
+> And in the "00details.log" file, it only shows:
+>
+> Flavor: r-devel-linux-x86_64-debian-gcc, r-devel-windows-x86_64
+> Check: * , Result: OK
+>
+> This is really confusing to me. Does anyone know why this happened? Thank you for your help!
+>
+> Best regards,
+> Haijiang Qin
+>
+>        [[alternative HTML version deleted]]
+>
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+	[[alternative HTML version deleted]]
+
+
+From eg|unt@ @end|ng |rom k@u@edu  Mon Sep 23 18:15:28 2024
+From: eg|unt@ @end|ng |rom k@u@edu (Eric Giunta)
+Date: Mon, 23 Sep 2024 16:15:28 +0000
+Subject: [R-pkg-devel] Rolling Back an Archived Package
+Message-ID: <SN6PR05MB4783410E924760E8EF6B1082A86F2@SN6PR05MB4783.namprd05.prod.outlook.com>
+
+Hello all,
+
+Recently I submitted a large update to the package I maintain and was unable to resolve the testing errors prior to it being archived. I've been unable to reproduce the errors, so I expect to have to setup my own fedora_clang virtual machine to debug my package. Ideally I'd want a previous version to be more easily available while I figure out my issues. Is it against CRAN policy to resubmit an earlier version of an archived package, assuming I fully explain what led to the archival and re-submission in the submission comment? I'm sorry if this has already been asked, I couldn't find an answer online and wanted to check before resubmitting anything.
+
+Thank you for your time,
+Eric
+
+From bbo|ker @end|ng |rom gm@||@com  Mon Sep 23 22:13:25 2024
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Mon, 23 Sep 2024 16:13:25 -0400
+Subject: [R-pkg-devel] Rolling Back an Archived Package
+In-Reply-To: <SN6PR05MB4783410E924760E8EF6B1082A86F2@SN6PR05MB4783.namprd05.prod.outlook.com>
+References: <SN6PR05MB4783410E924760E8EF6B1082A86F2@SN6PR05MB4783.namprd05.prod.outlook.com>
+Message-ID: <CABghstQObftmuf49YOq8sctMXh25OBR0EhRNvvdo2d-=t2VT2g@mail.gmail.com>
+
+Hmmm. Assuming the previous version of the package (without the
+extensions/updates) avoids all of the testing errors, I would say that
+RAW ("rules as written") the only constraint I can see on submitting a
+"rollback" version of the package would be the CRAN request for
+updates ?no more than every 1?2 months".
+https://cran.r-project.org/web/packages/policies.html   But an e-mail
+to the CRAN maintainers (if none reply on-list) seems appropriate.
+
+On Mon, Sep 23, 2024 at 3:49?PM Eric Giunta <egiunta at ksu.edu> wrote:
+>
+> Hello all,
+>
+> Recently I submitted a large update to the package I maintain and was unable to resolve the testing errors prior to it being archived. I've been unable to reproduce the errors, so I expect to have to setup my own fedora_clang virtual machine to debug my package. Ideally I'd want a previous version to be more easily available while I figure out my issues. Is it against CRAN policy to resubmit an earlier version of an archived package, assuming I fully explain what led to the archival and re-submission in the submission comment? I'm sorry if this has already been asked, I couldn't find an answer online and wanted to check before resubmitting anything.
+>
+> Thank you for your time,
+> Eric
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Mon Sep 23 22:24:48 2024
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Mon, 23 Sep 2024 16:24:48 -0400
+Subject: [R-pkg-devel] Rolling Back an Archived Package
+In-Reply-To: <CABghstQObftmuf49YOq8sctMXh25OBR0EhRNvvdo2d-=t2VT2g@mail.gmail.com>
+References: <SN6PR05MB4783410E924760E8EF6B1082A86F2@SN6PR05MB4783.namprd05.prod.outlook.com>
+ <CABghstQObftmuf49YOq8sctMXh25OBR0EhRNvvdo2d-=t2VT2g@mail.gmail.com>
+Message-ID: <1f85d9f0-77c1-49fe-b516-7f36039b7faa@gmail.com>
+
+On 2024-09-23 4:13 p.m., Ben Bolker wrote:
+> Hmmm. Assuming the previous version of the package (without the
+> extensions/updates) avoids all of the testing errors, I would say that
+> RAW ("rules as written") the only constraint I can see on submitting a
+> "rollback" version of the package would be the CRAN request for
+> updates ?no more than every 1?2 months".
+
+I think the original package wouldn't have been archived unless it was 
+failing tests and the author didn't address the failures.
+
+Duncan Murdoch
+
+> https://cran.r-project.org/web/packages/policies.html   But an e-mail
+> to the CRAN maintainers (if none reply on-list) seems appropriate.
+> 
+> On Mon, Sep 23, 2024 at 3:49?PM Eric Giunta <egiunta at ksu.edu> wrote:
+>>
+>> Hello all,
+>>
+>> Recently I submitted a large update to the package I maintain and was unable to resolve the testing errors prior to it being archived. I've been unable to reproduce the errors, so I expect to have to setup my own fedora_clang virtual machine to debug my package. Ideally I'd want a previous version to be more easily available while I figure out my issues. Is it against CRAN policy to resubmit an earlier version of an archived package, assuming I fully explain what led to the archival and re-submission in the submission comment? I'm sorry if this has already been asked, I couldn't find an answer online and wanted to check before resubmitting anything.
+>>
+>> Thank you for your time,
+>> Eric
+>> ______________________________________________
+>> R-package-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+> 
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+
+From bbo|ker @end|ng |rom gm@||@com  Mon Sep 23 22:32:55 2024
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Mon, 23 Sep 2024 16:32:55 -0400
+Subject: [R-pkg-devel] Rolling Back an Archived Package
+In-Reply-To: <1f85d9f0-77c1-49fe-b516-7f36039b7faa@gmail.com>
+References: <SN6PR05MB4783410E924760E8EF6B1082A86F2@SN6PR05MB4783.namprd05.prod.outlook.com>
+ <CABghstQObftmuf49YOq8sctMXh25OBR0EhRNvvdo2d-=t2VT2g@mail.gmail.com>
+ <1f85d9f0-77c1-49fe-b516-7f36039b7faa@gmail.com>
+Message-ID: <CABghstTyeesn4PPcbRAsYRfd1u+45n88Hn-nVz5T7LOd9SDhFw@mail.gmail.com>
+
+ I can imagine a (perhaps overly complicated) scenario:
+
+* version 1 passes tests OK when it is submitted to CRAN
+* version 2 passes tests OK when it is submitted to CRAN
+* CRAN introduces new tests (compiler versions, etc. etc.) that break
+version 2 but not version 1.
+
+Now version 1 would still pass but version 2 would fail, so bumping
+the version number of version 1 to 3 and resubmitting could (??) work.
+
+On Mon, Sep 23, 2024 at 4:24?PM Duncan Murdoch <murdoch.duncan at gmail.com> wrote:
+>
+> On 2024-09-23 4:13 p.m., Ben Bolker wrote:
+> > Hmmm. Assuming the previous version of the package (without the
+> > extensions/updates) avoids all of the testing errors, I would say that
+> > RAW ("rules as written") the only constraint I can see on submitting a
+> > "rollback" version of the package would be the CRAN request for
+> > updates ?no more than every 1?2 months".
+>
+> I think the original package wouldn't have been archived unless it was
+> failing tests and the author didn't address the failures.
+>
+> Duncan Murdoch
+>
+> > https://cran.r-project.org/web/packages/policies.html   But an e-mail
+> > to the CRAN maintainers (if none reply on-list) seems appropriate.
+> >
+> > On Mon, Sep 23, 2024 at 3:49?PM Eric Giunta <egiunta at ksu.edu> wrote:
+> >>
+> >> Hello all,
+> >>
+> >> Recently I submitted a large update to the package I maintain and was unable to resolve the testing errors prior to it being archived. I've been unable to reproduce the errors, so I expect to have to setup my own fedora_clang virtual machine to debug my package. Ideally I'd want a previous version to be more easily available while I figure out my issues. Is it against CRAN policy to resubmit an earlier version of an archived package, assuming I fully explain what led to the archival and re-submission in the submission comment? I'm sorry if this has already been asked, I couldn't find an answer online and wanted to check before resubmitting anything.
+> >>
+> >> Thank you for your time,
+> >> Eric
+> >> ______________________________________________
+> >> R-package-devel at r-project.org mailing list
+> >> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+> >
+> > ______________________________________________
+> > R-package-devel at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+
+
+From jen@@oeh|@ch|@ege| @end|ng |rom truec|u@ter@com  Mon Sep 23 22:45:10 2024
+From: jen@@oeh|@ch|@ege| @end|ng |rom truec|u@ter@com (=?UTF-8?Q?Jens_Oehlschl=C3=A4gel?=)
+Date: Mon, 23 Sep 2024 22:45:10 +0200
+Subject: [R-pkg-devel] bit, bit64, ff and greeNsort
+Message-ID: <b11255da-dd8d-4731-8b3c-0e8a2bdab5e0@truecluster.com>
+
+Dear package maintainers,
+
+Dear users of packages `bit`, `bit64`, `ff`,
+
+Everyone interested in sustainable sorting algorithms,
+
+I submitted updated versions for the upcoming R 4.5.0. The are only 
+minor changes (see the NEWS files) but there is one important change in 
+bit64:
+
+ ??? o setting options(integer64_semantics="new")
+ ????? gives the better semantics suggested by Ofek Shilon.
+ ????? Downstream package authors: please test and adjust to the new 
+semantics,
+ ????? we plan to make that the default.
+
+After 25 years volunteer work for the R community, that was my last 
+combined submission for packages `bit`, `bit64` and `ff`.
+
+I learned S+ in 1996 and supported R's 1.0 release in 2000 with bug 
+testing, a small code contribution to `pairs` and motivating the 
+core-team to replace 'NA' with NA_character_.
+
+In 2007 Daniel Adler and I published `ff`: the first R package allowing 
+big out of memory data.frames was a nail in the coffin of SAS dominance 
+and helped R into the big data era.
+
+2009 and 2012 followed `bit`, `bit64` to enhance R's data types somewhat 
+with `bit` vectors and signed `integer64`. Package `bit` supported 
+efficient selection in `ff`. Package `bit64` was an emergency 
+development in order to establish rather `integer64' than another 
+`int64` package that had too expensive performance.
+
+Since 2011 I work for an employer that does not use R, and maintenance 
+of R packages is a little rewarded burden.
+
+Since 2010 my priorities shifted to fighting global heating by 
+developing more sustainable sorting algorithms that provide better 
+trade-offs between memory investments, compute costs and adaptivity to 
+easier input patterns. My R&D project was successfully completed 2024 
+with theory and design of new symmetric sorting algorithms that can 
+replace Quicksort, Mergesort and Timsort. Lots of info at greeNsort.org. 
+I have an R package `greeNsort` on github with a research testbed that 
+can measure RAM, CPU and RAPL energy for ?150 equally tuned sorting 
+algorithms on multiple test patterns.
+
+Since 24.2.2022 my priorities are on strengthening resilience of 
+European civil society.
+
+Hence I happily accept the generous offer of Michael Chirico to carry 
+forward the maintenance of packages `bit` and `bit64`. Please support 
+him in the difficult task of developing very close to the core as a 
+normal package author.
+
+I will continue bug-fixing `ff` as time permits, although a modern C++ 
+rewrite would be preferable, which
+
+1) supports long vectors
+
+2) avoids copying between Mapped Memory and R's memory
+
+3) simplifies the package, particularly removes the "virtual window" 
+complexity
+
+All the best
+
+
+Jens Oehlschl?gel
+
+
+From ||u|@@rev|||@ @end|ng |rom gm@||@com  Tue Sep 24 11:05:25 2024
+From: ||u|@@rev|||@ @end|ng |rom gm@||@com (=?UTF-8?Q?Llu=C3=ADs_Revilla?=)
+Date: Tue, 24 Sep 2024 11:05:25 +0200
+Subject: [R-pkg-devel] Rolling Back an Archived Package
+In-Reply-To: <CABghstTyeesn4PPcbRAsYRfd1u+45n88Hn-nVz5T7LOd9SDhFw@mail.gmail.com>
+References: <SN6PR05MB4783410E924760E8EF6B1082A86F2@SN6PR05MB4783.namprd05.prod.outlook.com>
+ <CABghstQObftmuf49YOq8sctMXh25OBR0EhRNvvdo2d-=t2VT2g@mail.gmail.com>
+ <1f85d9f0-77c1-49fe-b516-7f36039b7faa@gmail.com>
+ <CABghstTyeesn4PPcbRAsYRfd1u+45n88Hn-nVz5T7LOd9SDhFw@mail.gmail.com>
+Message-ID: <CAN+W6_tBxF+7zd6wKtaPE5GWWXSR3EhqLUJQg5Wiym8SFYpNFA@mail.gmail.com>
+
+Dear Eric,
+
+While changing the version number of an old package could solve this, it is
+a work-around that won't help much:
+Users will be able to install the binaries of an old package without the
+new fixes and improvements of the later at the cost of another submission,
+which might delay the submission which fixes the current issues.
+
+Recently with Henrik Bengtsson we prepared a fallback for these cases:
+Packages archived from CRAN are built for 35 days more to be able to
+provide binaries to users: https://www.cranhaven.org/dashboard-live.html
+This time is what it takes for half the archived packages to be back to
+CRAN.
+You could point/use that repository while you fix your package up to CRAN
+checks.
+
+Is the package archived Colossus?
+Maybe some users might be able to help, as this looks like a compiler
+specific issue on Fedora.
+I am not sure if rhub can help you check your package in this environment,
+but that is something you could explore too.
+
+Best wishes,
+
+Llu?s
+
+
+On Mon, 23 Sept 2024 at 22:53, Ben Bolker <bbolker at gmail.com> wrote:
+
+>  I can imagine a (perhaps overly complicated) scenario:
+>
+> * version 1 passes tests OK when it is submitted to CRAN
+> * version 2 passes tests OK when it is submitted to CRAN
+> * CRAN introduces new tests (compiler versions, etc. etc.) that break
+> version 2 but not version 1.
+>
+> Now version 1 would still pass but version 2 would fail, so bumping
+> the version number of version 1 to 3 and resubmitting could (??) work.
+>
+> On Mon, Sep 23, 2024 at 4:24?PM Duncan Murdoch <murdoch.duncan at gmail.com>
+> wrote:
+> >
+> > On 2024-09-23 4:13 p.m., Ben Bolker wrote:
+> > > Hmmm. Assuming the previous version of the package (without the
+> > > extensions/updates) avoids all of the testing errors, I would say that
+> > > RAW ("rules as written") the only constraint I can see on submitting a
+> > > "rollback" version of the package would be the CRAN request for
+> > > updates ?no more than every 1?2 months".
+> >
+> > I think the original package wouldn't have been archived unless it was
+> > failing tests and the author didn't address the failures.
+> >
+> > Duncan Murdoch
+> >
+> > > https://cran.r-project.org/web/packages/policies.html   But an e-mail
+> > > to the CRAN maintainers (if none reply on-list) seems appropriate.
+> > >
+> > > On Mon, Sep 23, 2024 at 3:49?PM Eric Giunta <egiunta at ksu.edu> wrote:
+> > >>
+> > >> Hello all,
+> > >>
+> > >> Recently I submitted a large update to the package I maintain and was
+> unable to resolve the testing errors prior to it being archived. I've been
+> unable to reproduce the errors, so I expect to have to setup my own
+> fedora_clang virtual machine to debug my package. Ideally I'd want a
+> previous version to be more easily available while I figure out my issues.
+> Is it against CRAN policy to resubmit an earlier version of an archived
+> package, assuming I fully explain what led to the archival and
+> re-submission in the submission comment? I'm sorry if this has already been
+> asked, I couldn't find an answer online and wanted to check before
+> resubmitting anything.
+> > >>
+> > >> Thank you for your time,
+> > >> Eric
+> > >> ______________________________________________
+> > >> R-package-devel at r-project.org mailing list
+> > >> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+> > >
+> > > ______________________________________________
+> > > R-package-devel at r-project.org mailing list
+> > > https://stat.ethz.ch/mailman/listinfo/r-package-devel
+> >
+>
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+
+	[[alternative HTML version deleted]]
+
+
+From |kry|ov @end|ng |rom d|@root@org  Tue Sep 24 12:08:08 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Tue, 24 Sep 2024 13:08:08 +0300
+Subject: [R-pkg-devel] Rolling Back an Archived Package
+In-Reply-To: <SN6PR05MB4783410E924760E8EF6B1082A86F2@SN6PR05MB4783.namprd05.prod.outlook.com>
+References: <SN6PR05MB4783410E924760E8EF6B1082A86F2@SN6PR05MB4783.namprd05.prod.outlook.com>
+Message-ID: <20240924130808.4dab5ba8@arachnoid>
+
+? Mon, 23 Sep 2024 16:15:28 +0000
+Eric Giunta <egiunta at ksu.edu> ?????:
+
+> Recently I submitted a large update to the package I maintain and was
+> unable to resolve the testing errors prior to it being archived. I've
+> been unable to reproduce the errors, so I expect to have to setup my
+> own fedora_clang virtual machine to debug my package. 
+
+> Is it against CRAN policy to resubmit an earlier version of an
+> archived package, assuming I fully explain what led to the archival
+> and re-submission in the submission comment?
+
+If this is Colossus [1], as suggested by Llu?s, I would recommend
+making sure that you can reproduce the problem with the latest version
+of the package and then verifying that the previous version of the
+package doesn't exhibit that problem.
+
+Unfortunately, starting with `podman run fedora:36` and following [2]
+to compile clang-18 and R was not enough to reproduce the problem for
+me: the tests in Colossus_1.1.4.1.tar.gz don't fail. I even tried with
+19.1.0 by accident.
+
+-- 
+Best regards,
+Ivan
+
+[1]
+https://cran-archive.r-project.org/web/checks/2024/2024-09-23_check_results_Colossus.html
+
+[2]
+https://www.stats.ox.ac.uk/pub/bdr/Rconfig/r-devel-linux-x86_64-fedora-clang
+
+It's important to install llvm-18.1.8, not 19.1.0 from the example URL.
+
+
+From Roger@B|v@nd @end|ng |rom nhh@no  Tue Sep 24 14:40:48 2024
+From: Roger@B|v@nd @end|ng |rom nhh@no (Roger Bivand)
+Date: Tue, 24 Sep 2024 12:40:48 +0000
+Subject: [R-pkg-devel] Rolling Back an Archived Package
+Message-ID: <SV0P279MB04759FC89752F20A15A4F343EE682@SV0P279MB0475.NORP279.PROD.OUTLOOK.COM>
+
+Hi,
+
+I run an updated Fedora platform, and can build R under clang 18.1.8. If the affected package is Colossus, and https://github.com/ericgiunta/Colossus is the appropriate repo, could you indicate where you posted the error reports, and if they are not on the repo, please commit and push them there? Lluis, if you could help too, I'd be very grateful, for example if we can approach this through the github repo.
+
+Best wishes,
+
+Roger
+
+--
+Roger Bivand
+Emeritus Professor
+Norwegian School of Economics
+Postboks 3490 Ytre Sandviken, 5045 Bergen, Norway
+Roger.Bivand at nhh.no
+
+From bbo|ker @end|ng |rom gm@||@com  Tue Sep 24 16:27:34 2024
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Tue, 24 Sep 2024 10:27:34 -0400
+Subject: [R-pkg-devel] help with CRAN failures (broom.mixed, rstan-related)
+Message-ID: <05cbb1cb-5574-42de-bf24-c1518818fa3b@gmail.com>
+
+   broom.mixed is failing tests on Fedora.
+
+With apologies for the mangled formatting, here is the test failure 
+(full properly formatted details at 
+https://www.r-project.org/nosvn/R.check/r-devel-linux-x86_64-fedora-gcc/broom.mixed-00check.html).
+
+   ?? Failed tests 
+????????????????????????????????????????????????????????????????   ?? 
+Error ('test-alltibbles.R:57:21'): (code run outside of `test_that()`) 
+??????   Error in `.requirePackage(package)`: unable to find required 
+package 'rstan'   Backtrace:        ?     1. ??broom.mixed (local) 
+testf("glance", z) at test-alltibbles.R:62:13     2. 
+??testthat::expect_is(get(fn_str)(obj), "tbl_df") at 
+test-alltibbles.R:57:21     3. ? ??testthat::quasi_label(enquo(object), 
+label, arg = "object")     4. ? ??rlang::eval_bare(expr, 
+quo_get_env(quo))     5. ??get(fn_str)(obj)     6. 
+??broom.mixed:::glance.brmsfit(obj)     7. 
+??broom.mixed:::glance_stan(...)     8. ??stats::sigma(x)     9. 
+??broom.mixed:::sigma.brmsfit(x)    10. ??"sigma" %in% 
+brms::variables(object)    11. ??brms::variables(object)    12. 
+??brms:::variables.brmsfit(object)    13. ??methods (local) 
+dimnames(x$fit)    14. ??methods (local) `<fn>`(`<list>`, `<stndrdGn>`, 
+`<env>`)    15. ??methods:::.findInheritedMethods(classes, fdef, mtable) 
+    16. ??methods::getClass(cl1, where = where, .Force = TRUE)    17. 
+??methods::getClassDef(Class, where)    18. 
+??methods:::.requirePackage(package)      [ FAIL 1 | WARN 4 | SKIP 1 | 
+PASS 237 ]   Error: Test failures   Execution halted
+
+
+   This is in a test section where I loop over fitted examples from 
+different modeling packages. *If* the relevant package is installed, I 
+test the various methods defined in broom.mixed for extracting 
+information from that kind of object.
+
+   This appears to be failing when testing objects from 'brms', because 
+'rstan' isn't available. However, I don't see how brms can be available 
+when rstan isn't, since brms Imports: rstan?
+
+   Weirdly, I can't get this to fail on my local system even if I remove 
+rstan -- maybe rstan needs to be present for brms at install time but 
+not at runtime ... ???
+
+   Any hints/insights/guesses/suggestions for further diagnostics are 
+welcome.
+
+   cheers
+     Ben
+
+
+
+
+-- 
+Dr. Benjamin Bolker
+Professor, Mathematics & Statistics and Biology, McMaster University
+Director, School of Computational Science and Engineering
+* E-mail is sent at my convenience; I don't expect replies outside of 
+working hours.
+
+
+From jo@|@h@p@rry @end|ng |rom gm@||@com  Tue Sep 24 17:12:42 2024
+From: jo@|@h@p@rry @end|ng |rom gm@||@com (Josiah Parry)
+Date: Tue, 24 Sep 2024 08:12:42 -0700
+Subject: [R-pkg-devel] 
+ help with CRAN failures (broom.mixed, rstan-related)
+In-Reply-To: <05cbb1cb-5574-42de-bf24-c1518818fa3b@gmail.com>
+References: <05cbb1cb-5574-42de-bf24-c1518818fa3b@gmail.com>
+Message-ID: <CAL3ufUKfXUsMMuCme6rfnzM+UXUn07uVL3DL3x9Bz=pBLURkJw@mail.gmail.com>
+
+Ben, the issue is that {rstan} is not available. Since it is a suggested
+package it is not expected to always be there.
+
+This is referred to is the "hard" check.
+
+Here is a  GitHub CI workflow I use to perform this check:
+https://github.com/JosiahParry/sfdep/blob/008a59b6009d01e5e1625319f6525c1e0bae34a2/.github/workflows/R-CMD-check-hard.yaml#L15
+
+TL;DR if you are using a package conditionally, the examples should also be
+conditional.
+
+
+
+
+On Tue, Sep 24, 2024 at 7:27?AM Ben Bolker <bbolker at gmail.com> wrote:
+
+>    broom.mixed is failing tests on Fedora.
+>
+> With apologies for the mangled formatting, here is the test failure
+> (full properly formatted details at
+>
+> https://www.r-project.org/nosvn/R.check/r-devel-linux-x86_64-fedora-gcc/broom.mixed-00check.html
+> ).
+>
+>    ?? Failed tests
+> ????????????????????????????????????????????????????????????????   ??
+> Error ('test-alltibbles.R:57:21'): (code run outside of `test_that()`)
+> ??????   Error in `.requirePackage(package)`: unable to find required
+> package 'rstan'   Backtrace:        ?     1. ??broom.mixed (local)
+> testf("glance", z) at test-alltibbles.R:62:13     2.
+> ??testthat::expect_is(get(fn_str)(obj), "tbl_df") at
+> test-alltibbles.R:57:21     3. ? ??testthat::quasi_label(enquo(object),
+> label, arg = "object")     4. ? ??rlang::eval_bare(expr,
+> quo_get_env(quo))     5. ??get(fn_str)(obj)     6.
+> ??broom.mixed:::glance.brmsfit(obj)     7.
+> ??broom.mixed:::glance_stan(...)     8. ??stats::sigma(x)     9.
+> ??broom.mixed:::sigma.brmsfit(x)    10. ??"sigma" %in%
+> brms::variables(object)    11. ??brms::variables(object)    12.
+> ??brms:::variables.brmsfit(object)    13. ??methods (local)
+> dimnames(x$fit)    14. ??methods (local) `<fn>`(`<list>`, `<stndrdGn>`,
+> `<env>`)    15. ??methods:::.findInheritedMethods(classes, fdef, mtable)
+>     16. ??methods::getClass(cl1, where = where, .Force = TRUE)    17.
+> ??methods::getClassDef(Class, where)    18.
+> ??methods:::.requirePackage(package)      [ FAIL 1 | WARN 4 | SKIP 1 |
+> PASS 237 ]   Error: Test failures   Execution halted
+>
+>
+>    This is in a test section where I loop over fitted examples from
+> different modeling packages. *If* the relevant package is installed, I
+> test the various methods defined in broom.mixed for extracting
+> information from that kind of object.
+>
+>    This appears to be failing when testing objects from 'brms', because
+> 'rstan' isn't available. However, I don't see how brms can be available
+> when rstan isn't, since brms Imports: rstan?
+>
+>    Weirdly, I can't get this to fail on my local system even if I remove
+> rstan -- maybe rstan needs to be present for brms at install time but
+> not at runtime ... ???
+>
+>    Any hints/insights/guesses/suggestions for further diagnostics are
+> welcome.
+>
+>    cheers
+>      Ben
+>
+>
+>
+>
+> --
+> Dr. Benjamin Bolker
+> Professor, Mathematics & Statistics and Biology, McMaster University
+> Director, School of Computational Science and Engineering
+> * E-mail is sent at my convenience; I don't expect replies outside of
+> working hours.
+>
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+
+	[[alternative HTML version deleted]]
+
+
+From |kry|ov @end|ng |rom d|@root@org  Tue Sep 24 17:14:04 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Tue, 24 Sep 2024 18:14:04 +0300
+Subject: [R-pkg-devel] 
+ help with CRAN failures (broom.mixed, rstan-related)
+In-Reply-To: <05cbb1cb-5574-42de-bf24-c1518818fa3b@gmail.com>
+References: <05cbb1cb-5574-42de-bf24-c1518818fa3b@gmail.com>
+Message-ID: <20240924181404.24038cb7@arachnoid>
+
+? Tue, 24 Sep 2024 10:27:34 -0400
+Ben Bolker <bbolker at gmail.com> ?????:
+
+>    Weirdly, I can't get this to fail on my local system even if I
+> remove rstan -- maybe rstan needs to be present for brms at install
+> time but not at runtime ... ???
+
+I'm noticing that despite broom.mixed having Suggests: rstan and it
+being seemingly unable to load, you don't get a NOTE for the missing
+dependency:
+
+>> checking package dependencies ... NOTE
+>> Packages suggested but not available for checking: 'dotwhisker',
+>> 'glmmADMB'
+
+At that stage, R CMD check verifies that at least one of the libraries
+contains file.path(PACKAGE_NAME, 'DESCRIPTION'). Later, something else
+needs a valid rstan/Meta/package.rds. (There are also tests for links
+between help pages, but they don't stop the check.) While running the
+tests, methods:::.requirePackage actually tries to load the namespace
+using require() -> ... -> loadNamespace(), which fails.
+
+> Weirdly, I can't get this to fail on my local system even if I
+> remove rstan -- maybe rstan needs to be present for brms at install
+> time but not at runtime ... ???
+
+Having only the following files left from a valid 'rstan' installation,
+I can make R CMD check broom.mixed_0.2.9.5.tar.gz reach the same error
+as you're getting:
+
+rstan
+rstan/Meta
+rstan/Meta/package.rds
+rstan/DESCRIPTION
+
+Something must have happened on the Fedora machine.
+
+-- 
+Best regards,
+Ivan
+
+
+From eg|unt@ @end|ng |rom k@u@edu  Tue Sep 24 17:16:20 2024
+From: eg|unt@ @end|ng |rom k@u@edu (Eric Giunta)
+Date: Tue, 24 Sep 2024 15:16:20 +0000
+Subject: [R-pkg-devel] Rolling Back an Archived Package
+In-Reply-To: <SV0P279MB04759FC89752F20A15A4F343EE682@SV0P279MB0475.NORP279.PROD.OUTLOOK.COM>
+References: <SV0P279MB04759FC89752F20A15A4F343EE682@SV0P279MB0475.NORP279.PROD.OUTLOOK.COM>
+Message-ID: <SN6PR05MB4783840B1161E0A42ABBA726A8682@SN6PR05MB4783.namprd05.prod.outlook.com>
+
+All,
+
+Thank you for your feedback and suggestions. Yes, the package is Colossus (https://github.com/ericgiunta/Colossus). From April to September of this year version 1.1.1 was available on CRAN while I updated the GitHub version, with no issues on CRAN. Then earlier this month I updated to version 1.1.3 to update the CRAN version to the GitHub version, which then failed CRAN tests. I submitted versions 1.1.3.1 and 1.1.4.1 to try to fix the issues, but different tests failed and the package was archived. So to the best of my knowledge the failed tests are due to changes I made to the code, not anything present in version 1.1.1.
+
+I just started an issue thread on the repo that includes which tests failed for the last CRAN version. Unfortunately I've already tried running the various rhub actions on my github and was unable to replicate the testing errors. I'll keep trying to reproduce the issues before I resubmit anything.
+
+Thank you all again for your help,
+Eric
+
+________________________________________
+From: Roger Bivand <Roger.Bivand at nhh.no>
+Sent: Tuesday, September 24, 2024 7:40 AM
+To: r-package-devel at r-project.org
+Cc: Eric Giunta; lluis.revilla at gmail.com
+Subject: Re: Rolling Back an Archived Package
+
+This email originated from outside of K-State.
+
+
+Hi,
+
+I run an updated Fedora platform, and can build R under clang 18.1.8. If the affected package is Colossus, and https://github.com/ericgiunta/Colossus is the appropriate repo, could you indicate where you posted the error reports, and if they are not on the repo, please commit and push them there? Lluis, if you could help too, I'd be very grateful, for example if we can approach this through the github repo.
+
+Best wishes,
+
+Roger
+
+--
+Roger Bivand
+Emeritus Professor
+Norwegian School of Economics
+Postboks 3490 Ytre Sandviken, 5045 Bergen, Norway
+Roger.Bivand at nhh.no
+
+
+From bbo|ker @end|ng |rom gm@||@com  Tue Sep 24 23:15:31 2024
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Tue, 24 Sep 2024 17:15:31 -0400
+Subject: [R-pkg-devel] 
+ help with CRAN failures (broom.mixed, rstan-related)
+In-Reply-To: <20240924181404.24038cb7@arachnoid>
+References: <05cbb1cb-5574-42de-bf24-c1518818fa3b@gmail.com>
+ <20240924181404.24038cb7@arachnoid>
+Message-ID: <04133be5-5a50-4c6f-ab92-ee52295a3f46@gmail.com>
+
+    Thanks both.
+
+Josiah Parry says:
+
+ > Ben, the issue is that {rstan} is not available. Since it is a 
+suggested package it is not expected to always be there.
+
+   The thing is that the checks for rstan-based objects *are* 
+conditional.  This is actually failing on the tests for brms-based 
+objects, which import methods from rstan.  I do test to see whether brms 
+is available or not.
+
+   I agree with Ivan's diagnosis that something has happened to the 
+rstan installation which leaves brms available but rstan somehow 
+(despite the fact that it is a hard dependency for brms) missing ...
+
+   I will ask the CRAN maintainers for guidance.
+
+   cheers
+    Ben Bolker
+
+
+On 9/24/24 11:14, Ivan Krylov wrote:
+> ? Tue, 24 Sep 2024 10:27:34 -0400
+> Ben Bolker <bbolker at gmail.com> ?????:
+> 
+>>     Weirdly, I can't get this to fail on my local system even if I
+>> remove rstan -- maybe rstan needs to be present for brms at install
+>> time but not at runtime ... ???
+> 
+> I'm noticing that despite broom.mixed having Suggests: rstan and it
+> being seemingly unable to load, you don't get a NOTE for the missing
+> dependency:
+> 
+>>> checking package dependencies ... NOTE
+>>> Packages suggested but not available for checking: 'dotwhisker',
+>>> 'glmmADMB'
+> 
+> At that stage, R CMD check verifies that at least one of the libraries
+> contains file.path(PACKAGE_NAME, 'DESCRIPTION'). Later, something else
+> needs a valid rstan/Meta/package.rds. (There are also tests for links
+> between help pages, but they don't stop the check.) While running the
+> tests, methods:::.requirePackage actually tries to load the namespace
+> using require() -> ... -> loadNamespace(), which fails.
+> 
+>> Weirdly, I can't get this to fail on my local system even if I
+>> remove rstan -- maybe rstan needs to be present for brms at install
+>> time but not at runtime ... ???
+> 
+> Having only the following files left from a valid 'rstan' installation,
+> I can make R CMD check broom.mixed_0.2.9.5.tar.gz reach the same error
+> as you're getting:
+> 
+> rstan
+> rstan/Meta
+> rstan/Meta/package.rds
+> rstan/DESCRIPTION
+> 
+> Something must have happened on the Fedora machine.
+> 
+
+-- 
+Dr. Benjamin Bolker
+Professor, Mathematics & Statistics and Biology, McMaster University
+Director, School of Computational Science and Engineering
+* E-mail is sent at my convenience; I don't expect replies outside of 
+working hours.
+
+
+From murr@y@e||ord @end|ng |rom ot@go@@c@nz  Wed Sep 25 07:13:31 2024
+From: murr@y@e||ord @end|ng |rom ot@go@@c@nz (Murray Efford)
+Date: Wed, 25 Sep 2024 05:13:31 +0000
+Subject: [R-pkg-devel] Deprecating apparent S3 method, changing name
+Message-ID: <SY4PR01MB56581D25A3BD15AC4CB3F882AC692@SY4PR01MB5658.ausprd01.prod.outlook.com>
+
+A package of mine on CRAN has some old function names (not S3 methods) that include "." (e.g., "esa.plot"). In a new version I want to simultaneously
+1. rename these functions to e.g. "esaPlot"
+2. export a new S3 generic with the base name (e.g. "esa") and methods for different model types (e.g. "esa.secr").
+
+When I deprecate the old functions (by exporting a shell function that calls .Deprecated and the new function), I get a package check note for e.g. esa.plot
+"* checking S3 generic/method consistency ... NOTE
+Apparent methods for exported generics not registered: etc."
+
+This is understandable, but how can I avoid it while properly deprecating the old functions? I seem to remember a recent question like this, but I'm sorry I cannot find it.
+
+Murray
+
+	[[alternative HTML version deleted]]
+
+
+From |kry|ov @end|ng |rom d|@root@org  Wed Sep 25 18:21:20 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Wed, 25 Sep 2024 19:21:20 +0300
+Subject: [R-pkg-devel] 
+ help with CRAN failures (broom.mixed, rstan-related)
+In-Reply-To: <04133be5-5a50-4c6f-ab92-ee52295a3f46@gmail.com>
+References: <05cbb1cb-5574-42de-bf24-c1518818fa3b@gmail.com>
+ <20240924181404.24038cb7@arachnoid>
+ <04133be5-5a50-4c6f-ab92-ee52295a3f46@gmail.com>
+Message-ID: <20240925192120.366c020c@arachnoid>
+
+Hmm, so it's *not* a machine-specific problem after all [1,2] and can
+now be reproduced on a regular R-devel build on Debian Sid. I'm sorry
+for jumping to conclusions.
+
+Why would Rcpp::loadModule() (called from rstan's .onLoad) end up trying
+to apply a non-function, but only when being called from
+broom.mixed/tests/testthat/test-alltibbles.R, and only on the first
+attempt? (A repeated source() will run to completion without signalling
+any errors.)
+
+>> Error: package or namespace load failed for 'rstan' in
+>> .doLoadActions(where, attach):
+>> error in load action .__A__.1 for package rstan:
+>> Rcpp::loadModule(module = "class_model_base", what = TRUE, env = ns,:
+>> Unable to load module "class_model_base": attempt to apply
+>> non-function
+>> Error in .requirePackage(package) : unable to load required package
+>> 'rstan'
+
+The underlying error is in Rcpp::Module('class_model_base', mustStart =
+TRUE, where = <namespace:rstan>):
+
+>> simpleError in METHOD$info(""): attempt to apply non-function
+
+This call originates in Rcpp:::method_wrapper:
+
+Browse[3]> METHOD$info
+NULL
+Browse[3]> str(METHOD)
+Prototypical reference class 'C++OverloadedMethods' [package "Rcpp"]
+Browse[3]> unclass(METHOD) # print(METHOD) fails due do $info
+<S4 Type Object>
+attr(,".xData")
+<environment: 0x5596b8ef1530>
+Browse[3]> ls(METHOD at .xData, all = TRUE)
+ [1] ".->class_pointer" ".->const"         ".->docstrings"    ".->nargs"
+ [5] ".->pointer"       ".->signatures"    ".->size"          ".->void"
+ [9] ".refClassDef"     ".self"            "class_pointer"    "const"
+[13] "docstrings"       "nargs"            "pointer"        "signatures"
+[17] "size"             "void"
+
+Why would an object of reference class 'C++OverloadedMethods' suddenly
+lose its $info method? This doesn't look like anything printed when I
+trace(Rcpp:::method_wrapper, quote(print(METHOD))) and then load
+'rstan' in a fresh R session.
+
+-- 
+Best regards,
+Ivan
+
+[1]
+https://cran.r-project.org/web/checks/check_results_broom.mixed.html
+
+[2]
+https://www.stats.ox.ac.uk/pub/bdr/donttest/broom.mixed.out
+
+
+From bbo|ker @end|ng |rom gm@||@com  Wed Sep 25 18:28:25 2024
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Wed, 25 Sep 2024 12:28:25 -0400
+Subject: [R-pkg-devel] 
+ help with CRAN failures (broom.mixed, rstan-related)
+In-Reply-To: <20240925192120.366c020c@arachnoid>
+References: <05cbb1cb-5574-42de-bf24-c1518818fa3b@gmail.com>
+ <20240924181404.24038cb7@arachnoid>
+ <04133be5-5a50-4c6f-ab92-ee52295a3f46@gmail.com>
+ <20240925192120.366c020c@arachnoid>
+Message-ID: <25a8da11-9adb-45cb-9858-53fe406a9251@gmail.com>
+
+
+
+On 9/25/24 12:21, Ivan Krylov wrote:
+> Hmm, so it's *not* a machine-specific problem after all [1,2] and can
+> now be reproduced on a regular R-devel build on Debian Sid. I'm sorry
+> for jumping to conclusions.
+
+   No need to apologize, you've gotten 1000x farther than I  would have 
+on my own.
+
+   What is your current estimate of the probability that this is 
+something that I've done wrong vs. exposing something wonky elsewhere 
+(i.e. at the level of testthat, brms, rstan, Rcpp, R-devel, ...) ?
+
+   I will try to find time and energy to
+
+* see if there are any other packages downstream of brms that are 
+encountering testing problems on Fedora;
+* set up my own more-minimal example/figure out how to reproduce in a 
+Docker container
+
+   I have a few weeks to sort this out. If absolutely necessary I can 
+use the ugly solution of skipping those tests on CRAN ...
+
+   cheers
+     Ben
+
+> 
+> Why would Rcpp::loadModule() (called from rstan's .onLoad) end up trying
+> to apply a non-function, but only when being called from
+> broom.mixed/tests/testthat/test-alltibbles.R, and only on the first
+> attempt? (A repeated source() will run to completion without signalling
+> any errors.)
+> 
+>>> Error: package or namespace load failed for 'rstan' in
+>>> .doLoadActions(where, attach):
+>>> error in load action .__A__.1 for package rstan:
+>>> Rcpp::loadModule(module = "class_model_base", what = TRUE, env = ns,:
+>>> Unable to load module "class_model_base": attempt to apply
+>>> non-function
+>>> Error in .requirePackage(package) : unable to load required package
+>>> 'rstan'
+> 
+> The underlying error is in Rcpp::Module('class_model_base', mustStart =
+> TRUE, where = <namespace:rstan>):
+> 
+>>> simpleError in METHOD$info(""): attempt to apply non-function
+> 
+> This call originates in Rcpp:::method_wrapper:
+> 
+> Browse[3]> METHOD$info
+> NULL
+> Browse[3]> str(METHOD)
+> Prototypical reference class 'C++OverloadedMethods' [package "Rcpp"]
+> Browse[3]> unclass(METHOD) # print(METHOD) fails due do $info
+> <S4 Type Object>
+> attr(,".xData")
+> <environment: 0x5596b8ef1530>
+> Browse[3]> ls(METHOD at .xData, all = TRUE)
+>   [1] ".->class_pointer" ".->const"         ".->docstrings"    ".->nargs"
+>   [5] ".->pointer"       ".->signatures"    ".->size"          ".->void"
+>   [9] ".refClassDef"     ".self"            "class_pointer"    "const"
+> [13] "docstrings"       "nargs"            "pointer"        "signatures"
+> [17] "size"             "void"
+> 
+> Why would an object of reference class 'C++OverloadedMethods' suddenly
+> lose its $info method? This doesn't look like anything printed when I
+> trace(Rcpp:::method_wrapper, quote(print(METHOD))) and then load
+> 'rstan' in a fresh R session.
+> 
+
+-- 
+Dr. Benjamin Bolker
+Professor, Mathematics & Statistics and Biology, McMaster University
+Director, School of Computational Science and Engineering
+* E-mail is sent at my convenience; I don't expect replies outside of 
+working hours.
+
+
+From |kry|ov @end|ng |rom d|@root@org  Wed Sep 25 22:22:43 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Wed, 25 Sep 2024 23:22:43 +0300
+Subject: [R-pkg-devel] 
+ help with CRAN failures (broom.mixed, rstan-related)
+In-Reply-To: <25a8da11-9adb-45cb-9858-53fe406a9251@gmail.com>
+References: <05cbb1cb-5574-42de-bf24-c1518818fa3b@gmail.com>
+ <20240924181404.24038cb7@arachnoid>
+ <04133be5-5a50-4c6f-ab92-ee52295a3f46@gmail.com>
+ <20240925192120.366c020c@arachnoid>
+ <25a8da11-9adb-45cb-9858-53fe406a9251@gmail.com>
+Message-ID: <20240925232243.5159cd2a@Tarkus>
+
+? Wed, 25 Sep 2024 12:28:25 -0400
+Ben Bolker <bbolker at gmail.com> ?????:
+
+>    What is your current estimate of the probability that this is 
+> something that I've done wrong vs. exposing something wonky elsewhere 
+> (i.e. at the level of testthat, brms, rstan, Rcpp, R-devel, ...) ?
+
+I didn't have a good answer (the most recently updated package should
+be the one to suspect, right?), but stopping the investigation now
+would be akin to closing a murder mystery in the middle of the last
+chapter. Here's what I've been able to find out:
+
+When running library(testthat); debugonce(Rcpp::loadModule);
+source('tests/testthat/test-alltibbles.R'), by the time we reach
+Rcpp:::loadModule, the reference classes don't come out right. A simple
+new('C++OverloadedMethods') returns an object that doesn't have a $show
+or $info method. A similar problem happens for 'envRefClass', from
+which 'C++OverloadedMethods' inherits: printing it will fail due to a
+missing $show() method.
+
+The problem is not in the class definition or object contents. I don't
+see differences between serialised class definitions. Reloading a
+serialized object from a "broken" R session into a fresh R session makes
+it work normally.
+
+The first difference I was able to notice was in how the $ operator
+works for the reference semantics objects. In both cases,
+.Primitive('$') -> do_subset3 eventually calls DispatchOrEval(). In a
+healthy R session, the test [*] for IS_S4_OBJECT(x) &&
+R_has_methods(op) succeeds. In a "broken" R session it fails because
+R_has_methods(op) is FALSE.
+
+That's because allowPrimitiveMethods had been set to FALSE.
+
+Judging by the traceback, brms::variables(object) ->
+variables.brmsfit(object) -> dimnames(x$fit) needs to resolve the S4
+'dimnames' method for class 'stanfit'. At this point
+methods:::.findInheritedMethods temporarily disables S4 methods for
+primitives. The comment says it's done "to avoid infinite recursion,
+and somewhat for speed". Unfortunately, later the 'rstan' namespace
+needs to be loaded, and 'rstan' calls Rcpp functions that use reference
+classes, which break without S4 dispatch for `$`.
+
+As far as endings go, this one is rather like Murder on the Orient
+Express. Even understanding what happened doesn't point towards the
+"right" fix. Josiah's suggestion should have helped by loading the
+namespace at a safer time.
+
+-- 
+Best regards,
+Ivan
+
+[*]
+https://github.com/r-devel/r-svn/blob/776045d4601ed3ac7b8041e94c665bbfe9709191/src/main/eval.c#L4152
+
+
+From bbo|ker @end|ng |rom gm@||@com  Wed Sep 25 22:57:55 2024
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Wed, 25 Sep 2024 16:57:55 -0400
+Subject: [R-pkg-devel] 
+ help with CRAN failures (broom.mixed, rstan-related)
+In-Reply-To: <20240925232243.5159cd2a@Tarkus>
+References: <05cbb1cb-5574-42de-bf24-c1518818fa3b@gmail.com>
+ <20240924181404.24038cb7@arachnoid>
+ <04133be5-5a50-4c6f-ab92-ee52295a3f46@gmail.com>
+ <20240925192120.366c020c@arachnoid>
+ <25a8da11-9adb-45cb-9858-53fe406a9251@gmail.com>
+ <20240925232243.5159cd2a@Tarkus>
+Message-ID: <1cd9eec4-5e44-4461-95ff-141dfa675c29@gmail.com>
+
+   Yikes.  Next question, is this (in your opinion) worth escalating to 
+r-devel ?
+
+   I can definitely implement something where I require() rstan up 
+front, (which should be harmless if it's really not available but will 
+fix issues that brms is having?) ... that might resolve the symptoms 
+cleanly in the absence of a definitive diagnosis ...
+
+https://github.com/bbolker/broom.mixed/commit/4096d00cf8cb6dd6798079859dfce56ea870b636
+
+   ... now all I have to do is get a testing framework up and running so 
+I can see if it helps ...
+
+On 2024-09-25 4:22 p.m., Ivan Krylov wrote:
+> ? Wed, 25 Sep 2024 12:28:25 -0400
+> Ben Bolker <bbolker at gmail.com> ?????:
+> 
+>>     What is your current estimate of the probability that this is
+>> something that I've done wrong vs. exposing something wonky elsewhere
+>> (i.e. at the level of testthat, brms, rstan, Rcpp, R-devel, ...) ?
+> 
+> I didn't have a good answer (the most recently updated package should
+> be the one to suspect, right?), but stopping the investigation now
+> would be akin to closing a murder mystery in the middle of the last
+> chapter. Here's what I've been able to find out:
+> 
+> When running library(testthat); debugonce(Rcpp::loadModule);
+> source('tests/testthat/test-alltibbles.R'), by the time we reach
+> Rcpp:::loadModule, the reference classes don't come out right. A simple
+> new('C++OverloadedMethods') returns an object that doesn't have a $show
+> or $info method. A similar problem happens for 'envRefClass', from
+> which 'C++OverloadedMethods' inherits: printing it will fail due to a
+> missing $show() method.
+> 
+> The problem is not in the class definition or object contents. I don't
+> see differences between serialised class definitions. Reloading a
+> serialized object from a "broken" R session into a fresh R session makes
+> it work normally.
+> 
+> The first difference I was able to notice was in how the $ operator
+> works for the reference semantics objects. In both cases,
+> .Primitive('$') -> do_subset3 eventually calls DispatchOrEval(). In a
+> healthy R session, the test [*] for IS_S4_OBJECT(x) &&
+> R_has_methods(op) succeeds. In a "broken" R session it fails because
+> R_has_methods(op) is FALSE.
+> 
+> That's because allowPrimitiveMethods had been set to FALSE.
+> 
+> Judging by the traceback, brms::variables(object) ->
+> variables.brmsfit(object) -> dimnames(x$fit) needs to resolve the S4
+> 'dimnames' method for class 'stanfit'. At this point
+> methods:::.findInheritedMethods temporarily disables S4 methods for
+> primitives. The comment says it's done "to avoid infinite recursion,
+> and somewhat for speed". Unfortunately, later the 'rstan' namespace
+> needs to be loaded, and 'rstan' calls Rcpp functions that use reference
+> classes, which break without S4 dispatch for `$`.
+> 
+> As far as endings go, this one is rather like Murder on the Orient
+> Express. Even understanding what happened doesn't point towards the
+> "right" fix. Josiah's suggestion should have helped by loading the
+> namespace at a safer time.
+> 
+
+-- 
+Dr. Benjamin Bolker
+Professor, Mathematics & Statistics and Biology, McMaster University
+Director, School of Computational Science and Engineering
+ > E-mail is sent at my convenience; I don't expect replies outside of 
+working hours.
+
+
+From p@u|@buerkner @end|ng |rom gm@||@com  Wed Sep 25 23:13:13 2024
+From: p@u|@buerkner @end|ng |rom gm@||@com (Paul Buerkner)
+Date: Wed, 25 Sep 2024 23:13:13 +0200
+Subject: [R-pkg-devel] 
+ help with CRAN failures (broom.mixed, rstan-related)
+In-Reply-To: <1cd9eec4-5e44-4461-95ff-141dfa675c29@gmail.com>
+References: <05cbb1cb-5574-42de-bf24-c1518818fa3b@gmail.com>
+ <20240924181404.24038cb7@arachnoid>
+ <04133be5-5a50-4c6f-ab92-ee52295a3f46@gmail.com>
+ <20240925192120.366c020c@arachnoid>
+ <25a8da11-9adb-45cb-9858-53fe406a9251@gmail.com>
+ <20240925232243.5159cd2a@Tarkus>
+ <1cd9eec4-5e44-4461-95ff-141dfa675c29@gmail.com>
+Message-ID: <CAGoSky85hoFzhT+d_hU1zUhP6cqqUfZYBqA0jq-DHR4Fg0fpXQ@mail.gmail.com>
+
+Please let me know if I can be of any help. I kind of "caused" this issue
+by submitting the new version of brms to CRAN.
+Of course, the issue is not really in brms but somehow deeper as your
+investigations shows. Would it help if brms
+extracted variables names from rstan objects somehow differently than via
+dimnames(stanfit)?
+
+Paul
+
+Am Mi., 25. Sept. 2024 um 22:58 Uhr schrieb Ben Bolker <bbolker at gmail.com>:
+
+>    Yikes.  Next question, is this (in your opinion) worth escalating to
+> r-devel ?
+>
+>    I can definitely implement something where I require() rstan up
+> front, (which should be harmless if it's really not available but will
+> fix issues that brms is having?) ... that might resolve the symptoms
+> cleanly in the absence of a definitive diagnosis ...
+>
+>
+> https://github.com/bbolker/broom.mixed/commit/4096d00cf8cb6dd6798079859dfce56ea870b636
+>
+>    ... now all I have to do is get a testing framework up and running so
+> I can see if it helps ...
+>
+> On 2024-09-25 4:22 p.m., Ivan Krylov wrote:
+> > ? Wed, 25 Sep 2024 12:28:25 -0400
+> > Ben Bolker <bbolker at gmail.com> ?????:
+> >
+> >>     What is your current estimate of the probability that this is
+> >> something that I've done wrong vs. exposing something wonky elsewhere
+> >> (i.e. at the level of testthat, brms, rstan, Rcpp, R-devel, ...) ?
+> >
+> > I didn't have a good answer (the most recently updated package should
+> > be the one to suspect, right?), but stopping the investigation now
+> > would be akin to closing a murder mystery in the middle of the last
+> > chapter. Here's what I've been able to find out:
+> >
+> > When running library(testthat); debugonce(Rcpp::loadModule);
+> > source('tests/testthat/test-alltibbles.R'), by the time we reach
+> > Rcpp:::loadModule, the reference classes don't come out right. A simple
+> > new('C++OverloadedMethods') returns an object that doesn't have a $show
+> > or $info method. A similar problem happens for 'envRefClass', from
+> > which 'C++OverloadedMethods' inherits: printing it will fail due to a
+> > missing $show() method.
+> >
+> > The problem is not in the class definition or object contents. I don't
+> > see differences between serialised class definitions. Reloading a
+> > serialized object from a "broken" R session into a fresh R session makes
+> > it work normally.
+> >
+> > The first difference I was able to notice was in how the $ operator
+> > works for the reference semantics objects. In both cases,
+> > .Primitive('$') -> do_subset3 eventually calls DispatchOrEval(). In a
+> > healthy R session, the test [*] for IS_S4_OBJECT(x) &&
+> > R_has_methods(op) succeeds. In a "broken" R session it fails because
+> > R_has_methods(op) is FALSE.
+> >
+> > That's because allowPrimitiveMethods had been set to FALSE.
+> >
+> > Judging by the traceback, brms::variables(object) ->
+> > variables.brmsfit(object) -> dimnames(x$fit) needs to resolve the S4
+> > 'dimnames' method for class 'stanfit'. At this point
+> > methods:::.findInheritedMethods temporarily disables S4 methods for
+> > primitives. The comment says it's done "to avoid infinite recursion,
+> > and somewhat for speed". Unfortunately, later the 'rstan' namespace
+> > needs to be loaded, and 'rstan' calls Rcpp functions that use reference
+> > classes, which break without S4 dispatch for `$`.
+> >
+> > As far as endings go, this one is rather like Murder on the Orient
+> > Express. Even understanding what happened doesn't point towards the
+> > "right" fix. Josiah's suggestion should have helped by loading the
+> > namespace at a safer time.
+> >
+>
+> --
+> Dr. Benjamin Bolker
+> Professor, Mathematics & Statistics and Biology, McMaster University
+> Director, School of Computational Science and Engineering
+>  > E-mail is sent at my convenience; I don't expect replies outside of
+> working hours.
+>
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+
+	[[alternative HTML version deleted]]
+
+

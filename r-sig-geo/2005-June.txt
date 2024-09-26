@@ -1,0 +1,5130 @@
+From Roger.Bivand at nhh.no  Wed Jun  1 13:33:26 2005
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Wed, 1 Jun 2005 13:33:26 +0200 (CEST)
+Subject: [R-sig-Geo] R-stats - GRASS6
+In-Reply-To: <20050531171510.GC30343@thuille.itc.it>
+Message-ID: <Pine.LNX.4.44.0506011314440.18289-100000@reclus.nhh.no>
+
+On Tue, 31 May 2005, Markus Neteler wrote:
+
+> Dear Roger,
+> 
+> On Tue, May 31, 2005 at 06:53:31PM +0200, Roger Bivand wrote:
+> > On Tue, 31 May 2005, Markus Neteler wrote:
+> > 
+> > > Dear list members,
+> > > 
+> > > I am currently trying out the new GRASS 6/R-stats interface.
+> > > I installed all software today (R-2.1.0, all interfaces, using
+> > > GRASS 6.1-CVS).
+> > > 
+> > > There is a little problem which I don't understand:
+> > > 
+> > > > library(spgrass6)
+> > > > G <- gmeta6()
+> > > > str(G)
+> > > List of 28
+> > >  $ GISDBASE         : chr "/ssi0/ssi/neteler/grassdata"
+> > >  $ LOCATION_NAME    : chr "spearfish60"
+> > >  $ MAPSET           : chr "neteler"
+> > >  $ GRASS_DB_ENCODING: chr "utf-8"
+> > >  $ DEBUG            : chr "0"
+> > >  $ MONITOR          : chr "x0"
+> > >  $ GRASS_GUI        : chr "text"
+> > >  $ projection       : chr "1 (UTM)"
+> > > [...]
+> > > 
+> > > > system("r.info -t landcover.orig")
+> > > datatype=CELL
+> > > > landcover <- readCELL6sp("landcover.orig", cat = TRUE)
+> > > Error in "names<-.default"(`*tmp*`, value = "landcover.orig") :
+> > >         'names' attribute [1] must be the same length as the vector [0]
+> > 
+> > I can't replicate this, I'm afraid (R 2.1.0, Linux, sp 0.7-7, spgrass6
+> > 0.1-4 (from CVS on sourceforge, GRASS 6.0.0 release). I don't think the sp 
+> > or spgrass6 versions make a difference. 
+> > 
+> > Could you say debug(readCELL6sp) and re-run this please - that should show 
+> > which line is failing. Once we know that, please check the arguments to 
+> > that function for sanity. I don't think it is important, but I'm running 
+> > under LANG=en_GB ; export LANG, not UTF8. My current guess is that the 
+> > problem is in:
+> > 
+> > res <- read.asciigrid(tmpfl, colname = vname, proj4string = p4)
+> > 
+> > where vname is the layer name. If you additionally do 
+> > debug(read.asciigrid), it may fail at: names(df) = colname - please see 
+> > what is in colname, and if length(colname) is the same as length(df). One 
+> > possibility is that there is something amiss in read.asciigrid().
+> > 
+> > The landcover.orig layer is strange because there are no category labels 
+> > at all, so:
+> 
+> [... took the wrong landuse map, but it doesn't change ...]
+> 
+> > library(spgrass6)
+> Loading required package: rgdal
+> Loading required package: abind
+> Loading required package: pixmap
+> Geospatial Data Abstraction Library extensions to R successfully loaded
+> Loading required package: sp
+> > G <- gmeta6()
+> 
+> > landcover <- readCELL6sp("landcover.30m", cat = TRUE)
+> Error in "names<-.default"(`*tmp*`, value = "landcover.30m") :
+>         'names' attribute [1] must be the same length as the vector [0]
+> > debug(readCELL6sp)
+> 
+> > system("r.stats -l -q landcover.30m | head -20")
+> 11 Open Water
+> 21 Low Intensity Residential
+> 22 High Intensity Residential
+> 23 Commercial/Industrial/Transportation
+> 31 Bare Rock/Sand/Clay
+> 32 Quarries/Strip Mines/Gravel Pits
+> 41 Deciduous Forest
+> 42 Evergreen Forest
+> 43 Mixed Forest
+> 51 Shrubland
+> 71 Grasslands/Herbaceous
+> 81 Pasture/Hay
+> 82 Row Crops
+> 83 Small Grains
+> 85 Urban/Recreational Grasses
+> 91 Woody Wetlands
+> 92 Emergent Herbaceous Wetlands
+> * no data
+> 
+> > landcover <- readCELL6sp("landcover.30m", cat = TRUE)
+> debugging in: readCELL6sp("landcover.30m", cat = TRUE)
+> debug: {
+> [...]
+> }
+> Browse[1]>
+> debug: tmpfl <- tempfile()
+> Browse[1]>
+> debug: system(paste("r.out.arc input=", vname, " output=", tmpfl, sep = ""))
+> Browse[1]>
+> debug: library(sp)
+> Browse[1]>
+> debug: p4 <- CRS(system("g.proj -j -f", intern = TRUE))
+> Browse[1]>
+> debug: res <- read.asciigrid(tmpfl, colname = vname, proj4string = p4)
+> Browse[1]>
+> debug: if (cat) {
+>     cats <- strsplit(system(paste("r.stats -l -q", vname), intern = TRUE),
+>         " ")
+>     catnos <- sapply(cats, function(x) x[1])
+>     catlabs <- sapply(cats, function(x) paste(x[-1], collapse = " "))
+>     if (any(!is.na(match(catnos, "*")))) {
+>         isNA <- which(catnos == "*")
+>         catnos <- catnos[-isNA]
+>         catlabs <- catlabs[-isNA]
+>     }
+>     res at data[, 1] <- factor(res at data[, 1], levels = catnos, labels = catlabs)
+> } else {
+>     res at data[, 1] <- as.integer(res at data[, 1])
+> }
+> Browse[1]>
+> debug: cats <- strsplit(system(paste("r.stats -l -q", vname), intern = TRUE),
+>     " ")
+> Browse[1]>
+> debug: catnos <- sapply(cats, function(x) x[1])
+> Browse[1]>
+> debug: catlabs <- sapply(cats, function(x) paste(x[-1], collapse = " "))
+> Browse[1]>
+> debug: if (any(!is.na(match(catnos, "*")))) {
+>     isNA <- which(catnos == "*")
+>     catnos <- catnos[-isNA]
+>     catlabs <- catlabs[-isNA]
+> }
+> Browse[1]>
+> debug: isNA <- which(catnos == "*")
+> Browse[1]>
+> debug: catnos <- catnos[-isNA]
+> Browse[1]>
+> debug: catlabs <- catlabs[-isNA]
+> Browse[1]>
+> debug: res at data[, 1] <- factor(res at data[, 1], levels = catnos, labels = catlabs)
+> Browse[1]>
+> Error in "names<-.default"(`*tmp*`, value = "landcover.30m") :
+>         'names' attribute [1] must be the same length as the vector [0]
+> >  
+> 
+> 
+> > debug(read.asciigrid)
+> > undebug(readCELL6sp)
+> 
+> > landcover <- readCELL6sp("landcover.30m", cat = TRUE)
+> [...]
+> Browse[1]>
+> debug: df = data.frame(map)
+> Browse[1]>
+> debug: names(df) = colname
+> Browse[1]> length(colname)
+> [1] 1
+> Browse[1]> length(df)
+> [1] 1
+> Browse[1]> colname
+> [1] "landcover.30m"
+> Browse[1]> df
+> [...all values...]
+> 
+> > str(df)
+> `data.frame':   302418 obs. of  1 variable:
+>  $ map: num  NA NA NA NA NA NA NA NA NA NA ...
+> Browse[1]>
+> debug: grid = GridTopology(c(xllcenter, yllcenter), rep(cellsize, 2),
+>     c(ncols, nrows))
+> Browse[1]>
+> debug: SpatialGridDataFrame(grid, data = df, proj4string = proj4string)
+> Browse[1]>
+> exiting from: read.asciigrid(tmpfl, colname = vname, proj4string = p4)
+> Error in "names<-.default"(`*tmp*`, value = "landcover.30m") :
+>         'names' attribute [1] must be the same length as the vector [0]
+> >    
+> 
+> I don't know if this is already helpful.
+
+Yes, looks as though the changes we made to sp in Valencia (you have sp 
+0.7-7, right?) are getting in the way. When the data is being made into a 
+factor, the name of the data seems to be getting messed up. I have:
+
+readCELL6sp <- function(vname, cat=FALSE) {
+	tmpfl <- tempfile()
+	system(paste("r.out.arc input=", vname, " output=", tmpfl, sep=""))
+	library(sp)
+	p4 <- CRS(system("g.proj -j -f", intern=TRUE))
+	res <- read.asciigrid(tmpfl, colname=vname, proj4string=p4)
+	if (cat) {
+		cats <- strsplit(system(paste("r.stats -l -q", vname), 
+			intern=TRUE), " ")
+		catnos <- sapply(cats, function(x) x[1])
+		catlabs <- sapply(cats, function(x) paste(x[-1], collapse=" "))
+		if (any(!is.na(match(catnos, "*")))) {
+			isNA <- which(catnos == "*")
+			catnos <- catnos[-isNA]
+			catlabs <- catlabs[-isNA]
+		}
+		res at data[[1]] <- factor(res at data[[1]], levels=catnos, labels=catlabs)
+	} else {
+		res at data[[1]] <- as.integer(res at data[[1]])
+	}
+	res
+}
+
+on my machine, I think it is on CVS, but cannot check now. The change 
+Edzer and I made to sp was the same that was made to the R/GRASS interface 
+years ago, that is do not use data frames where possible, because they 
+generate unique character row names, which we do not need. So we changed 
+from the @data slot being a data frame that can be accessed like a matrix, 
+to a list of equal length vectors, which can only be accessed by list 
+member. Please try this change in the function. The error message isn't 
+the same in the following, but you can see what is going on (unless I'm 
+still wrong):
+
+> df <- data.frame(a=sample(1:5,100,replace=TRUE))
+> str(df)
+`data.frame':   100 obs. of  1 variable:
+ $ a: int  3 2 2 2 3 1 3 1 5 2 ...
+> ldf <- as.list(df)
+> str(ldf)
+List of 1
+ $ a: int [1:100] 3 2 2 2 3 1 3 1 5 2 ...
+> df1 <- df
+> df1[,1] <- factor(df[,1])
+> str(df1)
+`data.frame':   100 obs. of  1 variable:
+ $ a: Factor w/ 5 levels "1","2","3","4",..: 3 2 2 2 3 1 3 1 5 2 ...
+> ldf1 <- ldf
+> ldf1[,1] <- factor(ldf[,1])
+Error in ldf[, 1] : incorrect number of dimensions
+> ldf1[[1]] <- factor(ldf[[1]])
+> str(ldf1)
+List of 1
+ $ a: Factor w/ 5 levels "1","2","3","4",..: 3 2 2 2 3 1 3 1 5 2 ...
+
+Best wishes,
+
+Roger
+
+PS. I think 0.7-7 read.asciigrid() is also wrong, that is it should not 
+use data.frame() anyway, but I can't check that now.
+
+> 
+> Best regards
+> 
+>  Markus
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From tkeitt at mail.utexas.edu  Wed Jun  1 21:20:49 2005
+From: tkeitt at mail.utexas.edu (Tim Keitt)
+Date: Wed, 01 Jun 2005 14:20:49 -0500
+Subject: [R-sig-Geo] Position announcement
+Message-ID: <1117653649.12302.5.camel@fosteri.keittlab.net>
+
+Hi Folks,
+
+If you go to UT's web site and search the jobs database, you'll find a
+Linux related position in my lab (scientific programmer, Integrative
+Biology). The direct link below may also work. Drop me an email if you
+are interested.
+
+Cheers,
+Tim
+
+http://utdirect.utexas.edu/pnjobs/pnjobsvw.WBX?comp=0&job_nbr=050502019332
+
+-- 
+Tim Keitt
+Section of Integrative Biology
+http://www.keittlab.org/
+
+
+
+From jakob.petersen at qmul.ac.uk  Thu Jun  2 13:18:12 2005
+From: jakob.petersen at qmul.ac.uk (Jakob Petersen)
+Date: Thu, 02 Jun 2005 12:18:12 +0100
+Subject: [R-sig-Geo] Density estimation in R and plot in ArcGIS? - bkde2D
+ {KernSmooth} to ArcGIS raster file
+Message-ID: <429EEAF4.4040803@qmul.ac.uk>
+
+An HTML attachment was scrubbed...
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20050602/e8858e69/attachment.html>
+
+From SADrzy at ship.edu  Fri Jun  3 14:44:46 2005
+From: SADrzy at ship.edu (Drzyzga, Scott)
+Date: Fri, 3 Jun 2005 08:44:46 -0400
+Subject: [R-sig-Geo] network analysis indices
+Message-ID: <8D4FC509D4D4944EBF736B9EEF7DB3DC0392E831@shipmail01.ship.lcl>
+
+An embedded and charset-unspecified text was scrubbed...
+Name: not available
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20050603/fde526b8/attachment.pl>
+
+From RRoa at fisheries.gov.fk  Tue Jun  7 12:59:39 2005
+From: RRoa at fisheries.gov.fk (Ruben Roa)
+Date: Tue, 7 Jun 2005 08:59:39 -0200
+Subject: [R-sig-Geo] Scale bar in image.kriging?
+Message-ID: <03DCBBA079F2324786E8715BE538968A068D28@FIGMAIL-CLUS01.FIG.FK>
+
+Hi:
+How do i produce a scale bar alongside an image when
+using image.kriging in geoR? I need to show the levels 
+of the z variable corresponding to each of 27 colors. 
+Thanks
+Ruben
+
+
+
+From olefc at daimi.au.dk  Tue Jun  7 18:36:54 2005
+From: olefc at daimi.au.dk (Ole F. Christensen)
+Date: Tue, 07 Jun 2005 18:36:54 +0200
+Subject: [R-sig-Geo] Scale bar in image.kriging?
+In-Reply-To: <03DCBBA079F2324786E8715BE538968A068D28@FIGMAIL-CLUS01.FIG.FK>
+References: <03DCBBA079F2324786E8715BE538968A068D28@FIGMAIL-CLUS01.FIG.FK>
+Message-ID: <42A5CD26.20407@daimi.au.dk>
+
+Ruben,
+
+use legend.krige
+
+An example is found in the help file for image.kriging
+
+Ole
+
+
+Ruben Roa wrote:
+
+>Hi:
+>How do i produce a scale bar alongside an image when
+>using image.kriging in geoR? I need to show the levels 
+>of the z variable corresponding to each of 27 colors. 
+>Thanks
+>Ruben
+>
+>_______________________________________________
+>R-sig-Geo mailing list
+>R-sig-Geo at stat.math.ethz.ch
+>https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>
+>
+>  
+>
+
+-- 
+Ole F. Christensen
+BiRC - Bioinformatics Research Center
+University of Aarhus
+
+
+
+From mik-smith at supanet.com  Thu Jun  9 14:44:43 2005
+From: mik-smith at supanet.com (Mike Smith)
+Date: Thu, 9 Jun 2005 13:44:43 +0100
+Subject: [R-sig-Geo] geoR help with kriging (newbie!)
+Message-ID: <1654961618.20050609134443@kingston.ac.uk>
+
+Hi
+
+I have recently been experimenting with the use of kriging, primarily
+through Goldensoftware's Surfer. Having had a look around at the
+packages available for R I see the geoR (amongst several) supports
+kriging and so have started experimenting with this.
+
+What I am interested in doing is batch processing ~300 datasets using
+ordinary kriging with an exact interpolator (which I believe has no nugget).
+
+As I am not expert with either R or kriging (!!) I was wondering
+what the best command line options might be? I have been working
+through the geoR intro and have a few queries:
+
+-the command below appears to cover everything I want to do, however do
+I need to fit a model to the variogram first and, if so, where is this
+specified (using krige?)
+kc <- krige.conv(s100, loc = pred.grid, krige = krige.control(obj.m = ml))
+
+-the input file is a data frame with three columns; x and y coordinates
+and a z value to interpolate. I would ideally like to tell geoR (using
+loc) to take the max extent of my area and, at a specified point spacing,
+interpolate a new grid.
+
+
+Many thanks
+
+mike
+
+
+-- 
+Dr Mike J Smith
+Editor-in-Chief: Journal of Maps
+http://www.journalofmaps.com
+
+School of Earth Sciences and Geography
+Kingston University
+Penrhyn Road
+Kingston-upon-Thames
+Surrey
+KT1 2EE UK
+tel +44 (0)208 547 7500
+fax +44 (0)208 547 7497
+OS X/Y:518098/168540
+Lat/Long: 51.403603/-0.303575
+
+Personal Webpage:
+http://www.kingston.ac.uk/esg/staff/smith.htm
+
+-----BEGIN PGP PUBLIC KEY BLOCK-----
+Version: 2.6
+
+mQCPA0AyMQwBbgEEAMDTRNYB5Zi2SbmOtnBULHWIMXFaK+MVSTqGPi66N8s0ZQaJ
+bMggYe5ySdltKLgT1FFmJN48IdSzqvzwPAMD5pQEuyLadnBfFvdfJapBcvHTd1pL
+h5ikc/3zUXnK/JegioA4bCPypGnhf/1HFx70GRhpSaEOiul+vK1pQRliQJz1ABEB
+AAG0KU1pa2UgU21pdGggPG1pY2hhZWwuc21pdGhAa2luZ3N0b24uYWMudWs+iQCV
+AwUQQDIxDK1pQRliQJz1AQHn1QQAqA+203XQM7t0GEhIUh4PFEMysT+s2jMGUkNm
+eihQnyK+1ljBcG9Vt8DtzOC5s3Pop1G9nbW9vl7OYzSb4E5uQ5L5wFUz0TJ81mu6
+V8u/1CsERi+eXcNre+MON+q1GYoerUSd6LTh/kj+4J+MU05zHpSMXVJQsr2wcaxJ
+vDM8DHY=
+=oIrO
+-----END PGP PUBLIC KEY BLOCK-----
+
+
+
+From neteler at itc.it  Thu Jun  9 17:14:54 2005
+From: neteler at itc.it (Markus Neteler)
+Date: Thu, 9 Jun 2005 17:14:54 +0200
+Subject: [R-sig-Geo] R-stats - GRASS6
+In-Reply-To: <Pine.LNX.4.44.0506011314440.18289-100000@reclus.nhh.no>
+References: <20050531171510.GC30343@thuille.itc.it>
+	<Pine.LNX.4.44.0506011314440.18289-100000@reclus.nhh.no>
+Message-ID: <20050609151454.GQ3992@thuille.itc.it>
+
+Dear Roger,
+
+sorry for the delay (was out for teaching). My installation is
+untouched since then.
+I tested you functions as proposed below, it helped:
+
+> library(spgrass6)
+Loading required package: rgdal
+Loading required package: abind
+Loading required package: pixmap
+Geospatial Data Abstraction Library extensions to R successfully loaded
+Loading required package: sp
+> G <- gmeta6()
+
+[now paste of the modified readCELL6sp() function]
+
+> landcover <- readCELL6sp("landcover.30m", cat = TRUE)
+> summary(landcover)
+Object of class SpatialGridDataFrame
+Coordinates:
+              min     max
+coords.x1  589995  608985
+coords.x2 4913715 4927995
+Is projected: TRUE
+proj4string : [+proj=utm +zone=13 +a=6378206.4 +rf=294.9786982 +no_defs +nadgrids=conus]
+Number of points: 2
+Grid attributes:
+  cellcentre.offset cellsize cells.dim
+1            589995       30       634
+2           4913715       30       477
+Data attributes:
+                      landcover.30m
+ Evergreen Forest            :135375
+ Grasslands/Herbaceous       : 67396
+ Pasture/Hay                 : 56263
+ Small Grains                :  9023
+ Emergent Herbaceous Wetlands:  5673
+ (Other)                     : 18587
+ NA's                        : 10101
+
+Now I tried to plot the map according your new article in the
+GRASS Newsletter (http://grass.itc.it/newsletter/):
+
+> image(landcover,"landcover.30m")
+Error in image.default(as.image.SpatialGridDataFrame(x[attr], xcol, ycol),  :
+        invalid z limits
+In addition: Warning messages:
+1: no finite arguments to min; returning Inf
+2: no finite arguments to max; returning -Inf
+
+Maybe I am missing something?
+
+Thanks
+
+ Markus
+
+On Wed, Jun 01, 2005 at 01:33:26PM +0200, Roger Bivand wrote:
+> On Tue, 31 May 2005, Markus Neteler wrote:
+> 
+> > Dear Roger,
+> > 
+> > On Tue, May 31, 2005 at 06:53:31PM +0200, Roger Bivand wrote:
+> > > On Tue, 31 May 2005, Markus Neteler wrote:
+> > > 
+> > > > Dear list members,
+> > > > 
+> > > > I am currently trying out the new GRASS 6/R-stats interface.
+> > > > I installed all software today (R-2.1.0, all interfaces, using
+> > > > GRASS 6.1-CVS).
+> > > > 
+> > > > There is a little problem which I don't understand:
+> > > > 
+> > > > > library(spgrass6)
+> > > > > G <- gmeta6()
+> > > > > str(G)
+> > > > List of 28
+> > > >  $ GISDBASE         : chr "/ssi0/ssi/neteler/grassdata"
+> > > >  $ LOCATION_NAME    : chr "spearfish60"
+> > > >  $ MAPSET           : chr "neteler"
+> > > >  $ GRASS_DB_ENCODING: chr "utf-8"
+> > > >  $ DEBUG            : chr "0"
+> > > >  $ MONITOR          : chr "x0"
+> > > >  $ GRASS_GUI        : chr "text"
+> > > >  $ projection       : chr "1 (UTM)"
+> > > > [...]
+> > > > 
+> > > > > system("r.info -t landcover.orig")
+> > > > datatype=CELL
+> > > > > landcover <- readCELL6sp("landcover.orig", cat = TRUE)
+> > > > Error in "names<-.default"(`*tmp*`, value = "landcover.orig") :
+> > > >         'names' attribute [1] must be the same length as the vector [0]
+> > > 
+> > > I can't replicate this, I'm afraid (R 2.1.0, Linux, sp 0.7-7, spgrass6
+> > > 0.1-4 (from CVS on sourceforge, GRASS 6.0.0 release). I don't think the sp 
+> > > or spgrass6 versions make a difference. 
+> > > 
+> > > Could you say debug(readCELL6sp) and re-run this please - that should show 
+> > > which line is failing. Once we know that, please check the arguments to 
+> > > that function for sanity. I don't think it is important, but I'm running 
+> > > under LANG=en_GB ; export LANG, not UTF8. My current guess is that the 
+> > > problem is in:
+> > > 
+> > > res <- read.asciigrid(tmpfl, colname = vname, proj4string = p4)
+> > > 
+> > > where vname is the layer name. If you additionally do 
+> > > debug(read.asciigrid), it may fail at: names(df) = colname - please see 
+> > > what is in colname, and if length(colname) is the same as length(df). One 
+> > > possibility is that there is something amiss in read.asciigrid().
+> > > 
+> > > The landcover.orig layer is strange because there are no category labels 
+> > > at all, so:
+> > 
+> > [... took the wrong landuse map, but it doesn't change ...]
+> > 
+> > > library(spgrass6)
+> > Loading required package: rgdal
+> > Loading required package: abind
+> > Loading required package: pixmap
+> > Geospatial Data Abstraction Library extensions to R successfully loaded
+> > Loading required package: sp
+> > > G <- gmeta6()
+> > 
+> > > landcover <- readCELL6sp("landcover.30m", cat = TRUE)
+> > Error in "names<-.default"(`*tmp*`, value = "landcover.30m") :
+> >         'names' attribute [1] must be the same length as the vector [0]
+> > > debug(readCELL6sp)
+> > 
+> > > system("r.stats -l -q landcover.30m | head -20")
+> > 11 Open Water
+> > 21 Low Intensity Residential
+> > 22 High Intensity Residential
+> > 23 Commercial/Industrial/Transportation
+> > 31 Bare Rock/Sand/Clay
+> > 32 Quarries/Strip Mines/Gravel Pits
+> > 41 Deciduous Forest
+> > 42 Evergreen Forest
+> > 43 Mixed Forest
+> > 51 Shrubland
+> > 71 Grasslands/Herbaceous
+> > 81 Pasture/Hay
+> > 82 Row Crops
+> > 83 Small Grains
+> > 85 Urban/Recreational Grasses
+> > 91 Woody Wetlands
+> > 92 Emergent Herbaceous Wetlands
+> > * no data
+> > 
+> > > landcover <- readCELL6sp("landcover.30m", cat = TRUE)
+> > debugging in: readCELL6sp("landcover.30m", cat = TRUE)
+> > debug: {
+> > [...]
+> > }
+> > Browse[1]>
+> > debug: tmpfl <- tempfile()
+> > Browse[1]>
+> > debug: system(paste("r.out.arc input=", vname, " output=", tmpfl, sep = ""))
+> > Browse[1]>
+> > debug: library(sp)
+> > Browse[1]>
+> > debug: p4 <- CRS(system("g.proj -j -f", intern = TRUE))
+> > Browse[1]>
+> > debug: res <- read.asciigrid(tmpfl, colname = vname, proj4string = p4)
+> > Browse[1]>
+> > debug: if (cat) {
+> >     cats <- strsplit(system(paste("r.stats -l -q", vname), intern = TRUE),
+> >         " ")
+> >     catnos <- sapply(cats, function(x) x[1])
+> >     catlabs <- sapply(cats, function(x) paste(x[-1], collapse = " "))
+> >     if (any(!is.na(match(catnos, "*")))) {
+> >         isNA <- which(catnos == "*")
+> >         catnos <- catnos[-isNA]
+> >         catlabs <- catlabs[-isNA]
+> >     }
+> >     res at data[, 1] <- factor(res at data[, 1], levels = catnos, labels = catlabs)
+> > } else {
+> >     res at data[, 1] <- as.integer(res at data[, 1])
+> > }
+> > Browse[1]>
+> > debug: cats <- strsplit(system(paste("r.stats -l -q", vname), intern = TRUE),
+> >     " ")
+> > Browse[1]>
+> > debug: catnos <- sapply(cats, function(x) x[1])
+> > Browse[1]>
+> > debug: catlabs <- sapply(cats, function(x) paste(x[-1], collapse = " "))
+> > Browse[1]>
+> > debug: if (any(!is.na(match(catnos, "*")))) {
+> >     isNA <- which(catnos == "*")
+> >     catnos <- catnos[-isNA]
+> >     catlabs <- catlabs[-isNA]
+> > }
+> > Browse[1]>
+> > debug: isNA <- which(catnos == "*")
+> > Browse[1]>
+> > debug: catnos <- catnos[-isNA]
+> > Browse[1]>
+> > debug: catlabs <- catlabs[-isNA]
+> > Browse[1]>
+> > debug: res at data[, 1] <- factor(res at data[, 1], levels = catnos, labels = catlabs)
+> > Browse[1]>
+> > Error in "names<-.default"(`*tmp*`, value = "landcover.30m") :
+> >         'names' attribute [1] must be the same length as the vector [0]
+> > >  
+> > 
+> > 
+> > > debug(read.asciigrid)
+> > > undebug(readCELL6sp)
+> > 
+> > > landcover <- readCELL6sp("landcover.30m", cat = TRUE)
+> > [...]
+> > Browse[1]>
+> > debug: df = data.frame(map)
+> > Browse[1]>
+> > debug: names(df) = colname
+> > Browse[1]> length(colname)
+> > [1] 1
+> > Browse[1]> length(df)
+> > [1] 1
+> > Browse[1]> colname
+> > [1] "landcover.30m"
+> > Browse[1]> df
+> > [...all values...]
+> > 
+> > > str(df)
+> > `data.frame':   302418 obs. of  1 variable:
+> >  $ map: num  NA NA NA NA NA NA NA NA NA NA ...
+> > Browse[1]>
+> > debug: grid = GridTopology(c(xllcenter, yllcenter), rep(cellsize, 2),
+> >     c(ncols, nrows))
+> > Browse[1]>
+> > debug: SpatialGridDataFrame(grid, data = df, proj4string = proj4string)
+> > Browse[1]>
+> > exiting from: read.asciigrid(tmpfl, colname = vname, proj4string = p4)
+> > Error in "names<-.default"(`*tmp*`, value = "landcover.30m") :
+> >         'names' attribute [1] must be the same length as the vector [0]
+> > >    
+> > 
+> > I don't know if this is already helpful.
+> 
+> Yes, looks as though the changes we made to sp in Valencia (you have sp 
+> 0.7-7, right?) are getting in the way. When the data is being made into a 
+> factor, the name of the data seems to be getting messed up. I have:
+> 
+> readCELL6sp <- function(vname, cat=FALSE) {
+> 	tmpfl <- tempfile()
+> 	system(paste("r.out.arc input=", vname, " output=", tmpfl, sep=""))
+> 	library(sp)
+> 	p4 <- CRS(system("g.proj -j -f", intern=TRUE))
+> 	res <- read.asciigrid(tmpfl, colname=vname, proj4string=p4)
+> 	if (cat) {
+> 		cats <- strsplit(system(paste("r.stats -l -q", vname), 
+> 			intern=TRUE), " ")
+> 		catnos <- sapply(cats, function(x) x[1])
+> 		catlabs <- sapply(cats, function(x) paste(x[-1], collapse=" "))
+> 		if (any(!is.na(match(catnos, "*")))) {
+> 			isNA <- which(catnos == "*")
+> 			catnos <- catnos[-isNA]
+> 			catlabs <- catlabs[-isNA]
+> 		}
+> 		res at data[[1]] <- factor(res at data[[1]], levels=catnos, labels=catlabs)
+> 	} else {
+> 		res at data[[1]] <- as.integer(res at data[[1]])
+> 	}
+> 	res
+> }
+> 
+> on my machine, I think it is on CVS, but cannot check now. The change 
+> Edzer and I made to sp was the same that was made to the R/GRASS interface 
+> years ago, that is do not use data frames where possible, because they 
+> generate unique character row names, which we do not need. So we changed 
+> from the @data slot being a data frame that can be accessed like a matrix, 
+> to a list of equal length vectors, which can only be accessed by list 
+> member. Please try this change in the function. The error message isn't 
+> the same in the following, but you can see what is going on (unless I'm 
+> still wrong):
+> 
+> > df <- data.frame(a=sample(1:5,100,replace=TRUE))
+> > str(df)
+> `data.frame':   100 obs. of  1 variable:
+>  $ a: int  3 2 2 2 3 1 3 1 5 2 ...
+> > ldf <- as.list(df)
+> > str(ldf)
+> List of 1
+>  $ a: int [1:100] 3 2 2 2 3 1 3 1 5 2 ...
+> > df1 <- df
+> > df1[,1] <- factor(df[,1])
+> > str(df1)
+> `data.frame':   100 obs. of  1 variable:
+>  $ a: Factor w/ 5 levels "1","2","3","4",..: 3 2 2 2 3 1 3 1 5 2 ...
+> > ldf1 <- ldf
+> > ldf1[,1] <- factor(ldf[,1])
+> Error in ldf[, 1] : incorrect number of dimensions
+> > ldf1[[1]] <- factor(ldf[[1]])
+> > str(ldf1)
+> List of 1
+>  $ a: Factor w/ 5 levels "1","2","3","4",..: 3 2 2 2 3 1 3 1 5 2 ...
+> 
+> Best wishes,
+> 
+> Roger
+> 
+> PS. I think 0.7-7 read.asciigrid() is also wrong, that is it should not 
+> use data.frame() anyway, but I can't check that now.
+> 
+> > 
+> > Best regards
+> > 
+> >  Markus
+> > 
+> 
+> -- 
+> Roger Bivand
+> Economic Geography Section, Department of Economics, Norwegian School of
+> Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+> Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+> e-mail: Roger.Bivand at nhh.no
+> 
+
+-- 
+Markus Neteler     <neteler itc it>       http://mpa.itc.it
+ITC-irst -  Centro per la Ricerca Scientifica e Tecnologica
+MPBA - Predictive Models for Biol. & Environ. Data Analysis
+Via Sommarive, 18        -       38050 Povo (Trento), Italy
+
+
+
+From paulojus at est.ufpr.br  Thu Jun  9 17:33:54 2005
+From: paulojus at est.ufpr.br (Paulo Justiniano Ribeiro Jr)
+Date: Thu, 9 Jun 2005 12:33:54 -0300 (BRT)
+Subject: [R-sig-Geo] geoR help with kriging (newbie!)
+In-Reply-To: <1654961618.20050609134443@kingston.ac.uk>
+References: <1654961618.20050609134443@kingston.ac.uk>
+Message-ID: <Pine.LNX.4.58L0.0506091233480.32196@est.ufpr.br>
+
+Mike
+
+there are a few steps before kriging:
+
+1. a good exploratoruy analysis is aways a good ideia
+
+2. Parameter estimation
+   geoR implement 4 "methods"
+   2.1. empirical variogram (variog()) + subjective model fitting
+(eyefit())
+   2.2  empirical variogram (variog()) + least squares fit (variofit())
+   2.3  maximum likelihood (ML or REML) via likfit()
+   2.4  Bayesian method: krige.bayes()
+
+3. For the kriging function (krige.conv) you can either use the geodata
+format for oyur data (a list with "coords" and "data")
+or use the arguments "coords" and "data" passing to them the corresponding
+columns in your data matrix
+
+Furter detaisl in the geoR web page
+http://www.est.ufpr.br/geoR
+
+
+
+On Thu, 9 Jun 2005, Mike Smith wrote:
+
+> Hi
+>
+> I have recently been experimenting with the use of kriging, primarily
+> through Goldensoftware's Surfer. Having had a look around at the
+> packages available for R I see the geoR (amongst several) supports
+> kriging and so have started experimenting with this.
+>
+> What I am interested in doing is batch processing ~300 datasets using
+> ordinary kriging with an exact interpolator (which I believe has no nugget).
+>
+> As I am not expert with either R or kriging (!!) I was wondering
+> what the best command line options might be? I have been working
+> through the geoR intro and have a few queries:
+>
+> -the command below appears to cover everything I want to do, however do
+> I need to fit a model to the variogram first and, if so, where is this
+> specified (using krige?)
+> kc <- krige.conv(s100, loc = pred.grid, krige = krige.control(obj.m = ml))
+>
+> -the input file is a data frame with three columns; x and y coordinates
+> and a z value to interpolate. I would ideally like to tell geoR (using
+> loc) to take the max extent of my area and, at a specified point spacing,
+> interpolate a new grid.
+>
+>
+> Many thanks
+>
+> mike
+>
+>
+> --
+> Dr Mike J Smith
+> Editor-in-Chief: Journal of Maps
+> http://www.journalofmaps.com
+>
+> School of Earth Sciences and Geography
+> Kingston University
+> Penrhyn Road
+> Kingston-upon-Thames
+> Surrey
+> KT1 2EE UK
+> tel +44 (0)208 547 7500
+> fax +44 (0)208 547 7497
+> OS X/Y:518098/168540
+> Lat/Long: 51.403603/-0.303575
+>
+> Personal Webpage:
+> http://www.kingston.ac.uk/esg/staff/smith.htm
+>
+> -----BEGIN PGP PUBLIC KEY BLOCK-----
+> Version: 2.6
+>
+> mQCPA0AyMQwBbgEEAMDTRNYB5Zi2SbmOtnBULHWIMXFaK+MVSTqGPi66N8s0ZQaJ
+> bMggYe5ySdltKLgT1FFmJN48IdSzqvzwPAMD5pQEuyLadnBfFvdfJapBcvHTd1pL
+> h5ikc/3zUXnK/JegioA4bCPypGnhf/1HFx70GRhpSaEOiul+vK1pQRliQJz1ABEB
+> AAG0KU1pa2UgU21pdGggPG1pY2hhZWwuc21pdGhAa2luZ3N0b24uYWMudWs+iQCV
+> AwUQQDIxDK1pQRliQJz1AQHn1QQAqA+203XQM7t0GEhIUh4PFEMysT+s2jMGUkNm
+> eihQnyK+1ljBcG9Vt8DtzOC5s3Pop1G9nbW9vl7OYzSb4E5uQ5L5wFUz0TJ81mu6
+> V8u/1CsERi+eXcNre+MON+q1GYoerUSd6LTh/kj+4J+MU05zHpSMXVJQsr2wcaxJ
+> vDM8DHY=
+> =oIrO
+> -----END PGP PUBLIC KEY BLOCK-----
+>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>
+>
+
+Paulo Justiniano Ribeiro Jr
+LEG (Laborat?rio de Estat?stica e Geoinforma??o)
+Departamento de Estat?stica
+Universidade Federal do Paran?
+Caixa Postal 19.081
+CEP 81.531-990
+Curitiba, PR  -  Brasil
+Tel: (+55) 41 3361 3573
+Fax: (+55) 41 3361 3141
+e-mail: paulojus at est.ufpr.br
+http://www.est.ufpr.br/~paulojus
+
+
+
+From stanimura-ngs at umin.ac.jp  Thu Jun  9 19:01:29 2005
+From: stanimura-ngs at umin.ac.jp (Susumu Tanimura)
+Date: Fri, 10 Jun 2005 02:01:29 +0900
+Subject: [R-sig-Geo] Trouble with leglabs()
+Message-ID: <20050610020129.55687286.stanimura-ngs@umin.ac.jp>
+
+Hi there,
+
+This may be a silly question here, but I cannot solve a problem with
+leglabs().  
+
+> breaks <- c(0,300000, 600000, 900000,1200000,10000000)
+> leglabs(breaks)
+[1] "under 3e+05"     "3e+05 - 6e+05"   "6e+05 - 9e+05"   "9e+05 - 1200000"
+[5] "over 1200000"
+
+I do not need exponential expression but sequential zero.  It is very
+happy if you give me some advice.
+
+--
+Susumu Tanimura
+
+
+
+From nychka at cgd.ucar.edu  Thu Jun  9 20:15:24 2005
+From: nychka at cgd.ucar.edu (Doug Nychka)
+Date: Thu, 9 Jun 2005 12:15:24 -0600 (MDT)
+Subject: [R-sig-Geo] geoR help with kriging (newbie!)
+In-Reply-To: <1654961618.20050609134443@kingston.ac.uk>
+References: <1654961618.20050609134443@kingston.ac.uk>
+Message-ID: <Pine.GSO.4.53.0506091213510.14603@neva.cgd.ucar.edu>
+
+Mike,
+Also check the package fields for Kriging it may produce output closer to
+your application. If the locations are the fields Krig function can take
+advantage of multiple fits ( your 300 cases) to different obsreeved
+values.
+Doug
+
+-----------------------------------------------------------------------------
+Doug Nychka,
+
+Institute for Mathematics Applied to Geosciences
+National Center for Atmospheric Research
+Boulder, CO
+Email: nychka "AT" ucar "DOT" edu  Web: www.cgd.ucar.edu/~nychka
+Voice: 303-497-1711     FAX: 303-497-1333
+
+
+On Thu, 9 Jun 2005, Mike Smith wrote:
+
+> Hi
+>
+> I have recently been experimenting with the use of kriging, primarily
+> through Goldensoftware's Surfer. Having had a look around at the
+> packages available for R I see the geoR (amongst several) supports
+> kriging and so have started experimenting with this.
+>
+> What I am interested in doing is batch processing ~300 datasets using
+> ordinary kriging with an exact interpolator (which I believe has no nugget).
+>
+> As I am not expert with either R or kriging (!!) I was wondering
+> what the best command line options might be? I have been working
+> through the geoR intro and have a few queries:
+>
+> -the command below appears to cover everything I want to do, however do
+> I need to fit a model to the variogram first and, if so, where is this
+> specified (using krige?)
+> kc <- krige.conv(s100, loc = pred.grid, krige = krige.control(obj.m = ml))
+>
+> -the input file is a data frame with three columns; x and y coordinates
+> and a z value to interpolate. I would ideally like to tell geoR (using
+> loc) to take the max extent of my area and, at a specified point spacing,
+> interpolate a new grid.
+>
+>
+> Many thanks
+>
+> mike
+>
+>
+> --
+> Dr Mike J Smith
+> Editor-in-Chief: Journal of Maps
+> http://www.journalofmaps.com
+>
+> School of Earth Sciences and Geography
+> Kingston University
+> Penrhyn Road
+> Kingston-upon-Thames
+> Surrey
+> KT1 2EE UK
+> tel +44 (0)208 547 7500
+> fax +44 (0)208 547 7497
+> OS X/Y:518098/168540
+> Lat/Long: 51.403603/-0.303575
+>
+> Personal Webpage:
+> http://www.kingston.ac.uk/esg/staff/smith.htm
+>
+> -----BEGIN PGP PUBLIC KEY BLOCK-----
+> Version: 2.6
+>
+> mQCPA0AyMQwBbgEEAMDTRNYB5Zi2SbmOtnBULHWIMXFaK+MVSTqGPi66N8s0ZQaJ
+> bMggYe5ySdltKLgT1FFmJN48IdSzqvzwPAMD5pQEuyLadnBfFvdfJapBcvHTd1pL
+> h5ikc/3zUXnK/JegioA4bCPypGnhf/1HFx70GRhpSaEOiul+vK1pQRliQJz1ABEB
+> AAG0KU1pa2UgU21pdGggPG1pY2hhZWwuc21pdGhAa2luZ3N0b24uYWMudWs+iQCV
+> AwUQQDIxDK1pQRliQJz1AQHn1QQAqA+203XQM7t0GEhIUh4PFEMysT+s2jMGUkNm
+> eihQnyK+1ljBcG9Vt8DtzOC5s3Pop1G9nbW9vl7OYzSb4E5uQ5L5wFUz0TJ81mu6
+> V8u/1CsERi+eXcNre+MON+q1GYoerUSd6LTh/kj+4J+MU05zHpSMXVJQsr2wcaxJ
+> vDM8DHY=
+> =oIrO
+> -----END PGP PUBLIC KEY BLOCK-----
+>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>
+
+
+
+From Roger.Bivand at nhh.no  Thu Jun  9 22:59:11 2005
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Thu, 9 Jun 2005 22:59:11 +0200 (CEST)
+Subject: [R-sig-Geo] Trouble with leglabs()
+In-Reply-To: <20050610020129.55687286.stanimura-ngs@umin.ac.jp>
+Message-ID: <Pine.LNX.4.44.0506092256120.4813-100000@reclus.nhh.no>
+
+On Fri, 10 Jun 2005, Susumu Tanimura wrote:
+
+> Hi there,
+> 
+> This may be a silly question here, but I cannot solve a problem with
+> leglabs().  
+> 
+> > breaks <- c(0,300000, 600000, 900000,1200000,10000000)
+> > leglabs(breaks)
+> [1] "under 3e+05"     "3e+05 - 6e+05"   "6e+05 - 9e+05"   "9e+05 - 1200000"
+> [5] "over 1200000"
+> 
+> I do not need exponential expression but sequential zero.  It is very
+> happy if you give me some advice.
+
+I think you can convert the input vector to character first, using for 
+example the base formatC() function:
+
+> leglabs(formatC(breaks, digits=0, format="f"))
+[1] "under 300000"     "300000 - 600000"  "600000 - 900000"  "900000 - 1200000"
+[5] "over 1200000"  
+
+is probably close to your needs.
+
+> 
+> --
+> Susumu Tanimura
+> 
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From Roger.Bivand at nhh.no  Thu Jun  9 23:11:55 2005
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Thu, 9 Jun 2005 23:11:55 +0200 (CEST)
+Subject: [R-sig-Geo] geoR help with kriging (newbie!)
+In-Reply-To: <Pine.GSO.4.53.0506091213510.14603@neva.cgd.ucar.edu>
+Message-ID: <Pine.LNX.4.44.0506092301180.4813-100000@reclus.nhh.no>
+
+On Thu, 9 Jun 2005, Doug Nychka wrote:
+
+> Mike,
+> Also check the package fields for Kriging it may produce output closer to
+> your application. If the locations are the fields Krig function can take
+> advantage of multiple fits ( your 300 cases) to different obsreeved
+> values.
+> Doug
+
+Thanks to Doug and Paulo for replying so quickly; Mike's initial question
+was posted on R-help about the fields package, and moved here after the
+first reply there. I feel that Mike could try out some of the advice
+offered to get a feel for which approaches will suit his needs, with
+fields, geoR, and gstat, not to mention other packages, geostatistics is
+now an interesting "field" to be in using R. 
+
+We have tried to write our "Spatial" Task View (top left on your chosen
+CRAN) to help beginners - suggestions for improving the Task View are very
+welcome!
+
+Roger
+
+> 
+> -----------------------------------------------------------------------------
+> Doug Nychka,
+> 
+> Institute for Mathematics Applied to Geosciences
+> National Center for Atmospheric Research
+> Boulder, CO
+> Email: nychka "AT" ucar "DOT" edu  Web: www.cgd.ucar.edu/~nychka
+> Voice: 303-497-1711     FAX: 303-497-1333
+> 
+> 
+> On Thu, 9 Jun 2005, Mike Smith wrote:
+> 
+> > Hi
+> >
+> > I have recently been experimenting with the use of kriging, primarily
+> > through Goldensoftware's Surfer. Having had a look around at the
+> > packages available for R I see the geoR (amongst several) supports
+> > kriging and so have started experimenting with this.
+> >
+> > What I am interested in doing is batch processing ~300 datasets using
+> > ordinary kriging with an exact interpolator (which I believe has no nugget).
+> >
+> > As I am not expert with either R or kriging (!!) I was wondering
+> > what the best command line options might be? I have been working
+> > through the geoR intro and have a few queries:
+> >
+> > -the command below appears to cover everything I want to do, however do
+> > I need to fit a model to the variogram first and, if so, where is this
+> > specified (using krige?)
+> > kc <- krige.conv(s100, loc = pred.grid, krige = krige.control(obj.m = ml))
+> >
+> > -the input file is a data frame with three columns; x and y coordinates
+> > and a z value to interpolate. I would ideally like to tell geoR (using
+> > loc) to take the max extent of my area and, at a specified point spacing,
+> > interpolate a new grid.
+> >
+> >
+> > Many thanks
+> >
+> > mike
+> >
+> >
+> > --
+> > Dr Mike J Smith
+> > Editor-in-Chief: Journal of Maps
+> > http://www.journalofmaps.com
+> >
+> > School of Earth Sciences and Geography
+> > Kingston University
+> > Penrhyn Road
+> > Kingston-upon-Thames
+> > Surrey
+> > KT1 2EE UK
+> > tel +44 (0)208 547 7500
+> > fax +44 (0)208 547 7497
+> > OS X/Y:518098/168540
+> > Lat/Long: 51.403603/-0.303575
+> >
+> > Personal Webpage:
+> > http://www.kingston.ac.uk/esg/staff/smith.htm
+> >
+> > -----BEGIN PGP PUBLIC KEY BLOCK-----
+> > Version: 2.6
+> >
+> > mQCPA0AyMQwBbgEEAMDTRNYB5Zi2SbmOtnBULHWIMXFaK+MVSTqGPi66N8s0ZQaJ
+> > bMggYe5ySdltKLgT1FFmJN48IdSzqvzwPAMD5pQEuyLadnBfFvdfJapBcvHTd1pL
+> > h5ikc/3zUXnK/JegioA4bCPypGnhf/1HFx70GRhpSaEOiul+vK1pQRliQJz1ABEB
+> > AAG0KU1pa2UgU21pdGggPG1pY2hhZWwuc21pdGhAa2luZ3N0b24uYWMudWs+iQCV
+> > AwUQQDIxDK1pQRliQJz1AQHn1QQAqA+203XQM7t0GEhIUh4PFEMysT+s2jMGUkNm
+> > eihQnyK+1ljBcG9Vt8DtzOC5s3Pop1G9nbW9vl7OYzSb4E5uQ5L5wFUz0TJ81mu6
+> > V8u/1CsERi+eXcNre+MON+q1GYoerUSd6LTh/kj+4J+MU05zHpSMXVJQsr2wcaxJ
+> > vDM8DHY=
+> > =oIrO
+> > -----END PGP PUBLIC KEY BLOCK-----
+> >
+> > _______________________________________________
+> > R-sig-Geo mailing list
+> > R-sig-Geo at stat.math.ethz.ch
+> > https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> >
+> 
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From Roger.Bivand at nhh.no  Thu Jun  9 23:32:56 2005
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Thu, 9 Jun 2005 23:32:56 +0200 (CEST)
+Subject: [R-sig-Geo] R-stats - GRASS6
+In-Reply-To: <20050609151454.GQ3992@thuille.itc.it>
+Message-ID: <Pine.LNX.4.44.0506092317060.4813-100000@reclus.nhh.no>
+
+On Thu, 9 Jun 2005, Markus Neteler wrote:
+
+> Dear Roger,
+> 
+> sorry for the delay (was out for teaching). My installation is
+> untouched since then.
+> I tested you functions as proposed below, it helped:
+> 
+> > library(spgrass6)
+> Loading required package: rgdal
+> Loading required package: abind
+> Loading required package: pixmap
+> Geospatial Data Abstraction Library extensions to R successfully loaded
+> Loading required package: sp
+> > G <- gmeta6()
+> 
+> [now paste of the modified readCELL6sp() function]
+> 
+> > landcover <- readCELL6sp("landcover.30m", cat = TRUE)
+> > summary(landcover)
+> Object of class SpatialGridDataFrame
+> Coordinates:
+>               min     max
+> coords.x1  589995  608985
+> coords.x2 4913715 4927995
+> Is projected: TRUE
+> proj4string : [+proj=utm +zone=13 +a=6378206.4 +rf=294.9786982 +no_defs +nadgrids=conus]
+> Number of points: 2
+> Grid attributes:
+>   cellcentre.offset cellsize cells.dim
+> 1            589995       30       634
+> 2           4913715       30       477
+> Data attributes:
+>                       landcover.30m
+>  Evergreen Forest            :135375
+>  Grasslands/Herbaceous       : 67396
+>  Pasture/Hay                 : 56263
+>  Small Grains                :  9023
+>  Emergent Herbaceous Wetlands:  5673
+>  (Other)                     : 18587
+>  NA's                        : 10101
+> 
+> Now I tried to plot the map according your new article in the
+> GRASS Newsletter (http://grass.itc.it/newsletter/):
+> 
+> > image(landcover,"landcover.30m")
+> Error in image.default(as.image.SpatialGridDataFrame(x[attr], xcol, ycol),  :
+>         invalid z limits
+> In addition: Warning messages:
+> 1: no finite arguments to min; returning Inf
+> 2: no finite arguments to max; returning -Inf
+> 
+> Maybe I am missing something?
+
+Yes, you are plotting a factor, which image() is seeing as a character 
+matrix, and so rightly protests when it tries to find its range. This is 
+OK:
+
+> landcover1 <- readCELL6sp("landcover.30m", cat = FALSE)
+> image(landcover1,"landcover.30m", 
++   col=rainbow(nlevels(landcover at data[[1]])))
+
+but a bit meaningless. I'm not sure how to recover the category label
+matches to the GRASS color palette at the shell level - can r.colors
+report the current match? Thanks for flagging this need for improvement.
+
+Best wishes,
+
+Roger
+
+> 
+> Thanks
+> 
+>  Markus
+> 
+> On Wed, Jun 01, 2005 at 01:33:26PM +0200, Roger Bivand wrote:
+> > On Tue, 31 May 2005, Markus Neteler wrote:
+> > 
+> > > Dear Roger,
+> > > 
+> > > On Tue, May 31, 2005 at 06:53:31PM +0200, Roger Bivand wrote:
+> > > > On Tue, 31 May 2005, Markus Neteler wrote:
+> > > > 
+> > > > > Dear list members,
+> > > > > 
+> > > > > I am currently trying out the new GRASS 6/R-stats interface.
+> > > > > I installed all software today (R-2.1.0, all interfaces, using
+> > > > > GRASS 6.1-CVS).
+> > > > > 
+> > > > > There is a little problem which I don't understand:
+> > > > > 
+> > > > > > library(spgrass6)
+> > > > > > G <- gmeta6()
+> > > > > > str(G)
+> > > > > List of 28
+> > > > >  $ GISDBASE         : chr "/ssi0/ssi/neteler/grassdata"
+> > > > >  $ LOCATION_NAME    : chr "spearfish60"
+> > > > >  $ MAPSET           : chr "neteler"
+> > > > >  $ GRASS_DB_ENCODING: chr "utf-8"
+> > > > >  $ DEBUG            : chr "0"
+> > > > >  $ MONITOR          : chr "x0"
+> > > > >  $ GRASS_GUI        : chr "text"
+> > > > >  $ projection       : chr "1 (UTM)"
+> > > > > [...]
+> > > > > 
+> > > > > > system("r.info -t landcover.orig")
+> > > > > datatype=CELL
+> > > > > > landcover <- readCELL6sp("landcover.orig", cat = TRUE)
+> > > > > Error in "names<-.default"(`*tmp*`, value = "landcover.orig") :
+> > > > >         'names' attribute [1] must be the same length as the vector [0]
+> > > > 
+> > > > I can't replicate this, I'm afraid (R 2.1.0, Linux, sp 0.7-7, spgrass6
+> > > > 0.1-4 (from CVS on sourceforge, GRASS 6.0.0 release). I don't think the sp 
+> > > > or spgrass6 versions make a difference. 
+> > > > 
+> > > > Could you say debug(readCELL6sp) and re-run this please - that should show 
+> > > > which line is failing. Once we know that, please check the arguments to 
+> > > > that function for sanity. I don't think it is important, but I'm running 
+> > > > under LANG=en_GB ; export LANG, not UTF8. My current guess is that the 
+> > > > problem is in:
+> > > > 
+> > > > res <- read.asciigrid(tmpfl, colname = vname, proj4string = p4)
+> > > > 
+> > > > where vname is the layer name. If you additionally do 
+> > > > debug(read.asciigrid), it may fail at: names(df) = colname - please see 
+> > > > what is in colname, and if length(colname) is the same as length(df). One 
+> > > > possibility is that there is something amiss in read.asciigrid().
+> > > > 
+> > > > The landcover.orig layer is strange because there are no category labels 
+> > > > at all, so:
+> > > 
+> > > [... took the wrong landuse map, but it doesn't change ...]
+> > > 
+> > > > library(spgrass6)
+> > > Loading required package: rgdal
+> > > Loading required package: abind
+> > > Loading required package: pixmap
+> > > Geospatial Data Abstraction Library extensions to R successfully loaded
+> > > Loading required package: sp
+> > > > G <- gmeta6()
+> > > 
+> > > > landcover <- readCELL6sp("landcover.30m", cat = TRUE)
+> > > Error in "names<-.default"(`*tmp*`, value = "landcover.30m") :
+> > >         'names' attribute [1] must be the same length as the vector [0]
+> > > > debug(readCELL6sp)
+> > > 
+> > > > system("r.stats -l -q landcover.30m | head -20")
+> > > 11 Open Water
+> > > 21 Low Intensity Residential
+> > > 22 High Intensity Residential
+> > > 23 Commercial/Industrial/Transportation
+> > > 31 Bare Rock/Sand/Clay
+> > > 32 Quarries/Strip Mines/Gravel Pits
+> > > 41 Deciduous Forest
+> > > 42 Evergreen Forest
+> > > 43 Mixed Forest
+> > > 51 Shrubland
+> > > 71 Grasslands/Herbaceous
+> > > 81 Pasture/Hay
+> > > 82 Row Crops
+> > > 83 Small Grains
+> > > 85 Urban/Recreational Grasses
+> > > 91 Woody Wetlands
+> > > 92 Emergent Herbaceous Wetlands
+> > > * no data
+> > > 
+> > > > landcover <- readCELL6sp("landcover.30m", cat = TRUE)
+> > > debugging in: readCELL6sp("landcover.30m", cat = TRUE)
+> > > debug: {
+> > > [...]
+> > > }
+> > > Browse[1]>
+> > > debug: tmpfl <- tempfile()
+> > > Browse[1]>
+> > > debug: system(paste("r.out.arc input=", vname, " output=", tmpfl, sep = ""))
+> > > Browse[1]>
+> > > debug: library(sp)
+> > > Browse[1]>
+> > > debug: p4 <- CRS(system("g.proj -j -f", intern = TRUE))
+> > > Browse[1]>
+> > > debug: res <- read.asciigrid(tmpfl, colname = vname, proj4string = p4)
+> > > Browse[1]>
+> > > debug: if (cat) {
+> > >     cats <- strsplit(system(paste("r.stats -l -q", vname), intern = TRUE),
+> > >         " ")
+> > >     catnos <- sapply(cats, function(x) x[1])
+> > >     catlabs <- sapply(cats, function(x) paste(x[-1], collapse = " "))
+> > >     if (any(!is.na(match(catnos, "*")))) {
+> > >         isNA <- which(catnos == "*")
+> > >         catnos <- catnos[-isNA]
+> > >         catlabs <- catlabs[-isNA]
+> > >     }
+> > >     res at data[, 1] <- factor(res at data[, 1], levels = catnos, labels = catlabs)
+> > > } else {
+> > >     res at data[, 1] <- as.integer(res at data[, 1])
+> > > }
+> > > Browse[1]>
+> > > debug: cats <- strsplit(system(paste("r.stats -l -q", vname), intern = TRUE),
+> > >     " ")
+> > > Browse[1]>
+> > > debug: catnos <- sapply(cats, function(x) x[1])
+> > > Browse[1]>
+> > > debug: catlabs <- sapply(cats, function(x) paste(x[-1], collapse = " "))
+> > > Browse[1]>
+> > > debug: if (any(!is.na(match(catnos, "*")))) {
+> > >     isNA <- which(catnos == "*")
+> > >     catnos <- catnos[-isNA]
+> > >     catlabs <- catlabs[-isNA]
+> > > }
+> > > Browse[1]>
+> > > debug: isNA <- which(catnos == "*")
+> > > Browse[1]>
+> > > debug: catnos <- catnos[-isNA]
+> > > Browse[1]>
+> > > debug: catlabs <- catlabs[-isNA]
+> > > Browse[1]>
+> > > debug: res at data[, 1] <- factor(res at data[, 1], levels = catnos, labels = catlabs)
+> > > Browse[1]>
+> > > Error in "names<-.default"(`*tmp*`, value = "landcover.30m") :
+> > >         'names' attribute [1] must be the same length as the vector [0]
+> > > >  
+> > > 
+> > > 
+> > > > debug(read.asciigrid)
+> > > > undebug(readCELL6sp)
+> > > 
+> > > > landcover <- readCELL6sp("landcover.30m", cat = TRUE)
+> > > [...]
+> > > Browse[1]>
+> > > debug: df = data.frame(map)
+> > > Browse[1]>
+> > > debug: names(df) = colname
+> > > Browse[1]> length(colname)
+> > > [1] 1
+> > > Browse[1]> length(df)
+> > > [1] 1
+> > > Browse[1]> colname
+> > > [1] "landcover.30m"
+> > > Browse[1]> df
+> > > [...all values...]
+> > > 
+> > > > str(df)
+> > > `data.frame':   302418 obs. of  1 variable:
+> > >  $ map: num  NA NA NA NA NA NA NA NA NA NA ...
+> > > Browse[1]>
+> > > debug: grid = GridTopology(c(xllcenter, yllcenter), rep(cellsize, 2),
+> > >     c(ncols, nrows))
+> > > Browse[1]>
+> > > debug: SpatialGridDataFrame(grid, data = df, proj4string = proj4string)
+> > > Browse[1]>
+> > > exiting from: read.asciigrid(tmpfl, colname = vname, proj4string = p4)
+> > > Error in "names<-.default"(`*tmp*`, value = "landcover.30m") :
+> > >         'names' attribute [1] must be the same length as the vector [0]
+> > > >    
+> > > 
+> > > I don't know if this is already helpful.
+> > 
+> > Yes, looks as though the changes we made to sp in Valencia (you have sp 
+> > 0.7-7, right?) are getting in the way. When the data is being made into a 
+> > factor, the name of the data seems to be getting messed up. I have:
+> > 
+> > readCELL6sp <- function(vname, cat=FALSE) {
+> > 	tmpfl <- tempfile()
+> > 	system(paste("r.out.arc input=", vname, " output=", tmpfl, sep=""))
+> > 	library(sp)
+> > 	p4 <- CRS(system("g.proj -j -f", intern=TRUE))
+> > 	res <- read.asciigrid(tmpfl, colname=vname, proj4string=p4)
+> > 	if (cat) {
+> > 		cats <- strsplit(system(paste("r.stats -l -q", vname), 
+> > 			intern=TRUE), " ")
+> > 		catnos <- sapply(cats, function(x) x[1])
+> > 		catlabs <- sapply(cats, function(x) paste(x[-1], collapse=" "))
+> > 		if (any(!is.na(match(catnos, "*")))) {
+> > 			isNA <- which(catnos == "*")
+> > 			catnos <- catnos[-isNA]
+> > 			catlabs <- catlabs[-isNA]
+> > 		}
+> > 		res at data[[1]] <- factor(res at data[[1]], levels=catnos, labels=catlabs)
+> > 	} else {
+> > 		res at data[[1]] <- as.integer(res at data[[1]])
+> > 	}
+> > 	res
+> > }
+> > 
+> > on my machine, I think it is on CVS, but cannot check now. The change 
+> > Edzer and I made to sp was the same that was made to the R/GRASS interface 
+> > years ago, that is do not use data frames where possible, because they 
+> > generate unique character row names, which we do not need. So we changed 
+> > from the @data slot being a data frame that can be accessed like a matrix, 
+> > to a list of equal length vectors, which can only be accessed by list 
+> > member. Please try this change in the function. The error message isn't 
+> > the same in the following, but you can see what is going on (unless I'm 
+> > still wrong):
+> > 
+> > > df <- data.frame(a=sample(1:5,100,replace=TRUE))
+> > > str(df)
+> > `data.frame':   100 obs. of  1 variable:
+> >  $ a: int  3 2 2 2 3 1 3 1 5 2 ...
+> > > ldf <- as.list(df)
+> > > str(ldf)
+> > List of 1
+> >  $ a: int [1:100] 3 2 2 2 3 1 3 1 5 2 ...
+> > > df1 <- df
+> > > df1[,1] <- factor(df[,1])
+> > > str(df1)
+> > `data.frame':   100 obs. of  1 variable:
+> >  $ a: Factor w/ 5 levels "1","2","3","4",..: 3 2 2 2 3 1 3 1 5 2 ...
+> > > ldf1 <- ldf
+> > > ldf1[,1] <- factor(ldf[,1])
+> > Error in ldf[, 1] : incorrect number of dimensions
+> > > ldf1[[1]] <- factor(ldf[[1]])
+> > > str(ldf1)
+> > List of 1
+> >  $ a: Factor w/ 5 levels "1","2","3","4",..: 3 2 2 2 3 1 3 1 5 2 ...
+> > 
+> > Best wishes,
+> > 
+> > Roger
+> > 
+> > PS. I think 0.7-7 read.asciigrid() is also wrong, that is it should not 
+> > use data.frame() anyway, but I can't check that now.
+> > 
+> > > 
+> > > Best regards
+> > > 
+> > >  Markus
+> > > 
+> > 
+> > -- 
+> > Roger Bivand
+> > Economic Geography Section, Department of Economics, Norwegian School of
+> > Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+> > Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+> > e-mail: Roger.Bivand at nhh.no
+> > 
+> 
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From ernesto at ipimar.pt  Fri Jun 10 00:40:45 2005
+From: ernesto at ipimar.pt (Ernesto Jardim)
+Date: Thu, 09 Jun 2005 23:40:45 +0100
+Subject: [R-sig-Geo] Re: [R] Using transform on spproj package.
+Message-ID: <42A8C56D.90805@ipimar.pt>
+
+Hi,
+
+Following the advice from Roger I'm posting this issue on r-sig-geo.
+
+The previous thread is below.
+
+Responding Roger, yes you're correct these locations are near Cabo de 
+Sines, so I should correct the proj4string to latlon.
+
+However my main issue still exists. Why the transform is working on X only ?
+
+EJ
+
+ps: I'm using linux with R2.1.0 and I'm new to the sp family.
+
+On Thu, 9 Jun 2005, Ernesto Jardim wrote:
+
+> Hi,
+> 
+> I'm trying to use transform my mercator locations into utm but I'm doing 
+> something wrong because only x is transformed ... see
+
+Two points: I think you are getting the transform you specify, from
++proj=merc to +proj=utm with a different x origin - I suspect you meant
++proj=latlong for the input data. If the coordinates below are somewhere
+off Cabo de Sines, they are latlong.
+
+Second, spproj is not on CRAN, so either the R-spatial-dev mailing list on
+sourceforge (where spproj and friends are living while they grow up) or
+the R-sig-geo list might have been a good choice. Please consider
+continuing this on R-sig-geo.
+
+Best wishes,
+
+Roger
+
+> 
+>  > xy.sp
+> SpatialPoints:
+>         loni  lati
+>   [1,] -8.85 38.16
+>   [2,] -9.19 37.99
+>   [3,] -9.11 37.97
+>   [4,] -9.06 38.15
+>   [5,] -9.03 37.87
+>   [6,] -9.14 37.81
+>   [7,] -9.09 37.70
+>   [8,] -8.95 37.45
+>   [9,] -9.17 37.37
+> [10,] -9.00 37.34
+> Coordinate Reference System (CRS) arguments: +proj=merc +datum=WGS84
+>  > transform(xy.sp, CRS("+proj=utm +zone=29"))
+> SpatialPoints:
+>           loni     lati
+>   [1,] 1505638 38.62347
+>   [2,] 1505638 38.45141
+>   [3,] 1505638 38.43116
+>   [4,] 1505638 38.61335
+>   [5,] 1505638 38.32995
+>   [6,] 1505638 38.26922
+>   [7,] 1505638 38.15788
+>   [8,] 1505638 37.90485
+>   [9,] 1505638 37.82388
+> [10,] 1505638 37.79351
+> Coordinate Reference System (CRS) arguments:  +proj=utm +zone=29 
+> +ellps=WGS84
+> 
+> What am I doing wrong ?
+> 
+> Thanks
+> 
+> EJ
+> 
+> ______________________________________________
+> R-help at stat.math.ethz.ch mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-help
+> PLEASE do read the posting guide! http://www.R-project.org/posting-guide.html
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From stanimura-ngs at umin.ac.jp  Fri Jun 10 04:12:21 2005
+From: stanimura-ngs at umin.ac.jp (Susumu Tanimura)
+Date: Fri, 10 Jun 2005 11:12:21 +0900
+Subject: [R-sig-Geo] Trouble with leglabs()
+In-Reply-To: <Pine.LNX.4.44.0506092256120.4813-100000@reclus.nhh.no>
+References: <20050610020129.55687286.stanimura-ngs@umin.ac.jp>
+	<Pine.LNX.4.44.0506092256120.4813-100000@reclus.nhh.no>
+Message-ID: <20050610111221.677fcb58.stanimura-ngs@umin.ac.jp>
+
+Hi Roger,
+
+Thank you for your quick and appropriate reply. I am very happy to
+know formatC().
+
+--
+Susumu Tanimura
+
+
+
+From Alexander.Herr at csiro.au  Fri Jun 10 07:09:34 2005
+From: Alexander.Herr at csiro.au (Alexander.Herr at csiro.au)
+Date: Fri, 10 Jun 2005 15:09:34 +1000
+Subject: [R-sig-Geo] Size limit for krige.conv
+Message-ID: <062AE320EF971E40ACD0F6C93391D7694FF740@exqld1-tsv.nexus.csiro.au>
+
+Hi list,
+
+I get "Error: cannot allocate vector of size 390585 Kb". The file has 10000 locations. Is there a size limit to krige.conv?
+
+Thanks Herry
+
+--------------------------------------------
+Alexander Herr - Herry
+Northern Futures
+Davies Laboratory, CSIRO
+PMB, Aitkenvale, QLD 4814
+Phone (07) 4753 8510
+Fax?? (07) 4753 8650
+Home: http://herry.ausbats.org.au
+Webadmin ABS: http://ausbats.org.au
+Sustainable Ecosystems: http://www.cse.csiro.au/
+
+
+
+From Roger.Bivand at nhh.no  Fri Jun 10 08:44:39 2005
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Fri, 10 Jun 2005 08:44:39 +0200 (CEST)
+Subject: [R-sig-Geo] [R] Using transform on spproj package.
+In-Reply-To: <42A8C56D.90805@ipimar.pt>
+Message-ID: <Pine.LNX.4.44.0506100835450.5742-100000@reclus.nhh.no>
+
+On Thu, 9 Jun 2005, Ernesto Jardim wrote:
+
+> Hi,
+> 
+> Following the advice from Roger I'm posting this issue on r-sig-geo.
+> 
+> The previous thread is below.
+> 
+> Responding Roger, yes you're correct these locations are near Cabo de 
+> Sines, so I should correct the proj4string to latlon.
+> 
+> However my main issue still exists. Why the transform is working on X only ?
+
+Well, since +proj=merc is in metre units measured from its origin (so x is 
+8 metres west of the white line outside the Greenwich observatory) and y 
+is just north of the equator, all +proj=utm is doing is changing the x 
+origin to about 12 degrees west, and finding that Greenwich is 1505 km 
+further east. The distance north of the equator doesn't change. But in 
+fact the input data are measured in decimal degrees in latlong, not metres 
+measured from the intersection of the line through Greenwich and the 
+equator. I sometimes think of these things like time zones (and daylight 
+saving time) in two dimensions.
+
+Hope this helps,
+
+Roger
+
+> 
+> EJ
+> 
+> ps: I'm using linux with R2.1.0 and I'm new to the sp family.
+> 
+> On Thu, 9 Jun 2005, Ernesto Jardim wrote:
+> 
+> > Hi,
+> > 
+> > I'm trying to use transform my mercator locations into utm but I'm doing 
+> > something wrong because only x is transformed ... see
+> 
+> Two points: I think you are getting the transform you specify, from
+> +proj=merc to +proj=utm with a different x origin - I suspect you meant
+> +proj=latlong for the input data. If the coordinates below are somewhere
+> off Cabo de Sines, they are latlong.
+> 
+> Second, spproj is not on CRAN, so either the R-spatial-dev mailing list on
+> sourceforge (where spproj and friends are living while they grow up) or
+> the R-sig-geo list might have been a good choice. Please consider
+> continuing this on R-sig-geo.
+> 
+> Best wishes,
+> 
+> Roger
+> 
+> > 
+> >  > xy.sp
+> > SpatialPoints:
+> >         loni  lati
+> >   [1,] -8.85 38.16
+> >   [2,] -9.19 37.99
+> >   [3,] -9.11 37.97
+> >   [4,] -9.06 38.15
+> >   [5,] -9.03 37.87
+> >   [6,] -9.14 37.81
+> >   [7,] -9.09 37.70
+> >   [8,] -8.95 37.45
+> >   [9,] -9.17 37.37
+> > [10,] -9.00 37.34
+> > Coordinate Reference System (CRS) arguments: +proj=merc +datum=WGS84
+> >  > transform(xy.sp, CRS("+proj=utm +zone=29"))
+> > SpatialPoints:
+> >           loni     lati
+> >   [1,] 1505638 38.62347
+> >   [2,] 1505638 38.45141
+> >   [3,] 1505638 38.43116
+> >   [4,] 1505638 38.61335
+> >   [5,] 1505638 38.32995
+> >   [6,] 1505638 38.26922
+> >   [7,] 1505638 38.15788
+> >   [8,] 1505638 37.90485
+> >   [9,] 1505638 37.82388
+> > [10,] 1505638 37.79351
+> > Coordinate Reference System (CRS) arguments:  +proj=utm +zone=29 
+> > +ellps=WGS84
+> > 
+> > What am I doing wrong ?
+> > 
+> > Thanks
+> > 
+> > EJ
+> > 
+> > ______________________________________________
+> > R-help at stat.math.ethz.ch mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-help
+> > PLEASE do read the posting guide! http://www.R-project.org/posting-guide.html
+> > 
+> 
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From Roger.Bivand at nhh.no  Fri Jun 10 08:54:38 2005
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Fri, 10 Jun 2005 08:54:38 +0200 (CEST)
+Subject: [R-sig-Geo] Size limit for krige.conv
+In-Reply-To: <062AE320EF971E40ACD0F6C93391D7694FF740@exqld1-tsv.nexus.csiro.au>
+Message-ID: <Pine.LNX.4.44.0506100851180.5742-100000@reclus.nhh.no>
+
+On Fri, 10 Jun 2005 Alexander.Herr at csiro.au wrote:
+
+> Hi list,
+> 
+> I get "Error: cannot allocate vector of size 390585 Kb". The file has
+> 10000 locations. Is there a size limit to krige.conv?
+
+krige.conv() in the geoR package has size constraints - I believe that the 
+full interpoint matrix is needed, and its strengths are in handling 
+smaller but challenging data sets. Unless you have to use this function, 
+paerhaps you could consider alternatives in the gstat or fields packages, 
+which can be given arguments which will let you use large data sets.
+
+> 
+> Thanks Herry
+> 
+> --------------------------------------------
+> Alexander Herr - Herry
+> Northern Futures
+> Davies Laboratory, CSIRO
+> PMB, Aitkenvale, QLD 4814
+> Phone (07) 4753 8510
+> Fax?? (07) 4753 8650
+> Home: http://herry.ausbats.org.au
+> Webadmin ABS: http://ausbats.org.au
+> Sustainable Ecosystems: http://www.cse.csiro.au/
+> 
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From pebesma at geog.uu.nl  Fri Jun 10 19:28:04 2005
+From: pebesma at geog.uu.nl (pebesma at geog.uu.nl)
+Date: Fri, 10 Jun 2005 19:28:04 +0200 (CEST)
+Subject: [R-sig-Geo] Size limit for krige.conv
+In-Reply-To: <Pine.LNX.4.44.0506100851180.5742-100000@reclus.nhh.no>
+References: <062AE320EF971E40ACD0F6C93391D7694FF740@exqld1-tsv.nexus.csiro.au>
+	<Pine.LNX.4.44.0506100851180.5742-100000@reclus.nhh.no>
+Message-ID: <2673.213.36.8.154.1118424484.squirrel@213.36.8.154>
+
+Alexander,
+
+package gstat has the option to krige in a local neighbourhood,
+so you don't need to build (and invert!) a 10000x10000 = 800+ Mb
+matrix. Look at the options maxdist or nmax in function krige.
+
+Hth,
+--
+Edzer
+
+> On Fri, 10 Jun 2005 Alexander.Herr at csiro.au wrote:
+>
+>> Hi list,
+>>
+>> I get "Error: cannot allocate vector of size 390585 Kb". The file has
+>> 10000 locations. Is there a size limit to krige.conv?
+>
+> krige.conv() in the geoR package has size constraints - I believe that the
+> full interpoint matrix is needed, and its strengths are in handling
+> smaller but challenging data sets. Unless you have to use this function,
+> paerhaps you could consider alternatives in the gstat or fields packages,
+> which can be given arguments which will let you use large data sets.
+>
+>>
+>> Thanks Herry
+>>
+>> --------------------------------------------
+>> Alexander Herr - Herry
+>> Northern Futures
+>> Davies Laboratory, CSIRO
+>> PMB, Aitkenvale, QLD 4814
+>> Phone (07) 4753 8510
+>> Fax?? (07) 4753 8650
+>> Home: http://herry.ausbats.org.au
+>> Webadmin ABS: http://ausbats.org.au
+>> Sustainable Ecosystems: http://www.cse.csiro.au/
+>>
+>> _______________________________________________
+>> R-sig-Geo mailing list
+>> R-sig-Geo at stat.math.ethz.ch
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>>
+>
+> --
+> Roger Bivand
+> Economic Geography Section, Department of Economics, Norwegian School of
+> Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+> Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+> e-mail: Roger.Bivand at nhh.no
+>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>
+
+
+
+From drf5n at maplepark.com  Fri Jun 10 19:44:32 2005
+From: drf5n at maplepark.com (David Forrest)
+Date: Fri, 10 Jun 2005 12:44:32 -0500 (CDT)
+Subject: [R-sig-Geo] [R] Plot/manage spatial boundary data
+In-Reply-To: <Pine.LNX.4.44.0506100855290.5742-100000@reclus.nhh.no>
+References: <Pine.LNX.4.44.0506100855290.5742-100000@reclus.nhh.no>
+Message-ID: <Pine.LNX.4.58.0506101225330.21844@maplepark.com>
+
+On Fri, 10 Jun 2005, Roger Bivand wrote:
+
+> On Thu, 9 Jun 2005, David Forrest wrote:
+>
+> > I have some disconnected boundary data from a finite element ocean model
+> > and I'd like to make a plot.
+> >
+> > Maptools looks promising, but since my data is not in a shapefile or a
+> > map, I'm unclear on what the best way to approach the problem.
+>
+> If the line segments are unconnected, you will first need to establish
+> (short) lists saying which segments (in which order and direction) bound
+> each polygon to be filled with colour when plotting. A package you can
+> consider for "rolling your own" spatial rings is sp, which is on CRAN.
+
+The segments are largely connected -- my domain is bounded by a list of
+open boundary segments, land boundary segments, and several islands.
+library(sp) looks like the proper tool.
+
+> Once you have the list describing segment membership, order and direction
+> for each ring, building a SpatialRings object is not difficult. The hard
+> bit is going from spaghetti line segments to the list imposing order.
+>
+> Alternatively, the PBSmapping package may have suitable functions for
+> coersing polySet objects into rings. If your coordinates were in the
+> Pacific, I'd say PBSmapping might already have what you need, but your
+> example coordinates are Atlantic.
+>
+> (Could I suggest moving this discussion to R-sig-geo, referenced in the
+> "Spatial" Task View on CRAN (top left corner in navigation bar)?
+
+Sure.  I just subscribed.
+
+How do you find the Task Views?  I found the mailing list off of
+http://www.r-project.org/ -- Mailing Lists and the CRAN link brings up
+mirrors.
+
+Doh! I just answered my own question; these are different:
+
+   http://www.r-project.org/
+   http://cran.r-project.org/
+
+I thought they were simple mirrors of the homepage for downloading, but
+the menus are different.
+
+The page at http://cran.r-project.org/ Task Views / Spatial
+http://cran.r-project.org/src/contrib/Views/Spatial.html looks like just
+what I need.  Thanks again.
+
+> >
+> > >geom[1:10,]
+> >          lon      lat  depth
+> > 1  -75.42481 35.58192 16.172
+> > 2  -75.40726 35.58567 18.045
+> > 3  -75.41351 35.60312 17.333
+> > 4  -75.38888 35.58959 20.787
+> > 5  -75.39495 35.60706 19.834
+> > 6  -75.36964 35.59370 20.950
+> > 7  -75.37556 35.61159 20.941
+> > 8  -75.35530 35.61660 23.107
+> > 9  -75.34950 35.59800 22.960
+> > 10 -75.33418 35.62194 23.934
+> >
+> > >island1<-c(2,3,4,2)
+> > >water<-c(1,3,5,7,8,10)
+> > > land<-c(1,2,4,6,9,10)
+> > > plot(geom$lon[land],geom$lat[land],pch='.',t='l')
+> >  lines(geom$lon[water],geom$lat[water],pch='.',t='l',col="blue")
+> >  lines(geom$lon[island1],geom$lat[island1],pch='.',t='l',col="green")
+> >
+> > The above is toy-sized: dim(geom) is on the order of 120000,3 and there
+> > are about 30 different islands.  Maptools seems devoted to shapefiles,
+> > and it is unclear how to create 'polylists'.
+> >
+> > Is there a good way to manage and graph data defined on irregular grids?
+> >
+> > Dave
+
+Dave
+-- 
+ Dr. David Forrest
+ drf at vims.edu                                    (804)684-7900w
+ drf5n at maplepark.com                             (804)642-0662h
+                                   http://maplepark.com/~drf5n/
+
+
+
+From Roger.Bivand at nhh.no  Fri Jun 10 20:14:26 2005
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Fri, 10 Jun 2005 20:14:26 +0200 (CEST)
+Subject: [R-sig-Geo] [R] Plot/manage spatial boundary data
+In-Reply-To: <Pine.LNX.4.58.0506101225330.21844@maplepark.com>
+Message-ID: <Pine.LNX.4.44.0506102010140.5742-100000@reclus.nhh.no>
+
+On Fri, 10 Jun 2005, David Forrest wrote:
+
+> On Fri, 10 Jun 2005, Roger Bivand wrote:
+> 
+> > On Thu, 9 Jun 2005, David Forrest wrote:
+> >
+> > > I have some disconnected boundary data from a finite element ocean model
+> > > and I'd like to make a plot.
+> > >
+> > > Maptools looks promising, but since my data is not in a shapefile or a
+> > > map, I'm unclear on what the best way to approach the problem.
+> >
+> > If the line segments are unconnected, you will first need to establish
+> > (short) lists saying which segments (in which order and direction) bound
+> > each polygon to be filled with colour when plotting. A package you can
+> > consider for "rolling your own" spatial rings is sp, which is on CRAN.
+> 
+> The segments are largely connected -- my domain is bounded by a list of
+> open boundary segments, land boundary segments, and several islands.
+> library(sp) looks like the proper tool.
+
+If you can identify the open segments, and make Sline objects of them, 
+you'll get the bounding box too (bbox() of the output object). That gives 
+you the coordinates you need to close them against the study area boundary 
+(assumed rectangular in latlong), by rbind() to the input coordinates for 
+the missing bits, and copy in coords[1,] at the end to close. Since the 
+islands are closed rings anyway, I think this should work. Please let us 
+know how you get on.
+
+Roger
+
+> 
+> > Once you have the list describing segment membership, order and direction
+> > for each ring, building a SpatialRings object is not difficult. The hard
+> > bit is going from spaghetti line segments to the list imposing order.
+> >
+> > Alternatively, the PBSmapping package may have suitable functions for
+> > coersing polySet objects into rings. If your coordinates were in the
+> > Pacific, I'd say PBSmapping might already have what you need, but your
+> > example coordinates are Atlantic.
+> >
+> > (Could I suggest moving this discussion to R-sig-geo, referenced in the
+> > "Spatial" Task View on CRAN (top left corner in navigation bar)?
+> 
+> Sure.  I just subscribed.
+> 
+> How do you find the Task Views?  I found the mailing list off of
+> http://www.r-project.org/ -- Mailing Lists and the CRAN link brings up
+> mirrors.
+> 
+> Doh! I just answered my own question; these are different:
+> 
+>    http://www.r-project.org/
+>    http://cran.r-project.org/
+> 
+> I thought they were simple mirrors of the homepage for downloading, but
+> the menus are different.
+> 
+> The page at http://cran.r-project.org/ Task Views / Spatial
+> http://cran.r-project.org/src/contrib/Views/Spatial.html looks like just
+> what I need.  Thanks again.
+> 
+> > >
+> > > >geom[1:10,]
+> > >          lon      lat  depth
+> > > 1  -75.42481 35.58192 16.172
+> > > 2  -75.40726 35.58567 18.045
+> > > 3  -75.41351 35.60312 17.333
+> > > 4  -75.38888 35.58959 20.787
+> > > 5  -75.39495 35.60706 19.834
+> > > 6  -75.36964 35.59370 20.950
+> > > 7  -75.37556 35.61159 20.941
+> > > 8  -75.35530 35.61660 23.107
+> > > 9  -75.34950 35.59800 22.960
+> > > 10 -75.33418 35.62194 23.934
+> > >
+> > > >island1<-c(2,3,4,2)
+> > > >water<-c(1,3,5,7,8,10)
+> > > > land<-c(1,2,4,6,9,10)
+> > > > plot(geom$lon[land],geom$lat[land],pch='.',t='l')
+> > >  lines(geom$lon[water],geom$lat[water],pch='.',t='l',col="blue")
+> > >  lines(geom$lon[island1],geom$lat[island1],pch='.',t='l',col="green")
+> > >
+> > > The above is toy-sized: dim(geom) is on the order of 120000,3 and there
+> > > are about 30 different islands.  Maptools seems devoted to shapefiles,
+> > > and it is unclear how to create 'polylists'.
+> > >
+> > > Is there a good way to manage and graph data defined on irregular grids?
+> > >
+> > > Dave
+> 
+> Dave
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From drf5n at maplepark.com  Fri Jun 10 22:54:24 2005
+From: drf5n at maplepark.com (David Forrest)
+Date: Fri, 10 Jun 2005 15:54:24 -0500 (CDT)
+Subject: [R-sig-Geo] [R] Plot/manage spatial boundary data
+In-Reply-To: <Pine.LNX.4.44.0506102010140.5742-100000@reclus.nhh.no>
+References: <Pine.LNX.4.44.0506102010140.5742-100000@reclus.nhh.no>
+Message-ID: <Pine.LNX.4.58.0506101447370.21844@maplepark.com>
+
+On Fri, 10 Jun 2005, Roger Bivand wrote:
+...
+> > The segments are largely connected -- my domain is bounded by a list of
+> > open boundary segments, land boundary segments, and several islands.
+> > library(sp) looks like the proper tool.
+>
+> If you can identify the open segments, and make Sline objects of them,
+> you'll get the bounding box too (bbox() of the output object). That gives
+> you the coordinates you need to close them against the study area boundary
+> (assumed rectangular in latlong), by rbind() to the input coordinates for
+> the missing bits, and copy in coords[1,] at the end to close. Since the
+> islands are closed rings anyway, I think this should work. Please let us
+> know how you get on.
+>
+> Roger
+
+Thanks,
+  I'm poking around my data to see what is my boundary lists
+
+http://www.maplepark.com/~drf5n/cgi-bin/wiki.cgi?ElcircVisualization has
+an old sample dataset (in UTM zone 18?) (and the boundary information is
+missing in that old sample file).
+
+On a more current output file, (with a proprietary FEM grid) it looks like
+only one of the 27 boundaries are closed, and that may be accidental.
+Boundary segment 0 is the ocean open-boundary condition, and when appended
+to boundary segment 27, the Chesapeake Bay coastline, it forms a closed
+loop around my model domain.
+
+http://www.maplepark.com/~drf5n/cgi-bin/wiki.cgi?ElcircVisualization
+
+has a few of my boundary extractor functions.
+
+At this point, I have a closed boundary surrounding my domain, and 3 time
+series of spatial fields defined at node points that I can index into my
+geom[] dataframe.
+
+I'm really not experienced in GIS, but a product I would like to make
+from this data is a plot of the water height or surface current vectors
+at a set of times.  As the plot on the page referenced above shows, I'm
+not sure what to do next.
+
+I'd like to mask off the coastline, plot either a selection of my node
+points or interpolate onto a regular grid within the polygon, not
+interpolate across the dirt, and use R to visualize the results of my
+model.
+
+I saw http://r-spatial.sourceforge.net/gallery/ , and the code there looks
+like it could help.  I'll dig into that.
+
+Meanwhile, which text should I buy and read?
+
+Thanks for your time,
+Dave
+-- 
+ Dr. David Forrest
+ drf at vims.edu                                    (804)684-7900w
+ drf5n at maplepark.com                             (804)642-0662h
+                                   http://maplepark.com/~drf5n/
+
+
+
+From Roger.Bivand at nhh.no  Fri Jun 10 23:25:26 2005
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Fri, 10 Jun 2005 23:25:26 +0200 (CEST)
+Subject: [R-sig-Geo] [R] Plot/manage spatial boundary data
+In-Reply-To: <Pine.LNX.4.58.0506101447370.21844@maplepark.com>
+Message-ID: <Pine.LNX.4.44.0506102318060.5742-100000@reclus.nhh.no>
+
+On Fri, 10 Jun 2005, David Forrest wrote:
+
+> On Fri, 10 Jun 2005, Roger Bivand wrote:
+> ...
+> > > The segments are largely connected -- my domain is bounded by a list of
+> > > open boundary segments, land boundary segments, and several islands.
+> > > library(sp) looks like the proper tool.
+> >
+> > If you can identify the open segments, and make Sline objects of them,
+> > you'll get the bounding box too (bbox() of the output object). That gives
+> > you the coordinates you need to close them against the study area boundary
+> > (assumed rectangular in latlong), by rbind() to the input coordinates for
+> > the missing bits, and copy in coords[1,] at the end to close. Since the
+> > islands are closed rings anyway, I think this should work. Please let us
+> > know how you get on.
+> >
+> > Roger
+> 
+> Thanks,
+>   I'm poking around my data to see what is my boundary lists
+> 
+> http://www.maplepark.com/~drf5n/cgi-bin/wiki.cgi?ElcircVisualization has
+> an old sample dataset (in UTM zone 18?) (and the boundary information is
+> missing in that old sample file).
+> 
+> On a more current output file, (with a proprietary FEM grid) it looks like
+> only one of the 27 boundaries are closed, and that may be accidental.
+> Boundary segment 0 is the ocean open-boundary condition, and when appended
+> to boundary segment 27, the Chesapeake Bay coastline, it forms a closed
+> loop around my model domain.
+> 
+> http://www.maplepark.com/~drf5n/cgi-bin/wiki.cgi?ElcircVisualization
+> 
+> has a few of my boundary extractor functions.
+> 
+> At this point, I have a closed boundary surrounding my domain, and 3 time
+> series of spatial fields defined at node points that I can index into my
+> geom[] dataframe.
+> 
+> I'm really not experienced in GIS, but a product I would like to make
+> from this data is a plot of the water height or surface current vectors
+> at a set of times.  As the plot on the page referenced above shows, I'm
+> not sure what to do next.
+> 
+> I'd like to mask off the coastline, plot either a selection of my node
+> points or interpolate onto a regular grid within the polygon, not
+> interpolate across the dirt, and use R to visualize the results of my
+> model.
+> 
+> I saw http://r-spatial.sourceforge.net/gallery/ , and the code there looks
+> like it could help.  I'll dig into that.
+
+I think that the overlay() methods there will help once the polygons are 
+constructed, the SpatialPixels* classes would be the ones to try to reach 
+(a grid with the NA grid cells dropped). I'm not sure of the next steps 
+either, probably once a SpatialRings object can be plotted, then 
+overlaying on the grid you are making for interp() should move things 
+along. 
+
+> 
+> Meanwhile, which text should I buy and read?
+> 
+
+For now the source code is the best reference, there is some documentation 
+on sourceforge (the gallery figures all have code), and this discussion 
+will be in the list archives for the next researcher with similar needs!
+
+Best wishes,
+
+Roger
+
+
+> Thanks for your time,
+> Dave
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From cavallini at faunalia.it  Mon Jun 13 19:51:47 2005
+From: cavallini at faunalia.it (Paolo Cavallini)
+Date: Mon, 13 Jun 2005 19:51:47 +0200
+Subject: [R-sig-Geo] installing spgrass6
+Message-ID: <200506131951.47673.cavallini@faunalia.it>
+
+Hi all.
+Dunno whether this is the right place to ask, but I am trying to install 
+spgrass6 on an updated debian testing box, and I start with:
+
+install.packages(c("sp","rgdal"), dependencies=TRUE)
+
+but I get
+
+Avviso in install.packages(c("sp", "rgdal"), dependencies = TRUE) :
+         argument 'lib' is missing: using /usr/local/lib/R/site-library
+--- Please select a CRAN mirror for use in this session ---
+Xlib: connection to ":0.0" refused by server
+Xlib: No protocol specified
+Errore in inherits(x, "factor") : oggetto "res" non trovato
+
+Any hint would be greaatly appreciated.
+
+All the best.
+pc
+-- 
+Paolo Cavallini
+cavallini at faunalia.it   www.faunalia.it   www.faunalia.com
+Piazza Garibaldi 5 - 56025 Pontedera (PI), Italy   Tel: (+39)348-3801953
+
+
+
+From tkeitt at mail.utexas.edu  Mon Jun 13 20:16:15 2005
+From: tkeitt at mail.utexas.edu (Tim Keitt)
+Date: Mon, 13 Jun 2005 13:16:15 -0500
+Subject: [R-sig-Geo] installing spgrass6
+In-Reply-To: <200506131951.47673.cavallini@faunalia.it>
+References: <200506131951.47673.cavallini@faunalia.it>
+Message-ID: <1118686575.12099.18.camel@fosteri.keittlab.net>
+
+You need to set the CRAN option to point to a mirror. The latest
+versions of R don't provide a default mirror anymore.
+
+THK
+
+On Mon, 2005-06-13 at 19:51 +0200, Paolo Cavallini wrote:
+> Hi all.
+> Dunno whether this is the right place to ask, but I am trying to install 
+> spgrass6 on an updated debian testing box, and I start with:
+> 
+> install.packages(c("sp","rgdal"), dependencies=TRUE)
+> 
+> but I get
+> 
+> Avviso in install.packages(c("sp", "rgdal"), dependencies = TRUE) :
+>          argument 'lib' is missing: using /usr/local/lib/R/site-library
+> --- Please select a CRAN mirror for use in this session ---
+> Xlib: connection to ":0.0" refused by server
+> Xlib: No protocol specified
+> Errore in inherits(x, "factor") : oggetto "res" non trovato
+> 
+> Any hint would be greaatly appreciated.
+> 
+> All the best.
+> pc
+-- 
+Tim Keitt
+Section of Integrative Biology
+http://www.keittlab.org/
+
+
+
+From Roger.Bivand at nhh.no  Mon Jun 13 20:32:56 2005
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Mon, 13 Jun 2005 20:32:56 +0200 (CEST)
+Subject: [R-sig-Geo] installing spgrass6
+In-Reply-To: <1118686575.12099.18.camel@fosteri.keittlab.net>
+Message-ID: <Pine.LNX.4.44.0506132018350.18825-100000@reclus.nhh.no>
+
+On Mon, 13 Jun 2005, Tim Keitt wrote:
+
+> You need to set the CRAN option to point to a mirror. The latest
+> versions of R don't provide a default mirror anymore.
+
+Yes, if capabilities(c("tcltk", "X11")) are not TRUE, (like trying to
+install on a server with no X11 display set), then there is no automatic
+fallback from R trying to start tcltk to show a list of CRANs. The same 
+list is shown going to CRAN from http://www.r-project.org, so 
+install.packages(c("sp","rgdal"), dependencies=TRUE, 
+repos="http://cran.arsmachinandi.it/") or one of the other Italian 
+mirrors should get you there. 
+
+The help page for options says:
+
+     'repos': The URLs of the repositories for use by
+          'update.packages'.  Defaults to 'c(CRAN="@CRAN@")', a value
+          that causes some utilities to prompt for a CRAN mirror.  To
+          avoid this, use something like
+          'options(repos=c(CRAN="http://my.local.cran/R"))'.
+
+
+Roger
+
+> 
+> THK
+> 
+> On Mon, 2005-06-13 at 19:51 +0200, Paolo Cavallini wrote:
+> > Hi all.
+> > Dunno whether this is the right place to ask, but I am trying to install 
+> > spgrass6 on an updated debian testing box, and I start with:
+> > 
+> > install.packages(c("sp","rgdal"), dependencies=TRUE)
+> > 
+> > but I get
+> > 
+> > Avviso in install.packages(c("sp", "rgdal"), dependencies = TRUE) :
+> >          argument 'lib' is missing: using /usr/local/lib/R/site-library
+> > --- Please select a CRAN mirror for use in this session ---
+> > Xlib: connection to ":0.0" refused by server
+> > Xlib: No protocol specified
+> > Errore in inherits(x, "factor") : oggetto "res" non trovato
+> > 
+> > Any hint would be greaatly appreciated.
+> > 
+> > All the best.
+> > pc
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From cavallini at faunalia.it  Mon Jun 13 20:54:36 2005
+From: cavallini at faunalia.it (Paolo Cavallini)
+Date: Mon, 13 Jun 2005 20:54:36 +0200
+Subject: [R-sig-Geo] installing spgrass6
+In-Reply-To: <Pine.LNX.4.44.0506132018350.18825-100000@reclus.nhh.no>
+References: <Pine.LNX.4.44.0506132018350.18825-100000@reclus.nhh.no>
+Message-ID: <200506132054.37331.cavallini@faunalia.it>
+
+Great, that helped a lot. But now I get
+
+./configure: line 1111: gdal-config: command not found
+
+I was unable to find the gdal-config script distributed with
+GDAL. If you have not installed the GDAL libraries, you can
+download the source from  http://www.remotesensing.org/gdal/
+If you have installed the GDAL libraries, then make sure that
+gdal-config is in your path. Try typing gdal-config at a
+shell prompt and see if it runs. If not, find it and add its
+path to your shell path.
+
+I checked, and I cannot locate gdal-config anywhere in my box (gdal installed 
+from debian package).
+I volunteer to improve the page at 
+http://grass.itc.it/statsgrass/grass6_r_install.html
+when I'll succeed.
+All the best.
+pc
+
+At 20:32, luned? 13 giugno 2005, Roger Bivand has probably written:
+> On Mon, 13 Jun 2005, Tim Keitt wrote:
+> > You need to set the CRAN option to point to a mirror. The latest
+> > versions of R don't provide a default mirror anymore.
+>
+> Yes, if capabilities(c("tcltk", "X11")) are not TRUE, (like trying to
+> install on a server with no X11 display set), then there is no automatic
+> fallback from R trying to start tcltk to show a list of CRANs. The same
+> list is shown going to CRAN from http://www.r-project.org, so
+> install.packages(c("sp","rgdal"), dependencies=TRUE,
+> repos="http://cran.arsmachinandi.it/") or one of the other Italian
+> mirrors should get you there.
+>
+> The help page for options says:
+>
+>      'repos': The URLs of the repositories for use by
+>           'update.packages'.  Defaults to 'c(CRAN="@CRAN@")', a value
+>           that causes some utilities to prompt for a CRAN mirror.  To
+>           avoid this, use something like
+>           'options(repos=c(CRAN="http://my.local.cran/R"))'.
+>
+>
+> Roger
+>
+> > THK
+> >
+> > On Mon, 2005-06-13 at 19:51 +0200, Paolo Cavallini wrote:
+> > > Hi all.
+> > > Dunno whether this is the right place to ask, but I am trying to
+> > > install spgrass6 on an updated debian testing box, and I start with:
+> > >
+> > > install.packages(c("sp","rgdal"), dependencies=TRUE)
+> > >
+> > > but I get
+> > >
+> > > Avviso in install.packages(c("sp", "rgdal"), dependencies = TRUE) :
+> > >          argument 'lib' is missing: using /usr/local/lib/R/site-library
+> > > --- Please select a CRAN mirror for use in this session ---
+> > > Xlib: connection to ":0.0" refused by server
+> > > Xlib: No protocol specified
+> > > Errore in inherits(x, "factor") : oggetto "res" non trovato
+> > >
+> > > Any hint would be greaatly appreciated.
+> > >
+> > > All the best.
+> > > pc
+
+-- 
+Paolo Cavallini
+cavallini at faunalia.it   www.faunalia.it   www.faunalia.com
+Piazza Garibaldi 5 - 56025 Pontedera (PI), Italy   Tel: (+39)348-3801953
+
+
+
+From cavallini at faunalia.it  Mon Jun 13 21:10:24 2005
+From: cavallini at faunalia.it (Paolo Cavallini)
+Date: Mon, 13 Jun 2005 21:10:24 +0200
+Subject: [R-sig-Geo] installing spgrass6
+In-Reply-To: <200506132054.37331.cavallini@faunalia.it>
+References: <Pine.LNX.4.44.0506132018350.18825-100000@reclus.nhh.no>
+	<200506132054.37331.cavallini@faunalia.it>
+Message-ID: <200506132110.25340.cavallini@faunalia.it>
+
+BTW: I see the instructions on 
+http://grass.itc.it/statsgrass/grass6_r_install.html
+are partly different from what reported in the latest grass news. Perhaps the 
+two versions should be aligned?
+on grass.itc.it:
+
+install.packages(c("sp","rgdal","maptools"), dependencies=TRUE)
+rS <- "http://r-spatial.sourceforge.net/R"
+install.packages(c("spgrass6","spGDAL","spmaptools","spproj"), repos=rS, 
+dependencies=TRUE)
+
+on GRASS News N. 3:
+install.packages(c("sp","rgdal"), dependencies=TRUE)
+rS <- "http://r-spatial.sourceforge.net/R"
+install.packages("spgrass6", repos=rS, dependencies=TRUE)
+install.packages("spGDAL", repos=rS, dependencies=TRUE)
+
+All the best.
+pc
+
+At 20:54, luned? 13 giugno 2005, Paolo Cavallini has probably written:
+> Great, that helped a lot. But now I get
+>
+> ./configure: line 1111: gdal-config: command not found
+>
+> I was unable to find the gdal-config script distributed with
+> GDAL. If you have not installed the GDAL libraries, you can
+> download the source from  http://www.remotesensing.org/gdal/
+> If you have installed the GDAL libraries, then make sure that
+> gdal-config is in your path. Try typing gdal-config at a
+> shell prompt and see if it runs. If not, find it and add its
+> path to your shell path.
+>
+> I checked, and I cannot locate gdal-config anywhere in my box (gdal
+> installed from debian package).
+> I volunteer to improve the page at
+> http://grass.itc.it/statsgrass/grass6_r_install.html
+> when I'll succeed.
+> All the best.
+> pc
+>
+> At 20:32, luned? 13 giugno 2005, Roger Bivand has probably written:
+> > On Mon, 13 Jun 2005, Tim Keitt wrote:
+> > > You need to set the CRAN option to point to a mirror. The latest
+> > > versions of R don't provide a default mirror anymore.
+> >
+> > Yes, if capabilities(c("tcltk", "X11")) are not TRUE, (like trying to
+> > install on a server with no X11 display set), then there is no automatic
+> > fallback from R trying to start tcltk to show a list of CRANs. The same
+> > list is shown going to CRAN from http://www.r-project.org, so
+> > install.packages(c("sp","rgdal"), dependencies=TRUE,
+> > repos="http://cran.arsmachinandi.it/") or one of the other Italian
+> > mirrors should get you there.
+> >
+> > The help page for options says:
+> >
+> >      'repos': The URLs of the repositories for use by
+> >           'update.packages'.  Defaults to 'c(CRAN="@CRAN@")', a value
+> >           that causes some utilities to prompt for a CRAN mirror.  To
+> >           avoid this, use something like
+> >           'options(repos=c(CRAN="http://my.local.cran/R"))'.
+> >
+> >
+> > Roger
+> >
+> > > THK
+> > >
+> > > On Mon, 2005-06-13 at 19:51 +0200, Paolo Cavallini wrote:
+> > > > Hi all.
+> > > > Dunno whether this is the right place to ask, but I am trying to
+> > > > install spgrass6 on an updated debian testing box, and I start with:
+> > > >
+> > > > install.packages(c("sp","rgdal"), dependencies=TRUE)
+> > > >
+> > > > but I get
+> > > >
+> > > > Avviso in install.packages(c("sp", "rgdal"), dependencies = TRUE) :
+> > > >          argument 'lib' is missing: using
+> > > > /usr/local/lib/R/site-library --- Please select a CRAN mirror for use
+> > > > in this session ---
+> > > > Xlib: connection to ":0.0" refused by server
+> > > > Xlib: No protocol specified
+> > > > Errore in inherits(x, "factor") : oggetto "res" non trovato
+> > > >
+> > > > Any hint would be greaatly appreciated.
+> > > >
+> > > > All the best.
+> > > > pc
+
+-- 
+Paolo Cavallini
+cavallini at faunalia.it   www.faunalia.it   www.faunalia.com
+Piazza Garibaldi 5 - 56025 Pontedera (PI), Italy   Tel: (+39)348-3801953
+
+
+
+From Roger.Bivand at nhh.no  Mon Jun 13 21:29:20 2005
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Mon, 13 Jun 2005 21:29:20 +0200 (CEST)
+Subject: [R-sig-Geo] installing spgrass6
+In-Reply-To: <200506132054.37331.cavallini@faunalia.it>
+Message-ID: <Pine.LNX.4.44.0506132124360.18825-100000@reclus.nhh.no>
+
+On Mon, 13 Jun 2005, Paolo Cavallini wrote:
+
+> Great, that helped a lot. But now I get
+> 
+> ./configure: line 1111: gdal-config: command not found
+> 
+> I was unable to find the gdal-config script distributed with
+> GDAL. If you have not installed the GDAL libraries, you can
+> download the source from  http://www.remotesensing.org/gdal/
+> If you have installed the GDAL libraries, then make sure that
+> gdal-config is in your path. Try typing gdal-config at a
+> shell prompt and see if it runs. If not, find it and add its
+> path to your shell path.
+> 
+> I checked, and I cannot locate gdal-config anywhere in my box (gdal installed 
+> from debian package).
+> I volunteer to improve the page at 
+> http://grass.itc.it/statsgrass/grass6_r_install.html
+> when I'll succeed.
+
+Mine is:
+
+$ which gdal-config
+/usr/local/bin/gdal-config
+
+but I install from source. 
+
+$ locate gdal-config
+
+found lots, mostly in the build trees. 
+
+$ file `which gdal-config`
+/usr/local/bin/gdal-config: Bourne shell script text executable
+
+and reading it shows that it is written at build time and says where all 
+the good GDAL things reside.
+
+If you can't find it, I can build a spgrass6 without the rgdal dependency, 
+but rgdal is worth having anyway, especially if you have the GRASS plugin.
+
+Best wishes,
+
+Roger
+
+
+
+> All the best.
+> pc
+> 
+> At 20:32, luned? 13 giugno 2005, Roger Bivand has probably written:
+> > On Mon, 13 Jun 2005, Tim Keitt wrote:
+> > > You need to set the CRAN option to point to a mirror. The latest
+> > > versions of R don't provide a default mirror anymore.
+> >
+> > Yes, if capabilities(c("tcltk", "X11")) are not TRUE, (like trying to
+> > install on a server with no X11 display set), then there is no automatic
+> > fallback from R trying to start tcltk to show a list of CRANs. The same
+> > list is shown going to CRAN from http://www.r-project.org, so
+> > install.packages(c("sp","rgdal"), dependencies=TRUE,
+> > repos="http://cran.arsmachinandi.it/") or one of the other Italian
+> > mirrors should get you there.
+> >
+> > The help page for options says:
+> >
+> >      'repos': The URLs of the repositories for use by
+> >           'update.packages'.  Defaults to 'c(CRAN="@CRAN@")', a value
+> >           that causes some utilities to prompt for a CRAN mirror.  To
+> >           avoid this, use something like
+> >           'options(repos=c(CRAN="http://my.local.cran/R"))'.
+> >
+> >
+> > Roger
+> >
+> > > THK
+> > >
+> > > On Mon, 2005-06-13 at 19:51 +0200, Paolo Cavallini wrote:
+> > > > Hi all.
+> > > > Dunno whether this is the right place to ask, but I am trying to
+> > > > install spgrass6 on an updated debian testing box, and I start with:
+> > > >
+> > > > install.packages(c("sp","rgdal"), dependencies=TRUE)
+> > > >
+> > > > but I get
+> > > >
+> > > > Avviso in install.packages(c("sp", "rgdal"), dependencies = TRUE) :
+> > > >          argument 'lib' is missing: using /usr/local/lib/R/site-library
+> > > > --- Please select a CRAN mirror for use in this session ---
+> > > > Xlib: connection to ":0.0" refused by server
+> > > > Xlib: No protocol specified
+> > > > Errore in inherits(x, "factor") : oggetto "res" non trovato
+> > > >
+> > > > Any hint would be greaatly appreciated.
+> > > >
+> > > > All the best.
+> > > > pc
+> 
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From Roger.Bivand at nhh.no  Mon Jun 13 21:34:14 2005
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Mon, 13 Jun 2005 21:34:14 +0200 (CEST)
+Subject: [R-sig-Geo] installing spgrass6
+In-Reply-To: <200506132110.25340.cavallini@faunalia.it>
+Message-ID: <Pine.LNX.4.44.0506132130270.18825-100000@reclus.nhh.no>
+
+On Mon, 13 Jun 2005, Paolo Cavallini wrote:
+
+> BTW: I see the instructions on 
+> http://grass.itc.it/statsgrass/grass6_r_install.html
+> are partly different from what reported in the latest grass news. Perhaps the 
+> two versions should be aligned?
+> on grass.itc.it:
+> 
+> install.packages(c("sp","rgdal","maptools"), dependencies=TRUE)
+> rS <- "http://r-spatial.sourceforge.net/R"
+> install.packages(c("spgrass6","spGDAL","spmaptools","spproj"), repos=rS, 
+> dependencies=TRUE)
+> 
+> on GRASS News N. 3:
+> install.packages(c("sp","rgdal"), dependencies=TRUE)
+> rS <- "http://r-spatial.sourceforge.net/R"
+> install.packages("spgrass6", repos=rS, dependencies=TRUE)
+> install.packages("spGDAL", repos=rS, dependencies=TRUE)
+
+Maybe, things change quite fast, and at some stage (please do not hold
+your breath), the file input/output packages should merge, with a single
+GDAL/PROJ.4/OGR dependency. Until then, it's messy, the more who join in
+and move things forward the merrier. The CVS for these packages is at the
+same place on sourceforge.
+
+Roger
+
+> 
+> All the best.
+> pc
+> 
+> At 20:54, luned? 13 giugno 2005, Paolo Cavallini has probably written:
+> > Great, that helped a lot. But now I get
+> >
+> > ./configure: line 1111: gdal-config: command not found
+> >
+> > I was unable to find the gdal-config script distributed with
+> > GDAL. If you have not installed the GDAL libraries, you can
+> > download the source from  http://www.remotesensing.org/gdal/
+> > If you have installed the GDAL libraries, then make sure that
+> > gdal-config is in your path. Try typing gdal-config at a
+> > shell prompt and see if it runs. If not, find it and add its
+> > path to your shell path.
+> >
+> > I checked, and I cannot locate gdal-config anywhere in my box (gdal
+> > installed from debian package).
+> > I volunteer to improve the page at
+> > http://grass.itc.it/statsgrass/grass6_r_install.html
+> > when I'll succeed.
+> > All the best.
+> > pc
+> >
+> > At 20:32, luned? 13 giugno 2005, Roger Bivand has probably written:
+> > > On Mon, 13 Jun 2005, Tim Keitt wrote:
+> > > > You need to set the CRAN option to point to a mirror. The latest
+> > > > versions of R don't provide a default mirror anymore.
+> > >
+> > > Yes, if capabilities(c("tcltk", "X11")) are not TRUE, (like trying to
+> > > install on a server with no X11 display set), then there is no automatic
+> > > fallback from R trying to start tcltk to show a list of CRANs. The same
+> > > list is shown going to CRAN from http://www.r-project.org, so
+> > > install.packages(c("sp","rgdal"), dependencies=TRUE,
+> > > repos="http://cran.arsmachinandi.it/") or one of the other Italian
+> > > mirrors should get you there.
+> > >
+> > > The help page for options says:
+> > >
+> > >      'repos': The URLs of the repositories for use by
+> > >           'update.packages'.  Defaults to 'c(CRAN="@CRAN@")', a value
+> > >           that causes some utilities to prompt for a CRAN mirror.  To
+> > >           avoid this, use something like
+> > >           'options(repos=c(CRAN="http://my.local.cran/R"))'.
+> > >
+> > >
+> > > Roger
+> > >
+> > > > THK
+> > > >
+> > > > On Mon, 2005-06-13 at 19:51 +0200, Paolo Cavallini wrote:
+> > > > > Hi all.
+> > > > > Dunno whether this is the right place to ask, but I am trying to
+> > > > > install spgrass6 on an updated debian testing box, and I start with:
+> > > > >
+> > > > > install.packages(c("sp","rgdal"), dependencies=TRUE)
+> > > > >
+> > > > > but I get
+> > > > >
+> > > > > Avviso in install.packages(c("sp", "rgdal"), dependencies = TRUE) :
+> > > > >          argument 'lib' is missing: using
+> > > > > /usr/local/lib/R/site-library --- Please select a CRAN mirror for use
+> > > > > in this session ---
+> > > > > Xlib: connection to ":0.0" refused by server
+> > > > > Xlib: No protocol specified
+> > > > > Errore in inherits(x, "factor") : oggetto "res" non trovato
+> > > > >
+> > > > > Any hint would be greaatly appreciated.
+> > > > >
+> > > > > All the best.
+> > > > > pc
+> 
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From christof.bigler at colorado.edu  Tue Jun 14 19:47:11 2005
+From: christof.bigler at colorado.edu (Christof Bigler)
+Date: Tue, 14 Jun 2005 11:47:11 -0600
+Subject: [R-sig-Geo] ArcGIS/R data exchange
+Message-ID: <e792a548ab8d9af552cdbe0d553b0ce1@colorado.edu>
+
+I would like to get some feedback on data exchange between ArcGIS and R 
+(both directions) under Windows. I noted that StatConnector can be used 
+to directly connect ArcGIS with R, and probably the R packages 
+"shapefiles" and "maptools" might be used for reading and writing ESRI 
+shapefiles.  Are these seamless procedures for the import and export of 
+different data types (grid, points, polygons)?
+There's also the newly developed R package "sp" which might get the 
+standard tool for exchanging spatial data. Is this package mostly 
+intended for the exchange of different formats of spatial data within R 
+or is there a possibility to import data from and export to ArcGIS?
+In R, I plan to work with the packages "spdep" and "nlme" for lattice 
+data and "spatstat" for point patterns.
+
+Any advice is appreciated.
+
+Christof
+
+
+
+From Roger.Bivand at nhh.no  Wed Jun 15 15:54:56 2005
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Wed, 15 Jun 2005 15:54:56 +0200 (CEST)
+Subject: [R-sig-Geo] ArcGIS/R data exchange
+In-Reply-To: <e792a548ab8d9af552cdbe0d553b0ce1@colorado.edu>
+Message-ID: <Pine.LNX.4.44.0506151545170.29466-100000@reclus.nhh.no>
+
+On Tue, 14 Jun 2005, Christof Bigler wrote:
+
+> I would like to get some feedback on data exchange between ArcGIS and R 
+> (both directions) under Windows. I noted that StatConnector can be used 
+> to directly connect ArcGIS with R, and probably the R packages 
+> "shapefiles" and "maptools" might be used for reading and writing ESRI 
+> shapefiles.  Are these seamless procedures for the import and export of 
+> different data types (grid, points, polygons)?
+
+Seamless is just a touch optimistic. The most advanced project is for 
+doing point pattern analysis from Arc using R/splancs in the background. 
+But the code for that is still being worked on by the authors, who have 
+spent a lot of time making point pattern techniques "look and feel" like 
+Arc through VBA. 
+
+> There's also the newly developed R package "sp" which might get the 
+> standard tool for exchanging spatial data. Is this package mostly 
+> intended for the exchange of different formats of spatial data within R 
+> or is there a possibility to import data from and export to ArcGIS?
+
+Yes, but loosely coupled, reading and writing files. Indeed, sp provides 
+containers for data objects, and small wrapper packages are available for 
+maptools and rgdal, for example. But seamless is not practical except in 
+regular production settings, in research, too much changes across data 
+sets to make full tight coupling worth the effort (especially with cheap 
+fast processors and lots of memory and disk storage), temporary files at 
+least let you look at the mess while it is in transit if debugging is 
+needed.
+
+> In R, I plan to work with the packages "spdep" and "nlme" for lattice 
+> data and "spatstat" for point patterns.
+> 
+
+It would be helpful to have input on how the sp classes match your data 
+object needs, and which kinds of data need to go in which direction. The 
+sp package fully supports PROJ.4, but so far we haven't got the read-write 
+functions to mesh with Arc - not much to do, but it needs doing. All the 
+sp things are on the sourceforge site found in the CRAN Spatial Task View.
+
+Best wishes,
+
+Roger
+
+
+> Any advice is appreciated.
+> 
+> Christof
+> 
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From giovanna.jonalasinio at uniroma1.it  Thu Jun 16 15:58:42 2005
+From: giovanna.jonalasinio at uniroma1.it (giovanna jona lasinio)
+Date: Thu, 16 Jun 2005 15:58:42 +0200
+Subject: [R-sig-Geo] Distances in geoR package
+In-Reply-To: <200412071125.iB7BP1gD030296@hypatia.math.ethz.ch>
+Message-ID: <004101c5727b$817cf0c0$65036497@sta.uniroma1.it>
+
+Dear all, this may be a stupid question, but I wasn't able to find an
+answer in the FAQ and in the mail archive.
+I have a huge amount of  data, 644 sites for 30 different  times, which
+coordinates are expressed in decimal longitude and latitude, I'd like to
+simply compute the empirical variogram and use "variofit" to estimate
+variogram's parameters for each time. The "variog" function uses
+euclidean distances and then it is not appropriate for lon-lat
+coordinate. Is there any way to change the distance type in "variog"? Or
+which information are necessary to "variofit" in order to estimate
+variogram's parameters?
+
+Thanks for any help
+Giovanna Jona Lasinio
+
+
+
+From RRoa at fisheries.gov.fk  Thu Jun 16 14:30:37 2005
+From: RRoa at fisheries.gov.fk (Ruben Roa)
+Date: Thu, 16 Jun 2005 10:30:37 -0200
+Subject: [R-sig-Geo] Distances in geoR package
+Message-ID: <03DCBBA079F2324786E8715BE538968A068D6F@FIGMAIL-CLUS01.FIG.FK>
+
+> -----Original Message-----
+> From: r-sig-geo-bounces at stat.math.ethz.ch
+> [mailto:r-sig-geo-bounces at stat.math.ethz.ch]On Behalf Of giovanna jona
+> lasinio
+> Sent: 16 June 2005 12:59
+> To: r-sig-geo at stat.math.ethz.ch
+> Subject: [R-sig-Geo] Distances in geoR package
+> 
+> 
+> Dear all, this may be a stupid question, but I wasn't able to find an
+> answer in the FAQ and in the mail archive.
+> I have a huge amount of  data, 644 sites for 30 different  
+> times, which coordinates are expressed in decimal longitude and latitude, 
+> I'd like to simply compute the empirical variogram and use "variofit" to estimate
+> variogram's parameters for each time. The "variog" function uses
+> euclidean distances and then it is not appropriate for lon-lat
+> coordinate. Is there any way to change the distance type in 
+> "variog"? Or which information are necessary to "variofit" in order to estimate
+> variogram's parameters?
+> 
+> Thanks for any help
+> Giovanna Jona Lasinio
+
+I don't think you could do coordinate transformation in geostatistical packages.
+Ernesto Jardim (on a message sent to this list the 9th of June) mentioned a package 
+called spproj but today i could not find it in CRAN/bin/windows/contrib/2.0,2.1,2.2.
+For coordinate transformation i use GeoConv. It is free and its author,
+Eino Uikkanen, will be very glad to help you (me too). It works in batch mode 
+so you can send all your 30 data files and get the output in a few seconds.
+http://www.kolumbus.fi/eino.uikkanen/geoconvgb/
+If all your data are all in the same UTM zone, then GeoConv will automatically identify
+that zone.
+Ruben
+
+
+
+From tkeitt at mail.utexas.edu  Thu Jun 16 16:43:22 2005
+From: tkeitt at mail.utexas.edu (Tim Keitt)
+Date: Thu, 16 Jun 2005 09:43:22 -0500
+Subject: [R-sig-Geo] Distances in geoR package
+In-Reply-To: <004101c5727b$817cf0c0$65036497@sta.uniroma1.it>
+References: <004101c5727b$817cf0c0$65036497@sta.uniroma1.it>
+Message-ID: <1118933002.18434.2.camel@fosteri.keittlab.net>
+
+For low-latitudes and small distances, the error should be
+insignificant. You can check using proj.4 to compute some distances in
+both Euclidean and geodesic distances. For large distances or high
+latitudes, you can 1) project to a Cartesian coordinate system or 2)
+compute geodesic distances. I think there is an "earth.distance"
+somewhere in R.
+
+THK
+
+
+On Thu, 2005-06-16 at 15:58 +0200, giovanna jona lasinio wrote:
+> Dear all, this may be a stupid question, but I wasn't able to find an
+> answer in the FAQ and in the mail archive.
+> I have a huge amount of  data, 644 sites for 30 different  times, which
+> coordinates are expressed in decimal longitude and latitude, I'd like to
+> simply compute the empirical variogram and use "variofit" to estimate
+> variogram's parameters for each time. The "variog" function uses
+> euclidean distances and then it is not appropriate for lon-lat
+> coordinate. Is there any way to change the distance type in "variog"? Or
+> which information are necessary to "variofit" in order to estimate
+> variogram's parameters?
+> 
+> Thanks for any help
+> Giovanna Jona Lasinio
+> 
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+-- 
+Tim Keitt
+Section of Integrative Biology
+http://www.keittlab.org/
+
+
+
+From ernesto at ipimar.pt  Thu Jun 16 17:04:20 2005
+From: ernesto at ipimar.pt (Ernesto Jardim)
+Date: Thu, 16 Jun 2005 16:04:20 +0100
+Subject: [R-sig-Geo] Distances in geoR package
+In-Reply-To: <004101c5727b$817cf0c0$65036497@sta.uniroma1.it>
+References: <004101c5727b$817cf0c0$65036497@sta.uniroma1.it>
+Message-ID: <42B194F4.2030302@ipimar.pt>
+
+giovanna jona lasinio wrote:
+> Dear all, this may be a stupid question, but I wasn't able to find an
+> answer in the FAQ and in the mail archive.
+> I have a huge amount of  data, 644 sites for 30 different  times, which
+> coordinates are expressed in decimal longitude and latitude, I'd like to
+> simply compute the empirical variogram and use "variofit" to estimate
+> variogram's parameters for each time. The "variog" function uses
+> euclidean distances and then it is not appropriate for lon-lat
+> coordinate. Is there any way to change the distance type in "variog"? Or
+> which information are necessary to "variofit" in order to estimate
+> variogram's parameters?
+> 
+> Thanks for any help
+> Giovanna Jona Lasinio
+> 
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+
+Hi,
+
+I think the best solution is to transform your coordinate system into utm.
+
+Regards
+
+EJ
+
+
+
+From ernesto at ipimar.pt  Thu Jun 16 17:23:39 2005
+From: ernesto at ipimar.pt (Ernesto Jardim)
+Date: Thu, 16 Jun 2005 16:23:39 +0100
+Subject: [R-sig-Geo] Distances in geoR package
+In-Reply-To: <03DCBBA079F2324786E8715BE538968A068D6F@FIGMAIL-CLUS01.FIG.FK>
+References: <03DCBBA079F2324786E8715BE538968A068D6F@FIGMAIL-CLUS01.FIG.FK>
+Message-ID: <42B1997B.1070703@ipimar.pt>
+
+Ruben Roa wrote:
+>>-----Original Message-----
+>>From: r-sig-geo-bounces at stat.math.ethz.ch
+>>[mailto:r-sig-geo-bounces at stat.math.ethz.ch]On Behalf Of giovanna jona
+>>lasinio
+>>Sent: 16 June 2005 12:59
+>>To: r-sig-geo at stat.math.ethz.ch
+>>Subject: [R-sig-Geo] Distances in geoR package
+>>
+>>
+>>Dear all, this may be a stupid question, but I wasn't able to find an
+>>answer in the FAQ and in the mail archive.
+>>I have a huge amount of  data, 644 sites for 30 different  
+>>times, which coordinates are expressed in decimal longitude and latitude, 
+>>I'd like to simply compute the empirical variogram and use "variofit" to estimate
+>>variogram's parameters for each time. The "variog" function uses
+>>euclidean distances and then it is not appropriate for lon-lat
+>>coordinate. Is there any way to change the distance type in 
+>>"variog"? Or which information are necessary to "variofit" in order to estimate
+>>variogram's parameters?
+>>
+>>Thanks for any help
+>>Giovanna Jona Lasinio
+> 
+> 
+> I don't think you could do coordinate transformation in geostatistical packages.
+> Ernesto Jardim (on a message sent to this list the 9th of June) mentioned a package 
+> called spproj but today i could not find it in CRAN/bin/windows/contrib/2.0,2.1,2.2.
+> For coordinate transformation i use GeoConv. It is free and its author,
+> Eino Uikkanen, will be very glad to help you (me too). It works in batch mode 
+> so you can send all your 30 data files and get the output in a few seconds.
+> http://www.kolumbus.fi/eino.uikkanen/geoconvgb/
+> If all your data are all in the same UTM zone, then GeoConv will automatically identify
+> that zone.
+> Ruben
+> 
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+
+
+Hi,
+
+You can do transformations into UTM with PBSmapping. I never found out 
+how to do it with spproj mainly because I was able to do it with 
+PBSmapping :-)
+
+Regards
+
+EJ
+
+ps: spproj is not in CRAN, look for it here 
+http://r-spatial.sourceforge.net/
+
+
+
+From e.pebesma at geog.uu.nl  Thu Jun 16 17:29:33 2005
+From: e.pebesma at geog.uu.nl (Edzer J Pebesma)
+Date: Thu, 16 Jun 2005 17:29:33 +0200
+Subject: [R-sig-Geo] Distances in geoR package
+In-Reply-To: <03DCBBA079F2324786E8715BE538968A068D6F@FIGMAIL-CLUS01.FIG.FK>
+References: <03DCBBA079F2324786E8715BE538968A068D6F@FIGMAIL-CLUS01.FIG.FK>
+Message-ID: <42B19ADD.2070100@geog.uu.nl>
+
+You can do coordinate transformations using spproj, which relies
+upon the PROJ.4 libraries; spproj is available as part of the
+sp suite of packages, on http://r-spatial.sourceforge.net
+
+Packages fields has some provisions for calculating great circle
+distances, and interpolation using lat/lon. I don't know if it does
+variogram calculation right with lat/lon data. Doug/Eric?
+--
+Edzer
+
+Ruben Roa wrote:
+
+>>-----Original Message-----
+>>From: r-sig-geo-bounces at stat.math.ethz.ch
+>>[mailto:r-sig-geo-bounces at stat.math.ethz.ch]On Behalf Of giovanna jona
+>>lasinio
+>>Sent: 16 June 2005 12:59
+>>To: r-sig-geo at stat.math.ethz.ch
+>>Subject: [R-sig-Geo] Distances in geoR package
+>>
+>>
+>>Dear all, this may be a stupid question, but I wasn't able to find an
+>>answer in the FAQ and in the mail archive.
+>>I have a huge amount of  data, 644 sites for 30 different  
+>>times, which coordinates are expressed in decimal longitude and latitude, 
+>>I'd like to simply compute the empirical variogram and use "variofit" to estimate
+>>variogram's parameters for each time. The "variog" function uses
+>>euclidean distances and then it is not appropriate for lon-lat
+>>coordinate. Is there any way to change the distance type in 
+>>"variog"? Or which information are necessary to "variofit" in order to estimate
+>>variogram's parameters?
+>>
+>>Thanks for any help
+>>Giovanna Jona Lasinio
+>>    
+>>
+>
+>I don't think you could do coordinate transformation in geostatistical packages.
+>Ernesto Jardim (on a message sent to this list the 9th of June) mentioned a package 
+>called spproj but today i could not find it in CRAN/bin/windows/contrib/2.0,2.1,2.2.
+>For coordinate transformation i use GeoConv. It is free and its author,
+>Eino Uikkanen, will be very glad to help you (me too). It works in batch mode 
+>so you can send all your 30 data files and get the output in a few seconds.
+>http://www.kolumbus.fi/eino.uikkanen/geoconvgb/
+>If all your data are all in the same UTM zone, then GeoConv will automatically identify
+>that zone.
+>Ruben
+>
+>_______________________________________________
+>R-sig-Geo mailing list
+>R-sig-Geo at stat.math.ethz.ch
+>https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>  
+>
+
+
+
+From White.Denis at epamail.epa.gov  Thu Jun 16 18:26:48 2005
+From: White.Denis at epamail.epa.gov (White.Denis at epamail.epa.gov)
+Date: Thu, 16 Jun 2005 09:26:48 -0700
+Subject: [R-sig-Geo] Distances in geoR package
+In-Reply-To: <1118933002.18434.2.camel@fosteri.keittlab.net>
+Message-ID: <OF19B9D05B.BF853DDC-ON88257022.00575A6D-88257022.005A59D9@epamail.epa.gov>
+
+In higher latitudes, if the study area has a relatively small range of
+latitude (say less than 5 degrees), then simply scaling the longitudes
+by the cosine of the mid-latitude, will give a satisfactory coordinate
+system.  For example, if the study area ranges from latitude 40 to 45,
+multiply the longitudes by cos (42.5 * pi/180) = 0.73..., or use the
+function below.  This projection is neither equal-area nor conformal.
+
+marinus <- function (lon, lat)
+  # Arguments are vectors of longitude and latitude,
+  # that is, geographic coordinates in decimal degrees.
+  # Projection center defined as midpoint in lat-lon space.
+  # Returns a two column matrix with column names "x" and "y",
+  # in units of kilometers.
+  # Line identifiers in lon[is.na (lat)] retained in x.
+  # This is the equidistant cylindric map projection,
+  # here named after Marinus of Tyre.
+  # (ref JP Snyder, USGS Prof Paper 1395, p 90).
+{
+    R <- 6371 # authalic radius of Clarke 1866 rounded to km
+    rlat <- range (lat, na.rm=TRUE)
+    rlon <- range (lon, na.rm=TRUE)
+    clat <- diff (rlat) / 2 + rlat[1]
+    clon <- diff (rlon) / 2 + rlon[1]
+    x <- R * (lon-clon)*pi/180 * cos (clat*pi/180)
+    y <- R * (lat-clat)*pi/180
+    x[is.na (lat)] <- lon[is.na (lat)]
+    xy <- cbind (x=x, y=y)
+    xy
+}
+
+r-sig-geo-bounces at stat.math.ethz.ch wrote on 2005-06-16 07:43:22:
+
+> For low-latitudes and small distances, the error should be
+> insignificant. You can check using proj.4 to compute some distances in
+> both Euclidean and geodesic distances. For large distances or high
+> latitudes, you can 1) project to a Cartesian coordinate system or 2)
+> compute geodesic distances. I think there is an "earth.distance"
+> somewhere in R.
+>
+> THK
+>
+>
+> On Thu, 2005-06-16 at 15:58 +0200, giovanna jona lasinio wrote:
+> > Dear all, this may be a stupid question, but I wasn't able to find
+an
+> > answer in the FAQ and in the mail archive.
+> > I have a huge amount of  data, 644 sites for 30 different  times,
+which
+> > coordinates are expressed in decimal longitude and latitude, I'd
+like to
+> > simply compute the empirical variogram and use "variofit" to
+estimate
+> > variogram's parameters for each time. The "variog" function uses
+> > euclidean distances and then it is not appropriate for lon-lat
+> > coordinate. Is there any way to change the distance type in
+"variog"? Or
+> > which information are necessary to "variofit" in order to estimate
+> > variogram's parameters?
+> >
+> > Thanks for any help
+> > Giovanna Jona Lasinio
+> >
+> > _______________________________________________
+> > R-sig-Geo mailing list
+> > R-sig-Geo at stat.math.ethz.ch
+> > https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> --
+> Tim Keitt
+> Section of Integrative Biology
+> http://www.keittlab.org/
+>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+
+
+
+From tkeitt at mail.utexas.edu  Thu Jun 16 18:42:03 2005
+From: tkeitt at mail.utexas.edu (Tim Keitt)
+Date: Thu, 16 Jun 2005 11:42:03 -0500
+Subject: [R-sig-Geo] Distances in geoR package
+In-Reply-To: <OF19B9D05B.BF853DDC-ON88257022.00575A6D-88257022.005A59D9@epamail.epa.gov>
+References: <OF19B9D05B.BF853DDC-ON88257022.00575A6D-88257022.005A59D9@epamail.epa.gov>
+Message-ID: <1118940123.18434.5.camel@fosteri.keittlab.net>
+
+Great. This looks useful. We need a "geoToolbox" package to collect
+these sorts of utility functions...
+
+THK
+
+On Thu, 2005-06-16 at 09:26 -0700, White.Denis at epamail.epa.gov wrote:
+> In higher latitudes, if the study area has a relatively small range of
+> latitude (say less than 5 degrees), then simply scaling the longitudes
+> by the cosine of the mid-latitude, will give a satisfactory coordinate
+> system.  For example, if the study area ranges from latitude 40 to 45,
+> multiply the longitudes by cos (42.5 * pi/180) = 0.73..., or use the
+> function below.  This projection is neither equal-area nor conformal.
+> 
+> marinus <- function (lon, lat)
+>   # Arguments are vectors of longitude and latitude,
+>   # that is, geographic coordinates in decimal degrees.
+>   # Projection center defined as midpoint in lat-lon space.
+>   # Returns a two column matrix with column names "x" and "y",
+>   # in units of kilometers.
+>   # Line identifiers in lon[is.na (lat)] retained in x.
+>   # This is the equidistant cylindric map projection,
+>   # here named after Marinus of Tyre.
+>   # (ref JP Snyder, USGS Prof Paper 1395, p 90).
+> {
+>     R <- 6371 # authalic radius of Clarke 1866 rounded to km
+>     rlat <- range (lat, na.rm=TRUE)
+>     rlon <- range (lon, na.rm=TRUE)
+>     clat <- diff (rlat) / 2 + rlat[1]
+>     clon <- diff (rlon) / 2 + rlon[1]
+>     x <- R * (lon-clon)*pi/180 * cos (clat*pi/180)
+>     y <- R * (lat-clat)*pi/180
+>     x[is.na (lat)] <- lon[is.na (lat)]
+>     xy <- cbind (x=x, y=y)
+>     xy
+> }
+> 
+> r-sig-geo-bounces at stat.math.ethz.ch wrote on 2005-06-16 07:43:22:
+> 
+> > For low-latitudes and small distances, the error should be
+> > insignificant. You can check using proj.4 to compute some distances in
+> > both Euclidean and geodesic distances. For large distances or high
+> > latitudes, you can 1) project to a Cartesian coordinate system or 2)
+> > compute geodesic distances. I think there is an "earth.distance"
+> > somewhere in R.
+> >
+> > THK
+> >
+> >
+> > On Thu, 2005-06-16 at 15:58 +0200, giovanna jona lasinio wrote:
+> > > Dear all, this may be a stupid question, but I wasn't able to find
+> an
+> > > answer in the FAQ and in the mail archive.
+> > > I have a huge amount of  data, 644 sites for 30 different  times,
+> which
+> > > coordinates are expressed in decimal longitude and latitude, I'd
+> like to
+> > > simply compute the empirical variogram and use "variofit" to
+> estimate
+> > > variogram's parameters for each time. The "variog" function uses
+> > > euclidean distances and then it is not appropriate for lon-lat
+> > > coordinate. Is there any way to change the distance type in
+> "variog"? Or
+> > > which information are necessary to "variofit" in order to estimate
+> > > variogram's parameters?
+> > >
+> > > Thanks for any help
+> > > Giovanna Jona Lasinio
+> > >
+> > > _______________________________________________
+> > > R-sig-Geo mailing list
+> > > R-sig-Geo at stat.math.ethz.ch
+> > > https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> > --
+> > Tim Keitt
+> > Section of Integrative Biology
+> > http://www.keittlab.org/
+> >
+> > _______________________________________________
+> > R-sig-Geo mailing list
+> > R-sig-Geo at stat.math.ethz.ch
+> > https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> 
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+-- 
+Tim Keitt
+Section of Integrative Biology
+http://www.keittlab.org/
+
+
+
+From giovanna.jonalasinio at uniroma1.it  Fri Jun 17 14:38:10 2005
+From: giovanna.jonalasinio at uniroma1.it (giovanna jona lasinio)
+Date: Fri, 17 Jun 2005 14:38:10 +0200
+Subject: [R-sig-Geo] Thanks to all: Distances in geoR package
+In-Reply-To: <mailman.15.1119002402.15498.r-sig-geo@stat.math.ethz.ch>
+Message-ID: <001b01c57339$6beb4cc0$65036497@sta.uniroma1.it>
+
+Dear all, thanks for the many suggestions, I'll try and let you know
+what worked best. Package fields works well in computing variogram's
+cloud with lon-lat coordinates (returns by default distances in miles)
+and usually I use a loess-built curve to get a nice-looking version of
+the variogram. However I wasn't able to use the "vgram" function's
+output in order to obtain a "variofit" estimated model. What would be
+extremely usefull, in my opinion, is to allow "variog" to accept a
+distance matrix as input, in this way no coordinate transformation would
+be needed. I'm not yet good enough at programming in R to find a good
+solution myself :-) but if I find a solution I'll let you know....
+
+Best
+Giovanna Jona Lasinio
+
+
+
+From paulojus at est.ufpr.br  Fri Jun 17 15:02:05 2005
+From: paulojus at est.ufpr.br (Paulo Justiniano Ribeiro Jr)
+Date: Fri, 17 Jun 2005 10:02:05 -0300 (BRT)
+Subject: [R-sig-Geo] Thanks to all: Distances in geoR package
+In-Reply-To: <001b01c57339$6beb4cc0$65036497@sta.uniroma1.it>
+References: <001b01c57339$6beb4cc0$65036497@sta.uniroma1.it>
+Message-ID: <Pine.LNX.4.58L0.0506170953530.17666@est.ufpr.br>
+
+A few words more on this.
+
+My feeling is that the best way to handle this is with coordinate
+trasformation (for instance for UTM) and then backtransform
+at the  end if required.
+
+There were a few messages along these lines and I will take the
+opportunity to mention that there is a package under development (aRT)
+which intends to provide this and other functionalities typical from GIS
+systems via Terralib
+The package page is: http://www.est.ufpr.br/aRT
+
+Still changing rapidly but already some functionalities are already
+working.
+There is a package vignette and a few exemples in the tests directory.
+This package adheres the the "sp" classes andin newer versions also allows
+"proj4".
+
+Best
+P.J.
+
+
+
+On Fri, 17 Jun 2005, giovanna jona lasinio wrote:
+
+> Dear all, thanks for the many suggestions, I'll try and let you know
+> what worked best. Package fields works well in computing variogram's
+> cloud with lon-lat coordinates (returns by default distances in miles)
+> and usually I use a loess-built curve to get a nice-looking version of
+> the variogram. However I wasn't able to use the "vgram" function's
+> output in order to obtain a "variofit" estimated model. What would be
+> extremely usefull, in my opinion, is to allow "variog" to accept a
+> distance matrix as input, in this way no coordinate transformation would
+> be needed. I'm not yet good enough at programming in R to find a good
+> solution myself :-) but if I find a solution I'll let you know....
+>
+> Best
+> Giovanna Jona Lasinio
+>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>
+>
+
+Paulo Justiniano Ribeiro Jr
+LEG (Laborat?rio de Estat?stica e Geoinforma??o)
+Departamento de Estat?stica
+Universidade Federal do Paran?
+Caixa Postal 19.081
+CEP 81.531-990
+Curitiba, PR  -  Brasil
+Tel: (+55) 41 3361 3573
+Fax: (+55) 41 3361 3141
+e-mail: paulojus at est.ufpr.br
+http://www.est.ufpr.br/~paulojus
+
+
+
+From Roger.Bivand at nhh.no  Fri Jun 17 15:22:34 2005
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Fri, 17 Jun 2005 15:22:34 +0200 (CEST)
+Subject: [R-sig-Geo] Thanks to all: Distances in geoR package
+In-Reply-To: <Pine.LNX.4.58L0.0506170953530.17666@est.ufpr.br>
+Message-ID: <Pine.LNX.4.44.0506171508120.30932-100000@reclus.nhh.no>
+
+On Fri, 17 Jun 2005, Paulo Justiniano Ribeiro Jr wrote:
+
+> A few words more on this.
+> 
+> My feeling is that the best way to handle this is with coordinate
+> trasformation (for instance for UTM) and then backtransform
+> at the  end if required.
+> 
+
+And a couple more ...
+
+Which way to go depends on the relative scale of the phenomena of 
+interest. For up to hundreds of km, the distortions introduced by 
+projecting to UTM or other suitable projections are small. But at 
+continental scales, working with Great Circle distances for building 
+distance matrices is a much better choice, not depending on the origin of 
+the projection. 
+
+I've had C code in spdep for some time to do GC (an if() on a flag passed
+through .Call to choose between the R built-in pythag() or the GC
+distance). I've put a copy in the spgwr package, but multiple copies means
+maintenance problems. The rdist.earth() function in fields is at the R
+level - the nice comment on the help page does hold: "Surprisingly this
+[is] all done efficiently in S".
+
+I'd like to expose the GC function in the sp package, but have not yet
+looked at how contributed packages can share functions (and header files)
+at the C level - the header file is the real issue, I think. Would there
+be interest in doing this? The GC function as it is does not have an R
+wrapper, because in spdep, most of the distances are thrown away
+immediately as being beyond threshold.
+
+Feedback, please?
+
+Roger
+
+> There were a few messages along these lines and I will take the
+> opportunity to mention that there is a package under development (aRT)
+> which intends to provide this and other functionalities typical from GIS
+> systems via Terralib
+> The package page is: http://www.est.ufpr.br/aRT
+> 
+> Still changing rapidly but already some functionalities are already
+> working.
+> There is a package vignette and a few exemples in the tests directory.
+> This package adheres the the "sp" classes andin newer versions also allows
+> "proj4".
+> 
+> Best
+> P.J.
+> 
+> 
+> 
+> On Fri, 17 Jun 2005, giovanna jona lasinio wrote:
+> 
+> > Dear all, thanks for the many suggestions, I'll try and let you know
+> > what worked best. Package fields works well in computing variogram's
+> > cloud with lon-lat coordinates (returns by default distances in miles)
+> > and usually I use a loess-built curve to get a nice-looking version of
+> > the variogram. However I wasn't able to use the "vgram" function's
+> > output in order to obtain a "variofit" estimated model. What would be
+> > extremely usefull, in my opinion, is to allow "variog" to accept a
+> > distance matrix as input, in this way no coordinate transformation would
+> > be needed. I'm not yet good enough at programming in R to find a good
+> > solution myself :-) but if I find a solution I'll let you know....
+> >
+> > Best
+> > Giovanna Jona Lasinio
+> >
+> > _______________________________________________
+> > R-sig-Geo mailing list
+> > R-sig-Geo at stat.math.ethz.ch
+> > https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> >
+> >
+> 
+> Paulo Justiniano Ribeiro Jr
+> LEG (Laborat?rio de Estat?stica e Geoinforma??o)
+> Departamento de Estat?stica
+> Universidade Federal do Paran?
+> Caixa Postal 19.081
+> CEP 81.531-990
+> Curitiba, PR  -  Brasil
+> Tel: (+55) 41 3361 3573
+> Fax: (+55) 41 3361 3141
+> e-mail: paulojus at est.ufpr.br
+> http://www.est.ufpr.br/~paulojus
+> 
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From giovanna.jonalasinio at uniroma1.it  Fri Jun 17 15:44:54 2005
+From: giovanna.jonalasinio at uniroma1.it (giovanna jona lasinio)
+Date: Fri, 17 Jun 2005 15:44:54 +0200
+Subject: [R-sig-Geo] R:  Thanks to all: Distances in geoR package
+In-Reply-To: <Pine.LNX.4.44.0506171508120.30932-100000@reclus.nhh.no>
+Message-ID: <002f01c57342$be043630$65036497@sta.uniroma1.it>
+
+I'd be, of course, very interested! The problem I'm facing now involves
+data on the adriatic sea, but the final task is to build models of waves
+climatology for the entire mediterranean... I'd love to do that in R
+instead of asking one of my collaborators to re-program all the
+exploratory analysis in C :-)
+
+Giovanna
+
+
+-----Messaggio originale-----
+Da: Roger Bivand [mailto:Roger.Bivand at nhh.no] 
+Inviato: venerd?, 17. giugno 2005 15:23
+A: Paulo Justiniano Ribeiro Jr
+Cc: giovanna jona lasinio; r-sig-geo at stat.math.ethz.ch
+Oggetto: Re: [R-sig-Geo] Thanks to all: Distances in geoR package
+
+
+On Fri, 17 Jun 2005, Paulo Justiniano Ribeiro Jr wrote:
+
+> A few words more on this.
+> 
+> My feeling is that the best way to handle this is with coordinate 
+> trasformation (for instance for UTM) and then backtransform at the  
+> end if required.
+> 
+
+And a couple more ...
+
+Which way to go depends on the relative scale of the phenomena of 
+interest. For up to hundreds of km, the distortions introduced by 
+projecting to UTM or other suitable projections are small. But at 
+continental scales, working with Great Circle distances for building 
+distance matrices is a much better choice, not depending on the origin
+of 
+the projection. 
+
+I've had C code in spdep for some time to do GC (an if() on a flag
+passed through .Call to choose between the R built-in pythag() or the GC
+distance). I've put a copy in the spgwr package, but multiple copies
+means maintenance problems. The rdist.earth() function in fields is at
+the R level - the nice comment on the help page does hold: "Surprisingly
+this [is] all done efficiently in S".
+
+I'd like to expose the GC function in the sp package, but have not yet
+looked at how contributed packages can share functions (and header
+files) at the C level - the header file is the real issue, I think.
+Would there be interest in doing this? The GC function as it is does not
+have an R wrapper, because in spdep, most of the distances are thrown
+away immediately as being beyond threshold.
+
+Feedback, please?
+
+Roger
+
+> There were a few messages along these lines and I will take the 
+> opportunity to mention that there is a package under development (aRT)
+
+> which intends to provide this and other functionalities typical from 
+> GIS systems via Terralib The package page is: 
+> http://www.est.ufpr.br/aRT
+> 
+> Still changing rapidly but already some functionalities are already 
+> working. There is a package vignette and a few exemples in the tests 
+> directory. This package adheres the the "sp" classes andin newer 
+> versions also allows "proj4".
+> 
+> Best
+> P.J.
+> 
+> 
+> 
+> On Fri, 17 Jun 2005, giovanna jona lasinio wrote:
+> 
+> > Dear all, thanks for the many suggestions, I'll try and let you know
+
+> > what worked best. Package fields works well in computing variogram's
+
+> > cloud with lon-lat coordinates (returns by default distances in 
+> > miles) and usually I use a loess-built curve to get a nice-looking 
+> > version of the variogram. However I wasn't able to use the "vgram" 
+> > function's output in order to obtain a "variofit" estimated model. 
+> > What would be extremely usefull, in my opinion, is to allow "variog"
+
+> > to accept a distance matrix as input, in this way no coordinate 
+> > transformation would be needed. I'm not yet good enough at 
+> > programming in R to find a good solution myself :-) but if I find a 
+> > solution I'll let you know....
+> >
+> > Best
+> > Giovanna Jona Lasinio
+> >
+> > _______________________________________________
+> > R-sig-Geo mailing list
+> > R-sig-Geo at stat.math.ethz.ch 
+> > https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> >
+> >
+> 
+> Paulo Justiniano Ribeiro Jr
+> LEG (Laborat?rio de Estat?stica e Geoinforma??o)
+> Departamento de Estat?stica
+> Universidade Federal do Paran?
+> Caixa Postal 19.081
+> CEP 81.531-990
+> Curitiba, PR  -  Brasil
+> Tel: (+55) 41 3361 3573
+> Fax: (+55) 41 3361 3141
+> e-mail: paulojus at est.ufpr.br
+> http://www.est.ufpr.br/~paulojus
+> 
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch 
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From tkeitt at mail.utexas.edu  Fri Jun 17 16:42:38 2005
+From: tkeitt at mail.utexas.edu (Tim Keitt)
+Date: Fri, 17 Jun 2005 09:42:38 -0500
+Subject: [R-sig-Geo] Thanks to all: Distances in geoR package
+In-Reply-To: <Pine.LNX.4.44.0506171508120.30932-100000@reclus.nhh.no>
+References: <Pine.LNX.4.44.0506171508120.30932-100000@reclus.nhh.no>
+Message-ID: <1119019358.2181.4.camel@fosteri.keittlab.net>
+
+Perhaps we could get it added into R core. The spherical-earth GC
+distance function is only a few lines of code.
+
+THK
+
+On Fri, 2005-06-17 at 15:22 +0200, Roger Bivand wrote:
+> On Fri, 17 Jun 2005, Paulo Justiniano Ribeiro Jr wrote:
+> 
+> > A few words more on this.
+> > 
+> > My feeling is that the best way to handle this is with coordinate
+> > trasformation (for instance for UTM) and then backtransform
+> > at the  end if required.
+> > 
+> 
+> And a couple more ...
+> 
+> Which way to go depends on the relative scale of the phenomena of 
+> interest. For up to hundreds of km, the distortions introduced by 
+> projecting to UTM or other suitable projections are small. But at 
+> continental scales, working with Great Circle distances for building 
+> distance matrices is a much better choice, not depending on the origin of 
+> the projection. 
+> 
+> I've had C code in spdep for some time to do GC (an if() on a flag passed
+> through .Call to choose between the R built-in pythag() or the GC
+> distance). I've put a copy in the spgwr package, but multiple copies means
+> maintenance problems. The rdist.earth() function in fields is at the R
+> level - the nice comment on the help page does hold: "Surprisingly this
+> [is] all done efficiently in S".
+> 
+> I'd like to expose the GC function in the sp package, but have not yet
+> looked at how contributed packages can share functions (and header files)
+> at the C level - the header file is the real issue, I think. Would there
+> be interest in doing this? The GC function as it is does not have an R
+> wrapper, because in spdep, most of the distances are thrown away
+> immediately as being beyond threshold.
+> 
+> Feedback, please?
+> 
+> Roger
+> 
+> > There were a few messages along these lines and I will take the
+> > opportunity to mention that there is a package under development (aRT)
+> > which intends to provide this and other functionalities typical from GIS
+> > systems via Terralib
+> > The package page is: http://www.est.ufpr.br/aRT
+> > 
+> > Still changing rapidly but already some functionalities are already
+> > working.
+> > There is a package vignette and a few exemples in the tests directory.
+> > This package adheres the the "sp" classes andin newer versions also allows
+> > "proj4".
+> > 
+> > Best
+> > P.J.
+> > 
+> > 
+> > 
+> > On Fri, 17 Jun 2005, giovanna jona lasinio wrote:
+> > 
+> > > Dear all, thanks for the many suggestions, I'll try and let you know
+> > > what worked best. Package fields works well in computing variogram's
+> > > cloud with lon-lat coordinates (returns by default distances in miles)
+> > > and usually I use a loess-built curve to get a nice-looking version of
+> > > the variogram. However I wasn't able to use the "vgram" function's
+> > > output in order to obtain a "variofit" estimated model. What would be
+> > > extremely usefull, in my opinion, is to allow "variog" to accept a
+> > > distance matrix as input, in this way no coordinate transformation would
+> > > be needed. I'm not yet good enough at programming in R to find a good
+> > > solution myself :-) but if I find a solution I'll let you know....
+> > >
+> > > Best
+> > > Giovanna Jona Lasinio
+> > >
+> > > _______________________________________________
+> > > R-sig-Geo mailing list
+> > > R-sig-Geo at stat.math.ethz.ch
+> > > https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> > >
+> > >
+> > 
+> > Paulo Justiniano Ribeiro Jr
+> > LEG (Laborat?rio de Estat?stica e Geoinforma??o)
+> > Departamento de Estat?stica
+> > Universidade Federal do Paran?
+> > Caixa Postal 19.081
+> > CEP 81.531-990
+> > Curitiba, PR  -  Brasil
+> > Tel: (+55) 41 3361 3573
+> > Fax: (+55) 41 3361 3141
+> > e-mail: paulojus at est.ufpr.br
+> > http://www.est.ufpr.br/~paulojus
+> > 
+> > _______________________________________________
+> > R-sig-Geo mailing list
+> > R-sig-Geo at stat.math.ethz.ch
+> > https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> > 
+> 
+-- 
+Tim Keitt
+Section of Integrative Biology
+http://www.keittlab.org/
+
+
+
+From Roger.Bivand at nhh.no  Fri Jun 17 17:01:55 2005
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Fri, 17 Jun 2005 17:01:55 +0200 (CEST)
+Subject: [R-sig-Geo] Thanks to all: Distances in geoR package
+In-Reply-To: <1119019358.2181.4.camel@fosteri.keittlab.net>
+Message-ID: <Pine.LNX.4.44.0506171657260.30932-100000@reclus.nhh.no>
+
+On Fri, 17 Jun 2005, Tim Keitt wrote:
+
+> Perhaps we could get it added into R core. The spherical-earth GC
+> distance function is only a few lines of code.
+> 
+
+(Just a note to say that this question turned out to have more general 
+interest, and Martin Maechler has taken it up on R-core. It's about how C 
+functions in one package can call C functions in another, which means 
+having both the header files and the DLL/so file findable. If this is 
+resolved cross-platform and for others to benefit from, we gain too. The 
+RGtk package family has examples of how this can work).
+
+Roger
+
+> THK
+> 
+> On Fri, 2005-06-17 at 15:22 +0200, Roger Bivand wrote:
+> > On Fri, 17 Jun 2005, Paulo Justiniano Ribeiro Jr wrote:
+> > 
+> > > A few words more on this.
+> > > 
+> > > My feeling is that the best way to handle this is with coordinate
+> > > trasformation (for instance for UTM) and then backtransform
+> > > at the  end if required.
+> > > 
+> > 
+> > And a couple more ...
+> > 
+> > Which way to go depends on the relative scale of the phenomena of 
+> > interest. For up to hundreds of km, the distortions introduced by 
+> > projecting to UTM or other suitable projections are small. But at 
+> > continental scales, working with Great Circle distances for building 
+> > distance matrices is a much better choice, not depending on the origin of 
+> > the projection. 
+> > 
+> > I've had C code in spdep for some time to do GC (an if() on a flag passed
+> > through .Call to choose between the R built-in pythag() or the GC
+> > distance). I've put a copy in the spgwr package, but multiple copies means
+> > maintenance problems. The rdist.earth() function in fields is at the R
+> > level - the nice comment on the help page does hold: "Surprisingly this
+> > [is] all done efficiently in S".
+> > 
+> > I'd like to expose the GC function in the sp package, but have not yet
+> > looked at how contributed packages can share functions (and header files)
+> > at the C level - the header file is the real issue, I think. Would there
+> > be interest in doing this? The GC function as it is does not have an R
+> > wrapper, because in spdep, most of the distances are thrown away
+> > immediately as being beyond threshold.
+> > 
+> > Feedback, please?
+> > 
+> > Roger
+> > 
+> > > There were a few messages along these lines and I will take the
+> > > opportunity to mention that there is a package under development (aRT)
+> > > which intends to provide this and other functionalities typical from GIS
+> > > systems via Terralib
+> > > The package page is: http://www.est.ufpr.br/aRT
+> > > 
+> > > Still changing rapidly but already some functionalities are already
+> > > working.
+> > > There is a package vignette and a few exemples in the tests directory.
+> > > This package adheres the the "sp" classes andin newer versions also allows
+> > > "proj4".
+> > > 
+> > > Best
+> > > P.J.
+> > > 
+> > > 
+> > > 
+> > > On Fri, 17 Jun 2005, giovanna jona lasinio wrote:
+> > > 
+> > > > Dear all, thanks for the many suggestions, I'll try and let you know
+> > > > what worked best. Package fields works well in computing variogram's
+> > > > cloud with lon-lat coordinates (returns by default distances in miles)
+> > > > and usually I use a loess-built curve to get a nice-looking version of
+> > > > the variogram. However I wasn't able to use the "vgram" function's
+> > > > output in order to obtain a "variofit" estimated model. What would be
+> > > > extremely usefull, in my opinion, is to allow "variog" to accept a
+> > > > distance matrix as input, in this way no coordinate transformation would
+> > > > be needed. I'm not yet good enough at programming in R to find a good
+> > > > solution myself :-) but if I find a solution I'll let you know....
+> > > >
+> > > > Best
+> > > > Giovanna Jona Lasinio
+> > > >
+> > > > _______________________________________________
+> > > > R-sig-Geo mailing list
+> > > > R-sig-Geo at stat.math.ethz.ch
+> > > > https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> > > >
+> > > >
+> > > 
+> > > Paulo Justiniano Ribeiro Jr
+> > > LEG (Laborat?rio de Estat?stica e Geoinforma??o)
+> > > Departamento de Estat?stica
+> > > Universidade Federal do Paran?
+> > > Caixa Postal 19.081
+> > > CEP 81.531-990
+> > > Curitiba, PR  -  Brasil
+> > > Tel: (+55) 41 3361 3573
+> > > Fax: (+55) 41 3361 3141
+> > > e-mail: paulojus at est.ufpr.br
+> > > http://www.est.ufpr.br/~paulojus
+> > > 
+> > > _______________________________________________
+> > > R-sig-Geo mailing list
+> > > R-sig-Geo at stat.math.ethz.ch
+> > > https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> > > 
+> > 
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From reeves at nceas.ucsb.edu  Mon Jun 20 20:36:34 2005
+From: reeves at nceas.ucsb.edu (Rick Reeves)
+Date: Mon, 20 Jun 2005 11:36:34 -0700
+Subject: [R-sig-Geo] Needed: example of WRITING an ESRI polygon shapefile
+	with the Shapefiles write.shp, et.al routines...
+Message-ID: <001301c575c6$fc46cd00$8bdc6f80@BURAN>
+
+
+
+Greetings:
+
+I would like to write the contents of an R polygon object
+containing (what else?) polygons to an ESRI shapefile. 
+
+I turned to the shapefiles package, read the pdf, which 
+mentions that 'the write functions work just fine, but 
+building the necessary data in R to write out all the 
+appropriate data in the shp and dbf files is absent'. 
+
+Hmmm....
+
+Can someone (maybe the authors) tell me if shapefiles
+will just export the polygon outlines as shapefiles?
+I can live without all the .dbf file contents or any
+geographic projection information for now. 
+
+Can anyone share a code example that shows how to
+use the shapefiles write.xxx() routines?
+
+My input objects are the same ones that I use as input 
+to the R polygon() and points() methods. 
+
+Thanks for any help on this...
+
+Rick Reeves
+Sr. Scientific Programmer / Quantitative Analyst
+National Center for Ecological Analysis and Synthesis
+University of California, Santa Barbara
+805 892 2534
+reeves at nceas.ucsb.edu
+
+
+
+From reeves at nceas.ucsb.edu  Mon Jun 20 20:45:57 2005
+From: reeves at nceas.ucsb.edu (Rick Reeves)
+Date: Mon, 20 Jun 2005 11:45:57 -0700
+Subject: [R-sig-Geo] ...Or is the maptools package the best to use for ESRI
+	shapefile export?
+Message-ID: <001401c575c8$4bd052a0$8bdc6f80@BURAN>
+
+
+
+I just reviewed the maptools package document, 
+which notes write PolylistShape() et al. 
+this doc has good written examples, has anyone
+any practical experience with them? 
+Thanks, Rick Reeves
+
+Sr. Scientific Programmer / Quantitative Analyst
+National Center for Ecological Analysis and Synthesis
+University of California, Santa Barbara
+805 892 2534
+reeves at nceas.ucsb.edu
+
+
+
+From reeves at nceas.ucsb.edu  Tue Jun 21 02:46:24 2005
+From: reeves at nceas.ucsb.edu (Rick Reeves)
+Date: Mon, 20 Jun 2005 17:46:24 -0700
+Subject: [R-sig-Geo] Technique required: create a new shapefile from polygon
+	vertices list
+Message-ID: <000701c575fa$a6b4aea0$8bdc6f80@BURAN>
+
+
+
+
+I have a collection of polygons, expressed as ordered lists 
+or line segments defined as x/y coordinate pairs. In the line
+set for each polygon, the last coordinate of the last line
+connects to the first coordinate of the first line. 
+
+I can plot these using the graphics package method 'polygon'. 
+
+Now, I would like to export them as a shapefile. Seemed like
+this would be simple. So far, I have examined the maptools,
+shapefiles,sp, geoR packages and found no way to write a 
+polygon shapefile that does not require the input data to 
+have been in a shapefile (e.g., maptools.write.polylistShape).
+
+Someone suggests using read.table in geoR. But how do you 
+specify that you want to create polygons? 
+
+Can anyone suggest a method using R methods or otherwise (e.g. gdal)
+for generating a polygon shapefile as I describe? Even
+the Arc GIS documentation is sketchy on thiis topic. 
+
+Thanks, Rick Reeves
+
+
+Scientific Programmer / Quantitative Analyst
+National Center for Ecological Analysis and Synthesis
+University of California, Santa Barbara
+805 892 2534
+reeves at nceas.ucsb.edu
+
+
+
+From Roger.Bivand at nhh.no  Tue Jun 21 09:40:02 2005
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Tue, 21 Jun 2005 09:40:02 +0200 (CEST)
+Subject: [R-sig-Geo] Technique required: create a new shapefile from
+ polygon vertices list
+In-Reply-To: <000701c575fa$a6b4aea0$8bdc6f80@BURAN>
+Message-ID: <Pine.LNX.4.44.0506210905020.14873-100000@reclus.nhh.no>
+
+On Mon, 20 Jun 2005, Rick Reeves wrote:
+
+> 
+> 
+> 
+> I have a collection of polygons, expressed as ordered lists 
+> or line segments defined as x/y coordinate pairs. In the line
+> set for each polygon, the last coordinate of the last line
+> connects to the first coordinate of the first line. 
+> 
+> I can plot these using the graphics package method 'polygon'. 
+> 
+> Now, I would like to export them as a shapefile. Seemed like
+> this would be simple. So far, I have examined the maptools,
+> shapefiles,sp, geoR packages and found no way to write a 
+> polygon shapefile that does not require the input data to 
+> have been in a shapefile (e.g., maptools.write.polylistShape).
+
+Assuming you would like each list element to be a separate shape:
+
+> library(sp)
+> pl <- list(s1=cbind(c(2,4,4,1,2), c(2,3,5,4,2)), s2=cbind(c(5,4,2,5), 
++   c(2,3,2,2)), s3=cbind(c(4,4,5,10,4), c(5,3,2,5,5)))
+> str(pl)
+List of 3
+ $ s1: num [1:5, 1:2] 2 4 4 1 2 2 3 5 4 2
+ $ s2: num [1:4, 1:2] 5 4 2 5 2 3 2 2
+ $ s3: num [1:5, 1:2] 4 4 5 10 4 5 3 2 5 5
+> plot(c(0,11), c(1,6), asp=1, type="n")
+> for (i in pl) polygon(i)
+> names(pl)
+[1] "s1" "s2" "s3"
+
+replicates your list (but here I've named the polygons in the list with 
+unique names, you can use names(pl) <- c(<unique names>) if need be.
+
+> for (i in 1:length(pl)) Srsl[[i]] <- Srings(list(Sring(pl[[i]])), 
++   names(pl)[i])
+> shps <- SpatialRings(Srsl, pO=1:length(pl))
+> plot(shps)
+
+That gives us a SpatialRings object, the plot order pO= argument is
+required, but will not be needed later for this case. Now for the 
+attribute data - it is required, because shapefiles have to have a DBF 
+file:
+
+> df <- data.frame(x1=rbinom(3,6,0.1), x2=sample(letters,3), x3=runif(3), 
++    row.names=getSRSringsIDSlots(shps))
+> df
+   x1 x2         x3
+s1  1  d 0.78274192
+s2  0  k 0.07043669
+s3  1  o 0.09974697
+> SRDF <- SpatialRingsDataFrame(shps, df)
+
+Now that we have a SpatialRingsDataFrame object, we can write it as a 
+shapefile (in fact using the facilities in the maptools package inside a 
+wrapper in the spmaptools package in the repository at sourceforge):
+
+# rSpatial <- "http://r-spatial.sourceforge.net/R"
+# install.packages("spmaptools", repos=rSpatial)
+> library(spmaptools)
+> writeSRDFShape(SRDF, "mySRDF")
+> getinfo.shape("mySRDF")
+Shapefile Type: Polygon   # of Shapes: 3 
+
+The sp package mechanisms also let you subset your SRDF, use the polygons 
+from the maps package, and use ArcInfo e00 files too if you feel like it. 
+You can also use gpclib through the spgpc wrapper to dissolve internal 
+borders when aggregating polygons if you need to. More ideas will be 
+welcome too ... (we still don't have a way to write a *.prj file from the 
+PROJ.4-format coordinate reference system information that we can embed in 
+the sp objects, that does need doing).
+
+Hope this helps
+
+Roger 
+
+> 
+> Someone suggests using read.table in geoR. But how do you 
+> specify that you want to create polygons? 
+> 
+> Can anyone suggest a method using R methods or otherwise (e.g. gdal)
+> for generating a polygon shapefile as I describe? Even
+> the Arc GIS documentation is sketchy on thiis topic. 
+> 
+> Thanks, Rick Reeves
+> 
+> 
+> Scientific Programmer / Quantitative Analyst
+> National Center for Ecological Analysis and Synthesis
+> University of California, Santa Barbara
+> 805 892 2534
+> reeves at nceas.ucsb.edu
+> 
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From Roger.Bivand at nhh.no  Tue Jun 21 10:16:54 2005
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Tue, 21 Jun 2005 10:16:54 +0200 (CEST)
+Subject: [R-sig-Geo] Technique required: create a new shapefile from
+ polygon vertices list
+In-Reply-To: <Pine.LNX.4.44.0506210905020.14873-100000@reclus.nhh.no>
+Message-ID: <Pine.LNX.4.44.0506211014390.14873-100000@reclus.nhh.no>
+
+Sorry, one line missing marked ###:
+
+On Tue, 21 Jun 2005, Roger Bivand wrote:
+
+> On Mon, 20 Jun 2005, Rick Reeves wrote:
+> 
+> > 
+> > 
+> > 
+> > I have a collection of polygons, expressed as ordered lists 
+> > or line segments defined as x/y coordinate pairs. In the line
+> > set for each polygon, the last coordinate of the last line
+> > connects to the first coordinate of the first line. 
+> > 
+> > I can plot these using the graphics package method 'polygon'. 
+> > 
+> > Now, I would like to export them as a shapefile. Seemed like
+> > this would be simple. So far, I have examined the maptools,
+> > shapefiles,sp, geoR packages and found no way to write a 
+> > polygon shapefile that does not require the input data to 
+> > have been in a shapefile (e.g., maptools.write.polylistShape).
+> 
+> Assuming you would like each list element to be a separate shape:
+> 
+> > library(sp)
+> > pl <- list(s1=cbind(c(2,4,4,1,2), c(2,3,5,4,2)), s2=cbind(c(5,4,2,5), 
+> +   c(2,3,2,2)), s3=cbind(c(4,4,5,10,4), c(5,3,2,5,5)))
+> > str(pl)
+> List of 3
+>  $ s1: num [1:5, 1:2] 2 4 4 1 2 2 3 5 4 2
+>  $ s2: num [1:4, 1:2] 5 4 2 5 2 3 2 2
+>  $ s3: num [1:5, 1:2] 4 4 5 10 4 5 3 2 5 5
+> > plot(c(0,11), c(1,6), asp=1, type="n")
+> > for (i in pl) polygon(i)
+> > names(pl)
+> [1] "s1" "s2" "s3"
+> 
+> replicates your list (but here I've named the polygons in the list with 
+> unique names, you can use names(pl) <- c(<unique names>) if need be.
+> 
+
+###
+Srsl <- vector(mode="list", length=length(pl))
+###
+
+> > for (i in 1:length(pl)) Srsl[[i]] <- Srings(list(Sring(pl[[i]])), 
+> +   names(pl)[i])
+> > shps <- SpatialRings(Srsl, pO=1:length(pl))
+> > plot(shps)
+> 
+> That gives us a SpatialRings object, the plot order pO= argument is
+> required, but will not be needed later for this case. Now for the 
+> attribute data - it is required, because shapefiles have to have a DBF 
+> file:
+> 
+> > df <- data.frame(x1=rbinom(3,6,0.1), x2=sample(letters,3), x3=runif(3), 
+> +    row.names=getSRSringsIDSlots(shps))
+> > df
+>    x1 x2         x3
+> s1  1  d 0.78274192
+> s2  0  k 0.07043669
+> s3  1  o 0.09974697
+> > SRDF <- SpatialRingsDataFrame(shps, df)
+> 
+> Now that we have a SpatialRingsDataFrame object, we can write it as a 
+> shapefile (in fact using the facilities in the maptools package inside a 
+> wrapper in the spmaptools package in the repository at sourceforge):
+> 
+> # rSpatial <- "http://r-spatial.sourceforge.net/R"
+> # install.packages("spmaptools", repos=rSpatial)
+> > library(spmaptools)
+> > writeSRDFShape(SRDF, "mySRDF")
+> > getinfo.shape("mySRDF")
+> Shapefile Type: Polygon   # of Shapes: 3 
+> 
+> The sp package mechanisms also let you subset your SRDF, use the polygons 
+> from the maps package, and use ArcInfo e00 files too if you feel like it. 
+> You can also use gpclib through the spgpc wrapper to dissolve internal 
+> borders when aggregating polygons if you need to. More ideas will be 
+> welcome too ... (we still don't have a way to write a *.prj file from the 
+> PROJ.4-format coordinate reference system information that we can embed in 
+> the sp objects, that does need doing).
+> 
+> Hope this helps
+> 
+> Roger 
+> 
+> > 
+> > Someone suggests using read.table in geoR. But how do you 
+> > specify that you want to create polygons? 
+> > 
+> > Can anyone suggest a method using R methods or otherwise (e.g. gdal)
+> > for generating a polygon shapefile as I describe? Even
+> > the Arc GIS documentation is sketchy on thiis topic. 
+> > 
+> > Thanks, Rick Reeves
+> > 
+> > 
+> > Scientific Programmer / Quantitative Analyst
+> > National Center for Ecological Analysis and Synthesis
+> > University of California, Santa Barbara
+> > 805 892 2534
+> > reeves at nceas.ucsb.edu
+> > 
+> > _______________________________________________
+> > R-sig-Geo mailing list
+> > R-sig-Geo at stat.math.ethz.ch
+> > https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> > 
+> 
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From Alexander.Herr at csiro.au  Thu Jun 23 04:23:55 2005
+From: Alexander.Herr at csiro.au (Alexander.Herr at csiro.au)
+Date: Thu, 23 Jun 2005 12:23:55 +1000
+Subject: [R-sig-Geo] Extracting regions with no neighbors from Map2poly
+	object
+Message-ID: <062AE320EF971E40ACD0F6C93391D7694FF74C@exqld1-tsv.nexus.csiro.au>
+
+Hi List,
+
+I am trying to delete polygons with no neighbors in a Map2poly object. 
+
+Region.id exists, however, I cannot find a way to identify/delete the list of polygons (from poly2nb()) with no neighbors. I have trouble subsetting the Map2poly object, so I can create a new object without these polygons.
+
+Any help appreciated
+
+Thanks HErry
+
+--------------------------------------------
+Alexander Herr - Herry
+Northern Futures
+Davies Laboratory, CSIRO
+PMB, Aitkenvale, QLD 4814
+Phone (07) 4753 8510
+Fax?? (07) 4753 8650
+Home: http://herry.ausbats.org.au
+Webadmin ABS: http://ausbats.org.au
+Sustainable Ecosystems: http://www.cse.csiro.au/
+--------------------------------------------
+?
+
+
+
+From Roger.Bivand at nhh.no  Thu Jun 23 11:44:00 2005
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Thu, 23 Jun 2005 11:44:00 +0200 (CEST)
+Subject: [R-sig-Geo] Extracting regions with no neighbors from Map2poly
+ object
+In-Reply-To: <062AE320EF971E40ACD0F6C93391D7694FF74C@exqld1-tsv.nexus.csiro.au>
+Message-ID: <Pine.LNX.4.44.0506231117360.18359-100000@reclus.nhh.no>
+
+On Thu, 23 Jun 2005 Alexander.Herr at csiro.au wrote:
+
+> Hi List,
+> 
+> I am trying to delete polygons with no neighbors in a Map2poly object. 
+> 
+> Region.id exists, however, I cannot find a way to identify/delete the
+> list of polygons (from poly2nb()) with no neighbors. I have trouble
+> subsetting the Map2poly object, so I can create a new object without
+> these polygons.
+> 
+
+I'll try to replicate:
+
+> library(spdep)
+> try3 <- read.shape(system.file("shapes/sids.shp", package="maptools")[1])
+> mappolys <- Map2poly(try3, as.character(try3$att.data$FIPSNO))
+> cents <- do.call("rbind", lapply(lapply(mappolys, function(x) attr(x, 
++   "centroid")), unlist))
+> str(cents)
+ num [1:100, 1:2] -81.5 -81.1 -80.7 -76.1 -77.4 ...
+ - attr(*, "dimnames")=List of 2
+  ..$ : NULL
+  ..$ : chr [1:2] "x" "y"
+> nb <- dnearneigh(cents, 0, 0.3)
+> nb
+Neighbour list object:
+Number of regions: 100 
+Number of nonzero links: 78 
+Percentage nonzero weights: 0.78 
+Average number of links: 0.78 
+44 regions with no links:
+6 8 10 11 12 14 24 33 37 38 39 42 44 46 51 54 55 56 57 58 62 63 64 66 67 
+68 70 71 75 78 79 80 82 84 85 86 88 89 92 94 95 96 98 100
+> table(card(nb))
+
+ 0  1  2  3 
+44 36 18  2 
+> plot(mappolys)
+> plot(nb, cents, add=TRUE, lwd=3, col="blue")
+
+This generates a neighbour list with lots of no-neighbour counties, so 
+subsetting is just a matter of dropping the counties with zero neighbour 
+cardinality (subset= are the ones to retain):
+
+> sub_mappolys <- subset(mappolys, subset=card(nb) > 0)
+> sub_nb <- subset(nb, subset=card(nb) > 0)
+> sub_cents <- subset(cents, subset=card(nb) > 0)
+> sub_nb
+Neighbour list object:
+Number of regions: 56 
+Number of nonzero links: 78 
+Percentage nonzero weights: 2.487245 
+Average number of links: 1.392857 
+> plot(mappolys, col="lightgreen")
+> plot(sub_mappolys, col="white", add=TRUE)
+> plot(sub_nb, sub_cents, add=TRUE, lwd=3, col="blue")
+
+Of course, this is just for this data set, and maybe there is something 
+different about yours.
+
+Hope this helps,
+
+Roger
+
+
+> Any help appreciated
+> 
+> Thanks HErry
+> 
+> --------------------------------------------
+> Alexander Herr - Herry
+> Northern Futures
+> Davies Laboratory, CSIRO
+> PMB, Aitkenvale, QLD 4814
+> Phone (07) 4753 8510
+> Fax?? (07) 4753 8650
+> Home: http://herry.ausbats.org.au
+> Webadmin ABS: http://ausbats.org.au
+> Sustainable Ecosystems: http://www.cse.csiro.au/
+> --------------------------------------------
+> ?
+> 
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From Alexander.Herr at csiro.au  Fri Jun 24 02:57:31 2005
+From: Alexander.Herr at csiro.au (Alexander.Herr at csiro.au)
+Date: Fri, 24 Jun 2005 10:57:31 +1000
+Subject: [R-sig-Geo] Extracting regions with no neighbors from Map2poly
+	object
+Message-ID: <062AE320EF971E40ACD0F6C93391D7694FF74D@exqld1-tsv.nexus.csiro.au>
+
+Thank Roger,
+
+I can replicate most of you example using my Map2poly object (ie plotting and subsetting works on the centroids and the poly2nb object). However when subsetting the Map2poly object I get an "Error in order(na.last, decreasing,...): argument 1 is not a vector.
+
+The shapefile I am using is messy and has multiple polygons in one region (ie islands off the coast assocaited with coastal polygons). Is there a way of matching region.id in the Map2poly object with the  isolated/non-isolated polygons from the neigborlist so I can delete/retain polygons?
+
+Thanks Herry
+
+--------------------------------------------
+Alexander Herr - Herry
+Northern Futures
+Davies Laboratory, CSIRO
+PMB, Aitkenvale, QLD 4814
+Phone (07) 4753 8510
+Fax?? (07) 4753 8650
+Home: http://herry.ausbats.org.au
+Webadmin ABS: http://ausbats.org.au
+Sustainable Ecosystems: http://www.cse.csiro.au/
+--------------------------------------------
+? 
+
+
+
+-----Original Message-----
+From: Roger Bivand [mailto:Roger.Bivand at nhh.no] 
+Sent: Thursday, 23 June 2005 7:44 PM
+To: Herr, Alexander Herr - Herry (CSE, Townsville)
+Cc: r-sig-geo at stat.math.ethz.ch
+Subject: Re: [R-sig-Geo] Extracting regions with no neighbors from Map2poly object
+
+
+On Thu, 23 Jun 2005 Alexander.Herr at csiro.au wrote:
+
+> Hi List,
+> 
+> I am trying to delete polygons with no neighbors in a Map2poly object.
+> 
+> Region.id exists, however, I cannot find a way to identify/delete the 
+> list of polygons (from poly2nb()) with no neighbors. I have trouble 
+> subsetting the Map2poly object, so I can create a new object without 
+> these polygons.
+> 
+
+I'll try to replicate:
+
+> library(spdep)
+> try3 <- read.shape(system.file("shapes/sids.shp", 
+> package="maptools")[1]) mappolys <- Map2poly(try3, 
+> as.character(try3$att.data$FIPSNO))
+> cents <- do.call("rbind", lapply(lapply(mappolys, function(x) attr(x, 
++   "centroid")), unlist))
+> str(cents)
+ num [1:100, 1:2] -81.5 -81.1 -80.7 -76.1 -77.4 ...
+ - attr(*, "dimnames")=List of 2
+  ..$ : NULL
+  ..$ : chr [1:2] "x" "y"
+> nb <- dnearneigh(cents, 0, 0.3)
+> nb
+Neighbour list object:
+Number of regions: 100 
+Number of nonzero links: 78 
+Percentage nonzero weights: 0.78 
+Average number of links: 0.78 
+44 regions with no links:
+6 8 10 11 12 14 24 33 37 38 39 42 44 46 51 54 55 56 57 58 62 63 64 66 67 
+68 70 71 75 78 79 80 82 84 85 86 88 89 92 94 95 96 98 100
+> table(card(nb))
+
+ 0  1  2  3 
+44 36 18  2 
+> plot(mappolys)
+> plot(nb, cents, add=TRUE, lwd=3, col="blue")
+
+This generates a neighbour list with lots of no-neighbour counties, so 
+subsetting is just a matter of dropping the counties with zero neighbour 
+cardinality (subset= are the ones to retain):
+
+> sub_mappolys <- subset(mappolys, subset=card(nb) > 0)
+> sub_nb <- subset(nb, subset=card(nb) > 0)
+> sub_cents <- subset(cents, subset=card(nb) > 0)
+> sub_nb
+Neighbour list object:
+Number of regions: 56 
+Number of nonzero links: 78 
+Percentage nonzero weights: 2.487245 
+Average number of links: 1.392857 
+> plot(mappolys, col="lightgreen")
+> plot(sub_mappolys, col="white", add=TRUE)
+> plot(sub_nb, sub_cents, add=TRUE, lwd=3, col="blue")
+
+Of course, this is just for this data set, and maybe there is something 
+different about yours.
+
+Hope this helps,
+
+Roger
+
+
+> Any help appreciated
+> 
+> Thanks HErry
+> 
+> --------------------------------------------
+> Alexander Herr - Herry
+> Northern Futures
+> Davies Laboratory, CSIRO
+> PMB, Aitkenvale, QLD 4814
+> Phone (07) 4753 8510
+> Fax?? (07) 4753 8650
+> Home: http://herry.ausbats.org.au
+> Webadmin ABS: http://ausbats.org.au
+> Sustainable Ecosystems: http://www.cse.csiro.au/
+> --------------------------------------------
+> ?
+> 
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch 
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of Economics and Business Administration, Helleveien 30, N-5045 Bergen, Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From Roger.Bivand at nhh.no  Fri Jun 24 15:23:19 2005
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Fri, 24 Jun 2005 15:23:19 +0200 (CEST)
+Subject: [R-sig-Geo] Extracting regions with no neighbors from Map2poly
+ object
+In-Reply-To: <062AE320EF971E40ACD0F6C93391D7694FF74D@exqld1-tsv.nexus.csiro.au>
+Message-ID: <Pine.LNX.4.44.0506241508580.20986-100000@reclus.nhh.no>
+
+On Fri, 24 Jun 2005 Alexander.Herr at csiro.au wrote:
+
+> Thank Roger,
+> 
+> I can replicate most of you example using my Map2poly object (ie
+> plotting and subsetting works on the centroids and the poly2nb object).
+> However when subsetting the Map2poly object I get an "Error in
+> order(na.last, decreasing,...): argument 1 is not a vector.
+
+Not on the centroids, they were used in that case only to generate an "nb" 
+object (by the way your Map2poly object is a "polylist" object, Map2poly() 
+is just one function which returns such an object; "nb" objects can be 
+returned by many more functions than poly2nb()).
+
+Please try debug(subset.polylist) and re-run to see where this is 
+happening, most likely in:
+
+    area <- sapply(res, function(x) attr(x, "area"))
+    if (any(sapply(area, is.null))) 
+        pO <- order(subset.default(attr(x, "plotOrder"), subset))
+    else pO <- order(area, decreasing = TRUE)
+
+It looks as though any(sapply(area, is.null)) is TRUE as well as the 
+return value from attr(x, "plotOrder") is not a vector. This suggests that 
+your "polylist" object is pretty old (?) and/or that the maptools package 
+is not very fresh(?) - which version of maptools are you using, and when 
+was the "polylist" object generated? What are the components of 
+attributes(<"polylist">)? Is there an area attribute and/or a plotOrder 
+attribute?
+
+A warning, I'll be offline from Sunday (GMT) for some weeks, so if 
+problems continue, please join in, other maptools users!
+
+Roger
+
+
+> 
+> The shapefile I am using is messy and has multiple polygons in one
+> region (ie islands off the coast assocaited with coastal polygons). Is
+> there a way of matching region.id in the Map2poly object with the
+> isolated/non-isolated polygons from the neigborlist so I can
+> delete/retain polygons?
+
+PS. I don't understand. A shape can have multiple polygons, and in 
+maptools, you can only subset shapes easily, removing one or more 
+sub-polygons from a shape can be done, but you have to manipulate the 
+object directly. This is one of the reasons why the sp package has been 
+developed, and it is where development will continue.
+
+> 
+> Thanks Herry
+> 
+> --------------------------------------------
+> Alexander Herr - Herry
+> Northern Futures
+> Davies Laboratory, CSIRO
+> PMB, Aitkenvale, QLD 4814
+> Phone (07) 4753 8510
+> Fax?? (07) 4753 8650
+> Home: http://herry.ausbats.org.au
+> Webadmin ABS: http://ausbats.org.au
+> Sustainable Ecosystems: http://www.cse.csiro.au/
+> --------------------------------------------
+> ? 
+> 
+> 
+> 
+> -----Original Message-----
+> From: Roger Bivand [mailto:Roger.Bivand at nhh.no] 
+> Sent: Thursday, 23 June 2005 7:44 PM
+> To: Herr, Alexander Herr - Herry (CSE, Townsville)
+> Cc: r-sig-geo at stat.math.ethz.ch
+> Subject: Re: [R-sig-Geo] Extracting regions with no neighbors from Map2poly object
+> 
+> 
+> On Thu, 23 Jun 2005 Alexander.Herr at csiro.au wrote:
+> 
+> > Hi List,
+> > 
+> > I am trying to delete polygons with no neighbors in a Map2poly object.
+> > 
+> > Region.id exists, however, I cannot find a way to identify/delete the 
+> > list of polygons (from poly2nb()) with no neighbors. I have trouble 
+> > subsetting the Map2poly object, so I can create a new object without 
+> > these polygons.
+> > 
+> 
+> I'll try to replicate:
+> 
+> > library(spdep)
+> > try3 <- read.shape(system.file("shapes/sids.shp", 
+> > package="maptools")[1]) mappolys <- Map2poly(try3, 
+> > as.character(try3$att.data$FIPSNO))
+> > cents <- do.call("rbind", lapply(lapply(mappolys, function(x) attr(x, 
+> +   "centroid")), unlist))
+> > str(cents)
+>  num [1:100, 1:2] -81.5 -81.1 -80.7 -76.1 -77.4 ...
+>  - attr(*, "dimnames")=List of 2
+>   ..$ : NULL
+>   ..$ : chr [1:2] "x" "y"
+> > nb <- dnearneigh(cents, 0, 0.3)
+> > nb
+> Neighbour list object:
+> Number of regions: 100 
+> Number of nonzero links: 78 
+> Percentage nonzero weights: 0.78 
+> Average number of links: 0.78 
+> 44 regions with no links:
+> 6 8 10 11 12 14 24 33 37 38 39 42 44 46 51 54 55 56 57 58 62 63 64 66 67 
+> 68 70 71 75 78 79 80 82 84 85 86 88 89 92 94 95 96 98 100
+> > table(card(nb))
+> 
+>  0  1  2  3 
+> 44 36 18  2 
+> > plot(mappolys)
+> > plot(nb, cents, add=TRUE, lwd=3, col="blue")
+> 
+> This generates a neighbour list with lots of no-neighbour counties, so 
+> subsetting is just a matter of dropping the counties with zero neighbour 
+> cardinality (subset= are the ones to retain):
+> 
+> > sub_mappolys <- subset(mappolys, subset=card(nb) > 0)
+> > sub_nb <- subset(nb, subset=card(nb) > 0)
+> > sub_cents <- subset(cents, subset=card(nb) > 0)
+> > sub_nb
+> Neighbour list object:
+> Number of regions: 56 
+> Number of nonzero links: 78 
+> Percentage nonzero weights: 2.487245 
+> Average number of links: 1.392857 
+> > plot(mappolys, col="lightgreen")
+> > plot(sub_mappolys, col="white", add=TRUE)
+> > plot(sub_nb, sub_cents, add=TRUE, lwd=3, col="blue")
+> 
+> Of course, this is just for this data set, and maybe there is something 
+> different about yours.
+> 
+> Hope this helps,
+> 
+> Roger
+> 
+> 
+> > Any help appreciated
+> > 
+> > Thanks HErry
+> > 
+> > --------------------------------------------
+> > Alexander Herr - Herry
+> > Northern Futures
+> > Davies Laboratory, CSIRO
+> > PMB, Aitkenvale, QLD 4814
+> > Phone (07) 4753 8510
+> > Fax?? (07) 4753 8650
+> > Home: http://herry.ausbats.org.au
+> > Webadmin ABS: http://ausbats.org.au
+> > Sustainable Ecosystems: http://www.cse.csiro.au/
+> > --------------------------------------------
+> > ?
+> > 
+> > _______________________________________________
+> > R-sig-Geo mailing list
+> > R-sig-Geo at stat.math.ethz.ch 
+> > https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> > 
+> 
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From stanimura-ngs at umin.ac.jp  Mon Jun 27 14:33:25 2005
+From: stanimura-ngs at umin.ac.jp (Susumu Tanimura)
+Date: Mon, 27 Jun 2005 21:33:25 +0900
+Subject: [R-sig-Geo] symbols on a map
+Message-ID: <20050627213325.6d232c93.stanimura-ngs@umin.ac.jp>
+
+Hi there,
+
+My today's trial is to put symbols on a map.  After reading pnm files
+(airport symbol) with read.pnm() from pixmap package, I overlaid the pixmap
+objects on the map following their xy coordinates.
+
+library(maptools)
+library(pixmap)
+airport <- function() {
+  A <- "airp.shp"
+  V <- "admin1.shp"
+  plot((read.shape(V)))
+  r <- read.pnm("air.ppm")
+  a <- Map2points(read.shape(A))
+  for (i in 1:length(a[,1])) addlogo(r,px=c(a[i,1]-0.5,a[i,1]+0.5),py=c(a[i,2]-0.5,a[i,2]+0.5))
+}
+
+Unfortunately, resulted map was very ugly because the pnm format dose
+not have transparency.  For mapping purpose, treating with a picture
+format with alpha channel is needed.  Dose anyone succeed to put
+symbols on a map of R?
+
+It may very happy if I can use metapost, eps, or any other vector
+formats for symbology of map.
+
+--
+Susumu Tanimura
+
+
+
+From SADrzy at ship.edu  Mon Jun 27 15:06:53 2005
+From: SADrzy at ship.edu (Drzyzga, Scott)
+Date: Mon, 27 Jun 2005 09:06:53 -0400
+Subject: [R-sig-Geo] symbols on a map
+Message-ID: <8D4FC509D4D4944EBF736B9EEF7DB3DC03EA6404@shipmail01.ship.lcl>
+
+Susumu,
+
+You might want to consider reading Paul Murrell's (2004) article, which
+addresses the transparency issue.  His ideas can be used to achieve
+great effects on both maps and plots.  Also, empirical scatterplots and
+variogram clouds yield so much more information when the densities of
+overlapping data can be observed and considered.  
+
+All the best,
+Scott Drzyzga
+
+Geography & Earth Science Department
+Shippensburg University
+
+
+Murrel P (2004) Fonts, lines and transparency in R graphics. R News
+4(2): 5-8.
+
+
+
+
+-----Original Message-----
+From: r-sig-geo-bounces at stat.math.ethz.ch
+[mailto:r-sig-geo-bounces at stat.math.ethz.ch] On Behalf Of Susumu
+Tanimura
+Sent: Monday, June 27, 2005 8:33 AM
+To: r-sig-geo at stat.math.ethz.ch
+Subject: [R-sig-Geo] symbols on a map
+
+Hi there,
+
+My today's trial is to put symbols on a map.  After reading pnm files
+(airport symbol) with read.pnm() from pixmap package, I overlaid the
+pixmap objects on the map following their xy coordinates.
+
+library(maptools)
+library(pixmap)
+airport <- function() {
+  A <- "airp.shp"
+  V <- "admin1.shp"
+  plot((read.shape(V)))
+  r <- read.pnm("air.ppm")
+  a <- Map2points(read.shape(A))
+  for (i in 1:length(a[,1]))
+addlogo(r,px=c(a[i,1]-0.5,a[i,1]+0.5),py=c(a[i,2]-0.5,a[i,2]+0.5))
+}
+
+Unfortunately, resulted map was very ugly because the pnm format dose
+not have transparency.  For mapping purpose, treating with a picture
+format with alpha channel is needed.  Dose anyone succeed to put symbols
+on a map of R?
+
+It may very happy if I can use metapost, eps, or any other vector
+formats for symbology of map.
+
+--
+Susumu Tanimura
+
+_______________________________________________
+R-sig-Geo mailing list
+R-sig-Geo at stat.math.ethz.ch
+https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+
+
+
+From stanimura-ngs at umin.ac.jp  Tue Jun 28 05:59:00 2005
+From: stanimura-ngs at umin.ac.jp (Susumu Tanimura)
+Date: Tue, 28 Jun 2005 12:59:00 +0900
+Subject: [R-sig-Geo] symbols on a map
+In-Reply-To: <8D4FC509D4D4944EBF736B9EEF7DB3DC03EA6404@shipmail01.ship.lcl>
+References: <8D4FC509D4D4944EBF736B9EEF7DB3DC03EA6404@shipmail01.ship.lcl>
+Message-ID: <20050628125900.2075785d.stanimura-ngs@umin.ac.jp>
+
+Dear Drzyzga, Scott
+
+> You might want to consider reading Paul Murrell's (2004) article, which
+> addresses the transparency issue.
+
+Thank you for the information. Semitransparent on a map was
+successfully shown with command such as
+plot(Mapobject,fg=rgb(1,0,0,0.5)).  As for pixmap, I can not come up
+with idea to make symbol picture transparent.
+
+> Also, empirical scatterplots and
+> variogram clouds yield so much more information when the densities of
+> overlapping data can be observed and considered.  
+
+Since I am familiar to neither gstat nor geoR, I may be wrong but I
+think a background of plotted vector object is usually transparent.
+In this case, there is no problem.  The problem of pixmap is that
+a rectangular background of bitmap picture covers the basemap, and
+piles one another.
+
+Thanks.
+
+--
+Susumu Tanimura
+Dept. of Socio-environmental Medicine
+Inst. of Tropical Medicine, Nagasaki University
+TEL 095-849-7865 FAX 095-849-7867
+
+
+
+From e.pebesma at geog.uu.nl  Tue Jun 28 12:41:04 2005
+From: e.pebesma at geog.uu.nl (Edzer J. Pebesma)
+Date: Tue, 28 Jun 2005 12:41:04 +0200
+Subject: [R-sig-Geo] symbols on a map
+In-Reply-To: <20050628125900.2075785d.stanimura-ngs@umin.ac.jp>
+References: <8D4FC509D4D4944EBF736B9EEF7DB3DC03EA6404@shipmail01.ship.lcl>
+	<20050628125900.2075785d.stanimura-ngs@umin.ac.jp>
+Message-ID: <42C12940.2000608@geog.uu.nl>
+
+Hi Susuma, I agree with the previous suggestions. I know that
+Roger is away for a while, and although I know little about
+pixmap I will give it a try. I do not think that pixmap currently
+actively supports transparency, in the sense that it stores
+red/green/blue+alpha channels. However, it does support
+indexed bitmaps, which have an index "channel" and a colour table.
+You may want to create such a pixmap, and then give it
+colors that have an alpha value, as in:
+
+ > library(sp)
+ > bpy.colors(10,alpha=.5)
+ [1] "#00003380" "#00009980" "#0000FF80" "#5000FF80" "#9F0FF080" "#EF42BD80"
+ [7] "#FF758A80" "#FFA85780" "#FFDB2480" "#FFFF6080"
+
+Here, #FF758A80 refers to hexadecimal encoding of
+red (FF) green (75) blue (8A) and transparency (80), all
+on a scale from 0 (=00) to 255 (=FF). If the pixmap
+accepts this, the consequent plotting method may
+again pick up the transparency (alpha) level.
+
+I haven't tried, but it may as well work.
+
+HTH,
+--
+Edzer
+
+
+Susumu Tanimura wrote:
+
+>Dear Drzyzga, Scott
+>
+>  
+>
+>>You might want to consider reading Paul Murrell's (2004) article, which
+>>addresses the transparency issue.
+>>    
+>>
+>
+>Thank you for the information. Semitransparent on a map was
+>successfully shown with command such as
+>plot(Mapobject,fg=rgb(1,0,0,0.5)).  As for pixmap, I can not come up
+>with idea to make symbol picture transparent.
+>
+>  
+>
+>>Also, empirical scatterplots and
+>>variogram clouds yield so much more information when the densities of
+>>overlapping data can be observed and considered.  
+>>    
+>>
+>
+>Since I am familiar to neither gstat nor geoR, I may be wrong but I
+>think a background of plotted vector object is usually transparent.
+>In this case, there is no problem.  The problem of pixmap is that
+>a rectangular background of bitmap picture covers the basemap, and
+>piles one another.
+>
+>Thanks.
+>
+>--
+>Susumu Tanimura
+>Dept. of Socio-environmental Medicine
+>Inst. of Tropical Medicine, Nagasaki University
+>TEL 095-849-7865 FAX 095-849-7867
+>
+>_______________________________________________
+>R-sig-Geo mailing list
+>R-sig-Geo at stat.math.ethz.ch
+>https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>  
+>
+
+
+
+From Alexander.Herr at csiro.au  Wed Jun 29 02:16:25 2005
+From: Alexander.Herr at csiro.au (Alexander.Herr at csiro.au)
+Date: Wed, 29 Jun 2005 10:16:25 +1000
+Subject: [R-sig-Geo] Extracting regions with no neighbors from Map2poly
+	object
+Message-ID: <062AE320EF971E40ACD0F6C93391D769542AF6@exqld1-tsv.nexus.csiro.au>
+
+Thanks Roger,
+
+#################### snip ##############################################
+Please try debug(subset.polylist) and re-run to see where this is 
+happening, most likely in:
+
+    area <- sapply(res, function(x) attr(x, "area"))
+    if (any(sapply(area, is.null))) 
+        pO <- order(subset.default(attr(x, "plotOrder"), subset))
+    else pO <- order(area, decreasing = TRUE)
+
+It looks as though any(sapply(area, is.null)) is TRUE as well as the 
+return value from attr(x, "plotOrder") is not a vector. This suggests that 
+your "polylist" object is pretty old (?) and/or that the maptools package 
+is not very fresh(?) - which version of maptools are you using, and when 
+was the "polylist" object generated? What are the components of 
+attributes(<"polylist">)? Is there an area attribute and/or a plotOrder 
+attribute? 
+######################## END #############################################
+
+
+Yes the error occurs in the area statement:
+
+debug: if (any(sapply(area, is.null))) pO <- order(subset.default(attr(x, 
+    "plotOrder"), subset)) else pO <- order(area, decreasing = TRUE) Browse[1]> 
+Error in order(na.last, decreasing, ...) : 
+        argument 1 is not a vector
+
+
+My maptools package is version 0.4-13. I am running R 2.1.0 under Mandrake 10.1 on a Pentium 4 and my polylist is from a week ago (ie create with this package).
+
+
+Attributes of the polylist are:
+List of 3
+ $ region.id: chr [1:4638] "1" "2" "3" "4" ...
+ $ class    : chr "polylist"
+ $ maplim   :List of 2
+  ..$ x: num [1:2] 113 153
+  ..$ y: num [1:2] -30.00  -9.14
+
+
+################## snip  ########################################
+> 
+> The shapefile I am using is messy and has multiple polygons in one
+> region (ie islands off the coast assocaited with coastal polygons). Is 
+> there a way of matching region.id in the Map2poly object with the 
+> isolated/non-isolated polygons from the neigborlist so I can 
+> delete/retain polygons?
+
+PS. I don't understand. A shape can have multiple polygons, and in 
+maptools, you can only subset shapes easily, removing one or more 
+sub-polygons from a shape can be done, but you have to manipulate the 
+object directly. This is one of the reasons why the sp package has been 
+developed, and it is where development will continue.
+#################### end ####################################
+
+I try to be clearer. Basically, I want to label all polygons that have no neighbor and than delete them from the Map2poly object. Subset is one way of doing that, but it doesn't work for me using card. A work around could be to identify all region.id with no neighbors in the nb object and match these to the region.id in the Map2poly object. How to do this so I cannot figure out...
+
+Thanks for any help
+Herry
+
+--------------------------------------------
+Alexander Herr - Herry
+Northern Futures
+Davies Laboratory, CSIRO
+PMB, Aitkenvale, QLD 4814
+Phone (07) 4753 8510
+Fax?? (07) 4753 8650
+Home: http://herry.ausbats.org.au
+Webadmin ABS: http://ausbats.org.au
+Sustainable Ecosystems: http://www.cse.csiro.au/
+--------------------------------------------
+?
+
+
+
+From RRoa at fisheries.gov.fk  Thu Jun 30 14:14:56 2005
+From: RRoa at fisheries.gov.fk (Ruben Roa)
+Date: Thu, 30 Jun 2005 10:14:56 -0200
+Subject: [R-sig-Geo] Error message from likfit.glsm in geoRglm
+Message-ID: <03DCBBA079F2324786E8715BE538968A068DFB@FIGMAIL-CLUS01.FIG.FK>
+
+Hi:
+
+I am trying to fit a spatial generalized linear mixed model
+with geoRglm (v.0.8-11, geoR version 1.5-7, R 2.1.0). The 
+family is binomial and the link is logit. There are no covariates, 
+so beta is only the intercept. In the data i have 4 columns, 
+namely easting, northing, number of successes and number of trials.
+These are the features of the model for generating the MCMC samples:
+
+$cov.pars     $beta    $cov.model   $nugget $kappa  $family        $link
+[1] 0.35 7.00 [1] 0.6  [1] "matern" [1] 0.1 [1] 1.5 [1] "binomial" [1] "logit"
+
+I get the following error message:
+
+Error in rep(no, length.out = length(ans)) : 
+        argument "no" is missing, with no default
+
+However, i don't see the "no" argument in the likfit.glsm
+function. Neither does it appear as an argument for optim(). 
+So I am lost. Can anyone give a clue of which specification i
+am missing. Btw, this was my command:
+
+c1f.lf<-likfit.glsm(c1i.pre.lf,ini.phi=7,hessian=TRUE)
+
+Thanks in advance,
+
+Ruben
+
+
+

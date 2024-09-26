@@ -1,0 +1,5026 @@
+From ibanez at bioef.org  Fri Dec  1 09:56:09 2006
+From: ibanez at bioef.org (Berta)
+Date: Fri, 1 Dec 2006 09:56:09 +0100
+Subject: [R-sig-Geo] Map2poly and poly2nb with unconnected polygon areas
+Message-ID: <006001c71526$8cb9b5f0$6601a8c0@BIOEF.ORG>
+
+An embedded and charset-unspecified text was scrubbed...
+Name: not available
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20061201/9aaacf08/attachment.pl>
+
+From Roger.Bivand at nhh.no  Fri Dec  1 10:18:53 2006
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Fri, 1 Dec 2006 10:18:53 +0100 (CET)
+Subject: [R-sig-Geo] Map2poly and poly2nb with unconnected polygon areas
+In-Reply-To: <006001c71526$8cb9b5f0$6601a8c0@BIOEF.ORG>
+Message-ID: <Pine.LNX.4.44.0612011000120.12229-100000@reclus.nhh.no>
+
+On Fri, 1 Dec 2006, Berta wrote:
+
+> Hi R-sig-geo list,
+> 
+> A very easy question: I have a shapefile with 730 areas. Somo of these
+> areas have two or three unconnected polygons, so that
+
+Not so easy. There are 758 objects present, but some of the 730 
+observations are associated with more than one object.
+
+If you say (using the maptools package):
+
+polys_758 <- readShapePoly("myfile.shp")
+
+or using rgdal:
+
+polys_758 <- readOGR("mydirectory", "myfile")
+
+you will get a SpatialPolygonsDataFrame
+
+Then (using maptools, and after installing gpclib), say:
+
+polys_730 <- unionSpatialPolygons(as(polys_758, "SpatialPolygons"), 
+  as.character(polys_758$cod))
+
+you have 730 objects. The final question is whether the rows in the data 
+frame are simply duplicated for the same cod value, and can be discarded, 
+or whether they should be aggregated (sum, for example). 
+
+df_758 <- as(polys_758, "data.frame")
+
+convert to: df_730, set row.names(df_730) <- as.character(df_730$cod)
+
+and:
+
+out_730 <- SpatialPolygonsDataFrame(polys_730, data=df_730)
+
+which will use the row names of df_730 to match against the 
+dissolving/union criterion.
+
+Then (using spdep):
+
+x.nb <- poly2nb(as(out_730, "SpatialPolygons"))
+
+should just work (and should put the cod values into the neighbour list 
+IDs). Check with:
+
+plot(out_730, border="grey")
+plot(x.nb, coordinates(out_730), pch=".", col="blue")
+
+It is quite typical for shapefiles to contain several objects for one 
+observation, because the writing application is thinking in terms of 
+geometry, not observations. Like having three of me, one for each 
+telephone number, rather than one of me with three numbers, in a telephone 
+number list.
+
+Hope this helps,
+
+Roger
+
+> 
+> length(myshapefile$att.data$cod) is 758 eventhough there are only 730 cods.
+> 
+> Now I want to obtain the neighbourhood structure using
+> 
+> x.2<-Map2poly(myshapefile, region.id="cod")
+> x.nb<-poly2nb(x.2)
+> sapply(x.nb,length) 
+> 
+> But it seems that it does not recognize the polygons that belong to the
+> same area (indicated by cod), and again length(sapply(x.nb,length)) is
+> 758 in stead of 730 . What am I doing wrong? Thanks a lot in advance,
+> 
+> Berta.
+> 	[[alternative HTML version deleted]]
+> 
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From harrykim at stat.Berkeley.EDU  Fri Dec  1 19:08:32 2006
+From: harrykim at stat.Berkeley.EDU (harrykim at stat.Berkeley.EDU)
+Date: Fri, 1 Dec 2006 10:08:32 -0800 (PST)
+Subject: [R-sig-Geo] (no subject)
+Message-ID: <50049.128.32.135.75.1164996512.squirrel@www.stat.berkeley.edu>
+
+Hello R-sig-geo list,
+
+   I've been trying to figure this out by myself but i am getting kind of
+lost so i was hoping if you could point me to the right direction.
+   I have a shape file for map of berkeley--the one in
+california--formatted in long/lat coordinates. I also have set of
+locations in long/lat coordinates which i wish to plot over the map of
+berkeley.
+   So far i have
+
+library("maptools")
+plot(readShapePoly("V1 Land.shp"))
+points(tmp$long,tmp$lat)
+
+which does the job. But I want to convert the shapefile and the locations
+into UTM coordinates and ultimately convert them into meters (or
+kilometers); I want to work with the coordinates in meters.
+   I have been using readShapePoly() in maptools package to read in the
+shapefile which returns spatial polygons data frame. I've read that the
+spatial polygons data frame can be converted into UTM using
+sptransform() in Rgdal package but i am not so sure what i need to
+exactly. I tried to read up on using CRS class (a class used by proj4)
+but i was getting lost in the documentation.
+
+Thank you very much
+Harry
+p.s:The UTM zone for berkeley is 10S
+
+
+
+From Roger.Bivand at nhh.no  Fri Dec  1 19:51:14 2006
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Fri, 1 Dec 2006 19:51:14 +0100 (CET)
+Subject: [R-sig-Geo] (no subject)
+In-Reply-To: <50049.128.32.135.75.1164996512.squirrel@www.stat.berkeley.edu>
+Message-ID: <Pine.LNX.4.44.0612011943350.13581-100000@reclus.nhh.no>
+
+On Fri, 1 Dec 2006 harrykim at stat.Berkeley.EDU wrote:
+
+> Hello R-sig-geo list,
+> 
+>    I've been trying to figure this out by myself but i am getting kind of
+> lost so i was hoping if you could point me to the right direction.
+>    I have a shape file for map of berkeley--the one in
+> california--formatted in long/lat coordinates. I also have set of
+> locations in long/lat coordinates which i wish to plot over the map of
+> berkeley.
+>    So far i have
+> 
+> library("maptools")
+> plot(readShapePoly("V1 Land.shp"))
+> points(tmp$long,tmp$lat)
+> 
+> which does the job. But I want to convert the shapefile and the locations
+> into UTM coordinates and ultimately convert them into meters (or
+> kilometers); I want to work with the coordinates in meters.
+>    I have been using readShapePoly() in maptools package to read in the
+> shapefile which returns spatial polygons data frame. I've read that the
+> spatial polygons data frame can be converted into UTM using
+> sptransform() in Rgdal package but i am not so sure what i need to
+> exactly. I tried to read up on using CRS class (a class used by proj4)
+> but i was getting lost in the documentation.
+
+You are almost there. If we assume that your shapefile is in geographical 
+coordinates and in the WGS84 datum (the model of where you are vertically 
+on a 3D globe), then you can set that when you read it:
+
+berk_ll <- readShapePoly("V1 Land.shp",
+ proj4string=CRS("+proj=longlat +datum=WGS84"))
+berk_utm <- spTransform(berk_ll, CRS("+proj=utm +zone=10"))
+
+and equivalently for the points, the coordinates will be in meters.
+
+> 
+> Thank you very much
+> Harry
+> p.s:The UTM zone for berkeley is 10S
+
+Not sure about 10S, you can get +south if you want, but I thought Berkeley 
+was still North of the Equator?
+
+> 
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From massimodisasha at yahoo.it  Fri Dec  1 23:40:41 2006
+From: massimodisasha at yahoo.it (Massimo Di Stefano)
+Date: Fri, 1 Dec 2006 23:40:41 +0100 (CET)
+Subject: [R-sig-Geo] Errore in sprintf(fmt, ...) ?
+Message-ID: <675059.51674.qm@web55006.mail.re4.yahoo.com>
+
+hi,
+i'm trying to perform a clustering on a dem (50x50 km
+res=20m)
+ is this is the code:
+
+
+require(spgrass6)
+
+require(cluster)
+
+gmeta6 <- gmeta6()
+
+x <-
+readFLOAT6sp(c("er","crosc","longc","slope","profc","minic","maxic"))
+
+morph <- data.frame(cbind(x$er, x$crosc, x$longc,
+x$slope, x$profc, x$minic, x$maxic))
+
+morph <- data.frame(cbind(x$er, x$crosc, x$longc,
+x$slope/max(x$slope), x$profc, x$minic, x$maxic))
+
+names(morph) <-
+c("er","crosc","longc","slope_n","profc","minic","maxic")
+
+print("perform the clustering")
+
+morph.clara <- clara(morph, k=5, stand=F)
+
+x$morph_class <- morph.clara$clustering
+
+print("send result back to GRASS")
+
+rast.put6(x,"morph", zcol="morph_class")
+....
+......
+but during:
+"perform the clustering"
+
+i'had this error:
+
+Errore in sprintf(fmt, ...) : La lunghezza della
+stringa eccede la dimensione del buffer di 8192
+Inoltre: Warning messages:
+1: perl = TRUE ?? implementato solo nei locale UTF-8
+2: perl = TRUE ?? implementato solo nei locale UTF-8
+3: perl = TRUE ?? implementato solo nei locale UTF-8
+4: perl = TRUE ?? implementato solo nei locale UTF-8
+5: perl = TRUE ?? implementato solo nei locale UTF-8
+6: perl = TRUE ?? implementato solo nei locale UTF-8
+7: perl = TRUE ?? implementato solo nei locale UTF-8
+8: La stringa di caratteri verr?  probabilmente
+troncata
+Esecuzione interrotta
+
+if i try the same code on a subregion of my data 
+(about 20x20 km res=20), it works very fine!
+but for a large region i've this error :-(
+
+obviously i think that is a memory problem, right ?
+(i'm working with a notebook PPC-1.33-512ram)
+my data are  : 7 raster-map on a region of about 50X40
+km at a resolution of 20m.
+is there some wolkaround about the memory problems?
+
+an other question is:
+what is this :
+Warning messages:
+1: perl = TRUE ?? implementato solo nei locale UTF-8
+2: perl = TRUE ?? implementato solo nei locale UTF-8
+3: perl = TRUE ?? implementato solo nei locale UTF-8
+4: perl = TRUE ?? implementato solo nei locale UTF-8
+5: perl = TRUE ?? implementato solo nei locale UTF-8
+6: perl = TRUE ?? implementato solo nei locale UTF-8
+7: perl = TRUE ?? implementato solo nei locale UTF-8
+
+is it about this line of the code :
+
+morph.clara <- clara(morph, k=5, stand=F)
+i have an F > false
+
+
+frustated for this error, to day i buy a 1 GB memory
+slot for my laptop
+now it have 1,28GB instead the old 512, but i've the
+same error :-(
+damn!damn!....how can i do?
+repeat for a little area (about 20X20 km and res=20m)
+it work fine!
+have you any suggestion?
+is ther a method for look if this error depend from my
+ram or other....?
+thanks foe any suggestion!
+i need your help.
+thanks.
+Massimo
+
+
+
+From Roger.Bivand at nhh.no  Sat Dec  2 11:16:22 2006
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Sat, 2 Dec 2006 11:16:22 +0100 (CET)
+Subject: [R-sig-Geo] Errore in sprintf(fmt, ...) ?
+In-Reply-To: <675059.51674.qm@web55006.mail.re4.yahoo.com>
+Message-ID: <Pine.LNX.4.44.0612021111260.14338-100000@reclus.nhh.no>
+
+On Fri, 1 Dec 2006, Massimo Di Stefano wrote:
+
+Massimo:
+
+Two deep breaths, it'll work out. Memory may well be a problem, but we 
+can't see what is going on without 
+
+1) sessionInfo() for your platform with the packages loaded
+
+2) traceback() after the problem arises
+
+3) do not run this as a script - run it line by line, so that you can 
+check things step by step. Run gc() - garbage collector - manually, and 
+stay in control as much as possible.
+
+Roger
+
+> hi,
+> i'm trying to perform a clustering on a dem (50x50 km
+> res=20m)
+>  is this is the code:
+> 
+> 
+> require(spgrass6)
+> 
+> require(cluster)
+> 
+> gmeta6 <- gmeta6()
+> 
+> x <-
+> readFLOAT6sp(c("er","crosc","longc","slope","profc","minic","maxic"))
+> 
+> morph <- data.frame(cbind(x$er, x$crosc, x$longc,
+> x$slope, x$profc, x$minic, x$maxic))
+> 
+> morph <- data.frame(cbind(x$er, x$crosc, x$longc,
+> x$slope/max(x$slope), x$profc, x$minic, x$maxic))
+> 
+> names(morph) <-
+> c("er","crosc","longc","slope_n","profc","minic","maxic")
+> 
+> print("perform the clustering")
+> 
+> morph.clara <- clara(morph, k=5, stand=F)
+> 
+> x$morph_class <- morph.clara$clustering
+> 
+> print("send result back to GRASS")
+> 
+> rast.put6(x,"morph", zcol="morph_class")
+> ....
+> ......
+> but during:
+> "perform the clustering"
+> 
+> i'had this error:
+> 
+> Errore in sprintf(fmt, ...) : La lunghezza della
+> stringa eccede la dimensione del buffer di 8192
+> Inoltre: Warning messages:
+> 1: perl = TRUE ?? implementato solo nei locale UTF-8
+> 2: perl = TRUE ?? implementato solo nei locale UTF-8
+> 3: perl = TRUE ?? implementato solo nei locale UTF-8
+> 4: perl = TRUE ?? implementato solo nei locale UTF-8
+> 5: perl = TRUE ?? implementato solo nei locale UTF-8
+> 6: perl = TRUE ?? implementato solo nei locale UTF-8
+> 7: perl = TRUE ?? implementato solo nei locale UTF-8
+> 8: La stringa di caratteri verr?  probabilmente
+> troncata
+> Esecuzione interrotta
+> 
+> if i try the same code on a subregion of my data 
+> (about 20x20 km res=20), it works very fine!
+> but for a large region i've this error :-(
+> 
+> obviously i think that is a memory problem, right ?
+> (i'm working with a notebook PPC-1.33-512ram)
+> my data are  : 7 raster-map on a region of about 50X40
+> km at a resolution of 20m.
+> is there some wolkaround about the memory problems?
+> 
+> an other question is:
+> what is this :
+> Warning messages:
+> 1: perl = TRUE ?? implementato solo nei locale UTF-8
+> 2: perl = TRUE ?? implementato solo nei locale UTF-8
+> 3: perl = TRUE ?? implementato solo nei locale UTF-8
+> 4: perl = TRUE ?? implementato solo nei locale UTF-8
+> 5: perl = TRUE ?? implementato solo nei locale UTF-8
+> 6: perl = TRUE ?? implementato solo nei locale UTF-8
+> 7: perl = TRUE ?? implementato solo nei locale UTF-8
+> 
+> is it about this line of the code :
+> 
+> morph.clara <- clara(morph, k=5, stand=F)
+> i have an F > false
+> 
+> 
+> frustated for this error, to day i buy a 1 GB memory
+> slot for my laptop
+> now it have 1,28GB instead the old 512, but i've the
+> same error :-(
+> damn!damn!....how can i do?
+> repeat for a little area (about 20X20 km and res=20m)
+> it work fine!
+> have you any suggestion?
+> is ther a method for look if this error depend from my
+> ram or other....?
+> thanks foe any suggestion!
+> i need your help.
+> thanks.
+> Massimo
+> 
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From massimodisasha at yahoo.it  Sat Dec  2 16:09:44 2006
+From: massimodisasha at yahoo.it (Massimo Di Stefano)
+Date: Sat, 2 Dec 2006 16:09:44 +0100 (CET)
+Subject: [R-sig-Geo] Errore in sprintf(fmt, ...) ?
+Message-ID: <888007.83583.qm@web55015.mail.re4.yahoo.com>
+
+i tryed again, 
+
+This is the log,
+
+> library(spgrass6)
+Carico il pacchetto richiesto: sp
+Carico il pacchetto richiesto: maptools
+Carico il pacchetto richiesto: foreign
+Carico il pacchetto richiesto: rgdal
+Geospatial Data Abstraction Library extensions to R
+successfully loaded
+> library(cluster)
+> sessionInfo()
+R version 2.4.0 (2006-10-03)
+powerpc-apple-darwin8.7.0
+
+locale:
+it_IT/it_IT/it_IT/C/it_IT/it_IT
+
+attached base packages:
+[1] "methods"   "stats"     "graphics"  "grDevices"
+"utils"     "datasets"
+[7] "base"
+
+other attached packages:
+cluster spgrass6    rgdal maptools  foreign       sp
+"1.11.2"  "0.3-3"  "0.5-1"  "0.6-3" "0.8-18"  "0.9-4"
+> gc()
+         used (Mb) gc trigger (Mb) max used (Mb)
+Ncells 408935 11.0     597831   16   531268 14.2
+Vcells 320324  2.5     786432    6   472905  3.7
+> gmeta6 <- gmeta6()
+> x <-
+readFLOAT6sp(c("er","crosc","longc","slope","profc","minic","maxic"))
+Warning messages:
+1: perl = TRUE ? implementato solo nei locale UTF-8
+2: perl = TRUE ? implementato solo nei locale UTF-8
+3: perl = TRUE ? implementato solo nei locale UTF-8
+4: perl = TRUE ? implementato solo nei locale UTF-8
+5: perl = TRUE ? implementato solo nei locale UTF-8
+6: perl = TRUE ? implementato solo nei locale UTF-8
+7: perl = TRUE ? implementato solo nei locale UTF-8
+> gc()
+           used  (Mb) gc trigger   (Mb)  max used  
+(Mb)
+Ncells   418204  11.2     741108   19.8    699974  
+18.7
+Vcells 22643234 172.8  191414408 1460.4 238993684
+1823.4
+> morph <- data.frame(cbind(x$er, x$crosc, x$longc,
+x$slope, x$profc, x$minic, x$maxic))
+> gc()
+           used  (Mb) gc trigger   (Mb)  max used  
+(Mb)
+Ncells   418451  11.2     741108   19.8    699974  
+18.7
+Vcells 46682176 356.2  153131526 1168.4 238993684
+1823.4
+<er, x$crosc, x$longc, x$slope/max(x$slope), x$profc,
+x$minic, x$maxic))
+> gc()
+           used  (Mb) gc trigger   (Mb)  max used  
+(Mb)
+Ncells   418453  11.2     741108   19.8    699974  
+18.7
+Vcells 46682176 356.2  137841862 1051.7 238993684
+1823.4
+> names(morph) <-
+c("er","crosc","longc","slope_n","profc","minic","maxic")
+> gc()
+           used  (Mb) gc trigger   (Mb)  max used  
+(Mb)
+Ncells   418456  11.2     741108   19.8    699974  
+18.7
+Vcells 46682180 356.2  137841862 1051.7 238993684
+1823.4
+> morph.clara <- clara(morph, k=5, stand=F)
+Errore in clara(morph, k = 5, stand = F) :
+Observations
+1929241,1931311,1933381,1935451,1937521,1939591,1941661,1943731,1945801,1947871,1949941,1952011,1954081,1956151,1958221,1960291,1962361,1964431,1966501,1968571,1970641,1972711,1974781,1976851,1978921,1980991,1983061,1985131,1987201,1989271,1991341,1993411,1995481,1997551,1999621,2001691,2003761,2005831,2007901,2009971,2012041,2014111,2016181,2018251,2020321,2022391,2024461,2026531,2028601,2030671,2032741,2034811,2036881,2038951,2041021,2043091,2045161,2047231,2049301,2051371,2053441,2055511,2057581,2059651,2061721,2063791,2065861,2067931,2070001,2072071,2074141,2076211,2078281,2080351,2082421,2084491,2086561,2088631,2090701,2092771,2094841,2096911,2098981,2101051,2103121,2105191,2107261,2109331,2111401,2113471,2115541,2117611,2119681,2121751,2123821,2125891,2127961,2130031,2132101,2134171,2136241,2138311,2140381,2142451,2144521,2146591,2148661,2150731,2152801,2154871,2156941,2159011,2161081,2163151,2165221,2167291,2169361,2171431
+> traceback()
+2: stop(ngettext(length(i), sprintf("Observation %d
+has", i[1]),
+       sprintf("Observations %s have", paste(i,
+collapse = ","))),
+       " *only* NAs --> omit for clustering")
+1: clara(morph, k = 5, stand = F)
+
+
+
+Il giorno 02/dic/06, alle ore 12:00,
+r-sig-geo-request at stat.math.ethz.ch ha scritto:
+
+Massimo:
+
+Two deep breaths, it'll work out. Memory may well be a
+problem, but we 
+can't see what is going on without 
+
+1) sessionInfo() for your platform with the packages
+loaded
+
+2) traceback() after the problem arises
+
+3) do not run this as a script - run it line by line,
+so that you can 
+check things step by step. Run gc() - garbage
+collector - manually, and 
+stay in control as much as possible.
+
+Roger
+
+hi,
+i'm trying to perform a clustering on a dem (50x50 km
+res=20m)
+ is this is the code:
+
+
+require(spgrass6)
+
+require(cluster)
+
+gmeta6 <- gmeta6()
+
+x <-
+readFLOAT6sp(c("er","crosc","longc","slope","profc","minic","maxic"))
+
+morph <- data.frame(cbind(x$er, x$crosc, x$longc,
+x$slope, x$profc, x$minic, x$maxic))
+
+morph <- data.frame(cbind(x$er, x$crosc, x$longc,
+x$slope/max(x$slope), x$profc, x$minic, x$maxic))
+
+names(morph) <-
+c("er","crosc","longc","slope_n","profc","minic","maxic")
+
+print("perform the clustering")
+
+morph.clara <- clara(morph, k=5, stand=F)
+
+x$morph_class <- morph.clara$clustering
+
+print("send result back to GRASS")
+
+rast.put6(x,"morph", zcol="morph_class")
+....
+......
+but during:
+"perform the clustering"
+
+i'had this error:
+
+Errore in sprintf(fmt, ...) : La lunghezza della
+stringa eccede la dimensione del buffer di 8192
+Inoltre: Warning messages:
+1: perl = TRUE ?? implementato solo nei locale UTF-8
+2: perl = TRUE ?? implementato solo nei locale UTF-8
+3: perl = TRUE ?? implementato solo nei locale UTF-8
+4: perl = TRUE ?? implementato solo nei locale UTF-8
+5: perl = TRUE ?? implementato solo nei locale UTF-8
+6: perl = TRUE ?? implementato solo nei locale UTF-8
+7: perl = TRUE ?? implementato solo nei locale UTF-8
+8: La stringa di caratteri verr?  probabilmente
+troncata
+Esecuzione interrotta
+
+if i try the same code on a subregion of my data 
+(about 20x20 km res=20), it works very fine!
+but for a large region i've this error :-(
+
+obviously i think that is a memory problem, right ?
+(i'm working with a notebook PPC-1.33-512ram)
+my data are  : 7 raster-map on a region of about 50X40
+km at a resolution of 20m.
+is there some wolkaround about the memory problems?
+
+an other question is:
+what is this :
+Warning messages:
+1: perl = TRUE ?? implementato solo nei locale UTF-8
+2: perl = TRUE ?? implementato solo nei locale UTF-8
+3: perl = TRUE ?? implementato solo nei locale UTF-8
+4: perl = TRUE ?? implementato solo nei locale UTF-8
+5: perl = TRUE ?? implementato solo nei locale UTF-8
+6: perl = TRUE ?? implementato solo nei locale UTF-8
+7: perl = TRUE ?? implementato solo nei locale UTF-8
+
+is it about this line of the code :
+
+morph.clara <- clara(morph, k=5, stand=F)
+i have an F > false
+
+
+frustated for this error, to day i buy a 1 GB memory
+slot for my laptop
+now it have 1,28GB instead the old 512, but i've the
+same error :-(
+damn!damn!....how can i do?
+repeat for a little area (about 20X20 km and res=20m)
+it work fine!
+have you any suggestion?
+is ther a method for look if this error depend from my
+ram or other....?
+thanks foe any suggestion!
+i need your help.
+thanks.
+Massimo
+
+
+
+From Roger.Bivand at nhh.no  Sat Dec  2 16:19:10 2006
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Sat, 2 Dec 2006 16:19:10 +0100 (CET)
+Subject: [R-sig-Geo] Errore in sprintf(fmt, ...) ?
+Message-ID: <Pine.LNX.4.44.0612021618210.14338-100000@reclus.nhh.no>
+
+On Sat, 2 Dec 2006, Massimo Di Stefano wrote:
+
+> Roger:
+> 
+> This is the log,
+> 
+> > library(spgrass6)
+> Carico il pacchetto richiesto: sp
+> Carico il pacchetto richiesto: maptools
+> Carico il pacchetto richiesto: foreign
+> Carico il pacchetto richiesto: rgdal
+> Geospatial Data Abstraction Library extensions to R
+> successfully loaded
+> > library(cluster)
+> > sessionInfo()
+> R version 2.4.0 (2006-10-03)
+> powerpc-apple-darwin8.7.0
+> 
+> locale:
+> it_IT/it_IT/it_IT/C/it_IT/it_IT
+> 
+> attached base packages:
+> [1] "methods"   "stats"     "graphics"  "grDevices"
+> "utils"     "datasets"
+> [7] "base"
+> 
+> other attached packages:
+> cluster spgrass6    rgdal maptools  foreign       sp
+> "1.11.2"  "0.3-3"  "0.5-1"  "0.6-3" "0.8-18"  "0.9-4"
+> > gc()
+>          used (Mb) gc trigger (Mb) max used (Mb)
+> Ncells 408935 11.0     597831   16   531268 14.2
+> Vcells 320324  2.5     786432    6   472905  3.7
+> > gmeta6 <- gmeta6()
+> > x <-
+> readFLOAT6sp(c("er","crosc","longc","slope","profc","minic","maxic"))
+> Warning messages:
+> 1: perl = TRUE ? implementato solo nei locale UTF-8
+> 2: perl = TRUE ? implementato solo nei locale UTF-8
+> 3: perl = TRUE ? implementato solo nei locale UTF-8
+> 4: perl = TRUE ? implementato solo nei locale UTF-8
+> 5: perl = TRUE ? implementato solo nei locale UTF-8
+> 6: perl = TRUE ? implementato solo nei locale UTF-8
+> 7: perl = TRUE ? implementato solo nei locale UTF-8
+
+Nowadays I would suggest readRAST6() instead of readFLOAT6sp(), because it 
+uses r.out.bin rather than r.out.arc from GRASS. The perl=TRUE warnings 
+seems to be coming from string comparison somewhere inside a function 
+called by readFLOAT6sp(), I don't think they are the problem.
+
+
+
+> > gc()
+>            used  (Mb) gc trigger   (Mb)  max used  
+> (Mb)
+> Ncells   418204  11.2     741108   19.8    699974  
+> 18.7
+> Vcells 22643234 172.8  191414408 1460.4 238993684
+> 1823.4
+> > morph <- data.frame(cbind(x$er, x$crosc, x$longc,
+> x$slope, x$profc, x$minic, x$maxic))
+
+morph <- as(x, "data.frame")
+
+str(morph) # look inside morph
+summary(morph)
+
+sapply(morph, function(x) any(!is.finite(x)))
+# check morph for NAs etc.
+
+
+> > gc()
+>            used  (Mb) gc trigger   (Mb)  max used  
+> (Mb)
+> Ncells   418451  11.2     741108   19.8    699974  
+> 18.7
+> Vcells 46682176 356.2  153131526 1168.4 238993684
+> 1823.4
+> <er, x$crosc, x$longc, x$slope/max(x$slope), x$profc,
+> x$minic, x$maxic))
+> > gc()
+>            used  (Mb) gc trigger   (Mb)  max used  
+> (Mb)
+> Ncells   418453  11.2     741108   19.8    699974  
+> 18.7
+> Vcells 46682176 356.2  137841862 1051.7 238993684
+> 1823.4
+> > names(morph) <-
+> c("er","crosc","longc","slope_n","profc","minic","maxic")
+> > gc()
+>            used  (Mb) gc trigger   (Mb)  max used  
+> (Mb)
+> Ncells   418456  11.2     741108   19.8    699974  
+> 18.7
+> Vcells 46682180 356.2  137841862 1051.7 238993684
+> 1823.4
+> > morph.clara <- clara(morph, k=5, stand=F)
+> Errore in clara(morph, k = 5, stand = F) :
+> Observations
+> 1929241,1931311,1933381,1935451,1937521,1939591,1941661,1943731,1945801,1947871,1949941,1952011,1954081,1956151,1958221,1960291,1962361,1964431,1966501,1968571,1970641,1972711,1974781,1976851,1978921,1980991,1983061,1985131,1987201,1989271,1991341,1993411,1995481,1997551,1999621,2001691,2003761,2005831,2007901,2009971,2012041,2014111,2016181,2018251,2020321,2022391,2024461,2026531,2028601,2030671,2032741,2034811,2036881,2038951,2041021,2043091,2045161,2047231,2049301,2051371,2053441,2055511,2057581,205965
+> 1,2061721,2063791,2065861,2067931,2070001,2072071,2074141,2076211,2078281,2080351,2082421,2084491,2086561,2088631,2090701,2092771,2094841,2096911,2098981,2101051,2103121,2105191,2107261,2109331,2111401,2113471,2115541,2117611,2119681,2121751,2123821,21258
+> 91,2127961,2130031,2132101,2134171,2136241,2138311,2140381,2142451,2144521,2146591,2148661,2150731,2152801,2154871,2156941,2159011,2161081,2163151,2165221,2167291,2169361,2171431
+> > traceback()
+> 2: stop(ngettext(length(i), sprintf("Observation %d
+> has", i[1]),
+>        sprintf("Observations %s have", paste(i,
+> collapse = ","))),
+>        " *only* NAs --> omit for clustering")
+> 1: clara(morph, k = 5, stand = F)
+> 
+> is this log usefool ?
+
+Yes, I think the problem is firstly that there are NAs in morph, and then 
+that the string listing the row numbers of the NAs exceeds 8K characters
+(your earlier message had: Errore in sprintf(fmt, ...) : La lunghezza 
+della stringa eccede la dimensione del buffer di 8192)
+
+
+So try clara on morph once you have omitted the NAs. If the NAs are for 
+all variables in a row, coercing from SpatialGridDataFrame to 
+SpatialPixelsDataFrame will work, if only some, you need to set the whole 
+row to NA, coerce, cluster, add the clara results to the 
+SpatialPixelsDataFrame, coerce back to SpatialGridDataFrame, then back to 
+GRASS.
+
+Once this is resolved, please post back to the list as well as to me, NAs 
+do happen, expecially in geomorphometrics, for example around the edges 
+where the filter is not fully within the window and/or mask.
+
+Best wishes,
+
+Roger
+
+> thanks a lot!
+> Massimo.
+> 
+> Il giorno 02/dic/06, alle ore 11:16, Roger Bivand ha
+> scritto:
+> 
+> On Fri, 1 Dec 2006, Massimo Di Stefano wrote:
+> 
+> Massimo:
+> 
+> Two deep breaths, it'll work out. Memory may well be a
+> problem, but we
+> can't see what is going on without
+> 
+> 1) sessionInfo() for your platform with the packages
+> loaded
+> 
+> 2) traceback() after the problem arises
+> 
+> 3) do not run this as a script - run it line by line,
+> so that you can
+> check things step by step. Run gc() - garbage
+> collector - manually, and
+> stay in control as much as possible.
+> 
+> Roger
+> 
+> hi,
+> i'm trying to perform a clustering on a dem (50x50 km
+> res=20m)
+>  is this is the code:
+> 
+> 
+> require(spgrass6)
+> 
+> require(cluster)
+> 
+> gmeta6 <- gmeta6()
+> 
+> x <-
+> readFLOAT6sp(c("er","crosc","longc","slope","profc","minic","maxic"))
+> 
+> morph <- data.frame(cbind(x$er, x$crosc, x$longc,
+> x$slope, x$profc, x$minic, x$maxic))
+> 
+> morph <- data.frame(cbind(x$er, x$crosc, x$longc,
+> x$slope/max(x$slope), x$profc, x$minic, x$maxic))
+> 
+> names(morph) <-
+> c("er","crosc","longc","slope_n","profc","minic","maxic")
+> 
+> print("perform the clustering")
+> 
+> morph.clara <- clara(morph, k=5, stand=F)
+> 
+> x$morph_class <- morph.clara$clustering
+> 
+> print("send result back to GRASS")
+> 
+> rast.put6(x,"morph", zcol="morph_class")
+> ....
+> ......
+> but during:
+> "perform the clustering"
+> 
+> i'had this error:
+> 
+> Errore in sprintf(fmt, ...) : La lunghezza della
+> stringa eccede la dimensione del buffer di 8192
+> Inoltre: Warning messages:
+> 1: perl = TRUE ?? implementato solo nei locale UTF-8
+> 2: perl = TRUE ?? implementato solo nei locale UTF-8
+> 3: perl = TRUE ?? implementato solo nei locale UTF-8
+> 4: perl = TRUE ?? implementato solo nei locale UTF-8
+> 5: perl = TRUE ?? implementato solo nei locale UTF-8
+> 6: perl = TRUE ?? implementato solo nei locale UTF-8
+> 7: perl = TRUE ?? implementato solo nei locale UTF-8
+> 8: La stringa di caratteri verr?  probabilmente
+> troncata
+> Esecuzione interrotta
+> 
+> if i try the same code on a subregion of my data
+> (about 20x20 km res=20), it works very fine!
+> but for a large region i've this error :-(
+> 
+> obviously i think that is a memory problem, right ?
+> (i'm working with a notebook PPC-1.33-512ram)
+> my data are  : 7 raster-map on a region of about 50X40
+> km at a resolution of 20m.
+> is there some wolkaround about the memory problems?
+> 
+> an other question is:
+> what is this :
+> Warning messages:
+> 1: perl = TRUE ?? implementato solo nei locale UTF-8
+> 2: perl = TRUE ?? implementato solo nei locale UTF-8
+> 3: perl = TRUE ?? implementato solo nei locale UTF-8
+> 4: perl = TRUE ?? implementato solo nei locale UTF-8
+> 5: perl = TRUE ?? implementato solo nei locale UTF-8
+> 6: perl = TRUE ?? implementato solo nei locale UTF-8
+> 7: perl = TRUE ?? implementato solo nei locale UTF-8
+> 
+> is it about this line of the code :
+> 
+> morph.clara <- clara(morph, k=5, stand=F)
+> i have an F > false
+> 
+> 
+> frustated for this error, to day i buy a 1 GB memory
+> slot for my laptop
+> now it have 1,28GB instead the old 512, but i've the
+> same error :-(
+> damn!damn!....how can i do?
+> repeat for a little area (about 20X20 km and res=20m)
+> it work fine!
+> have you any suggestion?
+> is ther a method for look if this error depend from my
+> ram or other....?
+> thanks foe any suggestion!
+> i need your help.
+> thanks.
+> Massimo
+> 
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> 
+> 
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From linard at geog.ucl.ac.be  Mon Dec  4 16:32:32 2006
+From: linard at geog.ucl.ac.be (Catherine Linard)
+Date: Mon, 04 Dec 2006 16:32:32 +0100
+Subject: [R-sig-Geo] create listw-objects from shapefiles
+Message-ID: <20061204153038.859CD2C520@smtp-1.dynsipr.ucl.ac.be>
+
+Dear R-sig-geo list,
+
+I would like to do some spatial analyses such as 
+moran.test, for which I need a listw. I have 
+shapefile data, so I tried to apply the following steps:
+
+-         create spatial polygons with readShapePoly (maptools package)
+-         create neighbours list by poly2nb (spdep package)
+-         create spatial weights with nb2listw
+
+I get an error message for the last step saying 
+that my nb-object is empty but I have results in 
+the neigbours list object in the previous step
+
+Here are my results:
+
+ > lyme <- readShapePoly ("Filename", 
+proj4string=CRS(as.character (NA)), verbose=FALSE)
+
+ > summary(lyme)
+Object of class SpatialPolygonsDataFrame
+Coordinates:
+         min      max
+r1 22120.69 295156.8
+r2 21153.22 244018.8
+Is projected: NA
+proj4string : [NA]
+Data attributes: different attributes
+
+
+ > lyme_nb <- poly2nb(as(lyme, "SpatialPolygons"))
+ > summary(lyme_nb)
+Neighbour list object:
+Number of regions: 589
+Number of nonzero links: 3314
+Percentage nonzero weights: 0.9552607
+Average number of links: 5.626486
+2 regions with no links:
+44 78
+Link number distribution:
+
+   0   1   2   3   4   5   6   7   8   9  10  11  12  14  15
+   2   2  10  35  75 170 144  86  38  17   5   1   2   1   1
+2 least connected regions:
+8 363 with 1 link
+1 most connected region:
+73 with 15 links
+
+ > lyme_w <- nb2listw(lyme_nb,glist=NULL,style="W",zero.policy=FALSE)
+Error in nb2listw(lyme_nb, glist = NULL, style = "W", zero.policy = FALSE) :
+         Empty neighbour sets found
+
+Is there something wrong? Do I miss something? 
+Thank you very much for any help!
+
+Catherine
+
+Catherine Linard
+University of Louvain
+Department of Geography
+Place Pasteur, 3
+B - 1348 Louvain-la-Neuve
+BELGIUM
+
+Tel: +32/10/47.28.67
+Fax: +32/10/47.28.77
+e-mail: linard at geog.ucl.ac.be
+
+
+
+From Roger.Bivand at nhh.no  Mon Dec  4 18:45:59 2006
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Mon, 4 Dec 2006 18:45:59 +0100 (CET)
+Subject: [R-sig-Geo] create listw-objects from shapefiles
+In-Reply-To: <20061204153038.859CD2C520@smtp-1.dynsipr.ucl.ac.be>
+Message-ID: <Pine.LNX.4.44.0612041843250.10211-100000@reclus.nhh.no>
+
+On Mon, 4 Dec 2006, Catherine Linard wrote:
+
+> Dear R-sig-geo list,
+> 
+> I would like to do some spatial analyses such as 
+> moran.test, for which I need a listw. I have 
+> shapefile data, so I tried to apply the following steps:
+> 
+> -         create spatial polygons with readShapePoly (maptools package)
+> -         create neighbours list by poly2nb (spdep package)
+> -         create spatial weights with nb2listw
+> 
+> I get an error message for the last step saying 
+> that my nb-object is empty but I have results in 
+> the neigbours list object in the previous step
+
+
+No, you have two observations with empty sets of neighbours:
+
+> 2 regions with no links:
+> 44 78
+
+Either fix that - for example with edit.nb(), or accept that this is 
+reasonable - they really have no neighbours, and set zero.policy=TRUE.
+
+Roger
+
+
+> Here are my results:
+> 
+>  > lyme <- readShapePoly ("Filename", 
+> proj4string=CRS(as.character (NA)), verbose=FALSE)
+> 
+>  > summary(lyme)
+> Object of class SpatialPolygonsDataFrame
+> Coordinates:
+>          min      max
+> r1 22120.69 295156.8
+> r2 21153.22 244018.8
+> Is projected: NA
+> proj4string : [NA]
+> Data attributes: different attributes
+
+> 
+>  > lyme_nb <- poly2nb(as(lyme, "SpatialPolygons"))
+>  > summary(lyme_nb)
+> Neighbour list object:
+> Number of regions: 589
+> Number of nonzero links: 3314
+> Percentage nonzero weights: 0.9552607
+> Average number of links: 5.626486
+> 2 regions with no links:
+> 44 78
+> Link number distribution:
+> 
+>    0   1   2   3   4   5   6   7   8   9  10  11  12  14  15
+>    2   2  10  35  75 170 144  86  38  17   5   1   2   1   1
+> 2 least connected regions:
+> 8 363 with 1 link
+> 1 most connected region:
+> 73 with 15 links
+> 
+>  > lyme_w <- nb2listw(lyme_nb,glist=NULL,style="W",zero.policy=FALSE)
+> Error in nb2listw(lyme_nb, glist = NULL, style = "W", zero.policy = FALSE) :
+>          Empty neighbour sets found
+> 
+> Is there something wrong? Do I miss something? 
+> Thank you very much for any help!
+> 
+> Catherine
+> 
+> Catherine Linard
+> University of Louvain
+> Department of Geography
+> Place Pasteur, 3
+> B - 1348 Louvain-la-Neuve
+> BELGIUM
+> 
+> Tel: +32/10/47.28.67
+> Fax: +32/10/47.28.77
+> e-mail: linard at geog.ucl.ac.be
+> 
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From Roger.Bivand at nhh.no  Mon Dec  4 19:12:14 2006
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Mon, 4 Dec 2006 19:12:14 +0100 (CET)
+Subject: [R-sig-Geo] GWR
+In-Reply-To: <BAY104-F32F4835F4D54AE16A36F0888DF0@phx.gbl>
+Message-ID: <Pine.LNX.4.44.0612041905060.10211-100000@reclus.nhh.no>
+
+On Mon, 4 Dec 2006, CARMEN RODRIGUEZ wrote:
+
+> Attached you will find the scripts and results from R and a comparation of 
+> the coefficients from both R and GWR 3.0. Hope you can help me to figure out 
+> the reason of the big differences.
+
+Two reasons:
+
+1) The GWR adaptive proportion to include is stated to be about 23 
+observations of 50, the R one was about 19. 
+
+2) You were using the arguments in gwr() wrongly. When doing adaptive GWR,
+you should pass the output of gwr.sel() through the adapt= argument, and
+should not include bandwidth=. For your data, with adapt=col.dd and
+adapt=(23/50), you get results much more like GWR3 - for 23/50 agreeing
+pretty closely.
+
+Hope this helps,
+
+Roger
+
+> 
+> Thank you very much.
+> 
+> 
+> >From: Roger Bivand <Roger.Bivand at nhh.no>
+> >Reply-To: Roger.Bivand at nhh.no
+> >To: CARMEN RODRIGUEZ <carm_rodrig at hotmail.com>
+> >CC: r-sig-geo at stat.math.ethz.ch
+> >Subject: Re: [R-sig-Geo] GWR
+> >Date: Wed, 29 Nov 2006 11:33:56 +0100 (CET)
+> >
+> >On Wed, 29 Nov 2006, CARMEN RODRIGUEZ wrote:
+> >
+> > > I insist on GWR. To run a GWR model I'm using both R and GWR 3.0. 
+> >Comparing
+> > > the estimated coefficients for an adaptative bisquare kernel in R with 
+> >the
+> > > results for an adaptative kernel in GWR 3.0 (which is supposed to be a
+> > > bisquare function too), differences are very big. I check the bandwidths 
+> >and
+> > > they are not that different (as I understand, in R the adaptative 
+> >bandwidth
+> > > is expressed as a percentage of observations, while in GWR 3.0 the 
+> >bandwidth
+> > > is the number of observations itself). But anyway, the estimated
+> > > coefficients shouldn't be so different, should they?
+> >
+> >Well, without documentation, it is impossible to tell. So please provide
+> >documentation, access to data and scripts of what you are doing that
+> >worries you. We cannot see over your shoulder.
+> >
+> >Roger
+> >
+> > >
+> > > Thank you.
+> > >
+> > > _________________________________________________________________
+> > > Descubre la descarga digital con MSN Music. M?s de un mill?n de 
+> >canciones.
+> > >
+> > > _______________________________________________
+> > > R-sig-Geo mailing list
+> > > R-sig-Geo at stat.math.ethz.ch
+> > > https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> > >
+> >
+> >--
+> >Roger Bivand
+> >Economic Geography Section, Department of Economics, Norwegian School of
+> >Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+> >Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+> >e-mail: Roger.Bivand at nhh.no
+> >
+> 
+> _________________________________________________________________
+> Acepta el reto MSN Premium: Protecci?n para tus hijos en internet. 
+> Desc?rgalo y pru?balo 2 meses gratis. 
+> http://join.msn.com?XAPID=1697&DI=1055&HL=Footer_mailsenviados_proteccioninfantil
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From debarchana.ghosh at gmail.com  Mon Dec  4 20:35:42 2006
+From: debarchana.ghosh at gmail.com (Debarchana Ghosh)
+Date: Mon, 4 Dec 2006 13:35:42 -0600
+Subject: [R-sig-Geo] Error in 'Jest' and 'Fest' funcstions of Spatstat
+	package
+Message-ID: <d1b8ff630612041135v7dd5307bu9943be467a9d0d94@mail.gmail.com>
+
+An embedded and charset-unspecified text was scrubbed...
+Name: not available
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20061204/7ec73cc7/attachment.pl>
+
+From v.gomezrubio at imperial.ac.uk  Tue Dec  5 02:06:06 2006
+From: v.gomezrubio at imperial.ac.uk (Virgilio =?ISO-8859-1?Q?G=F3mez-Rubio?=)
+Date: Tue, 05 Dec 2006 01:06:06 +0000
+Subject: [R-sig-Geo] Error in 'Jest' and 'Fest' funcstions of
+	Spatstat	package
+In-Reply-To: <d1b8ff630612041135v7dd5307bu9943be467a9d0d94@mail.gmail.com>
+References: <d1b8ff630612041135v7dd5307bu9943be467a9d0d94@mail.gmail.com>
+Message-ID: <1165280766.4125.1.camel@fh-vrubio.sm.med.ic.ac.uk>
+
+An embedded and charset-unspecified text was scrubbed...
+Name: not available
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20061205/2fe19932/attachment.pl>
+
+From massimodisasha at yahoo.it  Tue Dec  5 02:48:09 2006
+From: massimodisasha at yahoo.it (massimodisasha)
+Date: Tue, 5 Dec 2006 02:48:09 +0100
+Subject: [R-sig-Geo] Errore in sprintf(fmt, ...) ?
+In-Reply-To: <mailman.11.1165143604.32281.r-sig-geo@stat.math.ethz.ch>
+References: <mailman.11.1165143604.32281.r-sig-geo@stat.math.ethz.ch>
+Message-ID: <6461F3C5-70B8-460E-A7CB-5C99D05FAB02@yahoo.it>
+
+An embedded and charset-unspecified text was scrubbed...
+Name: not available
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20061205/2d6fd51f/attachment.pl>
+
+From Roger.Bivand at nhh.no  Tue Dec  5 08:59:45 2006
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Tue, 5 Dec 2006 08:59:45 +0100 (CET)
+Subject: [R-sig-Geo] Errore in sprintf(fmt, ...) ?
+In-Reply-To: <6461F3C5-70B8-460E-A7CB-5C99D05FAB02@yahoo.it>
+Message-ID: <Pine.LNX.4.44.0612050837170.10872-100000@reclus.nhh.no>
+
+On Tue, 5 Dec 2006, massimodisasha wrote:
+
+Please respect the time of people who reply to your questions. You send 
+messages which indicate that you are just fumbling in ignorance. You are 
+trying to run a very large problem on difficult hardware (yes, recently we 
+even found a case of console R on Intel Mac working when R.App failed), 
+using somebody else's script. 
+
+0) Why such large gaps in time between your replies - are you really 
+interested in a resolution? My suggestion of using reasRAST6() wasn't 
+answering your problem anyway, but was sent Sat, 2 Dec 2006 16:03:53, 
+after a previous longish gap.
+
+1) Why such a large area?
+
+2) Why this script and methodology - why clara() and this choice of 
+variables - you are classifying 5M observations on 7 variables? Wouldn't 
+it be possible to set up criteria for classification using a sample or 
+sub-region, and use the same rules in for example r.mapcalc?
+
+3) Why an Intel Mac using R.app(?)?
+
+4) Why not try harder to resolve the problems yourself, since you are
+trying to do things that probably nobody else on the list can reproduce on
+a similar platform? You say Dylan's script works for a smaller region,
+doesn't that tell you something? Please try to do this on a Linux
+platform, then at least some of us could try to reproduce it.
+
+4a) Or make the difficult object available on a website as:
+
+save(x, file="very_large_geomorp.RData", compress=TRUE)
+
+if this doesn't cause memory problems too, that is.
+
+5) Instead of copying to morph, use x at data directly - it is already a data 
+frame.
+
+str(x at data)
+summary(x at data)
+
+In any case in GRASS doing r.stats or whatever would show that there are 
+NAs in your region, wouldn't it?
+
+
+6) Instead of R.app(?), use R in a regular console (but maybe you are
+doing that anyway); recent experience indicates that Intel Mac is not
+necessarily well supported for larger tasks, especially R.app.
+
+Roger
+
+
+> hi,
+> i've tryied to use
+> readRAST6  instead of  readFLOAT6sp
+> this is the log:
+> 
+>  > library(cluster)
+>  > library(cluster)
+>  > x <- readRAST6(c 
+> ("er","crosc","longc","slope","profc","minic","maxic"))
+> 
+> .....
+> .......
+> ........
+> Percent complete:  100%
+> r.out.bin complete.
+> Creating BIL support files ...
+> Header File = /grassdata/remote/onearth/.tmp/powerbook-g4-12-di- 
+> epifanio.local/maxic.hdr
+> World File = /grassdata/remote/onearth/.tmp/powerbook-g4-12-di- 
+> epifanio.local/maxic.wld
+> Exporting Raster as double values(bytes=8)
+> Using the Current Region settings ...
+> north=4516560.000000
+> south=4483080.000000
+> east=527440.000000
+> west=485740.000000
+> r=1674
+> c=2085
+> 
+> Percent complete:  100%
+> r.out.bin complete.
+>  > gc()
+>             used  (Mb) gc trigger   (Mb)  max used   (Mb)
+> Ncells   416932  11.2     741108   19.8    692659   18.5
+> Vcells 23007923 175.6  194536624 1484.2 242896455 1853.2
+>  > morph <- as(x, "data.frame")
+> R(22751) malloc: *** vm_allocate(size=8421376) failed (error code=3)
+> R(22751) malloc: *** error: can't allocate region
+> R(22751) malloc: *** set a breakpoint in szone_error to debug
+> Errore: memoria 'vector' esaurita (raggiunto il limite?)
+> R(22751) malloc: *** vm_allocate(size=8421376) failed (error code=3)
+> R(22751) malloc: *** error: can't allocate region
+> R(22751) malloc: *** set a breakpoint in szone_error to debug
+>  >
+> ...
+> R not respond,
+> 
+> i force to quit the shell.
+> 
+> i cant continue to check morph:
+> 
+> str(morph) # look inside morph
+> summary(morph)
+> sapply(morph, function(x) any(!is.finite(x)))
+> # check morph for NAs etc.
+> 
+> 
+> Massimo
+> 
+> 
+> 
+> Il giorno 03/dic/06, alle ore 12:00, r-sig-geo- 
+> request at stat.math.ethz.ch ha scritto:
+> 
+> > On Sat, 2 Dec 2006, Massimo Di Stefano wrote:
+> >
+> >> Roger:
+> >>
+> >> This is the log,
+> >>
+> >>> library(spgrass6)
+> >> Carico il pacchetto richiesto: sp
+> >> Carico il pacchetto richiesto: maptools
+> >> Carico il pacchetto richiesto: foreign
+> >> Carico il pacchetto richiesto: rgdal
+> >> Geospatial Data Abstraction Library extensions to R
+> >> successfully loaded
+> >>> library(cluster)
+> >>> sessionInfo()
+> >> R version 2.4.0 (2006-10-03)
+> >> powerpc-apple-darwin8.7.0
+> >>
+> >> locale:
+> >> it_IT/it_IT/it_IT/C/it_IT/it_IT
+> >>
+> >> attached base packages:
+> >> [1] "methods"   "stats"     "graphics"  "grDevices"
+> >> "utils"     "datasets"
+> >> [7] "base"
+> >>
+> >> other attached packages:
+> >> cluster spgrass6    rgdal maptools  foreign       sp
+> >> "1.11.2"  "0.3-3"  "0.5-1"  "0.6-3" "0.8-18"  "0.9-4"
+> >>> gc()
+> >>          used (Mb) gc trigger (Mb) max used (Mb)
+> >> Ncells 408935 11.0     597831   16   531268 14.2
+> >> Vcells 320324  2.5     786432    6   472905  3.7
+> >>> gmeta6 <- gmeta6()
+> >>> x <-
+> >> readFLOAT6sp(c("er","crosc","longc","slope","profc","minic","maxic"))
+> >> Warning messages:
+> >> 1: perl = TRUE ? implementato solo nei locale UTF-8
+> >> 2: perl = TRUE ? implementato solo nei locale UTF-8
+> >> 3: perl = TRUE ? implementato solo nei locale UTF-8
+> >> 4: perl = TRUE ? implementato solo nei locale UTF-8
+> >> 5: perl = TRUE ? implementato solo nei locale UTF-8
+> >> 6: perl = TRUE ? implementato solo nei locale UTF-8
+> >> 7: perl = TRUE ? implementato solo nei locale UTF-8
+> >
+> > Nowadays I would suggest readRAST6() instead of readFLOAT6sp(),  
+> > because it
+> > uses r.out.bin rather than r.out.arc from GRASS. The perl=TRUE  
+> > warnings
+> > seems to be coming from string comparison somewhere inside a function
+> > called by readFLOAT6sp(), I don't think they are the problem.
+> >
+> >
+> >
+> >>> gc()
+> >>            used  (Mb) gc trigger   (Mb)  max used
+> >> (Mb)
+> >> Ncells   418204  11.2     741108   19.8    699974
+> >> 18.7
+> >> Vcells 22643234 172.8  191414408 1460.4 238993684
+> >> 1823.4
+> >>> morph <- data.frame(cbind(x$er, x$crosc, x$longc,
+> >> x$slope, x$profc, x$minic, x$maxic))
+> >
+> > morph <- as(x, "data.frame")
+> >
+> > str(morph) # look inside morph
+> > summary(morph)
+> >
+> > sapply(morph, function(x) any(!is.finite(x)))
+> > # check morph for NAs etc.
+> >
+> >
+> >>> gc()
+> >>            used  (Mb) gc trigger   (Mb)  max used
+> >> (Mb)
+> >> Ncells   418451  11.2     741108   19.8    699974
+> >> 18.7
+> >> Vcells 46682176 356.2  153131526 1168.4 238993684
+> >> 1823.4
+> >> <er, x$crosc, x$longc, x$slope/max(x$slope), x$profc,
+> >> x$minic, x$maxic))
+> >>> gc()
+> >>            used  (Mb) gc trigger   (Mb)  max used
+> >> (Mb)
+> >> Ncells   418453  11.2     741108   19.8    699974
+> >> 18.7
+> >> Vcells 46682176 356.2  137841862 1051.7 238993684
+> >> 1823.4
+> >>> names(morph) <-
+> >> c("er","crosc","longc","slope_n","profc","minic","maxic")
+> >>> gc()
+> >>            used  (Mb) gc trigger   (Mb)  max used
+> >> (Mb)
+> >> Ncells   418456  11.2     741108   19.8    699974
+> >> 18.7
+> >> Vcells 46682180 356.2  137841862 1051.7 238993684
+> >> 1823.4
+> >>> morph.clara <- clara(morph, k=5, stand=F)
+> >> Errore in clara(morph, k = 5, stand = F) :
+> >> Observations
+> >> 1929241,1931311,1933381,1935451,1937521,1939591,1941661,1943731,19458 
+> >> 01,1947871,1949941,1952011,1954081,1956151,1958221,1960291,1962361,19 
+> >> 64431,1966501,1968571,1970641,1972711,1974781,1976851,1978921,1980991 
+> >> , 
+> >> 1983061,1985131,1987201,1989271,1991341,1993411,1995481,1997551,19996 
+> >> 21,2001691,2003761,2005831,2007901,2009971,2012041,2014111,2016181,20 
+> >> 18251,2020321,2022391,2024461,2026531,2028601,2030671,2032741,2034811 
+> >> , 
+> >> 2036881,2038951,2041021,2043091,2045161,2047231,2049301,2051371,20534 
+> >> 41,2055511,2057581,205965
+> >> 1,2061721,2063791,2065861,2067931,2070001,2072071,2074141,2076211,207 
+> >> 8281,2080351,2082421,2084491,2086561,2088631,2090701,2092771,2094841, 
+> >> 2096911,2098981,2101051,2103121,2105191,2107261,2109331,2111401,21134 
+> >> 71,2115541,2117611,2119681,2121751,2123821,21258
+> >> 91,2127961,2130031,2132101,2134171,2136241,2138311,2140381,2142451,21 
+> >> 44521,2146591,2148661,2150731,2152801,2154871,2156941,2159011,2161081 
+> >> ,2163151,2165221,2167291,2169361,2171431
+> >>> traceback()
+> >> 2: stop(ngettext(length(i), sprintf("Observation %d
+> >> has", i[1]),
+> >>        sprintf("Observations %s have", paste(i,
+> >> collapse = ","))),
+> >>        " *only* NAs --> omit for clustering")
+> >> 1: clara(morph, k = 5, stand = F)
+> >>
+> >> is this log usefool ?
+> >
+> > Yes, I think the problem is firstly that there are NAs in morph,  
+> > and then
+> > that the string listing the row numbers of the NAs exceeds 8K  
+> > characters
+> > (your earlier message had: Errore in sprintf(fmt, ...) : La lunghezza
+> > della stringa eccede la dimensione del buffer di 8192)
+> >
+> >
+> > So try clara on morph once you have omitted the NAs. If the NAs are  
+> > for
+> > all variables in a row, coercing from SpatialGridDataFrame to
+> > SpatialPixelsDataFrame will work, if only some, you need to set the  
+> > whole
+> > row to NA, coerce, cluster, add the clara results to the
+> > SpatialPixelsDataFrame, coerce back to SpatialGridDataFrame, then  
+> > back to
+> > GRASS.
+> >
+> > Once this is resolved, please post back to the list as well as to  
+> > me, NAs
+> > do happen, expecially in geomorphometrics, for example around the  
+> > edges
+> > where the filter is not fully within the window and/or mask.
+> >
+> > Best wishes,
+> >
+> > Roger
+> 
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From ghos0033 at UMN.EDU  Tue Dec  5 22:10:40 2006
+From: ghos0033 at UMN.EDU (Debarchana Ghosh)
+Date: Tue, 5 Dec 2006 15:10:40 -0600
+Subject: [R-sig-Geo] Help with the Kmeasure function from the Spatstat
+	package
+Message-ID: <d1b8ff630612051310u50bc2009lecf077399f856e88@mail.gmail.com>
+
+An embedded and charset-unspecified text was scrubbed...
+Name: not available
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20061205/94f0a335/attachment.pl>
+
+From mkemp1 at lsu.edu  Wed Dec  6 02:53:30 2006
+From: mkemp1 at lsu.edu (Micheal Kemp)
+Date: Tue, 05 Dec 2006 19:53:30 -0600
+Subject: [R-sig-Geo] krig.image beyond data points
+Message-ID: <20061206015330.4773511B724@ws4-1.us4.outblaze.com>
+
+Hello all-
+I am using R to create a continuous surface with the krig.image command.  My only problem is that my data points do not encompass the full extent of the area that I am trying to map.  Is there a way to force krig.image to extrapolate just a little beyond the range of the data points? Thank you for any suggestions.
+
+Mike Kemp
+Geog - LSU
+
+
+
+From Alexander.Herr at csiro.au  Wed Dec  6 06:27:40 2006
+From: Alexander.Herr at csiro.au (Alexander.Herr at csiro.au)
+Date: Wed, 6 Dec 2006 15:27:40 +1000
+Subject: [R-sig-Geo] how is variance defined in krige {gstats}
+Message-ID: <062AE320EF971E40ACD0F6C93391D769BD03E9@exqld1-tsv.nexus.csiro.au>
+
+Hi list/Edzer,
+
+I am trying to determine errors in the krige output and can't find any
+documentation on the details of the variance output of krige {gstats}
+(variable var1.var of krige output).
+
+How is this variance defined? Basically I am after a way to calculate
+other statistics like N, standard error, CV or a probability to describe
+the uncertainty of the krige output.
+
+All help appreciated
+Thanks
+Herry
+
+
+Dr Alexander Herr
+Spatial and statistical analyst
+CSIRO, Sustainable Ecosystems
+Davies Laboratory,
+University Drive, Douglas, QLD 4814 
+Private Mail Bag, Aitkenvale, QLD 4814
+ 
+Phone/www 
+(07) 4753 8510; 4753 8650(fax)
+Home: http://herry.ausbats.org.au
+Webadmin ABS: http://ausbats.org.au
+Sustainable Ecosystems: http://www.cse.csiro.au/
+
+
+
+From p.hiemstra at geo.uu.nl  Wed Dec  6 09:51:15 2006
+From: p.hiemstra at geo.uu.nl (Paul Hiemstra)
+Date: Wed, 06 Dec 2006 09:51:15 +0100
+Subject: [R-sig-Geo] how is variance defined in krige {gstats}
+In-Reply-To: <062AE320EF971E40ACD0F6C93391D769BD03E9@exqld1-tsv.nexus.csiro.au>
+References: <062AE320EF971E40ACD0F6C93391D769BD03E9@exqld1-tsv.nexus.csiro.au>
+Message-ID: <45768483.8060905@geo.uu.nl>
+
+Dear Herry,
+
+Details on kriging variance are given in several books on geostatistics. 
+For example the following book:
+
+(Chiles1999) Chiles, J. & Delfiner, P. Geostatistics: Modeling Spatial 
+Uncertainty John Wiley & Sons, New York, 1999
+
+A paragraph on the kriging variance is on page 176-177. How it is 
+calculated is explained in the parts that describe kriging. (e.g. p. 156).
+
+hth,
+
+Paul
+
+Alexander.Herr at csiro.au schreef:
+> Hi list/Edzer,
+>
+> I am trying to determine errors in the krige output and can't find any
+> documentation on the details of the variance output of krige {gstats}
+> (variable var1.var of krige output).
+>
+> How is this variance defined? Basically I am after a way to calculate
+> other statistics like N, standard error, CV or a probability to describe
+> the uncertainty of the krige output.
+>
+> All help appreciated
+> Thanks
+> Herry
+>
+>
+> Dr Alexander Herr
+> Spatial and statistical analyst
+> CSIRO, Sustainable Ecosystems
+> Davies Laboratory,
+> University Drive, Douglas, QLD 4814 
+> Private Mail Bag, Aitkenvale, QLD 4814
+>  
+> Phone/www 
+> (07) 4753 8510; 4753 8650(fax)
+> Home: http://herry.ausbats.org.au
+> Webadmin ABS: http://ausbats.org.au
+> Sustainable Ecosystems: http://www.cse.csiro.au/
+>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>   
+
+
+-- 
+Drs. Paul Hiemstra
+Department of Physical Geography
+Faculty of Geosciences
+University of Utrecht
+Heidelberglaan 2
+P.O. Box 80.115
+3508 TC Utrecht
+Phone: 	+31302535773
+Fax:	+31302531145
+
+
+
+From v.gomezrubio at imperial.ac.uk  Wed Dec  6 13:33:51 2006
+From: v.gomezrubio at imperial.ac.uk (Virgilio =?ISO-8859-1?Q?G=F3mez-Rubio?=)
+Date: Wed, 06 Dec 2006 12:33:51 +0000
+Subject: [R-sig-Geo] Help with the Kmeasure function from the
+	Spatstat	package
+In-Reply-To: <d1b8ff630612051310u50bc2009lecf077399f856e88@mail.gmail.com>
+References: <d1b8ff630612051310u50bc2009lecf077399f856e88@mail.gmail.com>
+Message-ID: <1165408431.4678.7.camel@fh-vrubio.sm.med.ic.ac.uk>
+
+Dear Debarchana,
+
+I think that you could check any of the good books about point patterns
+that there are currently out there. Diggle (2003), for example,
+describes what you ask and most of the examples in the book can be
+reproduced using package Splancs. Check  manual page of function mse2d
+and references (in Splancs) as well.
+
+
+> I'm doing exploratory point pattern data analysis with 285 points in a
+> irregular polygon. I'm really exploring and hence trying out all possible
+> clustering functions on a single data set. In the 'Kmeasure' function, one
+> of the arguments that the user needs to be supplied is the 'sigma', which is
+> standard deviation of the isotropic Gaussian smoothing kernel. I don't know
+> how to compute that or which function to use to compute that value.
+
+Best regards,
+
+Virgilio
+
+
+
+From p.hiemstra at geo.uu.nl  Wed Dec  6 13:38:24 2006
+From: p.hiemstra at geo.uu.nl (Paul Hiemstra)
+Date: Wed, 06 Dec 2006 13:38:24 +0100
+Subject: [R-sig-Geo] krig.image beyond data points
+In-Reply-To: <20061206015330.4773511B724@ws4-1.us4.outblaze.com>
+References: <20061206015330.4773511B724@ws4-1.us4.outblaze.com>
+Message-ID: <4576B9C0.7000705@geo.uu.nl>
+
+Dear Micheal,
+
+I think you can also use the spplot command. It is not present in the 
+gstat package but in the sp package. The most recent version of gstat 
+(0.9-34)  needs sp present, so I think you already have this package. 
+For more info on spplot use:
+
+?spplot
+
+I think that the ylim and xlim options will suit your needs, just 
+overwrite the default values (xlim = bbox(obj)[1, ], ylim = bbox(obj)[2, ]).
+
+hth,
+
+Paul
+
+
+
+Micheal Kemp schreef:
+> Hello all-
+> I am using R to create a continuous surface with the krig.image command.  My only problem is that my data points do not encompass the full extent of the area that I am trying to map.  Is there a way to force krig.image to extrapolate just a little beyond the range of the data points? Thank you for any suggestions.
+>
+> Mike Kemp
+> Geog - LSU
+>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>   
+
+
+-- 
+Drs. Paul Hiemstra
+Department of Physical Geography
+Faculty of Geosciences
+University of Utrecht
+Heidelberglaan 2
+P.O. Box 80.115
+3508 TC Utrecht
+Phone: 	+31302535773
+Fax:	+31302531145
+
+
+
+From epistat at gmail.com  Wed Dec  6 14:25:17 2006
+From: epistat at gmail.com (zhijie zhang)
+Date: Wed, 6 Dec 2006 21:25:17 +0800
+Subject: [R-sig-Geo] project the lat./long. to x/y
+Message-ID: <2fc17e30612060525q6697cc1j5e318cf8a5994531@mail.gmail.com>
+
+An embedded and charset-unspecified text was scrubbed...
+Name: not available
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20061206/895eee55/attachment.pl>
+
+From Roger.Bivand at nhh.no  Wed Dec  6 15:21:30 2006
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Wed, 6 Dec 2006 15:21:30 +0100 (CET)
+Subject: [R-sig-Geo] project the lat./long. to x/y
+In-Reply-To: <2fc17e30612060525q6697cc1j5e318cf8a5994531@mail.gmail.com>
+Message-ID: <Pine.LNX.4.44.0612061455090.11952-100000@reclus.nhh.no>
+
+On Wed, 6 Dec 2006, zhijie zhang wrote:
+
+> Dear friends,
+>   I had a point pattern dataset, whose locations was defined by  lat./long..
+> In the past, I used ARCGIS to specify its coordinate system and the
+> projection method, now i want to do it in R. I don't know how to do it,
+> because it needs me to specify the *Geographic Coordinate System and the
+> Projected Coordinate System.* Maybe i mistake the information in ARCGIS and
+> only the projection method need to be specified because of my poor knwledge
+> on coordiante systems.
+
+Coordinate systems are unusually difficult to understand for everybody!
+
+In rgdal:
+
+EPSG <- make_EPSG()
+EPSG[grep("Xian", EPSG$note), 1:2]
+
+gives a list of the known projections including "Xian",
+
+among which:
+
+CRS("+init=epsg:2384")
+
+looks promising. The a= and b= specify the ellipsoid used, but I have not
+been able to find an authority to confirm that it is D_Xian_1980. One way
+to check would be to take a long/lat value in WGS84 (for known datum) and
+convert it to the target projection in both ArcGIS and with spTransform()
+in rgdal, and see how far they differ. I do not see anything helpful in 
+http://www.asprs.org/resources/GRIDS - referenced on the make_EPSG help 
+page, which is often a good authority, so you may need to double-check 
+with local sources.
+
+The way to go would be to make your (point?) data set into a Spatial* 
+object with a projection argument like CRS("+proj=longlat +ellps=WGS84") 
+if the ellipsoid is correct, and use spTransform to get to the 
+Gauss_Kruger Xian datum representation.
+
+Roger
+
+PS. Yes, the Windows binary of the rgdal version you give below was built 
+on R 2.4.0 (you are on Windows?). You need to download a Windows binary 
+package manually from http://cran.r-project.org/bin/windows/contrib/ 
+(there is a 0.4-12 version for R 2.3); the same may apply to other 
+packages.
+
+> 
+> ---------------------------------------------------The information in ARCGIS
+> after projecting the dataset-------
+> Geometry Type: Point
+> 
+> *Geographic Coordinate System:* #specify the coordinate system
+> GCS_Xian_1980
+> Datum: D_Xian_1980
+> Prime Meridian: 0
+> 
+> *Projected Coordinate System:* Xian_1980_3_Degree_GK_CM_117E   #specify the
+> projection method
+> Projection: Gauss_Kruger
+> False_Easting: 500000.00000000
+> False_Northing: 0.00000000
+> Central_Meridian: 117.00000000
+> Scale_Factor: 1.00000000
+> Latitude_Of_Origin: 0.00000000
+> Linear Unit: Meter (1.000000)
+> ----------------------------------------------------------------------------------------------------------------------------
+> mapproject(x, y, projection="", parameters=NULL, orientation=NULL)  *#only
+> allows us to define the projected coordinate system
+> Anybody knows how to finish it in R? Maybe rgdal() can it, but it's a liitle
+> difficult for me*.
+> 
+> *Example of my dataset:*
+> 
+> ID  CLASS SOILTEM AIRTEM GHEIGHT H      *LAT     LONG*
+> 1   1      19       20      50        30.61688 117.4140
+> 2   1      19       21      65        30.61686 117.4140
+> 3   2      20       22      55        30.61680 117.4139
+> 4   3      20       26      10        30.61675 117.4139
+> 5   4      20       23      75        30.61679 117.4140
+> 6   1      21       21      55        30.61685 117.4141
+> 
+> BTW, when i load the package rgdal, the following errors appear,*where is
+> the wrong*? Does it mean i need to use the R2.4.0 version?
+> error in load(dataFile, ns) : ReadItem uncorrect：no class 25
+> Warning message:
+> package'rgdal'is build with R2.4.0
+> error: package'rgdal' R's input code fail
+> error: 'rgdal'package/name space load fail，
+> -------------------------------package information
+> ----------------------------
+> R : Version 2.3.1 (2006-06-01)
+> rgdal_0.5-1
+> ---------------------------------------------
+> 
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From Roger.Bivand at nhh.no  Wed Dec  6 16:48:12 2006
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Wed, 6 Dec 2006 16:48:12 +0100 (CET)
+Subject: [R-sig-Geo] Live e-seminar
+Message-ID: <Pine.LNX.4.44.0612061645110.11952-100000@reclus.nhh.no>
+
+Edzer Pebesma's e-seminar is just beginning (1700 UTC) on:
+
+www.giscience.info
+
+If you miss it, you should be able to access a recording from the same 
+site or from www.wun.ac.uk/ggisa/seminars.html later.
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From spluque at gmail.com  Wed Dec  6 18:44:11 2006
+From: spluque at gmail.com (Sebastian P. Luque)
+Date: Wed, 06 Dec 2006 11:44:11 -0600
+Subject: [R-sig-Geo] map to shapefile with projection info
+Message-ID: <87odqgly1g.fsf@patagonia.sebmags.homelinux.org>
+
+Hi,
+
+Trying to extract a map (package maps) to a shapefile, IIUC the procedure
+is to get it into a SpatialPolygonsDataFrame and then use
+writePolyShape().  This seems to require an intermediate step through
+SpatialPolygons.  However, I'm running into some problems:
+
+
+R> canada <- map("world2Hires", "Canada", plot=FALSE)
+R> canada_sp <- map2SpatialPolygons(canada, IDs=canada$names,
++                                  proj4string=CRS("+proj=longlat +ellps=wgs84"))
+Error in map2SpatialPolygons(canada, IDs = canada$names, proj4string = CRS("+proj=longlat +ellps=wgs84")) : 
+	map and IDs differ in length
+
+
+How can these two components be lined up?
+
+I would also appreciate some suggestions on how to write a projection file
+for the shapefile.  I can see this has been discussed in the past, but at
+that time there was no solution.
+
+
+Cheers,
+
+-- 
+Seb
+
+
+
+From Roger.Bivand at nhh.no  Wed Dec  6 20:28:42 2006
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Wed, 6 Dec 2006 20:28:42 +0100 (CET)
+Subject: [R-sig-Geo] map to shapefile with projection info
+In-Reply-To: <87odqgly1g.fsf@patagonia.sebmags.homelinux.org>
+Message-ID: <Pine.LNX.4.44.0612062022040.11952-100000@reclus.nhh.no>
+
+On Wed, 6 Dec 2006, Sebastian P. Luque wrote:
+
+> Hi,
+> 
+> Trying to extract a map (package maps) to a shapefile, IIUC the procedure
+> is to get it into a SpatialPolygonsDataFrame and then use
+> writePolyShape().  This seems to require an intermediate step through
+> SpatialPolygons.  However, I'm running into some problems:
+> 
+> 
+> R> canada <- map("world2Hires", "Canada", plot=FALSE)
+> R> canada_sp <- map2SpatialPolygons(canada, IDs=canada$names,
+> +                                  proj4string=CRS("+proj=longlat +ellps=wgs84"))
+> Error in map2SpatialPolygons(canada, IDs = canada$names, proj4string = CRS("+proj=longlat +ellps=wgs84")) : 
+> 	map and IDs differ in length
+
+canada <- map("world2Hires", "Canada", fill=TRUE, plot=FALSE)
+
+fill=TRUE retrives polygons, otherwise you get line segments. For this 
+example it now works. You can also make several retrieved island belong to 
+the same Polygons object by giving them the same ID. There is an example 
+on the pal2SpatialPolygons help page.
+
+> 
+> 
+> How can these two components be lined up?
+> 
+> I would also appreciate some suggestions on how to write a projection file
+> for the shapefile.  I can see this has been discussed in the past, but at
+> that time there was no solution.
+> 
+
+In rgdal (the PROJ.4 library is needed):
+
+names <- sapply(slot(canada_sp, "polygons"), function(i) slot(i, "ID"))
+canada_spdf <- SpatialPolygonsDataFrame(canada_sp, 
+  data=data.frame(names=names, row.names=names))
+writeOGR(canada_spdf, dsn=".", layer="canada", driver="ESRI Shapefile")
+list.files(pattern="canada")
+
+where canada.prj is:
+
+GEOGCS["GCS_WGS_1984",DATUM["D_unknown",SPHEROID["WGS84",6378137,298.257223563]],PRIMEM["Greenwich",0],UNIT["Degree",0.017453292519943295]]
+
+Roger
+
+> 
+> Cheers,
+> 
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From ken.pierce at oregonstate.edu  Wed Dec  6 20:31:10 2006
+From: ken.pierce at oregonstate.edu (Pierce, Ken)
+Date: Wed, 6 Dec 2006 11:31:10 -0800
+Subject: [R-sig-Geo] Can you krige with a nominal response variable
+In-Reply-To: <mailman.25.1165402807.17447.r-sig-geo@stat.math.ethz.ch>
+Message-ID: <4D5DA98A54374044B7CC3F40A157B98B015D13C3@thuja>
+
+ 
+Is there a method for kriging a response with multiple states, for
+instance vegetation class in 10 classes? I know indicator kriging would
+work for a boolean variable. Is there an extension for multiple
+responses?
+
+Kenneth B. Pierce Jr.
+Research Ecologist
+Landscape Ecology, Modeling, Mapping and Analysis Team 
+PNW Research Station - USDA-FS 
+3200 SW Jefferson Way,  Corvallis,  OR 97331 
+ken.pierce at oregonstate.edu
+541 750-7393 
+http://www.fsl.orst.edu/lemma/gnnfire
+
+
+
+From spluque at gmail.com  Wed Dec  6 21:00:38 2006
+From: spluque at gmail.com (Sebastian P. Luque)
+Date: Wed, 06 Dec 2006 14:00:38 -0600
+Subject: [R-sig-Geo] map to shapefile with projection info
+References: <87odqgly1g.fsf@patagonia.sebmags.homelinux.org>
+	<Pine.LNX.4.44.0612062022040.11952-100000@reclus.nhh.no>
+Message-ID: <87bqmgvlp5.fsf@patagonia.sebmags.homelinux.org>
+
+On Wed, 6 Dec 2006 20:28:42 +0100 (CET),
+Roger Bivand <Roger.Bivand at nhh.no> wrote:
+
+[...]
+
+> canada <- map("world2Hires", "Canada", fill=TRUE, plot=FALSE)
+
+> fill=TRUE retrives polygons, otherwise you get line segments. For this
+> example it now works. You can also make several retrieved island belong
+> to the same Polygons object by giving them the same ID. There is an
+> example on the pal2SpatialPolygons help page.
+
+Thanks Roger, I didn't pick up that effect of the 'fill' arg.  I noticed
+also that I needed c("Canada", "Newfoundland"), as the latter island was
+not included!  I'll report this.
+
+
+[...]
+
+> In rgdal (the PROJ.4 library is needed):
+
+> names <- sapply(slot(canada_sp, "polygons"), function(i) slot(i, "ID"))
+> canada_spdf <- SpatialPolygonsDataFrame(canada_sp,
+>   data=data.frame(names=names, row.names=names))
+> writeOGR(canada_spdf, dsn=".", layer="canada", driver="ESRI Shapefile")
+> list.files(pattern="canada")
+
+Exactly.  Thanks a lot.
+
+
+Cheers,
+
+-- 
+Seb
+
+
+
+From spluque at gmail.com  Wed Dec  6 21:35:48 2006
+From: spluque at gmail.com (Sebastian P. Luque)
+Date: Wed, 06 Dec 2006 14:35:48 -0600
+Subject: [R-sig-Geo] map to shapefile with projection info
+References: <87odqgly1g.fsf@patagonia.sebmags.homelinux.org>
+	<Pine.LNX.4.44.0612062022040.11952-100000@reclus.nhh.no>
+	<87bqmgvlp5.fsf@patagonia.sebmags.homelinux.org>
+Message-ID: <874ps8vk2j.fsf@patagonia.sebmags.homelinux.org>
+
+On Wed, 06 Dec 2006 14:00:38 -0600,
+"Sebastian P. Luque" <spluque at gmail.com> wrote:
+
+> On Wed, 6 Dec 2006 20:28:42 +0100 (CET),
+> Roger Bivand <Roger.Bivand at nhh.no> wrote:
+
+[...]
+
+>> names <- sapply(slot(canada_sp, "polygons"), function(i) slot(i, "ID"))
+>> canada_spdf <- SpatialPolygonsDataFrame(canada_sp,
+>>   data=data.frame(names=names, row.names=names))
+>> writeOGR(canada_spdf, dsn=".", layer="canada", driver="ESRI Shapefile")
+>> list.files(pattern="canada")
+
+I searched on the maps and mapdata packages for the missing datum, but
+only found this:
+
+
+,-----[ *help[R](map)* (lines: 54 - 59) ]
+| projection: character string that names a map projection to use. See
+|           'mapproject' (in the 'mapproj' library). The default is to
+|           use a rectangular projection with the aspect ratio chosen so
+|           that longitude and latitude scales are equivalent at the
+|           center of the picture. 
+`-----
+
+
+where I think mapproj code has been transferred to rgdal.  How can we
+create a datum from this information?  Thanks once again.
+
+
+-- 
+Seb
+
+
+
+From Roger.Bivand at nhh.no  Wed Dec  6 21:51:23 2006
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Wed, 6 Dec 2006 21:51:23 +0100 (CET)
+Subject: [R-sig-Geo] map to shapefile with projection info
+In-Reply-To: <874ps8vk2j.fsf@patagonia.sebmags.homelinux.org>
+Message-ID: <Pine.LNX.4.44.0612062150100.11952-100000@reclus.nhh.no>
+
+On Wed, 6 Dec 2006, Sebastian P. Luque wrote:
+
+> On Wed, 06 Dec 2006 14:00:38 -0600,
+> "Sebastian P. Luque" <spluque at gmail.com> wrote:
+> 
+> > On Wed, 6 Dec 2006 20:28:42 +0100 (CET),
+> > Roger Bivand <Roger.Bivand at nhh.no> wrote:
+> 
+> [...]
+> 
+> >> names <- sapply(slot(canada_sp, "polygons"), function(i) slot(i, "ID"))
+> >> canada_spdf <- SpatialPolygonsDataFrame(canada_sp,
+> >>   data=data.frame(names=names, row.names=names))
+> >> writeOGR(canada_spdf, dsn=".", layer="canada", driver="ESRI Shapefile")
+> >> list.files(pattern="canada")
+> 
+> I searched on the maps and mapdata packages for the missing datum, but
+> only found this:
+> 
+> 
+> ,-----[ *help[R](map)* (lines: 54 - 59) ]
+> | projection: character string that names a map projection to use. See
+> |           'mapproject' (in the 'mapproj' library). The default is to
+> |           use a rectangular projection with the aspect ratio chosen so
+> |           that longitude and latitude scales are equivalent at the
+> |           center of the picture. 
+> `-----
+> 
+> 
+> where I think mapproj code has been transferred to rgdal.  How can we
+> create a datum from this information?  Thanks once again.
+
+No, the mapproj code base is completely different, has no datum support 
+(no datum transformation), the rgdal code is from PROJ.4.
+
+Roger
+
+> 
+> 
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From colinr23 at gmail.com  Wed Dec  6 22:01:26 2006
+From: colinr23 at gmail.com (Colin Robertson)
+Date: Wed, 6 Dec 2006 13:01:26 -0800
+Subject: [R-sig-Geo] local K function
+Message-ID: <45772f2d.6b2e5cc1.7138.152b@mx.google.com>
+
+An embedded and charset-unspecified text was scrubbed...
+Name: not available
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20061206/5c61d4ef/attachment.pl>
+
+From paciorek at hsph.harvard.edu  Thu Dec  7 00:18:00 2006
+From: paciorek at hsph.harvard.edu (Christopher Paciorek)
+Date: Wed, 06 Dec 2006 18:18:00 -0500
+Subject: [R-sig-Geo] Can you krige with a nominal response variable
+In-Reply-To: <4D5DA98A54374044B7CC3F40A157B98B015D13C3@thuja>
+References: <mailman.25.1165402807.17447.r-sig-geo@stat.math.ethz.ch>
+	<4D5DA98A54374044B7CC3F40A157B98B015D13C3@thuja>
+Message-ID: <45770910.10CD.002E.0@hsph.harvard.edu>
+
+I might consider using gam() in R to smooth the 0/1 indicator for each class individually based on a Bernoulli model - doing each class individually.  A downside of course is that the resulting smoothed maps of the proportions for each class would not add to one at an individual location, but they would probably be reasonably close and good enough for some basic analysis.
+
+If you're talking about truly modeling a joint distribution for the 10 classes spatially, it's starting to sound like a more complicated modeling problem based on a hierarchical statistical model.  Not aware of any standard recipe or software for this.
+
+chris
+
+  
+ -------------------------------------------------------------------------------
+Chris Paciorek / Asst. Professor  Email: paciorek at hsph.harvard.edu
+Department of Biostatistics           Voice: 617-432-4912
+Harvard School of Public Health   Fax:   617-432-5619
+655 Huntington Av., Bldg. 2-407  WWW: www.biostat.harvard.edu/~paciorek
+Boston, MA 02115 USA                  Permanent forward: paciorek at alumni.cmu.edu
+
+
+>>> "Pierce, Ken" <ken.pierce at oregonstate.edu> 12/06/06 2:31 PM >>> 
+
+Is there a method for kriging a response with multiple states, for
+instance vegetation class in 10 classes? I know indicator kriging would
+work for a boolean variable. Is there an extension for multiple
+responses?
+
+Kenneth B. Pierce Jr.
+Research Ecologist
+Landscape Ecology, Modeling, Mapping and Analysis Team 
+PNW Research Station -  USDA- FS 
+3200 SW Jefferson Way,  Corvallis,  OR 97331 
+ken.pierce at oregonstate.edu
+541 750- 7393 
+http://www.fsl.orst.edu/lemma/gnnfire
+
+_______________________________________________
+R- sig- Geo mailing list
+R- sig- Geo at stat.math.ethz.ch
+https://stat.ethz.ch/mailman/listinfo/r- sig- geo
+
+
+
+From adrian at maths.uwa.edu.au  Thu Dec  7 02:41:02 2006
+From: adrian at maths.uwa.edu.au (Adrian Baddeley)
+Date: Thu, 7 Dec 2006 09:41:02 +0800
+Subject: [R-sig-Geo] Help with the Kmeasure function from the
+	Spatstat	package
+Message-ID: <17783.28974.618297.806099@maths.uwa.edu.au>
+
+
+Debarchana Ghosh writes:
+
+>I'm doing exploratory point pattern data analysis with 285 points in a
+>irregular polygon. I'm really exploring and hence trying out all possible
+>clustering functions on a single data set. In the 'Kmeasure' function, one
+>of the arguments that the user needs to be supplied is the 'sigma', which is
+>standard deviation of the isotropic Gaussian smoothing kernel. I don't know
+>how to compute that or which function to use to compute that value.
+
+The smoothing parameter is a matter of choice. Although there are 
+some rules for automatically selecting a value of the smoothing parameter
+based on the data, even these automatic rules need human supervision. 
+
+The best advice is simply to try different values of sigma,
+ranging from about 5% to 25% of the diameter of the observation window.
+A very blotchy image probably means that sigma was too small, while a
+completely flat image means that sigma was too large.
+
+The value of sigma reflects an implicit assumption about the `scale'
+of interesting features in the pattern. If you don't know what features
+you are looking for, try different scales.
+
+Adrian Baddeley
+
+
+
+From Alexander.Herr at csiro.au  Thu Dec  7 07:36:29 2006
+From: Alexander.Herr at csiro.au (Alexander.Herr at csiro.au)
+Date: Thu, 7 Dec 2006 16:36:29 +1000
+Subject: [R-sig-Geo] how is variance defined in krige {gstats}
+Message-ID: <062AE320EF971E40ACD0F6C93391D769BD0594@exqld1-tsv.nexus.csiro.au>
+
+Hi all,
+
+from what I could devine (with the help of collegues) out of the gstat
+documentation (should have looked at www.gstat.org earlier...) the
+kriging variance (var1.var) is the kriging standard error ^2.
+
+I am still trying to get Chiles (1999) as it will be able to enlighten
+me on other things. Thanks Paul.
+
+Cheers Herry
+
+
+Dr Alexander Herr
+Spatial and statistical analyst
+CSIRO, Sustainable Ecosystems
+Davies Laboratory,
+University Drive, Douglas, QLD 4814 
+Private Mail Bag, Aitkenvale, QLD 4814
+ 
+Phone/www 
+(07) 4753 8510; 4753 8650(fax)
+Home: http://herry.ausbats.org.au
+Webadmin ABS: http://ausbats.org.au
+Sustainable Ecosystems: http://www.cse.csiro.au/
+--------------------------------------------
+
+
+-----Original Message-----
+From: Paul Hiemstra [mailto:p.hiemstra at geo.uu.nl] 
+Sent: Wednesday, December 06, 2006 6:51 PM
+To: Herr, Alexander Herr - Herry (CSE, Townsville)
+Cc: r-sig-geo at stat.math.ethz.ch
+Subject: Re: [R-sig-Geo] how is variance defined in krige {gstats}
+
+Dear Herry,
+
+Details on kriging variance are given in several books on geostatistics.
+
+For example the following book:
+
+(Chiles1999) Chiles, J. & Delfiner, P. Geostatistics: Modeling Spatial
+Uncertainty John Wiley & Sons, New York, 1999
+
+A paragraph on the kriging variance is on page 176-177. How it is
+calculated is explained in the parts that describe kriging. (e.g. p.
+156).
+
+hth,
+
+Paul
+
+Alexander.Herr at csiro.au schreef:
+> Hi list/Edzer,
+>
+> I am trying to determine errors in the krige output and can't find any
+
+> documentation on the details of the variance output of krige {gstats} 
+> (variable var1.var of krige output).
+>
+> How is this variance defined? Basically I am after a way to calculate 
+> other statistics like N, standard error, CV or a probability to 
+> describe the uncertainty of the krige output.
+>
+> All help appreciated
+> Thanks
+> Herry
+>
+>
+> Dr Alexander Herr
+> Spatial and statistical analyst
+> CSIRO, Sustainable Ecosystems
+> Davies Laboratory,
+> University Drive, Douglas, QLD 4814
+> Private Mail Bag, Aitkenvale, QLD 4814
+>  
+> Phone/www
+> (07) 4753 8510; 4753 8650(fax)
+> Home: http://herry.ausbats.org.au
+> Webadmin ABS: http://ausbats.org.au
+> Sustainable Ecosystems: http://www.cse.csiro.au/
+>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>   
+
+
+--
+Drs. Paul Hiemstra
+Department of Physical Geography
+Faculty of Geosciences
+University of Utrecht
+Heidelberglaan 2
+P.O. Box 80.115
+3508 TC Utrecht
+Phone: 	+31302535773
+Fax:	+31302531145
+
+
+
+From christoph.hofer at env.ethz.ch  Thu Dec  7 09:17:40 2006
+From: christoph.hofer at env.ethz.ch (Christoph Hofer)
+Date: Thu, 7 Dec 2006 09:17:40 +0100
+Subject: [R-sig-Geo] Function to cover polygons by rectangles
+Message-ID: <17E67D46-9B16-403A-B934-65F083BD15C7@env.ethz.ch>
+
+Dear all,
+
+Is there a function or package  to cover arbitrary polygons by  
+rectangles?
+I want to approximate a polygon area with as few rectangles as possible.
+
+
+Thanks in advance.
+
+Best regards
+
+Christoph
+
+
+
+From Roger.Bivand at nhh.no  Thu Dec  7 10:23:22 2006
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Thu, 7 Dec 2006 10:23:22 +0100 (CET)
+Subject: [R-sig-Geo] Function to cover polygons by rectangles
+In-Reply-To: <17E67D46-9B16-403A-B934-65F083BD15C7@env.ethz.ch>
+Message-ID: <Pine.LNX.4.44.0612071018400.12632-100000@reclus.nhh.no>
+
+On Thu, 7 Dec 2006, Christoph Hofer wrote:
+
+> Dear all,
+> 
+> Is there a function or package  to cover arbitrary polygons by  
+> rectangles?
+> I want to approximate a polygon area with as few rectangles as possible.
+> 
+
+If regular rectangles, then maybe overlaying SpatialPolygons and 
+SpatialPixels may help. But if you are asking for quadtrees, that is I 
+think not provided anywhere that I'm aware of (SPANS did that until they 
+disappeared). Does starspan help:
+
+http://starspan.casil.ucdavis.edu/?StarSpan
+
+Roger
+
+> 
+> Thanks in advance.
+> 
+> Best regards
+> 
+> Christoph
+> 
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From christoph.hofer at env.ethz.ch  Thu Dec  7 10:46:31 2006
+From: christoph.hofer at env.ethz.ch (Christoph Hofer)
+Date: Thu, 7 Dec 2006 10:46:31 +0100
+Subject: [R-sig-Geo] Function to cover polygons by rectangles
+In-Reply-To: <Pine.LNX.4.44.0612071018400.12632-100000@reclus.nhh.no>
+References: <Pine.LNX.4.44.0612071018400.12632-100000@reclus.nhh.no>
+Message-ID: <B661E12C-52A9-4BF1-B291-E0B7B76A502A@env.ethz.ch>
+
+Thanks for your answer. But sadly starspan is not what im looking for.
+I am looking for an algorithm that cover an arbitrary polygon with as  
+few rectangles as possible.
+(This rectangle approximate the area and the shape of the polygon)
+That means that the input parameter of the algorithm may  only be the  
+coordinates of the polygon-vertices  and
+the output are the coordinates of a number of regular rectangles.
+
+Best Regards
+
+Christoph
+
+
+
+
+
+Am 07.12.2006 um 10:23 schrieb Roger Bivand:
+
+> On Thu, 7 Dec 2006, Christoph Hofer wrote:
+>
+>> Dear all,
+>>
+>> Is there a function or package  to cover arbitrary polygons by
+>> rectangles?
+>> I want to approximate a polygon area with as few rectangles as  
+>> possible.
+>>
+>
+> If
+> , then maybe overlaying SpatialPolygons and
+> SpatialPixels may help. But if you are asking for quadtrees, that is I
+> think not provided anywhere that I'm aware of (SPANS did that until  
+> they
+> disappeared). Does starspan help:
+>
+> http://starspan.casil.ucdavis.edu/?StarSpan
+>
+> Roger
+>
+>>
+>> Thanks in advance.
+>>
+>> Best regards
+>>
+>> Christoph
+>>
+>> _______________________________________________
+>> R-sig-Geo mailing list
+>> R-sig-Geo at stat.math.ethz.ch
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>>
+>
+> -- 
+> Roger Bivand
+> Economic Geography Section, Department of Economics, Norwegian  
+> School of
+> Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+> Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+> e-mail: Roger.Bivand at nhh.no
+>
+
+
+
+From b.rowlingson at lancaster.ac.uk  Thu Dec  7 11:22:59 2006
+From: b.rowlingson at lancaster.ac.uk (Barry Rowlingson)
+Date: Thu, 07 Dec 2006 10:22:59 +0000
+Subject: [R-sig-Geo] Function to cover polygons by rectangles
+In-Reply-To: <B661E12C-52A9-4BF1-B291-E0B7B76A502A@env.ethz.ch>
+References: <Pine.LNX.4.44.0612071018400.12632-100000@reclus.nhh.no>
+	<B661E12C-52A9-4BF1-B291-E0B7B76A502A@env.ethz.ch>
+Message-ID: <4577EB83.5040004@lancaster.ac.uk>
+
+Christoph Hofer wrote:
+> Thanks for your answer. But sadly starspan is not what im looking for.
+> I am looking for an algorithm that cover an arbitrary polygon with as  
+> few rectangles as possible.
+
+  Just use one big rectangle. Big enough to cover the polygon. Job done.
+
+  Okay, I'll assume from now on you want to divide the polygon 
+internally into rectangles.
+
+> (This rectangle approximate the area and the shape of the polygon)
+> That means that the input parameter of the algorithm may  only be the  
+> coordinates of the polygon-vertices  and
+> the output are the coordinates of a number of regular rectangles.
+
+  This problem doesn't seem well-posed just yet. You can't cover some 
+polygons with a finite number of rectangles, so you need to specify when 
+to stop - at a given number of rectangles or when X% of the polygon is 
+covered? Also, do you want to restrict your rectangles to be aligned to 
+some axis, or can each rectangle have any rotation?
+
+  This looks like a hard problem. I'm just trying to think about the 
+simplest non-trivial case I can come up with, filling an equilateral 
+triangle. How do you stick one rectangle in an equilateral triangle and 
+maximise its area?[1] Then for two rectangles, do you start with the 
+best one-rectangle solution and then add another to fill in a gap? Or is 
+the best solution two completely new rectangles?
+
+  Now, for a general, complicated, concave polygon... Ahhhh I give up.
+
+  Barry
+
+[1] I think for a equilateral triangle of side 2 the best single 
+rectangle is a rectangle of side (1,sqrt(3)) aligned centrally and 
+adjacent to one side. I think I've just convinced myself that for two 
+rectangles you stick a similar rectangle into the remaining equilateral 
+triangle portion. If you continue, at some point you'll want to start 
+filling in the semi-equilateral triangle pieces left by the first 
+rectangle...
+
+
+
+From Roger.Bivand at nhh.no  Thu Dec  7 11:29:11 2006
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Thu, 7 Dec 2006 11:29:11 +0100 (CET)
+Subject: [R-sig-Geo] Function to cover polygons by rectangles
+In-Reply-To: <B661E12C-52A9-4BF1-B291-E0B7B76A502A@env.ethz.ch>
+Message-ID: <Pine.LNX.4.44.0612071128130.4669-100000@reclus.nhh.no>
+
+On Thu, 7 Dec 2006, Christoph Hofer wrote:
+
+> Thanks for your answer. But sadly starspan is not what im looking for.
+> I am looking for an algorithm that cover an arbitrary polygon with as  
+> few rectangles as possible.
+> (This rectangle approximate the area and the shape of the polygon)
+> That means that the input parameter of the algorithm may  only be the  
+> coordinates of the polygon-vertices  and
+> the output are the coordinates of a number of regular rectangles.
+
+Then try overlay() of a SpatialGrid on SpatialPolygons, varying the grid 
+size and origin manually until you are happy.
+
+Roger
+
+> 
+> Best Regards
+> 
+> Christoph
+> 
+> 
+> 
+> 
+> 
+> Am 07.12.2006 um 10:23 schrieb Roger Bivand:
+> 
+> > On Thu, 7 Dec 2006, Christoph Hofer wrote:
+> >
+> >> Dear all,
+> >>
+> >> Is there a function or package  to cover arbitrary polygons by
+> >> rectangles?
+> >> I want to approximate a polygon area with as few rectangles as  
+> >> possible.
+> >>
+> >
+> > If
+> > , then maybe overlaying SpatialPolygons and
+> > SpatialPixels may help. But if you are asking for quadtrees, that is I
+> > think not provided anywhere that I'm aware of (SPANS did that until  
+> > they
+> > disappeared). Does starspan help:
+> >
+> > http://starspan.casil.ucdavis.edu/?StarSpan
+> >
+> > Roger
+> >
+> >>
+> >> Thanks in advance.
+> >>
+> >> Best regards
+> >>
+> >> Christoph
+> >>
+> >> _______________________________________________
+> >> R-sig-Geo mailing list
+> >> R-sig-Geo at stat.math.ethz.ch
+> >> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> >>
+> >
+> > -- 
+> > Roger Bivand
+> > Economic Geography Section, Department of Economics, Norwegian  
+> > School of
+> > Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+> > Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+> > e-mail: Roger.Bivand at nhh.no
+> >
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From e.pebesma at geo.uu.nl  Thu Dec  7 11:49:36 2006
+From: e.pebesma at geo.uu.nl (Edzer J. Pebesma)
+Date: Thu, 07 Dec 2006 11:49:36 +0100
+Subject: [R-sig-Geo] Can you krige with a nominal response variable
+In-Reply-To: <4D5DA98A54374044B7CC3F40A157B98B015D13C3@thuja>
+References: <4D5DA98A54374044B7CC3F40A157B98B015D13C3@thuja>
+Message-ID: <4577F1C0.3080100@geo.uu.nl>
+
+Ken,
+
+The indicator kriging idea does not stop at a single binary variable. 
+The "standard" (or "Stanford"?) way of getting non-negative predictions, 
+and possibly predictions that sum to one is rather pragmatic--simply 
+postprocessing predictions. There is a cleaner solution, called 
+compositional kriging, which adds the "predictions should be 
+non-negative and sum to one" constraint to the kriging system, but I 
+don't know if implemenations are available in R. For compositional data 
+analysis you may want to explore the R package compositions. I believe 
+it does not do compositional kriging, but perhaps its author has 
+suggestions; I Cc:'d this email to the author.
+
+Best regards,
+--
+Edzer
+
+Pierce, Ken wrote:
+>  
+> Is there a method for kriging a response with multiple states, for
+> instance vegetation class in 10 classes? I know indicator kriging would
+> work for a boolean variable. Is there an extension for multiple
+> responses?
+>
+> Kenneth B. Pierce Jr.
+> Research Ecologist
+> Landscape Ecology, Modeling, Mapping and Analysis Team 
+> PNW Research Station - USDA-FS 
+> 3200 SW Jefferson Way,  Corvallis,  OR 97331 
+> ken.pierce at oregonstate.edu
+> 541 750-7393 
+> http://www.fsl.orst.edu/lemma/gnnfire
+>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>
+
+
+
+From adrian at maths.uwa.edu.au  Fri Dec  8 02:59:16 2006
+From: adrian at maths.uwa.edu.au (Adrian Baddeley)
+Date: Fri, 8 Dec 2006 09:59:16 +0800
+Subject: [R-sig-Geo] Help with the Kmeasure function from the	Spatstat
+	package
+Message-ID: <17784.50932.904623.57627@maths.uwa.edu.au>
+
+
+Virgilio Gomez-Rubio writes:
+
+>  Diggle (2003), for example, describes what you ask and most of the
+> examples in the book can be reproduced using package Splancs. Check
+> manual page of function mse2d and references (in Splancs) as well.
+
+I beg to disagree. The function 'Kmeasure' in spatstat does not have
+a counterpart in any other R package, to my knowledge. 
+The function mse2d (splancs) is not appropriate for selecting the
+sigma parameter in Kmeasure. 
+
+`Kmeasure' calculates an estimate of the `reduced second moment measure'
+of a point process. This is completely different from the first moment 
+(`intensity') function of the point pattern, which is done by 
+'density.ppp' in spatstat and by 'kernel2d' in splancs. 
+
+The commands density.ppp (spatstat) and kernel2d (splancs) take a point 
+pattern, and effectively replace each point in the pattern by a copy of the
+kernel, then add up these kernels to get an intensity function.
+
+The command Kmeasure (spatstat) takes a point pattern, forms the list of
+all PAIRS of distinct points in the pattern, computes the vectors that join
+the first point to the second point in each pair, treats these vectors
+as a pattern of `points', and applies a kernel smoother to them.
+
+Kmeasure is a generalisation of Ripley's K-function. The value of K(r) is 
+equal to the total integral of the pixel values of the Kmeasure image
+inside a circle of radius r centred at the origin. 
+
+The main reason for looking at the second moment measure rather than just
+the K-function is to look for anisotropic or shape effects. 
+If the point pattern was a regular hexagonal packing, then the Kmeasure image
+would reveal the hexagonal shape.
+
+`spatstat' is the only R package that provides this functionality,
+as far as I know.
+
+There are no well-established techniques for choosing the smoothing 
+parameter when estimating the second moment measure.
+The algorithm given in mse2d (splancs) for choosing the smoothing bandwidth
+for kernel2d (splancs) is not designed for, and is probably not appropriate
+for, choosing the bandwidth for `Kmeasure'. I guess you could use it as a
+ballpark figure / starting value to play around with.
+
+In general terms, spatstat is by far the largest and most extensive R package
+for analysing spatial point patterns. The writer's recommendation to 
+ignore this huge package is a bit misguided.
+
+Adrian Baddeley
+
+
+
+From Roger.Bivand at nhh.no  Fri Dec  8 09:19:37 2006
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Fri, 8 Dec 2006 09:19:37 +0100 (CET)
+Subject: [R-sig-Geo] Help with the Kmeasure function from the	Spatstat
+ package
+In-Reply-To: <17784.50932.904623.57627@maths.uwa.edu.au>
+Message-ID: <Pine.LNX.4.44.0612080855200.5643-100000@reclus.nhh.no>
+
+Adrian,
+
+I'm sure your description of Kmeasure is very welcome, and gives a
+foretaste of what the e-recipe book on http://www.spatstat.org/ will
+offer. Given the rapid development in the spatstat package, and the large
+number of contributors to the package, it is perhaps worth saying that
+spatstat is the only package for analysing spatial point patterns among
+the three commonly referenced packages: spatial (supporting the book
+MASS), splancs (originally written for S in the early 1990s), and
+spatstat, that is under active development. Both spatial and splancs
+represent the ways spatial point patterns were analysed at the time they
+were written, and constitute a useful record of where the subject has come
+from.
+
+Only spatstat shows where the subject is going, supplemented by a number
+of narrower packages, such as MarkedPointProcess. Only spatstat has a rich
+range of S3 classes for point pattern objects - the maptools package now
+contains wrappers for moving between classes defined in spatstat and those
+S4 classes defined in the sp package. Having splancs and spatial
+available, it is convenient to cross-check how implementation may impact
+output for shared methods of analysis. They are also useful for following
+up and reproducing published work documented as using them, such as MASS
+and the point pattern chapters in Bailey and Gatrell, so they will be 
+maintained in the future.
+
+Roger
+
+PS. Using spatstat, I notice that if the boot package is loaded, its 
+envelope() function gets masked by the function of the same name in 
+spatstat. Unfortunately, both have many named arguments, but the spatstat 
+one could dispatch on class ppp or ppm, and the boot one on class boot or 
+default. Maybe an S3 method with envelope(Y, ...) would be a way out?
+
+
+On Fri, 8 Dec 2006, Adrian Baddeley wrote:
+
+> 
+> Virgilio Gomez-Rubio writes:
+> 
+> >  Diggle (2003), for example, describes what you ask and most of the
+> > examples in the book can be reproduced using package Splancs. Check
+> > manual page of function mse2d and references (in Splancs) as well.
+> 
+> I beg to disagree. The function 'Kmeasure' in spatstat does not have
+> a counterpart in any other R package, to my knowledge. 
+> The function mse2d (splancs) is not appropriate for selecting the
+> sigma parameter in Kmeasure. 
+> 
+> `Kmeasure' calculates an estimate of the `reduced second moment measure'
+> of a point process. This is completely different from the first moment 
+> (`intensity') function of the point pattern, which is done by 
+> 'density.ppp' in spatstat and by 'kernel2d' in splancs. 
+> 
+> The commands density.ppp (spatstat) and kernel2d (splancs) take a point 
+> pattern, and effectively replace each point in the pattern by a copy of the
+> kernel, then add up these kernels to get an intensity function.
+> 
+> The command Kmeasure (spatstat) takes a point pattern, forms the list of
+> all PAIRS of distinct points in the pattern, computes the vectors that join
+> the first point to the second point in each pair, treats these vectors
+> as a pattern of `points', and applies a kernel smoother to them.
+> 
+> Kmeasure is a generalisation of Ripley's K-function. The value of K(r) is 
+> equal to the total integral of the pixel values of the Kmeasure image
+> inside a circle of radius r centred at the origin. 
+> 
+> The main reason for looking at the second moment measure rather than just
+> the K-function is to look for anisotropic or shape effects. 
+> If the point pattern was a regular hexagonal packing, then the Kmeasure image
+> would reveal the hexagonal shape.
+> 
+> `spatstat' is the only R package that provides this functionality,
+> as far as I know.
+> 
+> There are no well-established techniques for choosing the smoothing 
+> parameter when estimating the second moment measure.
+> The algorithm given in mse2d (splancs) for choosing the smoothing bandwidth
+> for kernel2d (splancs) is not designed for, and is probably not appropriate
+> for, choosing the bandwidth for `Kmeasure'. I guess you could use it as a
+> ballpark figure / starting value to play around with.
+> 
+> In general terms, spatstat is by far the largest and most extensive R package
+> for analysing spatial point patterns. The writer's recommendation to 
+> ignore this huge package is a bit misguided.
+> 
+> Adrian Baddeley
+> 
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From adrian at maths.uwa.edu.au  Fri Dec  8 10:59:20 2006
+From: adrian at maths.uwa.edu.au (Adrian Baddeley)
+Date: Fri, 8 Dec 2006 17:59:20 +0800
+Subject: [R-sig-Geo] Help with the Kmeasure function from the	Spatstat
+ package
+In-Reply-To: <Pine.LNX.4.44.0612080855200.5643-100000@reclus.nhh.no>
+References: <17784.50932.904623.57627@maths.uwa.edu.au>
+	<Pine.LNX.4.44.0612080855200.5643-100000@reclus.nhh.no>
+Message-ID: <17785.14200.686951.580210@maths.uwa.edu.au>
+
+Roger, 
+
+thank you for those informative comments. I agree entirely.
+
+Thanks for the good suggestion about envelope() in spatstat. We will discuss
+this with the authors of the boot package.
+
+Adrian
+
+
+
+From v.gomezrubio at imperial.ac.uk  Fri Dec  8 12:33:13 2006
+From: v.gomezrubio at imperial.ac.uk (Virgilio =?ISO-8859-1?Q?G=F3mez-Rubio?=)
+Date: Fri, 08 Dec 2006 11:33:13 +0000
+Subject: [R-sig-Geo] Help with the Kmeasure function from the
+	Spatstat	package
+In-Reply-To: <17784.50932.904623.57627@maths.uwa.edu.au>
+References: <17784.50932.904623.57627@maths.uwa.edu.au>
+Message-ID: <1165577593.19416.23.camel@fh-vrubio.sm.med.ic.ac.uk>
+
+Hi,
+
+El vie, 08-12-2006 a las 09:59 +0800, Adrian Baddeley escribi?:
+> Virgilio Gomez-Rubio writes:
+> 
+> >  Diggle (2003), for example, describes what you ask and most of the
+> > examples in the book can be reproduced using package Splancs. Check
+> > manual page of function mse2d and references (in Splancs) as well.
+> 
+> I beg to disagree. The function 'Kmeasure' in spatstat does not have
+> a counterpart in any other R package, to my knowledge. 
+> The function mse2d (splancs) is not appropriate for selecting the
+> sigma parameter in Kmeasure. 
+
+
+Yes, that is absolute true!!! I apologise, I realise now that what I
+said was completely non-sense!! Sorry, I messed things up in my head (I
+shall take more time to reply to e-mails next time).
+I completely agree with Prof. Baddeley's advice.
+
+> In general terms, spatstat is by far the largest and most extensive R package
+> for analysing spatial point patterns. The writer's recommendation to 
+> ignore this huge package is a bit misguided.
+
+I apologise again. Spatstat is the most comprehensive R package for
+point processes nowadays, with contributions by most of the main
+contributors to the field.
+
+I recommended Splancs because Debs mentioned he was interested in
+measuring clustering and then I thought of clustering in Spatial
+Epidemiology, which is not probably what he wants to do. That was my
+main reason to recommend Splancs and Diggle (2003). I know that most of
+the analysis can be done with spatstat as well but I do not know if all
+the methods are already included in spatstat. Probably they are now,
+since I have noticed a big grow in the number of functions in recent
+releases.
+
+Finally, I would like to say that I also use spatstat myself to analyse
+point patterns.
+
+Best regards,
+
+Virgilio
+
+
+
+From epistat at gmail.com  Mon Dec 11 02:05:44 2006
+From: epistat at gmail.com (zhijie zhang)
+Date: Mon, 11 Dec 2006 09:05:44 +0800
+Subject: [R-sig-Geo] project the lat./long. to x/y
+In-Reply-To: <Pine.LNX.4.44.0612061455090.11952-100000@reclus.nhh.no>
+References: <2fc17e30612060525q6697cc1j5e318cf8a5994531@mail.gmail.com>
+	<Pine.LNX.4.44.0612061455090.11952-100000@reclus.nhh.no>
+Message-ID: <2fc17e30612101705k1c06bef5of751d5764dd1d360@mail.gmail.com>
+
+An embedded and charset-unspecified text was scrubbed...
+Name: not available
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20061211/888a1758/attachment.pl>
+
+From epistat at gmail.com  Tue Dec 12 16:34:59 2006
+From: epistat at gmail.com (zhijie zhang)
+Date: Tue, 12 Dec 2006 23:34:59 +0800
+Subject: [R-sig-Geo] questions on using geoRglm?
+Message-ID: <2fc17e30612120734l246f0256r1c0f2851b0b6f993@mail.gmail.com>
+
+An embedded and charset-unspecified text was scrubbed...
+Name: not available
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20061212/a021892c/attachment.pl>
+
+From ken.pierce at oregonstate.edu  Wed Dec 13 05:56:10 2006
+From: ken.pierce at oregonstate.edu (Pierce, Ken)
+Date: Tue, 12 Dec 2006 20:56:10 -0800
+Subject: [R-sig-Geo] Can you query points with a polygon?
+In-Reply-To: <mailman.7.1165834805.1784.r-sig-geo@stat.math.ethz.ch>
+Message-ID: <4D5DA98A54374044B7CC3F40A157B98B015D13D6@thuja>
+
+If I have a set of points from a shapefile (or generated in R) and a
+polygon from a shapefile, can I use the polygon to select the points
+that fall within it? One of the many packages must do it but I can't
+seem to figure which one.
+
+Thanks,
+
+Kenneth B. Pierce Jr.
+Research Ecologist
+Landscape Ecology, Modeling, Mapping and Analysis Team 
+PNW Research Station - USDA-FS 
+3200 SW Jefferson Way,  Corvallis,  OR 97331 
+ken.pierce at oregonstate.edu
+541 750-7393 
+http://www.fsl.orst.edu/lemma/gnnfire
+
+
+
+ 
+
+-----Original Message-----
+From: r-sig-geo-bounces at stat.math.ethz.ch
+[mailto:r-sig-geo-bounces at stat.math.ethz.ch] On Behalf Of
+r-sig-geo-request at stat.math.ethz.ch
+Sent: Monday, December 11, 2006 3:00 AM
+To: r-sig-geo at stat.math.ethz.ch
+Subject: R-sig-Geo Digest, Vol 40, Issue 9
+
+Send R-sig-Geo mailing list submissions to
+	r-sig-geo at stat.math.ethz.ch
+
+To subscribe or unsubscribe via the World Wide Web, visit
+	https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+or, via email, send a message with subject or body 'help' to
+	r-sig-geo-request at stat.math.ethz.ch
+
+You can reach the person managing the list at
+	r-sig-geo-owner at stat.math.ethz.ch
+
+When replying, please edit your Subject line so it is more specific than
+"Re: Contents of R-sig-Geo digest..."
+
+
+Today's Topics:
+
+   1. Re: project the lat./long. to x/y (zhijie zhang)
+
+
+----------------------------------------------------------------------
+
+Message: 1
+Date: Mon, 11 Dec 2006 09:05:44 +0800
+From: "zhijie zhang" <epistat at gmail.com>
+Subject: Re: [R-sig-Geo] project the lat./long. to x/y
+To: Roger.Bivand at nhh.no
+Cc: r-sig-geo at stat.math.ethz.ch
+Message-ID:
+	<2fc17e30612101705k1c06bef5of751d5764dd1d360 at mail.gmail.com>
+Content-Type: text/plain
+
+*Dear Roger Bivand* ,
+  Your suggestions are very good, which gives me a general method to do
+projections.
+  Thanks.
+
+
+On 12/6/06, Roger Bivand <Roger.Bivand at nhh.no> wrote:
+>
+> On Wed, 6 Dec 2006, zhijie zhang wrote:
+>
+> > Dear friends,
+> >   I had a point pattern dataset, whose locations was defined
+> by  lat./long..
+> > In the past, I used ARCGIS to specify its coordinate system and the 
+> > projection method, now i want to do it in R. I don't know how to do 
+> > it, because it needs me to specify the *Geographic Coordinate System
+
+> > and the Projected Coordinate System.* Maybe i mistake the 
+> > information in ARCGIS
+> and
+> > only the projection method need to be specified because of my poor
+> knwledge
+> > on coordiante systems.
+>
+> Coordinate systems are unusually difficult to understand for
+everybody!
+>
+> In rgdal:
+>
+> EPSG <- make_EPSG()
+> EPSG[grep("Xian", EPSG$note), 1:2]
+>
+> gives a list of the known projections including "Xian",
+>
+> among which:
+>
+> CRS("+init=epsg:2384")
+>
+> looks promising. The a= and b= specify the ellipsoid used, but I have 
+> not been able to find an authority to confirm that it is D_Xian_1980. 
+> One way to check would be to take a long/lat value in WGS84 (for known
+
+> datum) and convert it to the target projection in both ArcGIS and with
+
+> spTransform() in rgdal, and see how far they differ. I do not see 
+> anything helpful in http://www.asprs.org/resources/GRIDS - referenced 
+> on the make_EPSG help page, which is often a good authority, so you 
+> may need to double-check with local sources.
+>
+> The way to go would be to make your (point?) data set into a Spatial* 
+> object with a projection argument like CRS("+proj=longlat 
+> +ellps=WGS84") if the ellipsoid is correct, and use spTransform to get
+
+> to the Gauss_Kruger Xian datum representation.
+>
+> Roger
+>
+> PS. Yes, the Windows binary of the rgdal version you give below was 
+> built on R 2.4.0 (you are on Windows?). You need to download a Windows
+
+> binary package manually from 
+> http://cran.r-project.org/bin/windows/contrib/
+> (there is a 0.4-12 version for R 2.3); the same may apply to other 
+> packages.
+>
+> >
+> > ---------------------------------------------------The information 
+> > in
+> ARCGIS
+> > after projecting the dataset-------
+> > Geometry Type: Point
+> >
+> > *Geographic Coordinate System:* #specify the coordinate system 
+> > GCS_Xian_1980
+> > Datum: D_Xian_1980
+> > Prime Meridian: 0
+> >
+> > *Projected Coordinate System:* Xian_1980_3_Degree_GK_CM_117E
+#specify
+> the
+> > projection method
+> > Projection: Gauss_Kruger
+> > False_Easting: 500000.00000000
+> > False_Northing: 0.00000000
+> > Central_Meridian: 117.00000000
+> > Scale_Factor: 1.00000000
+> > Latitude_Of_Origin: 0.00000000
+> > Linear Unit: Meter (1.000000)
+> >
+> ----------------------------------------------------------------------
+> ------------------------------------------------------
+> > mapproject(x, y, projection="", parameters=NULL,
+> orientation=NULL)  *#only
+> > allows us to define the projected coordinate system Anybody knows 
+> > how to finish it in R? Maybe rgdal() can it, but it's a
+> liitle
+> > difficult for me*.
+> >
+> > *Example of my dataset:*
+> >
+> > ID  CLASS SOILTEM AIRTEM GHEIGHT H      *LAT     LONG*
+> > 1   1      19       20      50        30.61688 117.4140
+> > 2   1      19       21      65        30.61686 117.4140
+> > 3   2      20       22      55        30.61680 117.4139
+> > 4   3      20       26      10        30.61675 117.4139
+> > 5   4      20       23      75        30.61679 117.4140
+> > 6   1      21       21      55        30.61685 117.4141
+> >
+> > BTW, when i load the package rgdal, the following errors 
+> > appear,*where
+> is
+> > the wrong*? Does it mean i need to use the R2.4.0 version?
+> > error in load(dataFile, ns) : ReadItem uncorrect：no class 25 
+> > Warning message:
+> > package'rgdal'is build with R2.4.0
+> > error: package'rgdal' R's input code fail
+> > error: 'rgdal'package/name space load fail， 
+> > -------------------------------package information
+> > ----------------------------
+> > R : Version 2.3.1 (2006-06-01)
+> > rgdal_0.5-1
+> > ---------------------------------------------
+> >
+> >
+>
+> --
+> Roger Bivand
+> Economic Geography Section, Department of Economics, Norwegian School 
+> of Economics and Business Administration, Helleveien 30, N-5045 
+> Bergen, Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+> e-mail: Roger.Bivand at nhh.no
+>
+>
+
+
+--
+With Kind Regards,
+
+oooO:::::::::
+(..):::::::::
+:\.(:::Oooo::
+::\_)::(..)::
+:::::::)./:::
+::::::(_/::::
+:::::::::::::
+[***********************************************************************
+]
+Zhi Jie,Zhang ,PHD
+Tel:86-21-54237149   epistat at gmail.com
+Dept. of Epidemiology,school of public health,Fudan University
+Address:No. 138 Yi Xue Yuan Road,Shanghai,China
+Postcode:200032
+[***********************************************************************
+]
+oooO:::::::::
+(..):::::::::
+:\.(:::Oooo::
+::\_)::(..)::
+:::::::)./:::
+::::::(_/::::
+:::::::::::::
+
+	[[alternative HTML version deleted]]
+
+
+
+------------------------------
+
+_______________________________________________
+R-sig-Geo mailing list
+R-sig-Geo at stat.math.ethz.ch
+https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+
+
+End of R-sig-Geo Digest, Vol 40, Issue 9
+
+
+
+From Tom.Mulholland at dpi.wa.gov.au  Wed Dec 13 06:24:00 2006
+From: Tom.Mulholland at dpi.wa.gov.au (Mulholland, Tom)
+Date: Wed, 13 Dec 2006 14:24:00 +0900
+Subject: [R-sig-Geo] Can you query points with a polygon?
+Message-ID: <4702645135092E4497088F71D9C8F51A0224E636@afhex01.dpi.wa.gov.au>
+
+Yes there is more than one. I can't remember when I made the decision but I recall doing some speed tests and I picked inside.owin in the spatstat package. I think splancs and spatial might have their own versions as well. The overlay function in sp works. I think I found this too slow for what I was doing at the time. I haven't revisited this recently so it may be worth your while checking out the variations.
+
+Tom
+
+> -----Original Message-----
+> From: r-sig-geo-bounces at stat.math.ethz.ch
+> [mailto:r-sig-geo-bounces at stat.math.ethz.ch]On Behalf Of Pierce, Ken
+> Sent: Wednesday, 13 December 2006 1:56 PM
+> To: r-sig-geo at stat.math.ethz.ch
+> Subject: [R-sig-Geo] Can you query points with a polygon?
+> 
+> 
+> If I have a set of points from a shapefile (or generated in R) and a
+> polygon from a shapefile, can I use the polygon to select the points
+> that fall within it? One of the many packages must do it but I can't
+> seem to figure which one.
+> 
+> Thanks,
+> 
+> Kenneth B. Pierce Jr.
+> Research Ecologist
+> Landscape Ecology, Modeling, Mapping and Analysis Team 
+> PNW Research Station - USDA-FS 
+> 3200 SW Jefferson Way,  Corvallis,  OR 97331 
+> ken.pierce at oregonstate.edu
+> 541 750-7393 
+> http://www.fsl.orst.edu/lemma/gnnfire
+> 
+> 
+> 
+>  
+> 
+> -----Original Message-----
+> From: r-sig-geo-bounces at stat.math.ethz.ch
+> [mailto:r-sig-geo-bounces at stat.math.ethz.ch] On Behalf Of
+> r-sig-geo-request at stat.math.ethz.ch
+> Sent: Monday, December 11, 2006 3:00 AM
+> To: r-sig-geo at stat.math.ethz.ch
+> Subject: R-sig-Geo Digest, Vol 40, Issue 9
+> 
+> Send R-sig-Geo mailing list submissions to
+> 	r-sig-geo at stat.math.ethz.ch
+> 
+> To subscribe or unsubscribe via the World Wide Web, visit
+> 	https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> or, via email, send a message with subject or body 'help' to
+> 	r-sig-geo-request at stat.math.ethz.ch
+> 
+> You can reach the person managing the list at
+> 	r-sig-geo-owner at stat.math.ethz.ch
+> 
+> When replying, please edit your Subject line so it is more 
+> specific than
+> "Re: Contents of R-sig-Geo digest..."
+> 
+> 
+> Today's Topics:
+> 
+>    1. Re: project the lat./long. to x/y (zhijie zhang)
+> 
+> 
+> ----------------------------------------------------------------------
+> 
+> Message: 1
+> Date: Mon, 11 Dec 2006 09:05:44 +0800
+> From: "zhijie zhang" <epistat at gmail.com>
+> Subject: Re: [R-sig-Geo] project the lat./long. to x/y
+> To: Roger.Bivand at nhh.no
+> Cc: r-sig-geo at stat.math.ethz.ch
+> Message-ID:
+> 	<2fc17e30612101705k1c06bef5of751d5764dd1d360 at mail.gmail.com>
+> Content-Type: text/plain
+> 
+> *Dear Roger Bivand* ,
+>   Your suggestions are very good, which gives me a general 
+> method to do
+> projections.
+>   Thanks.
+> 
+> 
+> On 12/6/06, Roger Bivand <Roger.Bivand at nhh.no> wrote:
+> >
+> > On Wed, 6 Dec 2006, zhijie zhang wrote:
+> >
+> > > Dear friends,
+> > >   I had a point pattern dataset, whose locations was defined
+> > by  lat./long..
+> > > In the past, I used ARCGIS to specify its coordinate 
+> system and the 
+> > > projection method, now i want to do it in R. I don't know 
+> how to do 
+> > > it, because it needs me to specify the *Geographic 
+> Coordinate System
+> 
+> > > and the Projected Coordinate System.* Maybe i mistake the 
+> > > information in ARCGIS
+> > and
+> > > only the projection method need to be specified because of my poor
+> > knwledge
+> > > on coordiante systems.
+> >
+> > Coordinate systems are unusually difficult to understand for
+> everybody!
+> >
+> > In rgdal:
+> >
+> > EPSG <- make_EPSG()
+> > EPSG[grep("Xian", EPSG$note), 1:2]
+> >
+> > gives a list of the known projections including "Xian",
+> >
+> > among which:
+> >
+> > CRS("+init=epsg:2384")
+> >
+> > looks promising. The a= and b= specify the ellipsoid used, 
+> but I have 
+> > not been able to find an authority to confirm that it is 
+> D_Xian_1980. 
+> > One way to check would be to take a long/lat value in WGS84 
+> (for known
+> 
+> > datum) and convert it to the target projection in both 
+> ArcGIS and with
+> 
+> > spTransform() in rgdal, and see how far they differ. I do not see 
+> > anything helpful in http://www.asprs.org/resources/GRIDS - 
+> referenced 
+> > on the make_EPSG help page, which is often a good authority, so you 
+> > may need to double-check with local sources.
+> >
+> > The way to go would be to make your (point?) data set into 
+> a Spatial* 
+> > object with a projection argument like CRS("+proj=longlat 
+> > +ellps=WGS84") if the ellipsoid is correct, and use 
+> spTransform to get
+> 
+> > to the Gauss_Kruger Xian datum representation.
+> >
+> > Roger
+> >
+> > PS. Yes, the Windows binary of the rgdal version you give below was 
+> > built on R 2.4.0 (you are on Windows?). You need to 
+> download a Windows
+> 
+> > binary package manually from 
+> > http://cran.r-project.org/bin/windows/contrib/
+> > (there is a 0.4-12 version for R 2.3); the same may apply to other 
+> > packages.
+> >
+> > >
+> > > ---------------------------------------------------The 
+> information 
+> > > in
+> > ARCGIS
+> > > after projecting the dataset-------
+> > > Geometry Type: Point
+> > >
+> > > *Geographic Coordinate System:* #specify the coordinate system 
+> > > GCS_Xian_1980
+> > > Datum: D_Xian_1980
+> > > Prime Meridian: 0
+> > >
+> > > *Projected Coordinate System:* Xian_1980_3_Degree_GK_CM_117E
+> #specify
+> > the
+> > > projection method
+> > > Projection: Gauss_Kruger
+> > > False_Easting: 500000.00000000
+> > > False_Northing: 0.00000000
+> > > Central_Meridian: 117.00000000
+> > > Scale_Factor: 1.00000000
+> > > Latitude_Of_Origin: 0.00000000
+> > > Linear Unit: Meter (1.000000)
+> > >
+> > 
+> ----------------------------------------------------------------------
+> > ------------------------------------------------------
+> > > mapproject(x, y, projection="", parameters=NULL,
+> > orientation=NULL)  *#only
+> > > allows us to define the projected coordinate system Anybody knows 
+> > > how to finish it in R? Maybe rgdal() can it, but it's a
+> > liitle
+> > > difficult for me*.
+> > >
+> > > *Example of my dataset:*
+> > >
+> > > ID  CLASS SOILTEM AIRTEM GHEIGHT H      *LAT     LONG*
+> > > 1   1      19       20      50        30.61688 117.4140
+> > > 2   1      19       21      65        30.61686 117.4140
+> > > 3   2      20       22      55        30.61680 117.4139
+> > > 4   3      20       26      10        30.61675 117.4139
+> > > 5   4      20       23      75        30.61679 117.4140
+> > > 6   1      21       21      55        30.61685 117.4141
+> > >
+> > > BTW, when i load the package rgdal, the following errors 
+> > > appear,*where
+> > is
+> > > the wrong*? Does it mean i need to use the R2.4.0 version?
+> > > error in load(dataFile, ns) : ReadItem 
+> uncorrect：no class 25 
+> > > Warning message:
+> > > package'rgdal'is build with R2.4.0
+> > > error: package'rgdal' R's input code fail
+> > > error: 'rgdal'package/name space load fail， 
+> > > -------------------------------package information
+> > > ----------------------------
+> > > R : Version 2.3.1 (2006-06-01)
+> > > rgdal_0.5-1
+> > > ---------------------------------------------
+> > >
+> > >
+> >
+> > --
+> > Roger Bivand
+> > Economic Geography Section, Department of Economics, 
+> Norwegian School 
+> > of Economics and Business Administration, Helleveien 30, N-5045 
+> > Bergen, Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+> > e-mail: Roger.Bivand at nhh.no
+> >
+> >
+> 
+> 
+> --
+> With Kind Regards,
+> 
+> oooO:::::::::
+> (..):::::::::
+> :\.(:::Oooo::
+> ::\_)::(..)::
+> :::::::)./:::
+> ::::::(_/::::
+> :::::::::::::
+> [*************************************************************
+> **********
+> ]
+> Zhi Jie,Zhang ,PHD
+> Tel:86-21-54237149   epistat at gmail.com
+> Dept. of Epidemiology,school of public health,Fudan University
+> Address:No. 138 Yi Xue Yuan Road,Shanghai,China
+> Postcode:200032
+> [*************************************************************
+> **********
+> ]
+> oooO:::::::::
+> (..):::::::::
+> :\.(:::Oooo::
+> ::\_)::(..)::
+> :::::::)./:::
+> ::::::(_/::::
+> :::::::::::::
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> 
+> 
+> ------------------------------
+> 
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> 
+> 
+> End of R-sig-Geo Digest, Vol 40, Issue 9
+> 
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>
+
+
+
+From christoph.hofer at env.ethz.ch  Wed Dec 13 13:22:43 2006
+From: christoph.hofer at env.ethz.ch (Christoph Hofer)
+Date: Wed, 13 Dec 2006 13:22:43 +0100
+Subject: [R-sig-Geo] Can you query points with a polygon?
+In-Reply-To: <4702645135092E4497088F71D9C8F51A0224E636@afhex01.dpi.wa.gov.au>
+References: <4702645135092E4497088F71D9C8F51A0224E636@afhex01.dpi.wa.gov.au>
+Message-ID: <881E89D2-266D-4223-91BF-5B5EA22E430E@env.ethz.ch>
+
+Hello Kenneth
+
+In the sp package you find the function "point.in.polygon".
+
+
+Christoph
+
+
+Am 13.12.2006 um 06:24 schrieb Mulholland, Tom:
+
+> Yes there is more than one. I can't remember when I made the  
+> decision but I recall doing some speed tests and I picked  
+> inside.owin in the spatstat package. I think splancs and spatial  
+> might have their own versions as well. The overlay function in sp  
+> works. I think I found this too slow for what I was doing at the  
+> time. I haven't revisited this recently so it may be worth your  
+> while checking out the variations.
+>
+> Tom
+>
+>> -----Original Message-----
+>> From: r-sig-geo-bounces at stat.math.ethz.ch
+>> [mailto:r-sig-geo-bounces at stat.math.ethz.ch]On Behalf Of Pierce, Ken
+>> Sent: Wednesday, 13 December 2006 1:56 PM
+>> To: r-sig-geo at stat.math.ethz.ch
+>> Subject: [R-sig-Geo] Can you query points with a polygon?
+>>
+>>
+>> If I have a set of points from a shapefile (or generated in R) and a
+>> polygon from a shapefile, can I use the polygon to select the points
+>> that fall within it? One of the many packages must do it but I can't
+>> seem to figure which one.
+>>
+>> Thanks,
+>>
+>> Kenneth B. Pierce Jr.
+>> Research Ecologist
+>> Landscape Ecology, Modeling, Mapping and Analysis Team
+>> PNW Research Station - USDA-FS
+>> 3200 SW Jefferson Way,  Corvallis,  OR 97331
+>> ken.pierce at oregonstate.edu
+>> 541 750-7393
+>> http://www.fsl.orst.edu/lemma/gnnfire
+>>
+>>
+>>
+>>
+>>
+>> -----Original Message-----
+>> From: r-sig-geo-bounces at stat.math.ethz.ch
+>> [mailto:r-sig-geo-bounces at stat.math.ethz.ch] On Behalf Of
+>> r-sig-geo-request at stat.math.ethz.ch
+>> Sent: Monday, December 11, 2006 3:00 AM
+>> To: r-sig-geo at stat.math.ethz.ch
+>> Subject: R-sig-Geo Digest, Vol 40, Issue 9
+>>
+>> Send R-sig-Geo mailing list submissions to
+>> 	r-sig-geo at stat.math.ethz.ch
+>>
+>> To subscribe or unsubscribe via the World Wide Web, visit
+>> 	https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>> or, via email, send a message with subject or body 'help' to
+>> 	r-sig-geo-request at stat.math.ethz.ch
+>>
+>> You can reach the person managing the list at
+>> 	r-sig-geo-owner at stat.math.ethz.ch
+>>
+>> When replying, please edit your Subject line so it is more
+>> specific than
+>> "Re: Contents of R-sig-Geo digest..."
+>>
+>>
+>> Today's Topics:
+>>
+>>    1. Re: project the lat./long. to x/y (zhijie zhang)
+>>
+>>
+>> --------------------------------------------------------------------- 
+>> -
+>>
+>> Message: 1
+>> Date: Mon, 11 Dec 2006 09:05:44 +0800
+>> From: "zhijie zhang" <epistat at gmail.com>
+>> Subject: Re: [R-sig-Geo] project the lat./long. to x/y
+>> To: Roger.Bivand at nhh.no
+>> Cc: r-sig-geo at stat.math.ethz.ch
+>> Message-ID:
+>> 	<2fc17e30612101705k1c06bef5of751d5764dd1d360 at mail.gmail.com>
+>> Content-Type: text/plain
+>>
+>> *Dear Roger Bivand* ,
+>>   Your suggestions are very good, which gives me a general
+>> method to do
+>> projections.
+>>   Thanks.
+>>
+>>
+>> On 12/6/06, Roger Bivand <Roger.Bivand at nhh.no> wrote:
+>>>
+>>> On Wed, 6 Dec 2006, zhijie zhang wrote:
+>>>
+>>>> Dear friends,
+>>>>   I had a point pattern dataset, whose locations was defined
+>>> by  lat./long..
+>>>> In the past, I used ARCGIS to specify its coordinate
+>> system and the
+>>>> projection method, now i want to do it in R. I don't know
+>> how to do
+>>>> it, because it needs me to specify the *Geographic
+>> Coordinate System
+>>
+>>>> and the Projected Coordinate System.* Maybe i mistake the
+>>>> information in ARCGIS
+>>> and
+>>>> only the projection method need to be specified because of my poor
+>>> knwledge
+>>>> on coordiante systems.
+>>>
+>>> Coordinate systems are unusually difficult to understand for
+>> everybody!
+>>>
+>>> In rgdal:
+>>>
+>>> EPSG <- make_EPSG()
+>>> EPSG[grep("Xian", EPSG$note), 1:2]
+>>>
+>>> gives a list of the known projections including "Xian",
+>>>
+>>> among which:
+>>>
+>>> CRS("+init=epsg:2384")
+>>>
+>>> looks promising. The a= and b= specify the ellipsoid used,
+>> but I have
+>>> not been able to find an authority to confirm that it is
+>> D_Xian_1980.
+>>> One way to check would be to take a long/lat value in WGS84
+>> (for known
+>>
+>>> datum) and convert it to the target projection in both
+>> ArcGIS and with
+>>
+>>> spTransform() in rgdal, and see how far they differ. I do not see
+>>> anything helpful in http://www.asprs.org/resources/GRIDS -
+>> referenced
+>>> on the make_EPSG help page, which is often a good authority, so you
+>>> may need to double-check with local sources.
+>>>
+>>> The way to go would be to make your (point?) data set into
+>> a Spatial*
+>>> object with a projection argument like CRS("+proj=longlat
+>>> +ellps=WGS84") if the ellipsoid is correct, and use
+>> spTransform to get
+>>
+>>> to the Gauss_Kruger Xian datum representation.
+>>>
+>>> Roger
+>>>
+>>> PS. Yes, the Windows binary of the rgdal version you give below was
+>>> built on R 2.4.0 (you are on Windows?). You need to
+>> download a Windows
+>>
+>>> binary package manually from
+>>> http://cran.r-project.org/bin/windows/contrib/
+>>> (there is a 0.4-12 version for R 2.3); the same may apply to other
+>>> packages.
+>>>
+>>>>
+>>>> ---------------------------------------------------The
+>> information
+>>>> in
+>>> ARCGIS
+>>>> after projecting the dataset-------
+>>>> Geometry Type: Point
+>>>>
+>>>> *Geographic Coordinate System:* #specify the coordinate system
+>>>> GCS_Xian_1980
+>>>> Datum: D_Xian_1980
+>>>> Prime Meridian: 0
+>>>>
+>>>> *Projected Coordinate System:* Xian_1980_3_Degree_GK_CM_117E
+>> #specify
+>>> the
+>>>> projection method
+>>>> Projection: Gauss_Kruger
+>>>> False_Easting: 500000.00000000
+>>>> False_Northing: 0.00000000
+>>>> Central_Meridian: 117.00000000
+>>>> Scale_Factor: 1.00000000
+>>>> Latitude_Of_Origin: 0.00000000
+>>>> Linear Unit: Meter (1.000000)
+>>>>
+>>>
+>> --------------------------------------------------------------------- 
+>> -
+>>> ------------------------------------------------------
+>>>> mapproject(x, y, projection="", parameters=NULL,
+>>> orientation=NULL)  *#only
+>>>> allows us to define the projected coordinate system Anybody knows
+>>>> how to finish it in R? Maybe rgdal() can it, but it's a
+>>> liitle
+>>>> difficult for me*.
+>>>>
+>>>> *Example of my dataset:*
+>>>>
+>>>> ID  CLASS SOILTEM AIRTEM GHEIGHT H      *LAT     LONG*
+>>>> 1   1      19       20      50        30.61688 117.4140
+>>>> 2   1      19       21      65        30.61686 117.4140
+>>>> 3   2      20       22      55        30.61680 117.4139
+>>>> 4   3      20       26      10        30.61675 117.4139
+>>>> 5   4      20       23      75        30.61679 117.4140
+>>>> 6   1      21       21      55        30.61685 117.4141
+>>>>
+>>>> BTW, when i load the package rgdal, the following errors
+>>>> appear,*where
+>>> is
+>>>> the wrong*? Does it mean i need to use the R2.4.0 version?
+>>>> error in load(dataFile, ns) : ReadItem
+>> uncorrect?no class 25
+>>>> Warning message:
+>>>> package'rgdal'is build with R2.4.0
+>>>> error: package'rgdal' R's input code fail
+>>>> error: 'rgdal'package/name space load fail?
+>>>> -------------------------------package information
+>>>> ----------------------------
+>>>> R : Version 2.3.1 (2006-06-01)
+>>>> rgdal_0.5-1
+>>>> ---------------------------------------------
+>>>>
+>>>>
+>>>
+>>> --
+>>> Roger Bivand
+>>> Economic Geography Section, Department of Economics,
+>> Norwegian School
+>>> of Economics and Business Administration, Helleveien 30, N-5045
+>>> Bergen, Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+>>> e-mail: Roger.Bivand at nhh.no
+>>>
+>>>
+>>
+>>
+>> --
+>> With Kind Regards,
+>>
+>> oooO:::::::::
+>> (..):::::::::
+>> :\.(:::Oooo::
+>> ::\_)::(..)::
+>> :::::::)./:::
+>> ::::::(_/::::
+>> :::::::::::::
+>> [*************************************************************
+>> **********
+>> ]
+>> Zhi Jie,Zhang ,PHD
+>> Tel:86-21-54237149   epistat at gmail.com
+>> Dept. of Epidemiology,school of public health,Fudan University
+>> Address:No. 138 Yi Xue Yuan Road,Shanghai,China
+>> Postcode:200032
+>> [*************************************************************
+>> **********
+>> ]
+>> oooO:::::::::
+>> (..):::::::::
+>> :\.(:::Oooo::
+>> ::\_)::(..)::
+>> :::::::)./:::
+>> ::::::(_/::::
+>> :::::::::::::
+>>
+>> 	[[alternative HTML version deleted]]
+>>
+>>
+>>
+>> ------------------------------
+>>
+>> _______________________________________________
+>> R-sig-Geo mailing list
+>> R-sig-Geo at stat.math.ethz.ch
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>>
+>>
+>> End of R-sig-Geo Digest, Vol 40, Issue 9
+>>
+>> _______________________________________________
+>> R-sig-Geo mailing list
+>> R-sig-Geo at stat.math.ethz.ch
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>>
+>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+
+
+
+From e.pebesma at geo.uu.nl  Wed Dec 13 14:05:25 2006
+From: e.pebesma at geo.uu.nl (Edzer J. Pebesma)
+Date: Wed, 13 Dec 2006 14:05:25 +0100
+Subject: [R-sig-Geo] Can you query points with a polygon?
+In-Reply-To: <881E89D2-266D-4223-91BF-5B5EA22E430E@env.ethz.ch>
+References: <4702645135092E4497088F71D9C8F51A0224E636@afhex01.dpi.wa.gov.au>
+	<881E89D2-266D-4223-91BF-5B5EA22E430E@env.ethz.ch>
+Message-ID: <457FFA95.6090807@geo.uu.nl>
+
+Christoph Hofer wrote:
+> Hello Kenneth
+>
+> In the sp package you find the function "point.in.polygon".
+>   
+Yes, and a convenient wrapper method, called "overlay" which basically 
+overlays a polygon coverage (SpatialPolygonsDataFrame) with a point 
+coverage (SpatialPointsDataFrame). Try
+
+ > library(sp)
+ > ?overlay
+ > methods?overlay
+
+--
+Edzer
+
+
+
+From adrian at maths.uwa.edu.au  Thu Dec 14 02:06:46 2006
+From: adrian at maths.uwa.edu.au (Adrian Baddeley)
+Date: Thu, 14 Dec 2006 09:06:46 +0800
+Subject: [R-sig-Geo]  Can you query points with a polygon?
+In-Reply-To: <mailman.11.1166007606.22202.r-sig-geo@stat.math.ethz.ch>
+References: <mailman.11.1166007606.22202.r-sig-geo@stat.math.ethz.ch>
+Message-ID: <17792.41894.243263.829866@maths.uwa.edu.au>
+
+
+Ken Pierce writes:
+
+> If I have a set of points from a shapefile (or generated in R) and a
+> polygon from a shapefile, can I use the polygon to select the points
+> that fall within it? One of the many packages must do it but I can't
+> seem to figure which one.
+
+Both splancs and spatstat can do this. 
+
+In spatstat you can use either the subset operator for point patterns [.ppp
+or the low level function inside.owin. The polygon should first be
+converted to an object of class "owin", e.g.
+
+	     W <- owin(poly=list(x=xp, y=yp))
+
+where xp and yp are vectors of coordinates of the vertices of the polygon
+traversed in anticlockwise order; see help(owin). 
+
+You can then determine which points are inside the polygon by 
+	ok <- inside.owin(x, y, W)
+where x and y are vectors of coordinates of the points. 
+The return value is a logical vector that is TRUE when the
+corresponding point lies inside the polygon. 
+
+If you want to select those points that are inside, you can of course
+just take x[ok] and y[ok]. A more elegant way to do both steps is 
+to use the subset operator for point patterns, [.ppp 
+First convert your coordinate vectors into a point pattern object,
+e.g.
+	A <- ppp(x, y, range(x), range(y))
+then simply
+        B <- A[W]
+gets you the sub-pattern of points lying inside W.
+
+This requires spatstat 1.10-2 or later.
+
+Adrian Baddeley
+
+
+
+From Alexander.Herr at csiro.au  Thu Dec 14 05:00:07 2006
+From: Alexander.Herr at csiro.au (Alexander.Herr at csiro.au)
+Date: Thu, 14 Dec 2006 14:00:07 +1000
+Subject: [R-sig-Geo] 3d surface plot of large data
+Message-ID: <062AE320EF971E40ACD0F6C93391D769BD09E5@exqld1-tsv.nexus.csiro.au>
+
+Dear list,
+
+I am trying to plot a grid with an overlayed height. I have a dataframe
+with four variables:
+x,y,gridvalue,height. The dataframe has 2.5mio observations (ie grid
+points),
+
+I assign colors through the gridvalue using map_color_gradient thus
+producing:
+x,y,gridvalue,height,gridcol as variables of the dataframe.
+
+My attempts with surface3d fail, mainly because I cannot produce the
+matrix required for the height input. 
+
+Any ideas/help appreciated
+Thanks
+Herry
+
+Dr Alexander Herr
+Spatial and statistical analyst
+CSIRO, Sustainable Ecosystems
+Davies Laboratory,
+University Drive, Douglas, QLD 4814 
+Private Mail Bag, Aitkenvale, QLD 4814
+ 
+Phone/www 
+(07) 4753 8510; 4753 8650(fax)
+Home: http://herry.ausbats.org.au
+Webadmin ABS: http://ausbats.org.au
+Sustainable Ecosystems: http://www.cse.csiro.au/
+
+
+
+From massimodisasha at yahoo.it  Sat Dec 16 01:52:56 2006
+From: massimodisasha at yahoo.it (massimodisasha)
+Date: Sat, 16 Dec 2006 01:52:56 +0100
+Subject: [R-sig-Geo] Errore in sprintf(fmt, ...) ?
+In-Reply-To: <mailman.17.1165316407.12259.r-sig-geo@stat.math.ethz.ch>
+References: <mailman.17.1165316407.12259.r-sig-geo@stat.math.ethz.ch>
+Message-ID: <DC257A5C-6886-4EDE-8BE6-C5910465305C@yahoo.it>
+
+>>>> Hi,
+>>>> in the last days i had an error during the computation of a  
+>>>> morfological clustering on a dtm,
+>>>> thanks to R.Bivand and his suggestions i've resolved it.
+>>>>
+>>>> error was generated by a large presence of Nas ( the sea  
+>>>> surface ) on my scene:
+>>>> http://img299.imageshack.us/img299/1619/immagine8gg6.png
+>>>>
+>>>> The problem is firstly that there are NAs in morph, and then
+>>>> that the string listing the row numbers of the NAs exceeds 8K  
+>>>> characters
+>>>> (my earlier message : Errore in sprintf(fmt, ...) : La lunghezza
+>>>> della stringa eccede la dimensione del buffer di 8192)
+>>>>
+>>>> So the right procedure is to try clara on morph once you have  
+>>>> omitted the NAs.
+>>>> If the NAs are for all variables in a row, coercing from  
+>>>> SpatialGridDataFrame to
+>>>> SpatialPixelsDataFrame will work,
+>>>> if only some, we need to set the whole row to NA, coerce,  
+>>>> cluster, add the clara results to the
+>>>> SpatialPixelsDataFrame, coerce back to SpatialGridDataFrame,  
+>>>> then back to
+>>>> GRASS.
+>>>>
+>>>>
+>>>> ##My system configuration:
+>>>>
+>>>> R version 2.4.0 (2006-10-03)
+>>>> powerpc-apple-darwin8.7.0
+>>>> locale:
+>>>> C
+>>>> attached base packages:
+>>>> [1] "methods"   "stats"     "graphics"  "grDevices" "utils"      
+>>>> "datasets"
+>>>> [7] "base"
+>>>> other attached packages:
+>>>> spgrass6    rgdal maptools  foreign       sp  cluster
+>>>> "0.3-4"  "0.5-3"  "0.6-5" "0.8-18"  "0.9-4" "1.11.4"
+>>>>
+>>>> ##This is the log of previous error:
+>>>>
+>>>> ...
+>>>> ...
+>>>> names(morph) <- c 
+>>>> ("er","crosc","longc","slope_n","profc","minic","maxic")
+>>>> morph.clara <- clara(morph, k=5, stand=F)
+>>>> Errore in clara(morph, k = 5, stand = F) :
+>>>> Observations
+>>>> 1929241,1931311,1933381,1935451,1937521,1939591,1941661,1943731,194 
+>>>> 58
+>>>> 01,1947871,........................................................ 
+>>>> ..
+>>>> .............44521,2146591,2148661,2150731,2152801,2154871,2156941
+>>>> ,2159011,2161081,2163151,2165221,2167291,2169361,2171431
+>>>> traceback()
+>>>> 2: stop(ngettext(length(i), sprintf("Observation %d
+>>>> has", i[1]),
+>>>>        sprintf("Observations %s have", paste(i,
+>>>> collapse = ","))),
+>>>>        " *only* NAs --> omit for clustering")
+>>>> 1: clara(morph, k = 5, stand = F)
+>>>>
+>>>>
+>>>>
+>>>>
+>>>> ##this code fix the problem:
+>>>>
+>>>>
+>>>> 	library(spgrass6)
+>>>> 	x <- readRAST6(c ('$map_1,..,$map_N'))
+>>>> 	save(x, file="geomorphological.RData", compress=TRUE)
+>>>> 	rm(x)
+>>>> 	gc()
+>>>> 	
+>>>> 	
+>>>>         #   copies the GridTopology object from its slot in x,  
+>>>> to use later on;  it is the current GRASS region
+>>>> 	
+>>>> 	grd <- x at grid
+>>>> 	
+>>>> 	#   Sets or retrieves projection attributes on classes  
+>>>> extending  SpatialData
+>>>> 	#   again copying from x so as to allow x to be removed from the
+>>>> 	#   workspace. It read the projection info and apply it to the  
+>>>> x data	
+>>>> 		
+>>>> 	proj <- x at proj4string
+>>>> 	
+>>>> 	#   copying the data slot (in R >= 2.4.0 a data frame) out to  
+>>>> xx; for some
+>>>> 	#   reason getting it in other ways made a copy of it, so this  
+>>>> saves space.
+>>>> 	
+>>>> 	xx <- x at data
+>>>> 	
+>>>> 	rm(x)
+>>>> 	gc()
+>>>> 	library(cluster)
+>>>> 	
+>>>> 	#   makes a logical vector saying which rows are all NAs  
+>>>> (FALSE), and
+>>>> 	#   which are not (TRUE).
+>>>> 	
+>>>> 	NArow <- apply(xx, 1, function(x) !(all(is.na(x))))
+>>>> 	
+>>>> 	#   create xx1 object (my data without Nas)
+>>>> 	#   selects the rows for which NArow is TRUE.
+>>>> 	
+>>>> 	xx1 <- xx[NArow,]
+>>>> 	
+>>>> 	rm(xx)
+>>>> 	gc()
+>>>> 	res <- clara(xx1, k='$clusters', metric="'$metric'",  
+>>>> stand='$stand', sampsize='$sampsizes', trace='$trace',  
+>>>> samples='$samples',
+>>>> 	medoids='$medoids', keep.data='$keepdata', rngR='$rngR')
+>>>> 	gc()
+>>>> 	rm(xx1)
+>>>> 	gc()
+>>>> 	
+>>>> 	#   object name out_class, an integer vector of NAs the same  
+>>>> length as NArow.
+>>>> 	
+>>>> 	out_class <- as.integer(rep(NA, length(NArow)))
+>>>> 	
+>>>> 	#   Inserts the results of res$clustering - c() removes the  
+>>>> unecessary names -
+>>>> 	#   into the elements of out_class for which NArow is TRUE (so  
+>>>> the elements
+>>>> 	#   corresponding to all NA inputs are NA in the output).	
+>>>> 	
+>>>> 	out_class[NArow] <- c(res$clustering)
+>>>> 	
+>>>> 	#   out is a SpatialGridDataFrame, with the same region as x,  
+>>>> same projection
+>>>> 	#   as x, but only the classification output (correctly  
+>>>> assigned to elements
+>>>> 	#   with regard to NAs in the input) in its data slot.
+>>>> 	
+>>>> 	out <- SpatialGridDataFrame(grd,  
+>>>> proj4string=proj,data=data.frame(cls=out_class))
+>>>> 	
+>>>>
+>>>> 	save(out, file="klust_out.RData", compress=TRUE)
+>>>> 	library(rgdal)
+>>>> 	writeGDAL(out, fname="clust.tif", drivername="GTiff", type="Byte")
+>>>> 	gc()
+>>>>
+>>>> i hope this is usefool
+>>>>
+>>>> regards,
+>>>> Massimo
+
+
+
+From patrick.giraudoux at univ-fcomte.fr  Sat Dec 16 18:41:38 2006
+From: patrick.giraudoux at univ-fcomte.fr (Patrick Giraudoux)
+Date: Sat, 16 Dec 2006 18:41:38 +0100
+Subject: [R-sig-Geo] installing rgdal on Ubuntu 6.10
+Message-ID: <45842FD2.3080603@univ-fcomte.fr>
+
+Deal all,
+
+I am moving from Windows XP to Ubuntu and hopefully work on the two 
+plateform and more an more on Linux (an old dream). Thus I am a newby in 
+Linux. I have installed R 2.4 (note that the R-cran repository must be 
+added manually to the synaptic package manager - if not one get R 2.3 
+from universe).
+
+gdal 1.3.1 has been installed via the synaptic package manager (thus 
+most likely well).
+
+The trouble comes installing the package rgdal. I get this message:
+
+The gdal-config script distributed with GDAL could not be found.
+If you have not installed the GDAL libraries, you can
+download the source from  http://www.gdal.org/
+If you have installed the GDAL libraries, then make sure that
+gdal-config is in your path. Try typing gdal-config at a
+shell prompt and see if it runs. If not, use:
+ --configure-args='--with-gdal-config=/usr/local/bin/gdal-config' echo 
+with appropriate values for your installation.
+
+ERROR: configuration failed for package 'rgdal'
+** Removing '/usr/local/lib/R/site-library/rgdal'
+
+typing gdal-confing at a shell prompt does not run indeed, but I don't 
+have the lesser idea of what the next line advised to be used means:
+--configure-args='--with-gdal-config=/usr/local/bin/gdal-config' echo
+
+For instance, I have tried 
+locate gdal-config
+to find were the directory or file mentioned may be found... useless.
+
+I have googled a bit through mailing lists where this question is 
+sometime raised, but did not find helpful answers.
+
+Any hint?
+
+Patrick
+
+
+
+From tkeitt at gmail.com  Sat Dec 16 19:16:22 2006
+From: tkeitt at gmail.com (Tim Keitt)
+Date: Sat, 16 Dec 2006 12:16:22 -0600
+Subject: [R-sig-Geo] installing rgdal on Ubuntu 6.10
+In-Reply-To: <45842FD2.3080603@univ-fcomte.fr>
+References: <45842FD2.3080603@univ-fcomte.fr>
+Message-ID: <6262c54c0612161016g5cd2ba35w86b4be1ad8117a18@mail.gmail.com>
+
+An embedded and charset-unspecified text was scrubbed...
+Name: not available
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20061216/98cf9482/attachment.pl>
+
+From cavallini at faunalia.it  Sat Dec 16 21:03:26 2006
+From: cavallini at faunalia.it (Paolo Cavallini)
+Date: Sat, 16 Dec 2006 21:03:26 +0100
+Subject: [R-sig-Geo] installing rgdal on Ubuntu 6.10
+In-Reply-To: <45842FD2.3080603@univ-fcomte.fr>
+References: <45842FD2.3080603@univ-fcomte.fr>
+Message-ID: <4584510E.6010103@faunalia.it>
+
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA1
+
+You'll get much more trouble using GIS when on ubuntu compared to debian.
+It is basically the same thing, but packaged in ubuntu are oudated.
+pc
+
+Patrick Giraudoux ha scritto:
+> Deal all,
+> 
+> I am moving from Windows XP to Ubuntu and hopefully work on the two 
+> plateform and more an more on Linux (an old dream). Thus I am a newby in 
+> Linux. I have installed R 2.4 (note that the R-cran repository must be 
+> added manually to the synaptic package manager - if not one get R 2.3 
+> from universe).
+...
+- --
+Paolo Cavallini
+email+jabber: cavallini at faunalia.it
+www.faunalia.it
+Piazza Garibaldi 5 - 56025 Pontedera (PI), Italy   Tel: (+39)348-3801953
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v1.4.6 (GNU/Linux)
+Comment: Using GnuPG with Mozilla - http://enigmail.mozdev.org
+
+iD8DBQFFhFEN/NedwLUzIr4RAqhIAJ49GmLExNiH8dzCB2Ei278HST8HTQCeL5b5
+HQzZENbsTQeFHv6QgZlSLV4=
+=HnI2
+-----END PGP SIGNATURE-----
+
+
+
+From Roger.Bivand at nhh.no  Sat Dec 16 21:51:59 2006
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Sat, 16 Dec 2006 21:51:59 +0100 (CET)
+Subject: [R-sig-Geo] installing rgdal on Ubuntu 6.10
+In-Reply-To: <45842FD2.3080603@univ-fcomte.fr>
+Message-ID: <Pine.LNX.4.44.0612162140540.5390-100000@reclus.nhh.no>
+
+On Sat, 16 Dec 2006, Patrick Giraudoux wrote:
+
+> Deal all,
+> 
+> I am moving from Windows XP to Ubuntu and hopefully work on the two 
+> plateform and more an more on Linux (an old dream). Thus I am a newby in 
+> Linux. I have installed R 2.4 (note that the R-cran repository must be 
+> added manually to the synaptic package manager - if not one get R 2.3 
+> from universe).
+> 
+> gdal 1.3.1 has been installed via the synaptic package manager (thus 
+> most likely well).
+
+Do you know or are you hoping? Does gdalinfo --version work? gdal-config
+should live in the same directory as gdalinfo. Have you looked at your
+PATH (echo $PATH)? 
+
+Personally, on capable OS I much prefer to build software I need from
+source, rather than installing binaries. GDAL 1.3.1 is pretty old, 1.3.2
+is established, and 1.4.0 will be released very soon. I think people have
+had similar problems on the GRASS list with this distribution - the
+promise of binary installs becomes the disappointment of finding that the
+available packages are either out of date, or make unjustified assumptions
+about other installed packages, or both.
+
+Roger
+
+> 
+> The trouble comes installing the package rgdal. I get this message:
+> 
+> The gdal-config script distributed with GDAL could not be found.
+> If you have not installed the GDAL libraries, you can
+> download the source from  http://www.gdal.org/
+> If you have installed the GDAL libraries, then make sure that
+> gdal-config is in your path. Try typing gdal-config at a
+> shell prompt and see if it runs. If not, use:
+>  --configure-args='--with-gdal-config=/usr/local/bin/gdal-config' echo 
+> with appropriate values for your installation.
+> 
+> ERROR: configuration failed for package 'rgdal'
+> ** Removing '/usr/local/lib/R/site-library/rgdal'
+> 
+> typing gdal-confing at a shell prompt does not run indeed, but I don't 
+> have the lesser idea of what the next line advised to be used means:
+> --configure-args='--with-gdal-config=/usr/local/bin/gdal-config' echo
+> 
+> For instance, I have tried 
+> locate gdal-config
+> to find were the directory or file mentioned may be found... useless.
+> 
+> I have googled a bit through mailing lists where this question is 
+> sometime raised, but did not find helpful answers.
+> 
+> Any hint?
+> 
+> Patrick
+> 
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From naren_svk at yahoo.com  Sat Dec 16 22:27:02 2006
+From: naren_svk at yahoo.com (Narendran Kodandapani)
+Date: Sat, 16 Dec 2006 13:27:02 -0800 (PST)
+Subject: [R-sig-Geo] rank abundance with VEGAN
+Message-ID: <592641.72961.qm@web33701.mail.mud.yahoo.com>
+
+Hello,
+
+I am preparing a rank-abundance plot in R.  I would
+like to have the four letter species code appear on
+the plot.  Can someone tell me how to do that.
+
+Thanks,
+
+Narendran
+Michigan State University.
+
+
+
+From tkeitt at gmail.com  Sun Dec 17 01:52:06 2006
+From: tkeitt at gmail.com (Tim Keitt)
+Date: Sat, 16 Dec 2006 18:52:06 -0600
+Subject: [R-sig-Geo] installing rgdal on Ubuntu 6.10
+In-Reply-To: <4584510E.6010103@faunalia.it>
+References: <45842FD2.3080603@univ-fcomte.fr> <4584510E.6010103@faunalia.it>
+Message-ID: <6262c54c0612161652j13ec9308n717005881077a90b@mail.gmail.com>
+
+An embedded and charset-unspecified text was scrubbed...
+Name: not available
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20061216/cc1782ee/attachment.pl>
+
+From cavallini at faunalia.it  Sun Dec 17 08:30:54 2006
+From: cavallini at faunalia.it (Paolo Cavallini)
+Date: Sun, 17 Dec 2006 08:30:54 +0100
+Subject: [R-sig-Geo] installing rgdal on Ubuntu 6.10
+In-Reply-To: <6262c54c0612161652j13ec9308n717005881077a90b@mail.gmail.com>
+References: <45842FD2.3080603@univ-fcomte.fr> <4584510E.6010103@faunalia.it>
+	<6262c54c0612161652j13ec9308n717005881077a90b@mail.gmail.com>
+Message-ID: <4584F22E.3070409@faunalia.it>
+
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA1
+
+No, I was talking about debian testing. It is the most updated
+distribution for GIS. I do not know much about the far past, but all
+current packages are in *very* good shape, up to date, and have been
+this way in the last couple of years (thanks to the DebianGIS project).
+Anyway, we don't want to start a flame war, don't we? I was just
+suggesting the easiest way to get recent packages through a single command.
+pc
+Tim Keitt ha scritto:
+> You mean Ubuntu lags behind Debian unstable. Debian unstable is constantly
+> being updated. This is either a good thing or a bad thing depending on your
+> perspective. I ran Debian unstable for several years and believe me the
+> quality of Debian packaging varies a lot. Most Debian devs are quite good,
+> but some are downright sloppy. YMMV. If you want a super stable
+> distribution, Debian stable is great, but tends to lag a couple of years
+> behind current development. Ubuntu snapshots Debian unstable twice a year
+> and cleans up the mess. You can track the development version of Ubuntu if
+> you want and it will get you closer to Debian unstable, but with possibly
+> more breakage.
+> 
+> I've not had any problem with GIS on Ubuntu except interfacing with CRAN.
+> The problem is CRAN is on a rolling update model without any policy about
+> backward compatibility.  (A little like Gentoo, which I also like, but can
+> be very very messy). I think the R community needs to start thinking about
+> having stable/unstable branches with a 6 month changeover cycle.
+> 
+> THK
+- --
+Paolo Cavallini
+email+jabber: cavallini at faunalia.it
+www.faunalia.it
+Piazza Garibaldi 5 - 56025 Pontedera (PI), Italy   Tel: (+39)348-3801953
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v1.4.6 (GNU/Linux)
+Comment: Using GnuPG with Mozilla - http://enigmail.mozdev.org
+
+iD8DBQFFhPIu/NedwLUzIr4RAlNRAJ98SQWAOH1y04/2+ZKBLbeKoLBY6wCeMAci
+o4Y3GOHl5s22K+nboVZg0L0=
+=OOw2
+-----END PGP SIGNATURE-----
+
+
+
+From patrick.giraudoux at univ-fcomte.fr  Sun Dec 17 11:14:48 2006
+From: patrick.giraudoux at univ-fcomte.fr (Patrick Giraudoux)
+Date: Sun, 17 Dec 2006 11:14:48 +0100
+Subject: [R-sig-Geo] installing rgdal on Ubuntu 6.10
+In-Reply-To: <Pine.LNX.4.44.0612162140540.5390-100000@reclus.nhh.no>
+References: <Pine.LNX.4.44.0612162140540.5390-100000@reclus.nhh.no>
+Message-ID: <45851898.2080606@univ-fcomte.fr>
+
+An embedded and charset-unspecified text was scrubbed...
+Name: not available
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20061217/78e58426/attachment.pl>
+
+From patrick.giraudoux at univ-fcomte.fr  Sun Dec 17 11:37:27 2006
+From: patrick.giraudoux at univ-fcomte.fr (Patrick Giraudoux)
+Date: Sun, 17 Dec 2006 11:37:27 +0100
+Subject: [R-sig-Geo] installing rgdal on Ubuntu 6.10
+Message-ID: <45851DE7.6020408@univ-fcomte.fr>
+
+Actually, PATH gives the following
+
+echo $PATH
+/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/bin/X11:/usr/games
+
+and gdalinfo --version gives:
+
+giraudoux at giraudoux-laptop:~$ gdalinfo --version
+GDAL 1.3.1.0, released 2005/10/04
+
+Going ahead:
+
+$ locate gdalinfo
+
+/usr/bin/gdalinfo
+/usr/share/doc/libgdal-doc/gdal/gdalinfo.c.html
+/usr/share/doc/libgdal-doc/gdal/gdalinfo.html
+/usr/share/man/man1/gdalinfo.1.gz
+
+$ ls gda*
+gdaladdo  gdal_contour  gdalinfo  gdaltindex  gdal_translate  gdalwarp
+
+Seems that no gdal-config file is present. However:
+
+$ locate gdal-conf*
+/usr/share/doc/libgdal-doc/gdal/gdal-config.html
+
+Which is not what was expected. May I suspect that no real gdal-config 
+file has been installed??? Thus would lead to install a newer version 
+hopefully more adapted?
+
+Patrick
+
+
+
+From patrick.giraudoux at univ-fcomte.fr  Sun Dec 17 13:02:09 2006
+From: patrick.giraudoux at univ-fcomte.fr (Patrick Giraudoux)
+Date: Sun, 17 Dec 2006 13:02:09 +0100
+Subject: [R-sig-Geo] installing rgdal on Ubuntu 6.10
+In-Reply-To: <6262c54c0612161016g5cd2ba35w86b4be1ad8117a18@mail.gmail.com>
+References: <45842FD2.3080603@univ-fcomte.fr>
+	<6262c54c0612161016g5cd2ba35w86b4be1ad8117a18@mail.gmail.com>
+Message-ID: <458531C1.7030200@univ-fcomte.fr>
+
+Tim Keitt a ?crit :
+> Try installing libgdal1-1.3.1-dev which contains the header files and 
+> should have gdal-config.
+OK. Just dit it... Worked well and rgdal could then be installed from R. 
+First trials within R and some rgdal examples came OK.
+
+Anyway, I will look further about "prevu" and also a way to manage with 
+up-dated version of gdal as Roger advised.
+
+Many thanks,
+
+Patrick
+
+
+>
+> You may run into problems with incompatible library versions. Ubuntu 
+> updates every 6 months, but the R world seems never to stop rolling 
+> along.
+>
+> I've found the Ubuntu "prevu" utility extremely helpful as it fully 
+> automates backporting from the development branch. Take a look here: 
+> http://ubuntuforums.org/showthread.php?t=268687 
+> <http://ubuntuforums.org/showthread.php?t=268687>
+>
+> Once installed and configured, you  can build an R 2.4 package for 
+> Edgy by typing "prevu r-base-core". Similarly for gdal "prevu gdal". 
+> The utility will put the new packages into a local repository and ask 
+> if you want to add it to your sources list. If you do add the local 
+> repository, the next "apt-get dist-upgrade" will install your 
+> backported packages. I know it sounds a bit complicated, but it really 
+> is fairly easy.
+>
+> I'm hoping CRAN in the future will try to stay compatible with the R 
+> version found in the major binary distributions!
+>
+> Cheers,
+> THK
+>
+> On 12/16/06, * Patrick Giraudoux* <patrick.giraudoux at univ-fcomte.fr 
+> <mailto:patrick.giraudoux at univ-fcomte.fr>> wrote:
+>
+>     Deal all,
+>
+>     I am moving from Windows XP to Ubuntu and hopefully work on the two
+>     plateform and more an more on Linux (an old dream). Thus I am a
+>     newby in
+>     Linux. I have installed R 2.4 (note that the R-cran repository
+>     must be
+>     added manually to the synaptic package manager - if not one get R 2.3
+>     from universe).
+>
+>     gdal 1.3.1 has been installed via the synaptic package manager (thus
+>     most likely well).
+>
+>     The trouble comes installing the package rgdal. I get this message:
+>
+>     The gdal-config script distributed with GDAL could not be found.
+>     If you have not installed the GDAL libraries, you can
+>     download the source from  http://www.gdal.org/
+>     If you have installed the GDAL libraries, then make sure that
+>     gdal-config is in your path. Try typing gdal-config at a
+>     shell prompt and see if it runs. If not, use:
+>     --configure-args='--with-gdal-config=/usr/local/bin/gdal-config' echo
+>     with appropriate values for your installation.
+>
+>     ERROR: configuration failed for package 'rgdal'
+>     ** Removing '/usr/local/lib/R/site-library/rgdal'
+>
+>     typing gdal-confing at a shell prompt does not run indeed, but I don't
+>     have the lesser idea of what the next line advised to be used means:
+>     --configure-args='--with-gdal-config=/usr/local/bin/gdal-config' echo
+>
+>     For instance, I have tried
+>     locate gdal-config
+>     to find were the directory or file mentioned may be found... useless.
+>
+>     I have googled a bit through mailing lists where this question is
+>     sometime raised, but did not find helpful answers.
+>
+>     Any hint?
+>
+>     Patrick
+>
+>     _______________________________________________
+>     R-sig-Geo mailing list
+>     R-sig-Geo at stat.math.ethz.ch <mailto:R-sig-Geo at stat.math.ethz.ch>
+>     https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>
+>
+>
+>
+> -- 
+> Timothy H. Keitt, University of Texas at Austin
+> Contact info and schedule at http://www.keittlab.org/tkeitt/
+> Reprints at http://www.keittlab.org/tkeitt/papers/
+> ODF attachment? See http://www.openoffice.org/
+
+
+
+From tkeitt at gmail.com  Sun Dec 17 18:05:27 2006
+From: tkeitt at gmail.com (Tim Keitt)
+Date: Sun, 17 Dec 2006 11:05:27 -0600
+Subject: [R-sig-Geo] installing rgdal on Ubuntu 6.10
+In-Reply-To: <4584F22E.3070409@faunalia.it>
+References: <45842FD2.3080603@univ-fcomte.fr> <4584510E.6010103@faunalia.it>
+	<6262c54c0612161652j13ec9308n717005881077a90b@mail.gmail.com>
+	<4584F22E.3070409@faunalia.it>
+Message-ID: <6262c54c0612170905j5a18c0ceyb02fba94314d8ccc@mail.gmail.com>
+
+An embedded and charset-unspecified text was scrubbed...
+Name: not available
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20061217/bc118b8f/attachment.pl>
+
+From Roger.Bivand at nhh.no  Sun Dec 17 21:40:17 2006
+From: Roger.Bivand at nhh.no (Roger Bivand)
+Date: Sun, 17 Dec 2006 21:40:17 +0100 (CET)
+Subject: [R-sig-Geo] installing rgdal on Ubuntu 6.10
+In-Reply-To: <458531C1.7030200@univ-fcomte.fr>
+Message-ID: <Pine.LNX.4.44.0612172130340.310-100000@reclus.nhh.no>
+
+On Sun, 17 Dec 2006, Patrick Giraudoux wrote:
+
+> Tim Keitt a ?crit :
+> > Try installing libgdal1-1.3.1-dev which contains the header files and 
+> > should have gdal-config.
+> OK. Just dit it... Worked well and rgdal could then be installed from R. 
+> First trials within R and some rgdal examples came OK.
+
+Am I right that the conclusion is that, for Ubuntu, the required packages 
+are:
+
+libgdal1-1.*-dev for the header files and gdal-config;
+libgdal1-1.* for the libraries; and probably
+gdal-bin for the GDAL applications if needed externally?
+
+Should I put this on Rgeo?
+
+Searching "gdal" on http://packages.ubuntulinux.org/ does lead to what is 
+available for a given distribution.
+
+Roger
+
+
+> 
+> Anyway, I will look further about "prevu" and also a way to manage with 
+> up-dated version of gdal as Roger advised.
+> 
+> Many thanks,
+> 
+> Patrick
+> 
+> 
+> >
+> > You may run into problems with incompatible library versions. Ubuntu 
+> > updates every 6 months, but the R world seems never to stop rolling 
+> > along.
+> >
+> > I've found the Ubuntu "prevu" utility extremely helpful as it fully 
+> > automates backporting from the development branch. Take a look here: 
+> > http://ubuntuforums.org/showthread.php?t=268687 
+> > <http://ubuntuforums.org/showthread.php?t=268687>
+> >
+> > Once installed and configured, you  can build an R 2.4 package for 
+> > Edgy by typing "prevu r-base-core". Similarly for gdal "prevu gdal". 
+> > The utility will put the new packages into a local repository and ask 
+> > if you want to add it to your sources list. If you do add the local 
+> > repository, the next "apt-get dist-upgrade" will install your 
+> > backported packages. I know it sounds a bit complicated, but it really 
+> > is fairly easy.
+> >
+> > I'm hoping CRAN in the future will try to stay compatible with the R 
+> > version found in the major binary distributions!
+> >
+> > Cheers,
+> > THK
+> >
+> > On 12/16/06, * Patrick Giraudoux* <patrick.giraudoux at univ-fcomte.fr 
+> > <mailto:patrick.giraudoux at univ-fcomte.fr>> wrote:
+> >
+> >     Deal all,
+> >
+> >     I am moving from Windows XP to Ubuntu and hopefully work on the two
+> >     plateform and more an more on Linux (an old dream). Thus I am a
+> >     newby in
+> >     Linux. I have installed R 2.4 (note that the R-cran repository
+> >     must be
+> >     added manually to the synaptic package manager - if not one get R 2.3
+> >     from universe).
+> >
+> >     gdal 1.3.1 has been installed via the synaptic package manager (thus
+> >     most likely well).
+> >
+> >     The trouble comes installing the package rgdal. I get this message:
+> >
+> >     The gdal-config script distributed with GDAL could not be found.
+> >     If you have not installed the GDAL libraries, you can
+> >     download the source from  http://www.gdal.org/
+> >     If you have installed the GDAL libraries, then make sure that
+> >     gdal-config is in your path. Try typing gdal-config at a
+> >     shell prompt and see if it runs. If not, use:
+> >     --configure-args='--with-gdal-config=/usr/local/bin/gdal-config' echo
+> >     with appropriate values for your installation.
+> >
+> >     ERROR: configuration failed for package 'rgdal'
+> >     ** Removing '/usr/local/lib/R/site-library/rgdal'
+> >
+> >     typing gdal-confing at a shell prompt does not run indeed, but I don't
+> >     have the lesser idea of what the next line advised to be used means:
+> >     --configure-args='--with-gdal-config=/usr/local/bin/gdal-config' echo
+> >
+> >     For instance, I have tried
+> >     locate gdal-config
+> >     to find were the directory or file mentioned may be found... useless.
+> >
+> >     I have googled a bit through mailing lists where this question is
+> >     sometime raised, but did not find helpful answers.
+> >
+> >     Any hint?
+> >
+> >     Patrick
+> >
+> >     _______________________________________________
+> >     R-sig-Geo mailing list
+> >     R-sig-Geo at stat.math.ethz.ch <mailto:R-sig-Geo at stat.math.ethz.ch>
+> >     https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> >
+> >
+> >
+> >
+> > -- 
+> > Timothy H. Keitt, University of Texas at Austin
+> > Contact info and schedule at http://www.keittlab.org/tkeitt/
+> > Reprints at http://www.keittlab.org/tkeitt/papers/
+> > ODF attachment? See http://www.openoffice.org/ 
+> 
+
+-- 
+Roger Bivand
+Economic Geography Section, Department of Economics, Norwegian School of
+Economics and Business Administration, Helleveien 30, N-5045 Bergen,
+Norway. voice: +47 55 95 93 55; fax +47 55 95 95 43
+e-mail: Roger.Bivand at nhh.no
+
+
+
+From tkeitt at gmail.com  Mon Dec 18 00:43:36 2006
+From: tkeitt at gmail.com (Tim Keitt)
+Date: Sun, 17 Dec 2006 17:43:36 -0600
+Subject: [R-sig-Geo] installing rgdal on Ubuntu 6.10
+In-Reply-To: <Pine.LNX.4.44.0612172130340.310-100000@reclus.nhh.no>
+References: <458531C1.7030200@univ-fcomte.fr>
+	<Pine.LNX.4.44.0612172130340.310-100000@reclus.nhh.no>
+Message-ID: <6262c54c0612171543j11a2b193l3f9cceebe6bdd701@mail.gmail.com>
+
+An embedded and charset-unspecified text was scrubbed...
+Name: not available
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20061217/f6d46632/attachment.pl>
+
+From epistat at gmail.com  Mon Dec 18 02:21:30 2006
+From: epistat at gmail.com (zhijie zhang)
+Date: Mon, 18 Dec 2006 09:21:30 +0800
+Subject: [R-sig-Geo] error in krige predictions
+Message-ID: <2fc17e30612171721y3b71c972kdf7e3ea94c77824d@mail.gmail.com>
+
+An embedded and charset-unspecified text was scrubbed...
+Name: not available
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20061218/40561c67/attachment.pl>
+
+From epistat at gmail.com  Tue Dec 19 02:33:51 2006
+From: epistat at gmail.com (zhijie zhang)
+Date: Tue, 19 Dec 2006 09:33:51 +0800
+Subject: [R-sig-Geo] Is there any great change in plot function?
+Message-ID: <2fc17e30612181733k24561bb9q3440b278fb4fa414@mail.gmail.com>
+
+An embedded and charset-unspecified text was scrubbed...
+Name: not available
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20061219/98f91b90/attachment.pl>
+
+From epistat at gmail.com  Tue Dec 19 14:21:31 2006
+From: epistat at gmail.com (zhijie zhang)
+Date: Tue, 19 Dec 2006 21:21:31 +0800
+Subject: [R-sig-Geo] Is there any great change in plot function?
+Message-ID: <2fc17e30612190521w5596ae1dva2b5cdd72a0a1168@mail.gmail.com>
+
+An embedded and charset-unspecified text was scrubbed...
+Name: not available
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20061219/07a79f5c/attachment.pl>
+
+From gggramig at students.wisc.edu  Wed Dec 20 17:57:07 2006
+From: gggramig at students.wisc.edu (GRETA G. GRAMIG)
+Date: Wed, 20 Dec 2006 10:57:07 -0600
+Subject: [R-sig-Geo] Newbie Questions
+Message-ID: <e37d8d80a4a4.45891703@wiscmail.wisc.edu>
+
+I have limited experience with spatial analysis, but I am trying to learn. Perhaps someone with patience for a newbie will field my questions? If this is not the appropriate forum for such questions perhaps someone could suggest a more appropriate forum. 
+
+I have a small dataset that consists of 128 x and y coordinates (latitude and longitude, on a small field scale). At each coordinate there are measurements for various soil properties along with a biomass yield measurement for each x,y.
+
+Via spdep, using k=4 nearest neighbors for the weights, I have calculated Moran's I and Geary's C for the univariate relationships. For most of the measured variables there is statistically significant spatial autocorrelation.
+
+I have also used Rgeo to plot some quintile scatterplots for each variable. Just from looking at these quintile plots I can see that, although the soil variables and yield are spatially autocorrelated, there does not seem to be a relationship between the patterns observed in soil variables vs. the patterns observed in the yield. 
+
+In other words, I would like to know if there is a relationship between yield and phosphorus, taking into account the spatial dependence. But how can I test this? I have used GeoDa to compute the multivariate Moran's but I don't really understand what the program is doing or if this is the correct approach. 
+
+Another thing I would like to be able to do is, for each variable, interpolate between measurements to create 2D maps of the response surface. 
+
+I've searched everywhere I could think of but can't find any clear (and simple) examples to follow. This site: http://leg.ufpr.br/geoR/geoRdoc/geoRintro.html was some help but still kind of beyond me. 
+
+Can someone  suggest a starting point (a book, article, or website) that might point me in the right direction? It would be especially great to have some examples using R to follow. 
+
+I would really appreciate any advice on these matters! 
+
+Greta
+
+
+
+From yud at mail.montclair.edu  Wed Dec 20 20:56:13 2006
+From: yud at mail.montclair.edu (Danlin Yu)
+Date: Wed, 20 Dec 2006 14:56:13 -0500
+Subject: [R-sig-Geo] Newbie Questions
+Message-ID: <6e160b6decf1.6decf16e160b@montclair.edu>
+
+Greta:
+
+Not entirely sure whether this would help. But if you want to find out whether or not there is a relationship between the soil variable(s) and the yield, won't a spatial regression be doing the job? For SPDEP, the errorsarlm() and lagsarlm() functions shall do the job quite nicely, and in GeoDa, you can do the same with few clicks.
+
+The manuals for both packages contain nice examples and easy to follow.
+
+Hope this help a bit.
+
+Best,
+Danlin Yu
+
+___________________________________________
+Danlin Yu, Ph.D.
+Assistant Professor
+Department of Earth & Environmental Studies
+Montclair State University
+Montclair, NJ, 07043
+Tel: 973-655-4313
+Fax: 973-655-4072
+email: yud at mail.montclair.edu
+
+----- Original Message -----
+From: "GRETA G. GRAMIG" <gggramig at students.wisc.edu>
+Date: Wednesday, December 20, 2006 11:57 am
+Subject: [R-sig-Geo] Newbie Questions
+
+> I have limited experience with spatial analysis, but I am trying 
+> to learn. Perhaps someone with patience for a newbie will field my 
+> questions? If this is not the appropriate forum for such questions 
+> perhaps someone could suggest a more appropriate forum. 
+> 
+> I have a small dataset that consists of 128 x and y coordinates 
+> (latitude and longitude, on a small field scale). At each 
+> coordinate there are measurements for various soil properties 
+> along with a biomass yield measurement for each x,y.
+> 
+> Via spdep, using k=4 nearest neighbors for the weights, I have 
+> calculated Moran's I and Geary's C for the univariate 
+> relationships. For most of the measured variables there is 
+> statistically significant spatial autocorrelation.
+> 
+> I have also used Rgeo to plot some quintile scatterplots for each 
+> variable. Just from looking at these quintile plots I can see 
+> that, although the soil variables and yield are spatially 
+> autocorrelated, there does not seem to be a relationship between 
+> the patterns observed in soil variables vs. the patterns observed 
+> in the yield. 
+> 
+> In other words, I would like to know if there is a relationship 
+> between yield and phosphorus, taking into account the spatial 
+> dependence. But how can I test this? I have used GeoDa to compute 
+> the multivariate Moran's but I don't really understand what the 
+> program is doing or if this is the correct approach. 
+> 
+> Another thing I would like to be able to do is, for each variable, 
+> interpolate between measurements to create 2D maps of the response 
+> surface. 
+> 
+> I've searched everywhere I could think of but can't find any clear 
+> (and simple) examples to follow. This site: 
+> http://leg.ufpr.br/geoR/geoRdoc/geoRintro.html was some help but 
+> still kind of beyond me. 
+> 
+> Can someone  suggest a starting point (a book, article, or 
+> website) that might point me in the right direction? It would be 
+> especially great to have some examples using R to follow. 
+> 
+> I would really appreciate any advice on these matters! 
+> 
+> Greta
+> 
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at stat.math.ethz.ch
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>
+
+
+
+From scionforbai at gmail.com  Wed Dec 20 21:50:41 2006
+From: scionforbai at gmail.com (Scionforbai)
+Date: Wed, 20 Dec 2006 21:50:41 +0100
+Subject: [R-sig-Geo] Newbie Questions
+In-Reply-To: <e37d8d80a4a4.45891703@wiscmail.wisc.edu>
+References: <e37d8d80a4a4.45891703@wiscmail.wisc.edu>
+Message-ID: <e9ee1f0a0612201250g59f3e86dl9809d63621df0fd@mail.gmail.com>
+
+Hallo,
+just a couple hints:
+
+> In other words, I would like to know if there is a relationship between yield and phosphorus, taking into account the spatial dependence. But how can I test this?
+
+I think you should look at the cross-variograms. Or did you already
+reject this option?
+
+ > Another thing I would like to be able to do is, for each variable,
+interpolate between measurements to create 2D maps of the response
+surface.
+
+Kriging (or co-kriging) seems to be what you need ... but there are
+also other possibilities, like polynomial or spline interpolation.
+
+Sorry if you already know this: a lot of resources are available from
+http://sal.uiuc.edu/csiss/Rgeo/
+
+Bye!
+
+
+
+From yong.li at unimelb.edu.au  Wed Dec 20 22:24:09 2006
+From: yong.li at unimelb.edu.au (Yong Li)
+Date: Thu, 21 Dec 2006 08:24:09 +1100 (EST)
+Subject: [R-sig-Geo] ask for help in using geoR
+Message-ID: <1475.220.237.154.35.1166649849.squirrel@webmail.unimelb.edu.au>
+
+Dear All,
+
+When I fit the models to the calculated semivariance using variofit, how
+can I know the performance of the fitting, say R2?
+
+Cheers
+
+Yong
+
+
+
+From epistat at gmail.com  Thu Dec 28 15:26:13 2006
+From: epistat at gmail.com (zhijie zhang)
+Date: Thu, 28 Dec 2006 22:26:13 +0800
+Subject: [R-sig-Geo] Fitting results of Poisson cluster process from R
+Message-ID: <2fc17e30612280626q6c83ad11l21ee26c6b4cba621@mail.gmail.com>
+
+An embedded and charset-unspecified text was scrubbed...
+Name: not available
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20061228/e78e5b17/attachment.pl>
+
+From patrick.giraudoux at univ-fcomte.fr  Thu Dec 28 16:33:17 2006
+From: patrick.giraudoux at univ-fcomte.fr (Patrick Giraudoux)
+Date: Thu, 28 Dec 2006 16:33:17 +0100
+Subject: [R-sig-Geo] ring not closed - readShapePoly - read.shape - maptools
+Message-ID: <4593E3BD.2050401@univ-fcomte.fr>
+
+Hi,
+
+I have slept on some data of a project which started in 2003 and  just 
+coming back on them today gives the opportunity to compare read.shape 
+(shapefiles were initially imported with this function) and 
+readShapePoly (the new one sp style). The latter will be much more 
+interesting for the next step, giving directed handling to overlay methods.
+
+Importing one of my shapefile with read.shape ( read as polyshape in 
+ArcGIS) made (and still makes) no problem. However, when I try to import 
+it again via readShapePoly, I get this message:
+
+ > UG<-readShapePoly("U:/Documents and Settings/giraudoux/Mes 
+documents/FC25/NewSIG050317/UG.shp")
+Error in validityMethod(object) : ring not closed
+
+Clear enough: at least one of the polygons is not closed... which is 
+confirmed by the fact that I can import the shapefile easy with 
+readShapeLines. I suppose the readShapePoly is more demanding in 
+validity control than the older read.Shape and ArcGIS: one cannot 
+complain for that.
+
+I am not afraid of sorting this out with some lines of programme. I have 
+however a question before writing it: is there already a function making 
+a check somewhere which could be used to know which one(s) of the 
+polygons are not closed?
+
+Patrick
+
+
+
+From patrick.giraudoux at univ-fcomte.fr  Thu Dec 28 16:59:20 2006
+From: patrick.giraudoux at univ-fcomte.fr (Patrick Giraudoux)
+Date: Thu, 28 Dec 2006 16:59:20 +0100
+Subject: [R-sig-Geo] ring not closed - readShapePoly - read.shape -
+	maptools
+In-Reply-To: <4593E3BD.2050401@univ-fcomte.fr>
+References: <4593E3BD.2050401@univ-fcomte.fr>
+Message-ID: <4593E9D8.60006@univ-fcomte.fr>
+
+OK... after a check, none of the rings are closed... suppose closing was 
+managed automatically by ArcGIS and read.Shape...
+
+
+Patrick Giraudoux a ?crit :
+> Hi,
+>
+> I have slept on some data of a project which started in 2003 and  just 
+> coming back on them today gives the opportunity to compare read.shape 
+> (shapefiles were initially imported with this function) and 
+> readShapePoly (the new one sp style). The latter will be much more 
+> interesting for the next step, giving directed handling to overlay 
+> methods.
+>
+> Importing one of my shapefile with read.shape ( read as polyshape in 
+> ArcGIS) made (and still makes) no problem. However, when I try to 
+> import it again via readShapePoly, I get this message:
+>
+> > UG<-readShapePoly("U:/Documents and Settings/giraudoux/Mes 
+> documents/FC25/NewSIG050317/UG.shp")
+> Error in validityMethod(object) : ring not closed
+>
+> Clear enough: at least one of the polygons is not closed... which is 
+> confirmed by the fact that I can import the shapefile easy with 
+> readShapeLines. I suppose the readShapePoly is more demanding in 
+> validity control than the older read.Shape and ArcGIS: one cannot 
+> complain for that.
+>
+> I am not afraid of sorting this out with some lines of programme. I 
+> have however a question before writing it: is there already a function 
+> making a check somewhere which could be used to know which one(s) of 
+> the polygons are not closed?
+>
+> Patrick
+>
+>
+>
+>
+
+
+
+From patrick.giraudoux at univ-fcomte.fr  Sat Dec 30 08:59:01 2006
+From: patrick.giraudoux at univ-fcomte.fr (Patrick Giraudoux)
+Date: Sat, 30 Dec 2006 08:59:01 +0100
+Subject: [R-sig-Geo] plot methods in sp
+Message-ID: <45961C45.4040306@univ-fcomte.fr>
+
+Dear listers,
+
+I am working since a while with the sp package and still wonder how the 
+plot methods are managed with sp spatial objects. For instance, 
+SpatialPolygonsDataFrame objects have obviously a plot method. However 
+it cannot be found in the list provided by methods(plot) . Furthermore 
+?plot.SpatialPolygonsDataFrame, nor ?plot.SpatialPolygons, etc.. provide 
+a help, though the lattice function spplot is adequately documented.
+
+On the other hand, plot(myobject, border="grey"), with myobject a 
+SpatialPolygonsDataframe is well interpreted and recalls the syntax of 
+plot.polylist of matools (though myobject is far from being a polylist...).
+
+Can anybody (especially the package's authors...) comment on this? Where 
+a help with the list of the plot function arguments can be found?
+
+Thanks for any hint,
+
+Patrick
+
+
+
+From gregor.gorjanc at bfro.uni-lj.si  Sat Dec 30 12:14:26 2006
+From: gregor.gorjanc at bfro.uni-lj.si (Gregor Gorjanc)
+Date: Sat, 30 Dec 2006 11:14:26 +0000 (UTC)
+Subject: [R-sig-Geo] R for The Malaria Atlas Project
+Message-ID: <loom.20061230T121338-512@post.gmane.org>
+
+Read about The Malaria Atlas Project using R at
+
+http://dx.doi.org/10.1371/journal.pmed.0030473
+
+Regards, Gregor
+
+
+
+From gregor.gorjanc at bfro.uni-lj.si  Sat Dec 30 16:13:35 2006
+From: gregor.gorjanc at bfro.uni-lj.si (Gregor Gorjanc)
+Date: Sat, 30 Dec 2006 15:13:35 +0000 (UTC)
+Subject: [R-sig-Geo] R for The Malaria Atlas Project
+References: <loom.20061230T121338-512@post.gmane.org>
+Message-ID: <loom.20061230T161211-30@post.gmane.org>
+
+Gregor Gorjanc <gregor.gorjanc <at> bfro.uni-lj.si> writes:
+
+> 
+> Read about The Malaria Atlas Project using R at
+> 
+> http://dx.doi.org/10.1371/journal.pmed.0030473
+
+Unfortunately, authors do not give credit to R-project. They do mention
+r-project site, but is it so hard to add citation() output in references, sic.
+
+Gregor
+
+
+
