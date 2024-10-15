@@ -1,0 +1,1145 @@
+From tom@@@k@||ber@ @end|ng |rom gm@||@com  Tue Oct  1 13:34:41 2024
+From: tom@@@k@||ber@ @end|ng |rom gm@||@com (Tomas Kalibera)
+Date: Tue, 1 Oct 2024 13:34:41 +0200
+Subject: [R-SIG-Mac] Bug in reading UTF-16LE file?
+In-Reply-To: <1a7efc08-8619-4ed2-9471-369bb6127a64@gmail.com>
+References: <7cbae008-78fe-48b1-9551-ece52beb495d@gmail.com>
+ <CF2424A3-7A10-4B33-9671-34F82E00A239@R-project.org>
+ <C265246D-DAFE-4C84-A66B-8D4B043619A7@gmail.com>
+ <1a7efc08-8619-4ed2-9471-369bb6127a64@gmail.com>
+Message-ID: <2d92e302-95cd-4f84-9174-f834258efe47@gmail.com>
+
+
+On 9/9/24 12:53, Tomas Kalibera wrote:
+>
+> On 9/9/24 10:53, peter dalgaard wrote:
+>> I am confused, and maybe I should just butt out of this, but:
+>>
+>> (a) BOM are designed to, um, mark the byte order...
+>>
+>> (b) in connections.c we have
+>>
+>> ???????????? if(checkBOM && con->inavail >= 2 &&
+>> ??????????????? ((int)con->iconvbuff[0] & 0xff) == 255 &&
+>> ??????????????? ((int)con->iconvbuff[1] & 0xff) == 254) {
+>> ???????????????? con->inavail -= (short) 2;
+>> ???????????????? memmove(con->iconvbuff, con->iconvbuff+2, 
+>> con->inavail);
+>> ???????????? }
+>> ? which checks for the two first bytes being FF, FE. However, a 
+>> big-endian BOM would be FE, FF and I see no check for that.
+> I think this is correct, it is executed only for encodings declared 
+> little-endian (UTF-16LE, UCS2-LE) - so, iconv will still know what is 
+> the byte-order from the name of the encoding, it will just not see the 
+> same information in the BOM.
+>>
+>> Duncan's file starts
+>>
+>>> readBin('https://online.stat.psu.edu/onlinecourses/sites/stat501/files/ch15/employee.txt', 
+>>> what="raw", n=10)
+>> ? [1] ff fe 74 00 69 00 6d 00 65 00
+>>
+>> so the BOM does indeed indicate little-endian, but apparently we 
+>> proceed to discard it and read the file with system (big-)endianness, 
+>> which strikes me as just plain wrong...
+> I've tested we are not discarding it by the code above and that iconv 
+> gets to see the BOM bytes.
+>>
+>> I see no Mac-specific code for this, only win_iconv.c, so presumably 
+>> we have potential issues on everything non-Windows?
+>
+> I can reproduce the problem and will have a closer look, it may still 
+> be there is a bug in R. We have some work-arounds for recent iconv 
+> issues on macOS in sysutils.c.
+
+This is a problem in macOS libiconv. When converting from "UTF-16" with 
+a BOM, it correctly learns the byte-order from the BOM, but later 
+forgets it in some cases.? This is not a problem in R, but could be 
+worked-around in R.
+
+As Simon wrote, to avoid running into these problems (in released 
+versions of R), one should use "UTF-16LE", so explicitly specify the 
+byte-order in the encoding name. This is useful also because it is not 
+clear what should be the default when no BOM is present and different 
+systems have different defaults.
+
+Best
+Tomas
+
+>
+> Tomas
+>
+>>
+>> -pd
+>>
+>>> On 9 Sep 2024, at 01:11 , Simon Urbanek 
+>>> <simon.urbanek at r-project.org> wrote:
+>>>
+>>> ?From the help page:
+>>>
+>>> ???? The encodings ?"UCS-2LE"? and ?"UTF-16LE"? are treated specially,
+>>> ???? as they are appropriate values for Windows ?Unicode? text files.
+>>> ???? If the first two bytes are the Byte Order Mark ?0xFEFF? then these
+>>> ???? are removed as some implementations of ?iconv? do not accept BOMs.
+>>>
+>>> so "UTF-16LE" is the documented way to reliably read such files.
+>>>
+>>> Cheers,
+>>> Simon
+>>>
+>>>
+>>>
+>>>> On 8 Sep 2024, at 21:23, Duncan Murdoch <murdoch.duncan at gmail.com> 
+>>>> wrote:
+>>>>
+>>>> To R-SIG-Mac, with a copy to Jeff Newmiller:
+>>>>
+>>>> On R-help there's a thread about reading a remote file that is 
+>>>> coded in UTF-16LE with a byte-order mark.? Jeff Newmiller pointed 
+>>>> out 
+>>>> (https://stat.ethz.ch/pipermail/r-help/2024-September/479933.html) 
+>>>> that it would be better to declare the encoding as "UTF-16", 
+>>>> because the BOM will indicate little endian.
+>>>>
+>>>> I tried this on my Mac running R 4.4.1, and it didn't work. I get 
+>>>> the same incorrect result from all of these commands:
+>>>>
+>>>> # Automatically recognizing a URL and using fileEncoding:
+>>>> read.delim(
+>>>> 'https://online.stat.psu.edu/onlinecourses/sites/stat501/files/ch15/employee.txt', 
+>>>>
+>>>> ??? fileEncoding = "UTF-16"
+>>>> )
+>>>>
+>>>> # Using explicit url() with encoding:
+>>>> read.delim(
+>>>> url('https://online.stat.psu.edu/onlinecourses/sites/stat501/files/ch15/employee.txt', 
+>>>>
+>>>> ?????? encoding = "UTF-16")
+>>>> )
+>>>>
+>>>> # Specifying the endianness incorrectly:
+>>>> read.delim(
+>>>> url('https://online.stat.psu.edu/onlinecourses/sites/stat501/files/ch15/employee.txt', 
+>>>>
+>>>> ?????? encoding = "UTF-16BE")
+>>>> )
+>>>>
+>>>> The only way I get the correct result is if I specify "UTF-16LE" 
+>>>> explicitly, whereas Jeff got correct results on several different 
+>>>> systems using "UTF-16".
+>>>>
+>>>> Is this a MacOS bug or an R for MacOS bug?
+>>>>
+>>>> Duncan Murdoch
+>>>>
+>>>> _______________________________________________
+>>>> R-SIG-Mac mailing list
+>>>> R-SIG-Mac at r-project.org
+>>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>>>>
+>>> _______________________________________________
+>>> R-SIG-Mac mailing list
+>>> R-SIG-Mac at r-project.org
+>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+
+
+From jdnewm|| @end|ng |rom dcn@d@v|@@c@@u@  Tue Oct  1 15:31:35 2024
+From: jdnewm|| @end|ng |rom dcn@d@v|@@c@@u@ (Jeff Newmiller)
+Date: Tue, 01 Oct 2024 06:31:35 -0700
+Subject: [R-SIG-Mac] Bug in reading UTF-16LE file?
+In-Reply-To: <2d92e302-95cd-4f84-9174-f834258efe47@gmail.com>
+References: <7cbae008-78fe-48b1-9551-ece52beb495d@gmail.com>
+ <CF2424A3-7A10-4B33-9671-34F82E00A239@R-project.org>
+ <C265246D-DAFE-4C84-A66B-8D4B043619A7@gmail.com>
+ <1a7efc08-8619-4ed2-9471-369bb6127a64@gmail.com>
+ <2d92e302-95cd-4f84-9174-f834258efe47@gmail.com>
+Message-ID: <007340B9-E981-4D97-BBA7-73752996B705@dcn.davis.ca.us>
+
+>This is a problem in macOS libiconv. When converting from "UTF-16" with a BOM, it correctly learns the byte-order from the BOM, but later forgets it in some cases.? This is not a problem in R, but could be worked-around in R.
+
+So, buggy system code on one system...
+
+>As Simon wrote, to avoid running into these problems (in released versions of R), one should use "UTF-16LE", so explicitly specify the byte-order in the encoding name. 
+
+... leads to institutionalized non-complince.
+
+> This is useful also because it is not clear what should be the default when no BOM is present and different systems have different defaults.
+
+This is nonsense, for reasons previously provided. You are calling a bug a feature. The BOM is supposed to prevent you from having to know this detail, and what you do when no BOM is present should have no bearing on this case.
+
+If Apple is intransigent (which would not be out of character) you could avoid institutionalized non-compliance at the user level by recognizing the buggy system and replacing the generic specification with this inappropriate LE or BE specification as directed by the BOM in the Mac-specific R code.
+
+
+On October 1, 2024 4:34:41 AM MST, Tomas Kalibera <tomas.kalibera at gmail.com> wrote:
+>
+>On 9/9/24 12:53, Tomas Kalibera wrote:
+>> 
+>> On 9/9/24 10:53, peter dalgaard wrote:
+>>> I am confused, and maybe I should just butt out of this, but:
+>>> 
+>>> (a) BOM are designed to, um, mark the byte order...
+>>> 
+>>> (b) in connections.c we have
+>>> 
+>>> ???????????? if(checkBOM && con->inavail >= 2 &&
+>>> ??????????????? ((int)con->iconvbuff[0] & 0xff) == 255 &&
+>>> ??????????????? ((int)con->iconvbuff[1] & 0xff) == 254) {
+>>> ???????????????? con->inavail -= (short) 2;
+>>> ???????????????? memmove(con->iconvbuff, con->iconvbuff+2, con->inavail);
+>>> ???????????? }
+>>> ? which checks for the two first bytes being FF, FE. However, a big-endian BOM would be FE, FF and I see no check for that.
+>> I think this is correct, it is executed only for encodings declared little-endian (UTF-16LE, UCS2-LE) - so, iconv will still know what is the byte-order from the name of the encoding, it will just not see the same information in the BOM.
+>>> 
+>>> Duncan's file starts
+>>> 
+>>>> readBin('https://online.stat.psu.edu/onlinecourses/sites/stat501/files/ch15/employee.txt', what="raw", n=10)
+>>> ? [1] ff fe 74 00 69 00 6d 00 65 00
+>>> 
+>>> so the BOM does indeed indicate little-endian, but apparently we proceed to discard it and read the file with system (big-)endianness, which strikes me as just plain wrong...
+>> I've tested we are not discarding it by the code above and that iconv gets to see the BOM bytes.
+>>> 
+>>> I see no Mac-specific code for this, only win_iconv.c, so presumably we have potential issues on everything non-Windows?
+>> 
+>> I can reproduce the problem and will have a closer look, it may still be there is a bug in R. We have some work-arounds for recent iconv issues on macOS in sysutils.c.
+>
+>This is a problem in macOS libiconv. When converting from "UTF-16" with a BOM, it correctly learns the byte-order from the BOM, but later forgets it in some cases.? This is not a problem in R, but could be worked-around in R.
+>
+>As Simon wrote, to avoid running into these problems (in released versions of R), one should use "UTF-16LE", so explicitly specify the byte-order in the encoding name. This is useful also because it is not clear what should be the default when no BOM is present and different systems have different defaults.
+>
+>Best
+>Tomas
+>
+>> 
+>> Tomas
+>> 
+>>> 
+>>> -pd
+>>> 
+>>>> On 9 Sep 2024, at 01:11 , Simon Urbanek <simon.urbanek at r-project.org> wrote:
+>>>> 
+>>>> ?From the help page:
+>>>> 
+>>>> ???? The encodings ?"UCS-2LE"? and ?"UTF-16LE"? are treated specially,
+>>>> ???? as they are appropriate values for Windows ?Unicode? text files.
+>>>> ???? If the first two bytes are the Byte Order Mark ?0xFEFF? then these
+>>>> ???? are removed as some implementations of ?iconv? do not accept BOMs.
+>>>> 
+>>>> so "UTF-16LE" is the documented way to reliably read such files.
+>>>> 
+>>>> Cheers,
+>>>> Simon
+>>>> 
+>>>> 
+>>>> 
+>>>>> On 8 Sep 2024, at 21:23, Duncan Murdoch <murdoch.duncan at gmail.com> wrote:
+>>>>> 
+>>>>> To R-SIG-Mac, with a copy to Jeff Newmiller:
+>>>>> 
+>>>>> On R-help there's a thread about reading a remote file that is coded in UTF-16LE with a byte-order mark.? Jeff Newmiller pointed out (https://stat.ethz.ch/pipermail/r-help/2024-September/479933.html) that it would be better to declare the encoding as "UTF-16", because the BOM will indicate little endian.
+>>>>> 
+>>>>> I tried this on my Mac running R 4.4.1, and it didn't work. I get the same incorrect result from all of these commands:
+>>>>> 
+>>>>> # Automatically recognizing a URL and using fileEncoding:
+>>>>> read.delim(
+>>>>> 'https://online.stat.psu.edu/onlinecourses/sites/stat501/files/ch15/employee.txt', 
+>>>>> ??? fileEncoding = "UTF-16"
+>>>>> )
+>>>>> 
+>>>>> # Using explicit url() with encoding:
+>>>>> read.delim(
+>>>>> url('https://online.stat.psu.edu/onlinecourses/sites/stat501/files/ch15/employee.txt', 
+>>>>> ?????? encoding = "UTF-16")
+>>>>> )
+>>>>> 
+>>>>> # Specifying the endianness incorrectly:
+>>>>> read.delim(
+>>>>> url('https://online.stat.psu.edu/onlinecourses/sites/stat501/files/ch15/employee.txt', 
+>>>>> ?????? encoding = "UTF-16BE")
+>>>>> )
+>>>>> 
+>>>>> The only way I get the correct result is if I specify "UTF-16LE" explicitly, whereas Jeff got correct results on several different systems using "UTF-16".
+>>>>> 
+>>>>> Is this a MacOS bug or an R for MacOS bug?
+>>>>> 
+>>>>> Duncan Murdoch
+>>>>> 
+>>>>> _______________________________________________
+>>>>> R-SIG-Mac mailing list
+>>>>> R-SIG-Mac at r-project.org
+>>>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>>>>> 
+>>>> _______________________________________________
+>>>> R-SIG-Mac mailing list
+>>>> R-SIG-Mac at r-project.org
+>>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>
+>_______________________________________________
+>R-SIG-Mac mailing list
+>R-SIG-Mac at r-project.org
+>https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+
+-- 
+Sent from my phone. Please excuse my brevity.
+
+
+From tom@@@k@||ber@ @end|ng |rom gm@||@com  Tue Oct  1 22:50:25 2024
+From: tom@@@k@||ber@ @end|ng |rom gm@||@com (Tomas Kalibera)
+Date: Tue, 1 Oct 2024 22:50:25 +0200
+Subject: [R-SIG-Mac] Bug in reading UTF-16LE file?
+In-Reply-To: <007340B9-E981-4D97-BBA7-73752996B705@dcn.davis.ca.us>
+References: <7cbae008-78fe-48b1-9551-ece52beb495d@gmail.com>
+ <CF2424A3-7A10-4B33-9671-34F82E00A239@R-project.org>
+ <C265246D-DAFE-4C84-A66B-8D4B043619A7@gmail.com>
+ <1a7efc08-8619-4ed2-9471-369bb6127a64@gmail.com>
+ <2d92e302-95cd-4f84-9174-f834258efe47@gmail.com>
+ <007340B9-E981-4D97-BBA7-73752996B705@dcn.davis.ca.us>
+Message-ID: <ce0a05c1-5c2a-471b-8028-8f5a4c4224a7@gmail.com>
+
+On 10/1/24 15:31, Jeff Newmiller wrote:
+>> This is a problem in macOS libiconv. When converting from "UTF-16" with a BOM, it correctly learns the byte-order from the BOM, but later forgets it in some cases.? This is not a problem in R, but could be worked-around in R.
+> So, buggy system code on one system...
+>
+>> As Simon wrote, to avoid running into these problems (in released versions of R), one should use "UTF-16LE", so explicitly specify the byte-order in the encoding name.
+> ... leads to institutionalized non-complince.
+>
+>> This is useful also because it is not clear what should be the default when no BOM is present and different systems have different defaults.
+> This is nonsense, for reasons previously provided. You are calling a bug a feature. The BOM is supposed to prevent you from having to know this detail, and what you do when no BOM is present should have no bearing on this case.
+
+I will try to explain this differently. The handling of BOMs in existing 
+iconv implementations is unreliable (one issue is documented in R 
+documentation, one issue is the one we have ran into now). Because it is 
+unreliable, people who want to be defensive and avoid problems are 
+advised to use *LE (or *BE) specifications. What is the default 
+byte-order when no BOM is specified is not reliable, either (defaults 
+differ between systems and the standard is open to interpretation - e.g. 
+my Linux and Windows builds of R default to little-endian, while my 
+macOS build defaults to big-endian). It is thus not advisable to depend 
+on the default order, either, and a defensive solution is again to use 
+*LE or *BE specifications. So, in principle, simply always use *LE or *BE.
+
+This advice is not a feature, it is a work-around that works for two 
+problems: that the byte order for specifications like "UTF-16" is 
+unknown (bug in the standard) and that specifying the byte-order by a 
+BOM is unreliable (bugs in implementations of iconv).
+
+> If Apple is intransigent (which would not be out of character) you could avoid institutionalized non-compliance at the user level by recognizing the buggy system and replacing the generic specification with this inappropriate LE or BE specification as directed by the BOM in the Mac-specific R code.
+
+Yes, indeed, the work-around for the libiconv bug can be implemented in 
+future versions of R and an experimental version is already in R-devel 
+(still subject to change), so that at user level, specifying say 
+"UTF-16" on an input with BOM will correctly use the byte-order of the BOM.
+
+I don't find anything inappropriate about the *LE/*BE specifications.
+
+Best
+Tomas
+
+>
+>
+> On October 1, 2024 4:34:41 AM MST, Tomas Kalibera <tomas.kalibera at gmail.com> wrote:
+>> On 9/9/24 12:53, Tomas Kalibera wrote:
+>>> On 9/9/24 10:53, peter dalgaard wrote:
+>>>> I am confused, and maybe I should just butt out of this, but:
+>>>>
+>>>> (a) BOM are designed to, um, mark the byte order...
+>>>>
+>>>> (b) in connections.c we have
+>>>>
+>>>>  ???????????? if(checkBOM && con->inavail >= 2 &&
+>>>>  ??????????????? ((int)con->iconvbuff[0] & 0xff) == 255 &&
+>>>>  ??????????????? ((int)con->iconvbuff[1] & 0xff) == 254) {
+>>>>  ???????????????? con->inavail -= (short) 2;
+>>>>  ???????????????? memmove(con->iconvbuff, con->iconvbuff+2, con->inavail);
+>>>>  ???????????? }
+>>>>  ? which checks for the two first bytes being FF, FE. However, a big-endian BOM would be FE, FF and I see no check for that.
+>>> I think this is correct, it is executed only for encodings declared little-endian (UTF-16LE, UCS2-LE) - so, iconv will still know what is the byte-order from the name of the encoding, it will just not see the same information in the BOM.
+>>>> Duncan's file starts
+>>>>
+>>>>> readBin('https://online.stat.psu.edu/onlinecourses/sites/stat501/files/ch15/employee.txt', what="raw", n=10)
+>>>>  ? [1] ff fe 74 00 69 00 6d 00 65 00
+>>>>
+>>>> so the BOM does indeed indicate little-endian, but apparently we proceed to discard it and read the file with system (big-)endianness, which strikes me as just plain wrong...
+>>> I've tested we are not discarding it by the code above and that iconv gets to see the BOM bytes.
+>>>> I see no Mac-specific code for this, only win_iconv.c, so presumably we have potential issues on everything non-Windows?
+>>> I can reproduce the problem and will have a closer look, it may still be there is a bug in R. We have some work-arounds for recent iconv issues on macOS in sysutils.c.
+>> This is a problem in macOS libiconv. When converting from "UTF-16" with a BOM, it correctly learns the byte-order from the BOM, but later forgets it in some cases.? This is not a problem in R, but could be worked-around in R.
+>>
+>> As Simon wrote, to avoid running into these problems (in released versions of R), one should use "UTF-16LE", so explicitly specify the byte-order in the encoding name. This is useful also because it is not clear what should be the default when no BOM is present and different systems have different defaults.
+>>
+>> Best
+>> Tomas
+>>
+>>> Tomas
+>>>
+>>>> -pd
+>>>>
+>>>>> On 9 Sep 2024, at 01:11 , Simon Urbanek <simon.urbanek at r-project.org> wrote:
+>>>>>
+>>>>>  ?From the help page:
+>>>>>
+>>>>>  ???? The encodings ?"UCS-2LE"? and ?"UTF-16LE"? are treated specially,
+>>>>>  ???? as they are appropriate values for Windows ?Unicode? text files.
+>>>>>  ???? If the first two bytes are the Byte Order Mark ?0xFEFF? then these
+>>>>>  ???? are removed as some implementations of ?iconv? do not accept BOMs.
+>>>>>
+>>>>> so "UTF-16LE" is the documented way to reliably read such files.
+>>>>>
+>>>>> Cheers,
+>>>>> Simon
+>>>>>
+>>>>>
+>>>>>
+>>>>>> On 8 Sep 2024, at 21:23, Duncan Murdoch <murdoch.duncan at gmail.com> wrote:
+>>>>>>
+>>>>>> To R-SIG-Mac, with a copy to Jeff Newmiller:
+>>>>>>
+>>>>>> On R-help there's a thread about reading a remote file that is coded in UTF-16LE with a byte-order mark.? Jeff Newmiller pointed out (https://stat.ethz.ch/pipermail/r-help/2024-September/479933.html) that it would be better to declare the encoding as "UTF-16", because the BOM will indicate little endian.
+>>>>>>
+>>>>>> I tried this on my Mac running R 4.4.1, and it didn't work. I get the same incorrect result from all of these commands:
+>>>>>>
+>>>>>> # Automatically recognizing a URL and using fileEncoding:
+>>>>>> read.delim(
+>>>>>> 'https://online.stat.psu.edu/onlinecourses/sites/stat501/files/ch15/employee.txt',
+>>>>>>  ??? fileEncoding = "UTF-16"
+>>>>>> )
+>>>>>>
+>>>>>> # Using explicit url() with encoding:
+>>>>>> read.delim(
+>>>>>> url('https://online.stat.psu.edu/onlinecourses/sites/stat501/files/ch15/employee.txt',
+>>>>>>  ?????? encoding = "UTF-16")
+>>>>>> )
+>>>>>>
+>>>>>> # Specifying the endianness incorrectly:
+>>>>>> read.delim(
+>>>>>> url('https://online.stat.psu.edu/onlinecourses/sites/stat501/files/ch15/employee.txt',
+>>>>>>  ?????? encoding = "UTF-16BE")
+>>>>>> )
+>>>>>>
+>>>>>> The only way I get the correct result is if I specify "UTF-16LE" explicitly, whereas Jeff got correct results on several different systems using "UTF-16".
+>>>>>>
+>>>>>> Is this a MacOS bug or an R for MacOS bug?
+>>>>>>
+>>>>>> Duncan Murdoch
+>>>>>>
+>>>>>> _______________________________________________
+>>>>>> R-SIG-Mac mailing list
+>>>>>> R-SIG-Mac at r-project.org
+>>>>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>>>>>>
+>>>>> _______________________________________________
+>>>>> R-SIG-Mac mailing list
+>>>>> R-SIG-Mac at r-project.org
+>>>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>> _______________________________________________
+>> R-SIG-Mac mailing list
+>> R-SIG-Mac at r-project.org
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+
+
+From jdnewm|| @end|ng |rom dcn@d@v|@@c@@u@  Wed Oct  2 08:53:41 2024
+From: jdnewm|| @end|ng |rom dcn@d@v|@@c@@u@ (Jeff Newmiller)
+Date: Tue, 01 Oct 2024 23:53:41 -0700
+Subject: [R-SIG-Mac] Bug in reading UTF-16LE file?
+In-Reply-To: <ce0a05c1-5c2a-471b-8028-8f5a4c4224a7@gmail.com>
+References: <7cbae008-78fe-48b1-9551-ece52beb495d@gmail.com>
+ <CF2424A3-7A10-4B33-9671-34F82E00A239@R-project.org>
+ <C265246D-DAFE-4C84-A66B-8D4B043619A7@gmail.com>
+ <1a7efc08-8619-4ed2-9471-369bb6127a64@gmail.com>
+ <2d92e302-95cd-4f84-9174-f834258efe47@gmail.com>
+ <007340B9-E981-4D97-BBA7-73752996B705@dcn.davis.ca.us>
+ <ce0a05c1-5c2a-471b-8028-8f5a4c4224a7@gmail.com>
+Message-ID: <24F1290D-780A-4C1C-9594-A7565E1DC947@dcn.davis.ca.us>
+
+>Yes, indeed, the work-around for the libiconv bug can be implemented in future versions of R and an experimental version is already in R-devel (still subject to change), so that at user level, specifying say "UTF-16" on an input with BOM will correctly use the byte-order of the BOM.
+
+That was not clear (to me?) in your previous summary. Thanks for clarifying.
+
+>I don't find anything inappropriate about the *LE/*BE specifications.
+
+The Unicode FAQ does. If you specify endian-ness and a BOM is present and these specifications agree then it would seem no harm no foul. The problem is that if they conflict, then there is no clearly correct behavior: if the BOM is valid then the user spec must be incorrectly specified and favoring the user specification forces incorrect decoding. If the BOM is erroneous, then you would want the user to be able to override the incorrect BOM... but these two cases amount to defeating the BOMs purpose... it might as well not be there. So the compliant handling of data with a BOM is for the user to make a standard practice of not specifying endianness _unless they must override an invalid BOM_ (which ought to be highly unusual)... save the sledgehammer for unusual cases, and let the BOM be the "only" specification if it is present. This lets the BOM serve its intended purpose of reducing how often users have to guess.
+
+
+On October 1, 2024 1:50:25 PM MST, Tomas Kalibera <tomas.kalibera at gmail.com> wrote:
+>On 10/1/24 15:31, Jeff Newmiller wrote:
+>>> This is a problem in macOS libiconv. When converting from "UTF-16" with a BOM, it correctly learns the byte-order from the BOM, but later forgets it in some cases.? This is not a problem in R, but could be worked-around in R.
+>> So, buggy system code on one system...
+>> 
+>>> As Simon wrote, to avoid running into these problems (in released versions of R), one should use "UTF-16LE", so explicitly specify the byte-order in the encoding name.
+>> ... leads to institutionalized non-complince.
+>> 
+>>> This is useful also because it is not clear what should be the default when no BOM is present and different systems have different defaults.
+>> This is nonsense, for reasons previously provided. You are calling a bug a feature. The BOM is supposed to prevent you from having to know this detail, and what you do when no BOM is present should have no bearing on this case.
+>
+>I will try to explain this differently. The handling of BOMs in existing iconv implementations is unreliable (one issue is documented in R documentation, one issue is the one we have ran into now). Because it is unreliable, people who want to be defensive and avoid problems are advised to use *LE (or *BE) specifications. What is the default byte-order when no BOM is specified is not reliable, either (defaults differ between systems and the standard is open to interpretation - e.g. my Linux and Windows builds of R default to little-endian, while my macOS build defaults to big-endian). It is thus not advisable to depend on the default order, either, and a defensive solution is again to use *LE or *BE specifications. So, in principle, simply always use *LE or *BE.
+>
+>This advice is not a feature, it is a work-around that works for two problems: that the byte order for specifications like "UTF-16" is unknown (bug in the standard) and that specifying the byte-order by a BOM is unreliable (bugs in implementations of iconv).
+>
+>> If Apple is intransigent (which would not be out of character) you could avoid institutionalized non-compliance at the user level by recognizing the buggy system and replacing the generic specification with this inappropriate LE or BE specification as directed by the BOM in the Mac-specific R code.
+>
+>Yes, indeed, the work-around for the libiconv bug can be implemented in future versions of R and an experimental version is already in R-devel (still subject to change), so that at user level, specifying say "UTF-16" on an input with BOM will correctly use the byte-order of the BOM.
+>
+>I don't find anything inappropriate about the *LE/*BE specifications.
+>
+>Best
+>Tomas
+>
+>> 
+>> 
+>> On October 1, 2024 4:34:41 AM MST, Tomas Kalibera <tomas.kalibera at gmail.com> wrote:
+>>> On 9/9/24 12:53, Tomas Kalibera wrote:
+>>>> On 9/9/24 10:53, peter dalgaard wrote:
+>>>>> I am confused, and maybe I should just butt out of this, but:
+>>>>> 
+>>>>> (a) BOM are designed to, um, mark the byte order...
+>>>>> 
+>>>>> (b) in connections.c we have
+>>>>> 
+>>>>>  ???????????? if(checkBOM && con->inavail >= 2 &&
+>>>>>  ??????????????? ((int)con->iconvbuff[0] & 0xff) == 255 &&
+>>>>>  ??????????????? ((int)con->iconvbuff[1] & 0xff) == 254) {
+>>>>>  ???????????????? con->inavail -= (short) 2;
+>>>>>  ???????????????? memmove(con->iconvbuff, con->iconvbuff+2, con->inavail);
+>>>>>  ???????????? }
+>>>>>  ? which checks for the two first bytes being FF, FE. However, a big-endian BOM would be FE, FF and I see no check for that.
+>>>> I think this is correct, it is executed only for encodings declared little-endian (UTF-16LE, UCS2-LE) - so, iconv will still know what is the byte-order from the name of the encoding, it will just not see the same information in the BOM.
+>>>>> Duncan's file starts
+>>>>> 
+>>>>>> readBin('https://online.stat.psu.edu/onlinecourses/sites/stat501/files/ch15/employee.txt', what="raw", n=10)
+>>>>>  ? [1] ff fe 74 00 69 00 6d 00 65 00
+>>>>> 
+>>>>> so the BOM does indeed indicate little-endian, but apparently we proceed to discard it and read the file with system (big-)endianness, which strikes me as just plain wrong...
+>>>> I've tested we are not discarding it by the code above and that iconv gets to see the BOM bytes.
+>>>>> I see no Mac-specific code for this, only win_iconv.c, so presumably we have potential issues on everything non-Windows?
+>>>> I can reproduce the problem and will have a closer look, it may still be there is a bug in R. We have some work-arounds for recent iconv issues on macOS in sysutils.c.
+>>> This is a problem in macOS libiconv. When converting from "UTF-16" with a BOM, it correctly learns the byte-order from the BOM, but later forgets it in some cases.? This is not a problem in R, but could be worked-around in R.
+>>> 
+>>> As Simon wrote, to avoid running into these problems (in released versions of R), one should use "UTF-16LE", so explicitly specify the byte-order in the encoding name. This is useful also because it is not clear what should be the default when no BOM is present and different systems have different defaults.
+>>> 
+>>> Best
+>>> Tomas
+>>> 
+>>>> Tomas
+>>>> 
+>>>>> -pd
+>>>>> 
+>>>>>> On 9 Sep 2024, at 01:11 , Simon Urbanek <simon.urbanek at r-project.org> wrote:
+>>>>>> 
+>>>>>>  ?From the help page:
+>>>>>> 
+>>>>>>  ???? The encodings ?"UCS-2LE"? and ?"UTF-16LE"? are treated specially,
+>>>>>>  ???? as they are appropriate values for Windows ?Unicode? text files.
+>>>>>>  ???? If the first two bytes are the Byte Order Mark ?0xFEFF? then these
+>>>>>>  ???? are removed as some implementations of ?iconv? do not accept BOMs.
+>>>>>> 
+>>>>>> so "UTF-16LE" is the documented way to reliably read such files.
+>>>>>> 
+>>>>>> Cheers,
+>>>>>> Simon
+>>>>>> 
+>>>>>> 
+>>>>>> 
+>>>>>>> On 8 Sep 2024, at 21:23, Duncan Murdoch <murdoch.duncan at gmail.com> wrote:
+>>>>>>> 
+>>>>>>> To R-SIG-Mac, with a copy to Jeff Newmiller:
+>>>>>>> 
+>>>>>>> On R-help there's a thread about reading a remote file that is coded in UTF-16LE with a byte-order mark.? Jeff Newmiller pointed out (https://stat.ethz.ch/pipermail/r-help/2024-September/479933.html) that it would be better to declare the encoding as "UTF-16", because the BOM will indicate little endian.
+>>>>>>> 
+>>>>>>> I tried this on my Mac running R 4.4.1, and it didn't work. I get the same incorrect result from all of these commands:
+>>>>>>> 
+>>>>>>> # Automatically recognizing a URL and using fileEncoding:
+>>>>>>> read.delim(
+>>>>>>> 'https://online.stat.psu.edu/onlinecourses/sites/stat501/files/ch15/employee.txt',
+>>>>>>>  ??? fileEncoding = "UTF-16"
+>>>>>>> )
+>>>>>>> 
+>>>>>>> # Using explicit url() with encoding:
+>>>>>>> read.delim(
+>>>>>>> url('https://online.stat.psu.edu/onlinecourses/sites/stat501/files/ch15/employee.txt',
+>>>>>>>  ?????? encoding = "UTF-16")
+>>>>>>> )
+>>>>>>> 
+>>>>>>> # Specifying the endianness incorrectly:
+>>>>>>> read.delim(
+>>>>>>> url('https://online.stat.psu.edu/onlinecourses/sites/stat501/files/ch15/employee.txt',
+>>>>>>>  ?????? encoding = "UTF-16BE")
+>>>>>>> )
+>>>>>>> 
+>>>>>>> The only way I get the correct result is if I specify "UTF-16LE" explicitly, whereas Jeff got correct results on several different systems using "UTF-16".
+>>>>>>> 
+>>>>>>> Is this a MacOS bug or an R for MacOS bug?
+>>>>>>> 
+>>>>>>> Duncan Murdoch
+>>>>>>> 
+>>>>>>> _______________________________________________
+>>>>>>> R-SIG-Mac mailing list
+>>>>>>> R-SIG-Mac at r-project.org
+>>>>>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>>>>>>> 
+>>>>>> _______________________________________________
+>>>>>> R-SIG-Mac mailing list
+>>>>>> R-SIG-Mac at r-project.org
+>>>>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>>> _______________________________________________
+>>> R-SIG-Mac mailing list
+>>> R-SIG-Mac at r-project.org
+>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+
+-- 
+Sent from my phone. Please excuse my brevity.
+
+
+From md @end|ng |rom @und@ku@dk  Wed Oct  2 11:04:45 2024
+From: md @end|ng |rom @und@ku@dk (Matt Denwood)
+Date: Wed, 2 Oct 2024 09:04:45 +0000
+Subject: [R-SIG-Mac] Bug in reading UTF-16LE file?
+In-Reply-To: <24F1290D-780A-4C1C-9594-A7565E1DC947@dcn.davis.ca.us>
+References: <7cbae008-78fe-48b1-9551-ece52beb495d@gmail.com>
+ <CF2424A3-7A10-4B33-9671-34F82E00A239@R-project.org>
+ <C265246D-DAFE-4C84-A66B-8D4B043619A7@gmail.com>
+ <1a7efc08-8619-4ed2-9471-369bb6127a64@gmail.com>
+ <2d92e302-95cd-4f84-9174-f834258efe47@gmail.com>
+ <007340B9-E981-4D97-BBA7-73752996B705@dcn.davis.ca.us>
+ <ce0a05c1-5c2a-471b-8028-8f5a4c4224a7@gmail.com>
+ <24F1290D-780A-4C1C-9594-A7565E1DC947@dcn.davis.ca.us>
+Message-ID: <7BD19A45-7FB1-4D4B-A8ED-2D772848E87B@sund.ku.dk>
+
+Hi Jeff / all
+
+On 02/10/2024, 08.54, Jeff Newmiller wrote:
+> The Unicode FAQ does. If you specify endian-ness and a BOM is present and these specifications agree then it would seem no harm no foul. The problem is that if they conflict, then there is no clearly correct behavior: if the BOM is valid then the user spec must be incorrectly specified and favoring the user specification forces incorrect decoding. If the BOM is erroneous, then you would want the user to be able to override the incorrect BOM... but these two cases amount to defeating the BOMs purpose... it might as well not be there. So the compliant handling of data with a BOM is for the user to make a standard practice of not specifying endianness _unless they must override an invalid BOM_ (which ought to be highly unusual)... save the sledgehammer for unusual cases, and let the BOM be the "only" specification if it is present. This lets the BOM serve its intended purpose of reducing how often users have to guess.
+
+Actually, the Unicode FAQ (https://unicode.org/faq/utf_bom.html, under "Q: Why wouldn?t I always use a protocol that requires a BOM?") says:  "In particular, if a text data stream is marked as UTF-16BE, UTF-16LE, UTF-32BE or UTF-32LE, a BOM is neither necessary nor permitted. Any U+FEFF would be interpreted as a ZWNBSP."
+
+So, my interpretation of the Unicode recommendation is that specifying *LE/*BE takes precedence - and if both are provided, then the BOM should be interpreted as a zero-width non-breaking space i.e. ignored.  Therefore, it would seem sensible for defensive programmers to specify *LE/*BE manually, safe in the knowledge that any BOM (correct or otherwise) becomes irrelevant - which is what I believe Tomas and Simon are suggesting.  Although it is possible I misunderstood something...
+
+Best wishes,
+
+Matt
+
+
+
+?On 02/10/2024, 08.54, "R-SIG-Mac on behalf of Jeff Newmiller via R-SIG-Mac" <r-sig-mac-bounces at r-project.org <mailto:r-sig-mac-bounces at r-project.org> on behalf of r-sig-mac at r-project.org <mailto:r-sig-mac at r-project.org>> wrote:
+
+[SNIP]
+
+>>I don't find anything inappropriate about the *LE/*BE specifications.
+
+
+> The Unicode FAQ does. If you specify endian-ness and a BOM is present and these specifications agree then it would seem no harm no foul. The problem is that if they conflict, then there is no clearly correct behavior: if the BOM is valid then the user spec must be incorrectly specified and favoring the user specification forces incorrect decoding. If the BOM is erroneous, then you would want the user to be able to override the incorrect BOM... but these two cases amount to defeating the BOMs purpose... it might as well not be there. So the compliant handling of data with a BOM is for the user to make a standard practice of not specifying endianness _unless they must override an invalid BOM_ (which ought to be highly unusual)... save the sledgehammer for unusual cases, and let the BOM be the "only" specification if it is present. This lets the BOM serve its intended purpose of reducing how often users have to guess.
+
+
+
+
+On October 1, 2024 1:50:25 PM MST, Tomas Kalibera <tomas.kalibera at gmail.com <mailto:tomas.kalibera at gmail.com>> wrote:
+>On 10/1/24 15:31, Jeff Newmiller wrote:
+>>> This is a problem in macOS libiconv. When converting from "UTF-16" with a BOM, it correctly learns the byte-order from the BOM, but later forgets it in some cases. This is not a problem in R, but could be worked-around in R.
+>> So, buggy system code on one system...
+>> 
+>>> As Simon wrote, to avoid running into these problems (in released versions of R), one should use "UTF-16LE", so explicitly specify the byte-order in the encoding name.
+>> ... leads to institutionalized non-complince.
+>> 
+>>> This is useful also because it is not clear what should be the default when no BOM is present and different systems have different defaults.
+>> This is nonsense, for reasons previously provided. You are calling a bug a feature. The BOM is supposed to prevent you from having to know this detail, and what you do when no BOM is present should have no bearing on this case.
+>
+>I will try to explain this differently. The handling of BOMs in existing iconv implementations is unreliable (one issue is documented in R documentation, one issue is the one we have ran into now). Because it is unreliable, people who want to be defensive and avoid problems are advised to use *LE (or *BE) specifications. What is the default byte-order when no BOM is specified is not reliable, either (defaults differ between systems and the standard is open to interpretation - e.g. my Linux and Windows builds of R default to little-endian, while my macOS build defaults to big-endian). It is thus not advisable to depend on the default order, either, and a defensive solution is again to use *LE or *BE specifications. So, in principle, simply always use *LE or *BE.
+>
+>This advice is not a feature, it is a work-around that works for two problems: that the byte order for specifications like "UTF-16" is unknown (bug in the standard) and that specifying the byte-order by a BOM is unreliable (bugs in implementations of iconv).
+>
+>> If Apple is intransigent (which would not be out of character) you could avoid institutionalized non-compliance at the user level by recognizing the buggy system and replacing the generic specification with this inappropriate LE or BE specification as directed by the BOM in the Mac-specific R code.
+>
+>Yes, indeed, the work-around for the libiconv bug can be implemented in future versions of R and an experimental version is already in R-devel (still subject to change), so that at user level, specifying say "UTF-16" on an input with BOM will correctly use the byte-order of the BOM.
+>
+>I don't find anything inappropriate about the *LE/*BE specifications.
+>
+>Best
+>Tomas
+>
+>> 
+>> 
+>> On October 1, 2024 4:34:41 AM MST, Tomas Kalibera <tomas.kalibera at gmail.com <mailto:tomas.kalibera at gmail.com>> wrote:
+>>> On 9/9/24 12:53, Tomas Kalibera wrote:
+>>>> On 9/9/24 10:53, peter dalgaard wrote:
+>>>>> I am confused, and maybe I should just butt out of this, but:
+>>>>> 
+>>>>> (a) BOM are designed to, um, mark the byte order...
+>>>>> 
+>>>>> (b) in connections.c we have
+>>>>> 
+>>>>> if(checkBOM && con->inavail >= 2 &&
+>>>>> ((int)con->iconvbuff[0] & 0xff) == 255 &&
+>>>>> ((int)con->iconvbuff[1] & 0xff) == 254) {
+>>>>> con->inavail -= (short) 2;
+>>>>> memmove(con->iconvbuff, con->iconvbuff+2, con->inavail);
+>>>>> }
+>>>>> which checks for the two first bytes being FF, FE. However, a big-endian BOM would be FE, FF and I see no check for that.
+>>>> I think this is correct, it is executed only for encodings declared little-endian (UTF-16LE, UCS2-LE) - so, iconv will still know what is the byte-order from the name of the encoding, it will just not see the same information in the BOM.
+>>>>> Duncan's file starts
+>>>>> 
+>>>>>> readBin('https://online.stat.psu.edu/onlinecourses/sites/stat501/files/ch15/employee.txt' <https://online.stat.psu.edu/onlinecourses/sites/stat501/files/ch15/employee.txt;>, what="raw", n=10)
+>>>>> [1] ff fe 74 00 69 00 6d 00 65 00
+>>>>> 
+>>>>> so the BOM does indeed indicate little-endian, but apparently we proceed to discard it and read the file with system (big-)endianness, which strikes me as just plain wrong...
+>>>> I've tested we are not discarding it by the code above and that iconv gets to see the BOM bytes.
+>>>>> I see no Mac-specific code for this, only win_iconv.c, so presumably we have potential issues on everything non-Windows?
+>>>> I can reproduce the problem and will have a closer look, it may still be there is a bug in R. We have some work-arounds for recent iconv issues on macOS in sysutils.c.
+>>> This is a problem in macOS libiconv. When converting from "UTF-16" with a BOM, it correctly learns the byte-order from the BOM, but later forgets it in some cases. This is not a problem in R, but could be worked-around in R.
+>>> 
+>>> As Simon wrote, to avoid running into these problems (in released versions of R), one should use "UTF-16LE", so explicitly specify the byte-order in the encoding name. This is useful also because it is not clear what should be the default when no BOM is present and different systems have different defaults.
+>>> 
+>>> Best
+>>> Tomas
+>>> 
+>>>> Tomas
+>>>> 
+>>>>> -pd
+>>>>> 
+>>>>>> On 9 Sep 2024, at 01:11 , Simon Urbanek <simon.urbanek at r-project.org <mailto:simon.urbanek at r-project.org>> wrote:
+>>>>>> 
+>>>>>> From the help page:
+>>>>>> 
+>>>>>> The encodings ?"UCS-2LE"? and ?"UTF-16LE"? are treated specially,
+>>>>>> as they are appropriate values for Windows ?Unicode? text files.
+>>>>>> If the first two bytes are the Byte Order Mark ?0xFEFF? then these
+>>>>>> are removed as some implementations of ?iconv? do not accept BOMs.
+>>>>>> 
+>>>>>> so "UTF-16LE" is the documented way to reliably read such files.
+>>>>>> 
+>>>>>> Cheers,
+>>>>>> Simon
+>>>>>> 
+>>>>>> 
+>>>>>> 
+>>>>>>> On 8 Sep 2024, at 21:23, Duncan Murdoch <murdoch.duncan at gmail.com <mailto:murdoch.duncan at gmail.com>> wrote:
+>>>>>>> 
+>>>>>>> To R-SIG-Mac, with a copy to Jeff Newmiller:
+>>>>>>> 
+>>>>>>> On R-help there's a thread about reading a remote file that is coded in UTF-16LE with a byte-order mark. Jeff Newmiller pointed out (https://stat.ethz.ch/pipermail/r-help/2024-September/479933.html <https://stat.ethz.ch/pipermail/r-help/2024-September/479933.html>) that it would be better to declare the encoding as "UTF-16", because the BOM will indicate little endian.
+>>>>>>> 
+>>>>>>> I tried this on my Mac running R 4.4.1, and it didn't work. I get the same incorrect result from all of these commands:
+>>>>>>> 
+>>>>>>> # Automatically recognizing a URL and using fileEncoding:
+>>>>>>> read.delim(
+>>>>>>> 'https://online.stat.psu.edu/onlinecourses/sites/stat501/files/ch15/employee.txt' <https://online.stat.psu.edu/onlinecourses/sites/stat501/files/ch15/employee.txt;>,
+>>>>>>> fileEncoding = "UTF-16"
+>>>>>>> )
+>>>>>>> 
+>>>>>>> # Using explicit url() with encoding:
+>>>>>>> read.delim(
+>>>>>>> url('https://online.stat.psu.edu/onlinecourses/sites/stat501/files/ch15/employee.txt' <https://online.stat.psu.edu/onlinecourses/sites/stat501/files/ch15/employee.txt;>,
+>>>>>>> encoding = "UTF-16")
+>>>>>>> )
+>>>>>>> 
+>>>>>>> # Specifying the endianness incorrectly:
+>>>>>>> read.delim(
+>>>>>>> url('https://online.stat.psu.edu/onlinecourses/sites/stat501/files/ch15/employee.txt' <https://online.stat.psu.edu/onlinecourses/sites/stat501/files/ch15/employee.txt;>,
+>>>>>>> encoding = "UTF-16BE")
+>>>>>>> )
+>>>>>>> 
+>>>>>>> The only way I get the correct result is if I specify "UTF-16LE" explicitly, whereas Jeff got correct results on several different systems using "UTF-16".
+>>>>>>> 
+>>>>>>> Is this a MacOS bug or an R for MacOS bug?
+>>>>>>> 
+>>>>>>> Duncan Murdoch
+>>>>>>> 
+>>>>>>> _______________________________________________
+>>>>>>> R-SIG-Mac mailing list
+>>>>>>> R-SIG-Mac at r-project.org <mailto:R-SIG-Mac at r-project.org>
+>>>>>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac <https://stat.ethz.ch/mailman/listinfo/r-sig-mac>
+>>>>>>> 
+>>>>>> _______________________________________________
+>>>>>> R-SIG-Mac mailing list
+>>>>>> R-SIG-Mac at r-project.org <mailto:R-SIG-Mac at r-project.org>
+>>>>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac <https://stat.ethz.ch/mailman/listinfo/r-sig-mac>
+>>> _______________________________________________
+>>> R-SIG-Mac mailing list
+>>> R-SIG-Mac at r-project.org <mailto:R-SIG-Mac at r-project.org>
+>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac <https://stat.ethz.ch/mailman/listinfo/r-sig-mac>
+
+
+-- 
+Sent from my phone. Please excuse my brevity.
+
+
+_______________________________________________
+R-SIG-Mac mailing list
+R-SIG-Mac at r-project.org <mailto:R-SIG-Mac at r-project.org>
+https://stat.ethz.ch/mailman/listinfo/r-sig-mac <https://stat.ethz.ch/mailman/listinfo/r-sig-mac>
+
+
+
+
+From jdnewm|| @end|ng |rom dcn@d@v|@@c@@u@  Wed Oct  2 15:24:16 2024
+From: jdnewm|| @end|ng |rom dcn@d@v|@@c@@u@ (Jeff Newmiller)
+Date: Wed, 02 Oct 2024 06:24:16 -0700
+Subject: [R-SIG-Mac] Bug in reading UTF-16LE file?
+In-Reply-To: <7BD19A45-7FB1-4D4B-A8ED-2D772848E87B@sund.ku.dk>
+References: <7cbae008-78fe-48b1-9551-ece52beb495d@gmail.com>
+ <CF2424A3-7A10-4B33-9671-34F82E00A239@R-project.org>
+ <C265246D-DAFE-4C84-A66B-8D4B043619A7@gmail.com>
+ <1a7efc08-8619-4ed2-9471-369bb6127a64@gmail.com>
+ <2d92e302-95cd-4f84-9174-f834258efe47@gmail.com>
+ <007340B9-E981-4D97-BBA7-73752996B705@dcn.davis.ca.us>
+ <ce0a05c1-5c2a-471b-8028-8f5a4c4224a7@gmail.com>
+ <24F1290D-780A-4C1C-9594-A7565E1DC947@dcn.davis.ca.us>
+ <7BD19A45-7FB1-4D4B-A8ED-2D772848E87B@sund.ku.dk>
+Message-ID: <78B4F819-208D-47DF-B838-18AD6C54413B@dcn.davis.ca.us>
+
+Prior to saying:
+
+> "Any U+FEFF would be interpreted as a ZWNBSP."
+
+it says:
+
+> ... if a text data stream is marked as UTF-16BE, UTF-16LE, UTF-32BE or UTF-32LE, a BOM is neither necessary nor permitted.
+
+which ("neither ... permitted") says don't mix an endianness indicator in your encoding spec with a BOM. It makes sense to be able to override an incorrect BOM, but not to do it all the time because if you do the BOM is rendered toothless. Programmer mis-specification is the problem that the BOM exists to solve.
+
+
+On October 2, 2024 2:04:45 AM MST, Matt Denwood <md at sund.ku.dk> wrote:
+>Hi Jeff / all
+>
+>On 02/10/2024, 08.54, Jeff Newmiller wrote:
+>> The Unicode FAQ does. If you specify endian-ness and a BOM is present and these specifications agree then it would seem no harm no foul. The problem is that if they conflict, then there is no clearly correct behavior: if the BOM is valid then the user spec must be incorrectly specified and favoring the user specification forces incorrect decoding. If the BOM is erroneous, then you would want the user to be able to override the incorrect BOM... but these two cases amount to defeating the BOMs purpose... it might as well not be there. So the compliant handling of data with a BOM is for the user to make a standard practice of not specifying endianness _unless they must override an invalid BOM_ (which ought to be highly unusual)... save the sledgehammer for unusual cases, and let the BOM be the "only" specification if it is present. This lets the BOM serve its intended purpose of reducing how often users have to guess.
+>
+>Actually, the Unicode FAQ (https://unicode.org/faq/utf_bom.html, under "Q: Why wouldn?t I always use a protocol that requires a BOM?") says:  "In particular, if a text data stream is marked as UTF-16BE, UTF-16LE, UTF-32BE or UTF-32LE, a BOM is neither necessary nor permitted. Any U+FEFF would be interpreted as a ZWNBSP."
+>
+>So, my interpretation of the Unicode recommendation is that specifying *LE/*BE takes precedence - and if both are provided, then the BOM should be interpreted as a zero-width non-breaking space i.e. ignored.  Therefore, it would seem sensible for defensive programmers to specify *LE/*BE manually, safe in the knowledge that any BOM (correct or otherwise) becomes irrelevant - which is what I believe Tomas and Simon are suggesting.  Although it is possible I misunderstood something...
+>
+>Best wishes,
+>
+>Matt
+>
+>
+>
+>?On 02/10/2024, 08.54, "R-SIG-Mac on behalf of Jeff Newmiller via R-SIG-Mac" <r-sig-mac-bounces at r-project.org <mailto:r-sig-mac-bounces at r-project.org> on behalf of r-sig-mac at r-project.org <mailto:r-sig-mac at r-project.org>> wrote:
+>
+>[SNIP]
+>
+>>>I don't find anything inappropriate about the *LE/*BE specifications.
+>
+>
+>> The Unicode FAQ does. If you specify endian-ness and a BOM is present and these specifications agree then it would seem no harm no foul. The problem is that if they conflict, then there is no clearly correct behavior: if the BOM is valid then the user spec must be incorrectly specified and favoring the user specification forces incorrect decoding. If the BOM is erroneous, then you would want the user to be able to override the incorrect BOM... but these two cases amount to defeating the BOMs purpose... it might as well not be there. So the compliant handling of data with a BOM is for the user to make a standard practice of not specifying endianness _unless they must override an invalid BOM_ (which ought to be highly unusual)... save the sledgehammer for unusual cases, and let the BOM be the "only" specification if it is present. This lets the BOM serve its intended purpose of reducing how often users have to guess.
+>
+>
+>
+>
+>On October 1, 2024 1:50:25 PM MST, Tomas Kalibera <tomas.kalibera at gmail.com <mailto:tomas.kalibera at gmail.com>> wrote:
+>>On 10/1/24 15:31, Jeff Newmiller wrote:
+>>>> This is a problem in macOS libiconv. When converting from "UTF-16" with a BOM, it correctly learns the byte-order from the BOM, but later forgets it in some cases. This is not a problem in R, but could be worked-around in R.
+>>> So, buggy system code on one system...
+>>> 
+>>>> As Simon wrote, to avoid running into these problems (in released versions of R), one should use "UTF-16LE", so explicitly specify the byte-order in the encoding name.
+>>> ... leads to institutionalized non-complince.
+>>> 
+>>>> This is useful also because it is not clear what should be the default when no BOM is present and different systems have different defaults.
+>>> This is nonsense, for reasons previously provided. You are calling a bug a feature. The BOM is supposed to prevent you from having to know this detail, and what you do when no BOM is present should have no bearing on this case.
+>>
+>>I will try to explain this differently. The handling of BOMs in existing iconv implementations is unreliable (one issue is documented in R documentation, one issue is the one we have ran into now). Because it is unreliable, people who want to be defensive and avoid problems are advised to use *LE (or *BE) specifications. What is the default byte-order when no BOM is specified is not reliable, either (defaults differ between systems and the standard is open to interpretation - e.g. my Linux and Windows builds of R default to little-endian, while my macOS build defaults to big-endian). It is thus not advisable to depend on the default order, either, and a defensive solution is again to use *LE or *BE specifications. So, in principle, simply always use *LE or *BE.
+>>
+>>This advice is not a feature, it is a work-around that works for two problems: that the byte order for specifications like "UTF-16" is unknown (bug in the standard) and that specifying the byte-order by a BOM is unreliable (bugs in implementations of iconv).
+>>
+>>> If Apple is intransigent (which would not be out of character) you could avoid institutionalized non-compliance at the user level by recognizing the buggy system and replacing the generic specification with this inappropriate LE or BE specification as directed by the BOM in the Mac-specific R code.
+>>
+>>Yes, indeed, the work-around for the libiconv bug can be implemented in future versions of R and an experimental version is already in R-devel (still subject to change), so that at user level, specifying say "UTF-16" on an input with BOM will correctly use the byte-order of the BOM.
+>>
+>>I don't find anything inappropriate about the *LE/*BE specifications.
+>>
+>>Best
+>>Tomas
+>>
+>>> 
+>>> 
+>>> On October 1, 2024 4:34:41 AM MST, Tomas Kalibera <tomas.kalibera at gmail.com <mailto:tomas.kalibera at gmail.com>> wrote:
+>>>> On 9/9/24 12:53, Tomas Kalibera wrote:
+>>>>> On 9/9/24 10:53, peter dalgaard wrote:
+>>>>>> I am confused, and maybe I should just butt out of this, but:
+>>>>>> 
+>>>>>> (a) BOM are designed to, um, mark the byte order...
+>>>>>> 
+>>>>>> (b) in connections.c we have
+>>>>>> 
+>>>>>> if(checkBOM && con->inavail >= 2 &&
+>>>>>> ((int)con->iconvbuff[0] & 0xff) == 255 &&
+>>>>>> ((int)con->iconvbuff[1] & 0xff) == 254) {
+>>>>>> con->inavail -= (short) 2;
+>>>>>> memmove(con->iconvbuff, con->iconvbuff+2, con->inavail);
+>>>>>> }
+>>>>>> which checks for the two first bytes being FF, FE. However, a big-endian BOM would be FE, FF and I see no check for that.
+>>>>> I think this is correct, it is executed only for encodings declared little-endian (UTF-16LE, UCS2-LE) - so, iconv will still know what is the byte-order from the name of the encoding, it will just not see the same information in the BOM.
+>>>>>> Duncan's file starts
+>>>>>> 
+>>>>>>> readBin('https://online.stat.psu.edu/onlinecourses/sites/stat501/files/ch15/employee.txt' <https://online.stat.psu.edu/onlinecourses/sites/stat501/files/ch15/employee.txt;>, what="raw", n=10)
+>>>>>> [1] ff fe 74 00 69 00 6d 00 65 00
+>>>>>> 
+>>>>>> so the BOM does indeed indicate little-endian, but apparently we proceed to discard it and read the file with system (big-)endianness, which strikes me as just plain wrong...
+>>>>> I've tested we are not discarding it by the code above and that iconv gets to see the BOM bytes.
+>>>>>> I see no Mac-specific code for this, only win_iconv.c, so presumably we have potential issues on everything non-Windows?
+>>>>> I can reproduce the problem and will have a closer look, it may still be there is a bug in R. We have some work-arounds for recent iconv issues on macOS in sysutils.c.
+>>>> This is a problem in macOS libiconv. When converting from "UTF-16" with a BOM, it correctly learns the byte-order from the BOM, but later forgets it in some cases. This is not a problem in R, but could be worked-around in R.
+>>>> 
+>>>> As Simon wrote, to avoid running into these problems (in released versions of R), one should use "UTF-16LE", so explicitly specify the byte-order in the encoding name. This is useful also because it is not clear what should be the default when no BOM is present and different systems have different defaults.
+>>>> 
+>>>> Best
+>>>> Tomas
+>>>> 
+>>>>> Tomas
+>>>>> 
+>>>>>> -pd
+>>>>>> 
+>>>>>>> On 9 Sep 2024, at 01:11 , Simon Urbanek <simon.urbanek at r-project.org <mailto:simon.urbanek at r-project.org>> wrote:
+>>>>>>> 
+>>>>>>> From the help page:
+>>>>>>> 
+>>>>>>> The encodings ?"UCS-2LE"? and ?"UTF-16LE"? are treated specially,
+>>>>>>> as they are appropriate values for Windows ?Unicode? text files.
+>>>>>>> If the first two bytes are the Byte Order Mark ?0xFEFF? then these
+>>>>>>> are removed as some implementations of ?iconv? do not accept BOMs.
+>>>>>>> 
+>>>>>>> so "UTF-16LE" is the documented way to reliably read such files.
+>>>>>>> 
+>>>>>>> Cheers,
+>>>>>>> Simon
+>>>>>>> 
+>>>>>>> 
+>>>>>>> 
+>>>>>>>> On 8 Sep 2024, at 21:23, Duncan Murdoch <murdoch.duncan at gmail.com <mailto:murdoch.duncan at gmail.com>> wrote:
+>>>>>>>> 
+>>>>>>>> To R-SIG-Mac, with a copy to Jeff Newmiller:
+>>>>>>>> 
+>>>>>>>> On R-help there's a thread about reading a remote file that is coded in UTF-16LE with a byte-order mark. Jeff Newmiller pointed out (https://stat.ethz.ch/pipermail/r-help/2024-September/479933.html <https://stat.ethz.ch/pipermail/r-help/2024-September/479933.html>) that it would be better to declare the encoding as "UTF-16", because the BOM will indicate little endian.
+>>>>>>>> 
+>>>>>>>> I tried this on my Mac running R 4.4.1, and it didn't work. I get the same incorrect result from all of these commands:
+>>>>>>>> 
+>>>>>>>> # Automatically recognizing a URL and using fileEncoding:
+>>>>>>>> read.delim(
+>>>>>>>> 'https://online.stat.psu.edu/onlinecourses/sites/stat501/files/ch15/employee.txt' <https://online.stat.psu.edu/onlinecourses/sites/stat501/files/ch15/employee.txt;>,
+>>>>>>>> fileEncoding = "UTF-16"
+>>>>>>>> )
+>>>>>>>> 
+>>>>>>>> # Using explicit url() with encoding:
+>>>>>>>> read.delim(
+>>>>>>>> url('https://online.stat.psu.edu/onlinecourses/sites/stat501/files/ch15/employee.txt' <https://online.stat.psu.edu/onlinecourses/sites/stat501/files/ch15/employee.txt;>,
+>>>>>>>> encoding = "UTF-16")
+>>>>>>>> )
+>>>>>>>> 
+>>>>>>>> # Specifying the endianness incorrectly:
+>>>>>>>> read.delim(
+>>>>>>>> url('https://online.stat.psu.edu/onlinecourses/sites/stat501/files/ch15/employee.txt' <https://online.stat.psu.edu/onlinecourses/sites/stat501/files/ch15/employee.txt;>,
+>>>>>>>> encoding = "UTF-16BE")
+>>>>>>>> )
+>>>>>>>> 
+>>>>>>>> The only way I get the correct result is if I specify "UTF-16LE" explicitly, whereas Jeff got correct results on several different systems using "UTF-16".
+>>>>>>>> 
+>>>>>>>> Is this a MacOS bug or an R for MacOS bug?
+>>>>>>>> 
+>>>>>>>> Duncan Murdoch
+>>>>>>>> 
+>>>>>>>> _______________________________________________
+>>>>>>>> R-SIG-Mac mailing list
+>>>>>>>> R-SIG-Mac at r-project.org <mailto:R-SIG-Mac at r-project.org>
+>>>>>>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac <https://stat.ethz.ch/mailman/listinfo/r-sig-mac>
+>>>>>>>> 
+>>>>>>> _______________________________________________
+>>>>>>> R-SIG-Mac mailing list
+>>>>>>> R-SIG-Mac at r-project.org <mailto:R-SIG-Mac at r-project.org>
+>>>>>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac <https://stat.ethz.ch/mailman/listinfo/r-sig-mac>
+>>>> _______________________________________________
+>>>> R-SIG-Mac mailing list
+>>>> R-SIG-Mac at r-project.org <mailto:R-SIG-Mac at r-project.org>
+>>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac <https://stat.ethz.ch/mailman/listinfo/r-sig-mac>
+>
+>
+
+-- 
+Sent from my phone. Please excuse my brevity.
+
+
+From tom@@@k@||ber@ @end|ng |rom gm@||@com  Wed Oct  2 15:52:56 2024
+From: tom@@@k@||ber@ @end|ng |rom gm@||@com (Tomas Kalibera)
+Date: Wed, 2 Oct 2024 15:52:56 +0200
+Subject: [R-SIG-Mac] Bug in reading UTF-16LE file?
+In-Reply-To: <7BD19A45-7FB1-4D4B-A8ED-2D772848E87B@sund.ku.dk>
+References: <7cbae008-78fe-48b1-9551-ece52beb495d@gmail.com>
+ <CF2424A3-7A10-4B33-9671-34F82E00A239@R-project.org>
+ <C265246D-DAFE-4C84-A66B-8D4B043619A7@gmail.com>
+ <1a7efc08-8619-4ed2-9471-369bb6127a64@gmail.com>
+ <2d92e302-95cd-4f84-9174-f834258efe47@gmail.com>
+ <007340B9-E981-4D97-BBA7-73752996B705@dcn.davis.ca.us>
+ <ce0a05c1-5c2a-471b-8028-8f5a4c4224a7@gmail.com>
+ <24F1290D-780A-4C1C-9594-A7565E1DC947@dcn.davis.ca.us>
+ <7BD19A45-7FB1-4D4B-A8ED-2D772848E87B@sund.ku.dk>
+Message-ID: <59152016-8281-450e-9d18-dec5bc95ba73@gmail.com>
+
+
+On 10/2/24 11:04, Matt Denwood wrote:
+> Hi Jeff / all
+>
+> On 02/10/2024, 08.54, Jeff Newmiller wrote:
+>> The Unicode FAQ does. If you specify endian-ness and a BOM is present and these specifications agree then it would seem no harm no foul. The problem is that if they conflict, then there is no clearly correct behavior: if the BOM is valid then the user spec must be incorrectly specified and favoring the user specification forces incorrect decoding. If the BOM is erroneous, then you would want the user to be able to override the incorrect BOM... but these two cases amount to defeating the BOMs purpose... it might as well not be there. So the compliant handling of data with a BOM is for the user to make a standard practice of not specifying endianness _unless they must override an invalid BOM_ (which ought to be highly unusual)... save the sledgehammer for unusual cases, and let the BOM be the "only" specification if it is present. This lets the BOM serve its intended purpose of reducing how often users have to guess.
+> Actually, the Unicode FAQ (https://unicode.org/faq/utf_bom.html, under "Q: Why wouldn?t I always use a protocol that requires a BOM?") says:  "In particular, if a text data stream is marked as UTF-16BE, UTF-16LE, UTF-32BE or UTF-32LE, a BOM is neither necessary nor permitted. Any U+FEFF would be interpreted as a ZWNBSP."
+>
+> So, my interpretation of the Unicode recommendation is that specifying *LE/*BE takes precedence - and if both are provided, then the BOM should be interpreted as a zero-width non-breaking space i.e. ignored.  Therefore, it would seem sensible for defensive programmers to specify *LE/*BE manually, safe in the knowledge that any BOM (correct or otherwise) becomes irrelevant - which is what I believe Tomas and Simon are suggesting.  Although it is possible I misunderstood something...
+
+I think it is a valid concern what happens with a BOM on *LE and *BE 
+input, and to be most defensive and conformant to Unicode FAQ, one would 
+not use a BOM with these.
+
+But R treats "UTF-16LE" specially, as documented in ?connections and 
+cited earlier in this thread. UTF-16LE is meant to be used for Windows 
+"Unicode" text files in R. As a work-around for some version of iconv 
+that wouldn't accept a BOM (from a source code comment it is/was seen in 
+glibc's iconv) in a UTF-16LE stream, R removes the BOM (if it is 
+correctly encoded as little-endian) before passing it to iconv.
+
+We might add some similar handling of less used combinations (UTF-32LE, 
+UTF-32BE, UTF-16BE) to future versions of R. What already exists in R is 
+removal of a BOM in readLines() - this would happen when the result is 
+in UTF-8 - so if iconv lets it through, and it is read via readLines(), 
+it won't be visible.
+
+Tomas
+
+
+
+>
+> Best wishes,
+>
+> Matt
+>
+>
+>
+> ?On 02/10/2024, 08.54, "R-SIG-Mac on behalf of Jeff Newmiller via R-SIG-Mac" <r-sig-mac-bounces at r-project.org <mailto:r-sig-mac-bounces at r-project.org> on behalf of r-sig-mac at r-project.org <mailto:r-sig-mac at r-project.org>> wrote:
+>
+> [SNIP]
+>
+>>> I don't find anything inappropriate about the *LE/*BE specifications.
+>
+>> The Unicode FAQ does. If you specify endian-ness and a BOM is present and these specifications agree then it would seem no harm no foul. The problem is that if they conflict, then there is no clearly correct behavior: if the BOM is valid then the user spec must be incorrectly specified and favoring the user specification forces incorrect decoding. If the BOM is erroneous, then you would want the user to be able to override the incorrect BOM... but these two cases amount to defeating the BOMs purpose... it might as well not be there. So the compliant handling of data with a BOM is for the user to make a standard practice of not specifying endianness _unless they must override an invalid BOM_ (which ought to be highly unusual)... save the sledgehammer for unusual cases, and let the BOM be the "only" specification if it is present. This lets the BOM serve its intended purpose of reducing how often users have to guess.
+>
+>
+>
+> On October 1, 2024 1:50:25 PM MST, Tomas Kalibera <tomas.kalibera at gmail.com <mailto:tomas.kalibera at gmail.com>> wrote:
+>> On 10/1/24 15:31, Jeff Newmiller wrote:
+>>>> This is a problem in macOS libiconv. When converting from "UTF-16" with a BOM, it correctly learns the byte-order from the BOM, but later forgets it in some cases. This is not a problem in R, but could be worked-around in R.
+>>> So, buggy system code on one system...
+>>>
+>>>> As Simon wrote, to avoid running into these problems (in released versions of R), one should use "UTF-16LE", so explicitly specify the byte-order in the encoding name.
+>>> ... leads to institutionalized non-complince.
+>>>
+>>>> This is useful also because it is not clear what should be the default when no BOM is present and different systems have different defaults.
+>>> This is nonsense, for reasons previously provided. You are calling a bug a feature. The BOM is supposed to prevent you from having to know this detail, and what you do when no BOM is present should have no bearing on this case.
+>> I will try to explain this differently. The handling of BOMs in existing iconv implementations is unreliable (one issue is documented in R documentation, one issue is the one we have ran into now). Because it is unreliable, people who want to be defensive and avoid problems are advised to use *LE (or *BE) specifications. What is the default byte-order when no BOM is specified is not reliable, either (defaults differ between systems and the standard is open to interpretation - e.g. my Linux and Windows builds of R default to little-endian, while my macOS build defaults to big-endian). It is thus not advisable to depend on the default order, either, and a defensive solution is again to use *LE or *BE specifications. So, in principle, simply always use *LE or *BE.
+>>
+>> This advice is not a feature, it is a work-around that works for two problems: that the byte order for specifications like "UTF-16" is unknown (bug in the standard) and that specifying the byte-order by a BOM is unreliable (bugs in implementations of iconv).
+>>
+>>> If Apple is intransigent (which would not be out of character) you could avoid institutionalized non-compliance at the user level by recognizing the buggy system and replacing the generic specification with this inappropriate LE or BE specification as directed by the BOM in the Mac-specific R code.
+>> Yes, indeed, the work-around for the libiconv bug can be implemented in future versions of R and an experimental version is already in R-devel (still subject to change), so that at user level, specifying say "UTF-16" on an input with BOM will correctly use the byte-order of the BOM.
+>>
+>> I don't find anything inappropriate about the *LE/*BE specifications.
+>>
+>> Best
+>> Tomas
+>>
+>>>
+>>> On October 1, 2024 4:34:41 AM MST, Tomas Kalibera <tomas.kalibera at gmail.com <mailto:tomas.kalibera at gmail.com>> wrote:
+>>>> On 9/9/24 12:53, Tomas Kalibera wrote:
+>>>>> On 9/9/24 10:53, peter dalgaard wrote:
+>>>>>> I am confused, and maybe I should just butt out of this, but:
+>>>>>>
+>>>>>> (a) BOM are designed to, um, mark the byte order...
+>>>>>>
+>>>>>> (b) in connections.c we have
+>>>>>>
+>>>>>> if(checkBOM && con->inavail >= 2 &&
+>>>>>> ((int)con->iconvbuff[0] & 0xff) == 255 &&
+>>>>>> ((int)con->iconvbuff[1] & 0xff) == 254) {
+>>>>>> con->inavail -= (short) 2;
+>>>>>> memmove(con->iconvbuff, con->iconvbuff+2, con->inavail);
+>>>>>> }
+>>>>>> which checks for the two first bytes being FF, FE. However, a big-endian BOM would be FE, FF and I see no check for that.
+>>>>> I think this is correct, it is executed only for encodings declared little-endian (UTF-16LE, UCS2-LE) - so, iconv will still know what is the byte-order from the name of the encoding, it will just not see the same information in the BOM.
+>>>>>> Duncan's file starts
+>>>>>>
+>>>>>>> readBin('https://online.stat.psu.edu/onlinecourses/sites/stat501/files/ch15/employee.txt' <https://online.stat.psu.edu/onlinecourses/sites/stat501/files/ch15/employee.txt;>, what="raw", n=10)
+>>>>>> [1] ff fe 74 00 69 00 6d 00 65 00
+>>>>>>
+>>>>>> so the BOM does indeed indicate little-endian, but apparently we proceed to discard it and read the file with system (big-)endianness, which strikes me as just plain wrong...
+>>>>> I've tested we are not discarding it by the code above and that iconv gets to see the BOM bytes.
+>>>>>> I see no Mac-specific code for this, only win_iconv.c, so presumably we have potential issues on everything non-Windows?
+>>>>> I can reproduce the problem and will have a closer look, it may still be there is a bug in R. We have some work-arounds for recent iconv issues on macOS in sysutils.c.
+>>>> This is a problem in macOS libiconv. When converting from "UTF-16" with a BOM, it correctly learns the byte-order from the BOM, but later forgets it in some cases. This is not a problem in R, but could be worked-around in R.
+>>>>
+>>>> As Simon wrote, to avoid running into these problems (in released versions of R), one should use "UTF-16LE", so explicitly specify the byte-order in the encoding name. This is useful also because it is not clear what should be the default when no BOM is present and different systems have different defaults.
+>>>>
+>>>> Best
+>>>> Tomas
+>>>>
+>>>>> Tomas
+>>>>>
+>>>>>> -pd
+>>>>>>
+>>>>>>> On 9 Sep 2024, at 01:11 , Simon Urbanek <simon.urbanek at r-project.org <mailto:simon.urbanek at r-project.org>> wrote:
+>>>>>>>
+>>>>>>>  From the help page:
+>>>>>>>
+>>>>>>> The encodings ?"UCS-2LE"? and ?"UTF-16LE"? are treated specially,
+>>>>>>> as they are appropriate values for Windows ?Unicode? text files.
+>>>>>>> If the first two bytes are the Byte Order Mark ?0xFEFF? then these
+>>>>>>> are removed as some implementations of ?iconv? do not accept BOMs.
+>>>>>>>
+>>>>>>> so "UTF-16LE" is the documented way to reliably read such files.
+>>>>>>>
+>>>>>>> Cheers,
+>>>>>>> Simon
+>>>>>>>
+>>>>>>>
+>>>>>>>
+>>>>>>>> On 8 Sep 2024, at 21:23, Duncan Murdoch <murdoch.duncan at gmail.com <mailto:murdoch.duncan at gmail.com>> wrote:
+>>>>>>>>
+>>>>>>>> To R-SIG-Mac, with a copy to Jeff Newmiller:
+>>>>>>>>
+>>>>>>>> On R-help there's a thread about reading a remote file that is coded in UTF-16LE with a byte-order mark. Jeff Newmiller pointed out (https://stat.ethz.ch/pipermail/r-help/2024-September/479933.html <https://stat.ethz.ch/pipermail/r-help/2024-September/479933.html>) that it would be better to declare the encoding as "UTF-16", because the BOM will indicate little endian.
+>>>>>>>>
+>>>>>>>> I tried this on my Mac running R 4.4.1, and it didn't work. I get the same incorrect result from all of these commands:
+>>>>>>>>
+>>>>>>>> # Automatically recognizing a URL and using fileEncoding:
+>>>>>>>> read.delim(
+>>>>>>>> 'https://online.stat.psu.edu/onlinecourses/sites/stat501/files/ch15/employee.txt' <https://online.stat.psu.edu/onlinecourses/sites/stat501/files/ch15/employee.txt;>,
+>>>>>>>> fileEncoding = "UTF-16"
+>>>>>>>> )
+>>>>>>>>
+>>>>>>>> # Using explicit url() with encoding:
+>>>>>>>> read.delim(
+>>>>>>>> url('https://online.stat.psu.edu/onlinecourses/sites/stat501/files/ch15/employee.txt' <https://online.stat.psu.edu/onlinecourses/sites/stat501/files/ch15/employee.txt;>,
+>>>>>>>> encoding = "UTF-16")
+>>>>>>>> )
+>>>>>>>>
+>>>>>>>> # Specifying the endianness incorrectly:
+>>>>>>>> read.delim(
+>>>>>>>> url('https://online.stat.psu.edu/onlinecourses/sites/stat501/files/ch15/employee.txt' <https://online.stat.psu.edu/onlinecourses/sites/stat501/files/ch15/employee.txt;>,
+>>>>>>>> encoding = "UTF-16BE")
+>>>>>>>> )
+>>>>>>>>
+>>>>>>>> The only way I get the correct result is if I specify "UTF-16LE" explicitly, whereas Jeff got correct results on several different systems using "UTF-16".
+>>>>>>>>
+>>>>>>>> Is this a MacOS bug or an R for MacOS bug?
+>>>>>>>>
+>>>>>>>> Duncan Murdoch
+>>>>>>>>
+>>>>>>>> _______________________________________________
+>>>>>>>> R-SIG-Mac mailing list
+>>>>>>>> R-SIG-Mac at r-project.org <mailto:R-SIG-Mac at r-project.org>
+>>>>>>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac <https://stat.ethz.ch/mailman/listinfo/r-sig-mac>
+>>>>>>>>
+>>>>>>> _______________________________________________
+>>>>>>> R-SIG-Mac mailing list
+>>>>>>> R-SIG-Mac at r-project.org <mailto:R-SIG-Mac at r-project.org>
+>>>>>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac <https://stat.ethz.ch/mailman/listinfo/r-sig-mac>
+>>>> _______________________________________________
+>>>> R-SIG-Mac mailing list
+>>>> R-SIG-Mac at r-project.org <mailto:R-SIG-Mac at r-project.org>
+>>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac <https://stat.ethz.ch/mailman/listinfo/r-sig-mac>
+>
+
+

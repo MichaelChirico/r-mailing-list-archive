@@ -1,0 +1,768 @@
+From rhe|p @end|ng |rom eoo@@dd@@n|  Tue Oct  1 09:32:59 2024
+From: rhe|p @end|ng |rom eoo@@dd@@n| (Jan van der Laan)
+Date: Tue, 1 Oct 2024 09:32:59 +0200
+Subject: [R-pkg-devel] Deprecating apparent S3 method, changing name
+In-Reply-To: <SY4PR01MB56580A1C36102B5DB3462AE4AC6A2@SY4PR01MB5658.ausprd01.prod.outlook.com>
+References: <SY4PR01MB56581D25A3BD15AC4CB3F882AC692@SY4PR01MB5658.ausprd01.prod.outlook.com>
+ <20240926234842.286fed70@Tarkus>
+ <SY4PR01MB56580A1C36102B5DB3462AE4AC6A2@SY4PR01MB5658.ausprd01.prod.outlook.com>
+Message-ID: <ea61f7fb-b212-46ff-870e-4e82b3ba4e70@eoos.dds.nl>
+
+
+
+On 9/26/24 23:48, Murray Efford via R-package-devel wrote:
+
+> I am tossing up between (i) appealing to CRAN to allow the submission through with NOTEs until it feels safe to remove the functions with misleading names altogether, and (ii) removing them now and warning users about the new names in an  onLoad message.
+
+
+A third solution would be to create a `esa.plot` method that redirects 
+the user to `esaPlot` etc. So you create a function `esa.plot`. Its 
+arguments should match those of the `esa` generic. If the `esaPlot` 
+function has completely different arguments, you could have this 
+`esa.plot` function give an error, redirecting the user to `esaPlot`.
+
+You will still need to document the `esa.plot` function as a method to 
+prevent warnings/notes:
+
+\usage{
+\method{esa}{plot}(..)
+}
+
+And you should export it:
+
+export(esa.plot)
+
+So that it can be called directly. To prevent that the `esa.plot` is 
+called when a user passes a `plot` object to the `esa` generic, you 
+could use the solution mentioned below:
+
+
+
+> ________________________________
+> From: Ivan Krylov <ikrylov at disroot.org>
+> 
+> Theoretically speaking, if there was a place in your package where you
+> called the esa() generic with a user-supplied object, esa.plot() would
+> be a reachable S3 method, because the user would be able to construct
+> structure(list(), class = 'plot') and give it to your package code to
+> call esa(plot_object) and have it dispatched to esa.plot(). (Which
+> wouldn't be useful to the user, but that's how S3 works.)
+>
+
+In NAMESPACE you can do:
+
+S3method(esa, plot, esaplotmethod)
+
+To register `esaplotmethod` as the method that is called when using 
+`esa` with an object of type `plot`. This would prevent this issue. 
+However, this probably (can't test as the note doesn't happen on my 
+system) doesn't resolve the issue with the NOTE.
+
+
+Best,
+Jan
+
+
+From yuy@ng@@t@t @end|ng |rom gm@||@com  Tue Oct  1 03:30:44 2024
+From: yuy@ng@@t@t @end|ng |rom gm@||@com (Yu Yang)
+Date: Mon, 30 Sep 2024 21:30:44 -0400
+Subject: [R-pkg-devel] Question about Debian installation error
+Message-ID: <617BD822-1EE1-4928-AA9F-42CDFB069B84@gmail.com>
+
+Hi R-package-devel team, 
+
+  I have a question about installation error on Debian. 
+
+  I recently updated my package ?glmtlp? to meet the ?_PACKAGE? requirement and to deal with the ?noRemap" requirement. I only modified the DESCRIPTION and glmtlp-package.R file and fixed a few typos. R CMD check showed no errors in my local machine (MacOS), but when I submitted to CRAN, it said installation error on Debian. 
+
+  The log file is at: https://win-builder.r-project.org/incoming_pretest/glmtlp_2.0.2_20240930_002619/Debian/00install.out. 
+
+  I also used devtools::use_github_action() to check and found the installation error occurred in ubuntu-latest (devel) but not the others, as shown below.
+ ?
+
+  My guess was that the Makevars file was not correctly written. I am not an expert in this and I tried different options, but none of them worked. Do you have any suggestions in handling this?
+
+  Thank you so much for your time and help!
+
+Best,
+Yu
+
+From |kry|ov @end|ng |rom d|@root@org  Tue Oct  1 12:39:21 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Tue, 1 Oct 2024 13:39:21 +0300
+Subject: [R-pkg-devel] Question about Debian installation error
+In-Reply-To: <617BD822-1EE1-4928-AA9F-42CDFB069B84@gmail.com>
+References: <617BD822-1EE1-4928-AA9F-42CDFB069B84@gmail.com>
+Message-ID: <20241001133921.3296a176@arachnoid>
+
+Hi Yu and welcome to R-package-devel! You're now part of the team as
+well.
+
+? Mon, 30 Sep 2024 21:30:44 -0400
+Yu Yang <yuyang.stat at gmail.com> ?????:
+
+>   I recently updated my package ?glmtlp? to meet the ?_PACKAGE?
+> requirement and to deal with the ?noRemap" requirement. I only
+> modified the DESCRIPTION and glmtlp-package.R file and fixed a few
+> typos. R CMD check showed no errors in my local machine (MacOS), but
+> when I submitted to CRAN, it said installation error on Debian. 
+> 
+>   The log file is at:
+> https://win-builder.r-project.org/incoming_pretest/glmtlp_2.0.2_20240930_002619/Debian/00install.out. 
+
+Thank you for providing the link to the failing example. The
+screenshot(?) didn't come through [1]; this mailing list only accepts
+plain text messages and a restricted set of attachment types, so it's
+best to compose in plain text as well.
+
+The reason your package is failing is because your C++ code calls R API
+functions by their short ("remapped") names, and this will no longer
+work in the next version of R. This has been mentioned in the news for
+R-devel [2,3]. The remapping is described in "Writing R Extensions",
+chapter 6 [4] (and a bit more at the end, shortly before chapter 7).
+
+In short, to reproduce the error outside of R-devel, you need to
+#define R_NO_REMAP before #including R API (or provide the -DR_NO_REMAP
+command-line switch to the compiler), and then fix it by finding every
+remapped name in your code and replacing it by the full name (typically
+by prepending Rf_ to it).
+
+You're not the first package author to have problems with C++ code due
+to R_NO_REMAP [5]. There's now an incomplete, unofficial set of
+manpage-style API documentation (made possible by Luke Tierney's effort
+to export a list of API functions programmatically via tools:::funAPI)
+where you can find both full and remapped names for most of "ordinary"
+R API and slightly less than a half of experimental R API [6]. Thanks
+to Erez Shomron, there's also information about when a lot of the
+functions had been introduced.
+
+The reason we have remapping in the first place is that for historical
+reasons, R API contained a lot of functions with "ordinary" names, such
+as "length", which conflicted with other C functions named "length" in
+the same namespace. This problem has been solved at the cost of
+introducing a more manageable problem by remapping: the "real" names of
+the conflicting functions now start with Rf_ (e.g. "Rf_length"), and to
+avoid breaking all existing code (including R itself), R uses the C
+preprocessor to replace the short names with the full names on the fly:
+"#define length Rf_length" and so on.
+
+Unfortunately, that still leads to conflicts when you need to use
+something named "length" (e.g. [7]) in a source file that #includes the
+R API. You type s.length(), and the preprocessor patches that to
+s.Rf_length(), and everything breaks. Since C++ code is the most
+affected by this, the R developers are now disabling it for all C++
+code.
+
+Hope this helps!
+
+-- 
+Best regards,
+Ivan
+
+[1]
+https://stat.ethz.ch/pipermail/r-package-devel/2024q4/011121.html
+
+[2]
+https://developer.r-project.org/blosxom.cgi/R-devel/NEWS/2024/04/14#n2024-04-14
+
+[3]
+https://stat.ethz.ch/R-manual/R-devel/doc/html/NEWS.html
+
+[4]
+https://cran.r-project.org/doc/manuals/R-exts.html#The-R-API
+
+[5]
+https://stat.ethz.ch/pipermail/r-package-devel/2024q2/010913.html
+
+[6]
+https://aitap.codeberg.page/R-api/#nrows
+https://aitap.codeberg.page/R-api/#XLENGTH
+https://aitap.codeberg.page/R-api/#allocVector
+
+[7]
+https://en.cppreference.com/w/cpp/string/basic_string/size
+
+
+From |kry|ov @end|ng |rom d|@root@org  Tue Oct  1 13:45:37 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Tue, 1 Oct 2024 14:45:37 +0300
+Subject: [R-pkg-devel] Deprecating apparent S3 method, changing name
+In-Reply-To: <38d9bf9a-6ab4-4e3a-9790-511159aab23c@dds.nl>
+References: <SY4PR01MB56581D25A3BD15AC4CB3F882AC692@SY4PR01MB5658.ausprd01.prod.outlook.com>
+ <20240926234842.286fed70@Tarkus>
+ <SY4PR01MB56580A1C36102B5DB3462AE4AC6A2@SY4PR01MB5658.ausprd01.prod.outlook.com>
+ <38d9bf9a-6ab4-4e3a-9790-511159aab23c@dds.nl>
+Message-ID: <20241001144537.2bec7355@arachnoid>
+
+? Tue, 1 Oct 2024 09:00:24 +0200
+Jan van der Laan <eoos at dds.nl> ?????:
+
+> S3method(esa, plot, esaplotmethod)
+> 
+> To register `esaplotmethod` as the method that is called when using 
+> `esa` with an object of type `plot`. This would prevent this issue. 
+> However, this probably (can't test as the note doesn't happen on my 
+> system) doesn't resolve the issue with the NOTE.
+
+Excellent idea, thank you! It does work for R CMD check as well:
+
+Sys.setenv("_R_CHECK_S3_METHODS_SHOW_POSSIBLE_ISSUES_" = 'TRUE')
+tools::checkS3methods(dir = '.') # used to show esa.plot as well
+# Apparent methods for exported generics not registered:
+#   fxi.contour fxi.mode
+
+No need for extra bits or attributes on the esa.plot function, just
+register a method for "esa" generic, "plot" class to prevent S3
+dispatch from reaching the function in question.
+
+-- 
+Best regards,
+Ivan
+
+
+From murr@y@e||ord @end|ng |rom ot@go@@c@nz  Wed Oct  2 03:04:29 2024
+From: murr@y@e||ord @end|ng |rom ot@go@@c@nz (Murray Efford)
+Date: Wed, 2 Oct 2024 01:04:29 +0000
+Subject: [R-pkg-devel] Deprecating apparent S3 method, changing name
+In-Reply-To: <20241001144537.2bec7355@arachnoid>
+References: <SY4PR01MB56581D25A3BD15AC4CB3F882AC692@SY4PR01MB5658.ausprd01.prod.outlook.com>
+ <20240926234842.286fed70@Tarkus>
+ <SY4PR01MB56580A1C36102B5DB3462AE4AC6A2@SY4PR01MB5658.ausprd01.prod.outlook.com>
+ <38d9bf9a-6ab4-4e3a-9790-511159aab23c@dds.nl>
+ <20241001144537.2bec7355@arachnoid>
+Message-ID: <SY4PR01MB56586DA4A75D7199ED7D6DCDAC702@SY4PR01MB5658.ausprd01.prod.outlook.com>
+
+Almost too good to be true: with this in my NAMESPACE
+
+export (esa.plot)
+S3method(esa,plot)
+
+it seems I can deprecate esa.plot by the usual route (calling .Deprecated and passing call through to the new function esaPlot).
+
+Thanks!
+Murray
+________________________________
+From: Ivan Krylov <ikrylov at disroot.org>
+Sent: Wednesday, 2 October 2024 00:45
+To: Jan van der Laan <eoos at dds.nl>
+Cc: Murray Efford <murray.efford at otago.ac.nz>; Murray Efford via R-package-devel <r-package-devel at r-project.org>
+Subject: Re: [R-pkg-devel] Deprecating apparent S3 method, changing name
+
+? Tue, 1 Oct 2024 09:00:24 +0200
+Jan van der Laan <eoos at dds.nl> ?????:
+
+> S3method(esa, plot, esaplotmethod)
+>
+> To register `esaplotmethod` as the method that is called when using
+> `esa` with an object of type `plot`. This would prevent this issue.
+> However, this probably (can't test as the note doesn't happen on my
+> system) doesn't resolve the issue with the NOTE.
+
+Excellent idea, thank you! It does work for R CMD check as well:
+
+Sys.setenv("_R_CHECK_S3_METHODS_SHOW_POSSIBLE_ISSUES_" = 'TRUE')
+tools::checkS3methods(dir = '.') # used to show esa.plot as well
+# Apparent methods for exported generics not registered:
+#   fxi.contour fxi.mode
+
+No need for extra bits or attributes on the esa.plot function, just
+register a method for "esa" generic, "plot" class to prevent S3
+dispatch from reaching the function in question.
+
+--
+Best regards,
+Ivan
+
+	[[alternative HTML version deleted]]
+
+
+From yuy@ng@@t@t @end|ng |rom gm@||@com  Wed Oct  2 03:05:03 2024
+From: yuy@ng@@t@t @end|ng |rom gm@||@com (Yu Yang)
+Date: Tue, 1 Oct 2024 21:05:03 -0400
+Subject: [R-pkg-devel] Question about Debian installation error
+In-Reply-To: <20241001133921.3296a176@arachnoid>
+References: <617BD822-1EE1-4928-AA9F-42CDFB069B84@gmail.com>
+ <20241001133921.3296a176@arachnoid>
+Message-ID: <9389AB20-E775-41AF-A4B6-ABA18B32B652@gmail.com>
+
+Hi Ivan, 
+
+  Thank you so much for your help! I have fixed the issue following your advice!
+
+  May you have a great day!
+
+Best,
+Yu
+
+
+> On Oct 1, 2024, at 6:39?AM, Ivan Krylov <ikrylov at disroot.org> wrote:
+> 
+> Hi Yu and welcome to R-package-devel! You're now part of the team as
+> well.
+> 
+> ? Mon, 30 Sep 2024 21:30:44 -0400
+> Yu Yang <yuyang.stat at gmail.com> ?????:
+> 
+>>  I recently updated my package ?glmtlp? to meet the ?_PACKAGE?
+>> requirement and to deal with the ?noRemap" requirement. I only
+>> modified the DESCRIPTION and glmtlp-package.R file and fixed a few
+>> typos. R CMD check showed no errors in my local machine (MacOS), but
+>> when I submitted to CRAN, it said installation error on Debian. 
+>> 
+>>  The log file is at:
+>> https://win-builder.r-project.org/incoming_pretest/glmtlp_2.0.2_20240930_002619/Debian/00install.out.
+> 
+> Thank you for providing the link to the failing example. The
+> screenshot(?) didn't come through [1]; this mailing list only accepts
+> plain text messages and a restricted set of attachment types, so it's
+> best to compose in plain text as well.
+> 
+> The reason your package is failing is because your C++ code calls R API
+> functions by their short ("remapped") names, and this will no longer
+> work in the next version of R. This has been mentioned in the news for
+> R-devel [2,3]. The remapping is described in "Writing R Extensions",
+> chapter 6 [4] (and a bit more at the end, shortly before chapter 7).
+> 
+> In short, to reproduce the error outside of R-devel, you need to
+> #define R_NO_REMAP before #including R API (or provide the -DR_NO_REMAP
+> command-line switch to the compiler), and then fix it by finding every
+> remapped name in your code and replacing it by the full name (typically
+> by prepending Rf_ to it).
+> 
+> You're not the first package author to have problems with C++ code due
+> to R_NO_REMAP [5]. There's now an incomplete, unofficial set of
+> manpage-style API documentation (made possible by Luke Tierney's effort
+> to export a list of API functions programmatically via tools:::funAPI)
+> where you can find both full and remapped names for most of "ordinary"
+> R API and slightly less than a half of experimental R API [6]. Thanks
+> to Erez Shomron, there's also information about when a lot of the
+> functions had been introduced.
+> 
+> The reason we have remapping in the first place is that for historical
+> reasons, R API contained a lot of functions with "ordinary" names, such
+> as "length", which conflicted with other C functions named "length" in
+> the same namespace. This problem has been solved at the cost of
+> introducing a more manageable problem by remapping: the "real" names of
+> the conflicting functions now start with Rf_ (e.g. "Rf_length"), and to
+> avoid breaking all existing code (including R itself), R uses the C
+> preprocessor to replace the short names with the full names on the fly:
+> "#define length Rf_length" and so on.
+> 
+> Unfortunately, that still leads to conflicts when you need to use
+> something named "length" (e.g. [7]) in a source file that #includes the
+> R API. You type s.length(), and the preprocessor patches that to
+> s.Rf_length(), and everything breaks. Since C++ code is the most
+> affected by this, the R developers are now disabling it for all C++
+> code.
+> 
+> Hope this helps!
+> 
+> -- 
+> Best regards,
+> Ivan
+> 
+> [1]
+> https://stat.ethz.ch/pipermail/r-package-devel/2024q4/011121.html
+> 
+> [2]
+> https://developer.r-project.org/blosxom.cgi/R-devel/NEWS/2024/04/14#n2024-04-14
+> 
+> [3]
+> https://stat.ethz.ch/R-manual/R-devel/doc/html/NEWS.html
+> 
+> [4]
+> https://cran.r-project.org/doc/manuals/R-exts.html#The-R-API
+> 
+> [5]
+> https://stat.ethz.ch/pipermail/r-package-devel/2024q2/010913.html
+> 
+> [6]
+> https://aitap.codeberg.page/R-api/#nrows
+> https://aitap.codeberg.page/R-api/#XLENGTH
+> https://aitap.codeberg.page/R-api/#allocVector
+> 
+> [7]
+> https://en.cppreference.com/w/cpp/string/basic_string/size
+
+
+From m@||ory@||ynn @end|ng |rom @t@t@ubc@c@  Wed Oct  9 22:26:24 2024
+From: m@||ory@||ynn @end|ng |rom @t@t@ubc@c@ (Mallory Flynn)
+Date: Wed, 9 Oct 2024 13:26:24 -0700
+Subject: [R-pkg-devel] Question about examples/tests run-time
+Message-ID: <78E66F51-2437-43C6-B4CD-C6A43A8984E6@stat.ubc.ca>
+
+Hello,
+
+I am hoping this is the correct way to pose a question about my submission, which I can?t seem to fix 2 NOTES for.  They are related to run time:
+Flavor: r-devel-windows-x86_64
+Check: examples, Result: NOTE
+Examples with CPU (user + system) or elapsed time > 10s
+           user system elapsed
+countTree 17.66   0.13   17.78
+estTree   17.52   0.02   17.54
+wmmTree   15.70   0.02   15.72
+
+Flavor: r-devel-linux-x86_64-debian-gcc
+Check: examples, Result: NOTE
+Examples with CPU (user + system) or elapsed time > 5s
+            user system elapsed
+countTree 14.218  0.077  14.401
+wmmTree   14.049  0.028  14.086
+estTree   14.046  0.012  14.066
+
+The package enables easy implementation of a sampling method for population size estimation on a highly correlated tree - since it?s sequentially sampled, it?s expected to run long compared to other functionality, even on smaller examples. 
+I have added many layers to try to shorten examples and tests, including ?donttest?, ?dontrun?, ?if (interactive())?, and reducing toy examples to what I believe is the smallest they can be to still demonstrate utility.  I also included the ?skip_on_cran()? function in tests which run longer.
+
+Does anyone else have any ideas on how I can eliminate these notes?
+
+Any help is very much appreciated!!
+Thank you!
+
+From j@|me@@@|v@dor @end|ng |rom |de@@yb|t@@com  Wed Oct  9 22:42:24 2024
+From: j@|me@@@|v@dor @end|ng |rom |de@@yb|t@@com (Jaime Salvador)
+Date: Wed, 9 Oct 2024 20:42:24 +0000
+Subject: [R-pkg-devel] Help with 2 NOTES
+Message-ID: <em79af66bf-7e90-400c-88a2-733409da284a@d22f2075.com>
+
+How I can solve this NOTES:
+
+
+* checking CRAN incoming feasibility ... [3s/5s] NOTE
+Maintainer: ?Jaime Salvador <
+jaime.salvador at ideasybits.com<mailto:jaime.salvador at ideasybits.com>>?
+
+New submission
+
+Possibly misspelled words in DESCRIPTION:
+  DICX (12:67)
+  RXDB (12:59)
+  Redatam (2:34, 12:40)
+
+
+
+* checking for detritus in the temp directory ... NOTE
+
+Found the following files/directories:
+  ?redatam?
+
+
+
+Thanks
+
+-------------------------------------
+Jaime Salvador
+| Ideas&Bits
+| mobile: +593 0987285748
+| email: jaime.salvador at ideasybits.com<mailto:jaime.salvador at ideasybits.com>
+| site: www.ideasybits.com<https://urldefense.com/v3/__http:/www.ideasybits.com__;!!C3eXzRIY6Mw!YcjWo_ljX1Mppy0kki8QDmz6mHQIrU1XSABeGK31GmB50zdsNenbNNyRCZvpmI0lgbWo$>
+
+
+
+	[[alternative HTML version deleted]]
+
+
+From ||u|@@rev|||@ @end|ng |rom gm@||@com  Thu Oct 10 00:00:48 2024
+From: ||u|@@rev|||@ @end|ng |rom gm@||@com (=?UTF-8?Q?Llu=C3=ADs_Revilla?=)
+Date: Thu, 10 Oct 2024 00:00:48 +0200
+Subject: [R-pkg-devel] Question about examples/tests run-time
+In-Reply-To: <78E66F51-2437-43C6-B4CD-C6A43A8984E6@stat.ubc.ca>
+References: <78E66F51-2437-43C6-B4CD-C6A43A8984E6@stat.ubc.ca>
+Message-ID: <CAN+W6_vmbnEX4BgcYoHoQJ4h-T9WnCyyYbcw38nuX3w_fMVQrQ@mail.gmail.com>
+
+Dear Mallory,
+
+It would help a little bit if we know the package and we can check the
+examples and code.
+Perhaps it can help this little explanation of when to use donttest,
+dontrun and other options:
+https://contributor.r-project.org/cran-cookbook/general_issues.html#structuring-of-examples
+If it is still too long I would leave the representative example for a
+vignette or demo (or an article if you use pkgdown) and show how to use the
+different parameters of your functions in the examples.
+
+Best,
+
+On Wed, 9 Oct 2024 at 23:04, Mallory Flynn <mallory.flynn at stat.ubc.ca>
+wrote:
+
+> Hello,
+>
+> I am hoping this is the correct way to pose a question about my
+> submission, which I can?t seem to fix 2 NOTES for.  They are related to run
+> time:
+> Flavor: r-devel-windows-x86_64
+> Check: examples, Result: NOTE
+> Examples with CPU (user + system) or elapsed time > 10s
+>            user system elapsed
+> countTree 17.66   0.13   17.78
+> estTree   17.52   0.02   17.54
+> wmmTree   15.70   0.02   15.72
+>
+> Flavor: r-devel-linux-x86_64-debian-gcc
+> Check: examples, Result: NOTE
+> Examples with CPU (user + system) or elapsed time > 5s
+>             user system elapsed
+> countTree 14.218  0.077  14.401
+> wmmTree   14.049  0.028  14.086
+> estTree   14.046  0.012  14.066
+>
+> The package enables easy implementation of a sampling method for
+> population size estimation on a highly correlated tree - since it?s
+> sequentially sampled, it?s expected to run long compared to other
+> functionality, even on smaller examples.
+> I have added many layers to try to shorten examples and tests, including
+> ?donttest?, ?dontrun?, ?if (interactive())?, and reducing toy examples to
+> what I believe is the smallest they can be to still demonstrate utility.  I
+> also included the ?skip_on_cran()? function in tests which run longer.
+>
+> Does anyone else have any ideas on how I can eliminate these notes?
+>
+> Any help is very much appreciated!!
+> Thank you!
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+
+	[[alternative HTML version deleted]]
+
+
+From |kry|ov @end|ng |rom d|@root@org  Thu Oct 10 10:30:18 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Thu, 10 Oct 2024 11:30:18 +0300
+Subject: [R-pkg-devel] Help with 2 NOTES
+In-Reply-To: <em79af66bf-7e90-400c-88a2-733409da284a@d22f2075.com>
+References: <em79af66bf-7e90-400c-88a2-733409da284a@d22f2075.com>
+Message-ID: <20241010113018.079bb0c9@Tarkus>
+
+Dear Jaime Salvador,
+
+Welcome to R-package-devel!
+
+? Wed, 9 Oct 2024 20:42:24 +0000
+Jaime Salvador <jaime.salvador at ideasybits.com> ?????:
+
+> New submission
+
+This one is expected for new packages.
+
+> Possibly misspelled words in DESCRIPTION:
+>   DICX (12:67)
+>   RXDB (12:59)
+>   Redatam (2:34, 12:40)
+
+Wrap the abbreviations and software names into 'single quotes':
+https://contributor.r-project.org/cran-cookbook/description_issues.html#formatting-software-names.
+Some of the acronyms may need to be explained in the submission
+comments in the CRAN web form.
+
+I see you've tried to put the acronyms into the WORDLIST, but I think
+the interface for spell-checking the package is different (see
+?'aspell-utils') and involves saving vectors of words into .rds files
+in .aspell and describing them in .aspell/defaults.R.
+
+(If anything reads WORDLIST, why doesn't grep -r WORDLIST src on the R
+source code show anything?)
+
+> * checking for detritus in the temp directory ... NOTE
+> 
+> Found the following files/directories:
+>   ?redatam?
+
+Some code from your package that ran during R CMD check (it's usually
+examples or tests) created the file named "redatam" in the temporary
+directory and didn't remove it afterwards. I'm not seeing any R code do
+this, so it must be something in the libredengine DLL. Can you make it
+remove its temporary files during _redatam_redatam_destroy()?
+
+There are more serious problems not flagged by R CMD check.
+
+Your code downloads a binary DLL during the configuration stage. What
+is the license under which it is shipped? Will it work on macOS? CRAN
+policy recommends including sources or downloading (and compiling on
+the fly) a fixed version rather than the latest one, although I know
+of exceptions for some open-source libraries.
+
+Almost all your examples are wrapped in \dontrun{}. Generally, this is
+only allowed for code that absolutely has no chance of running as
+written, for example, due to a missing API key:
+https://contributor.r-project.org/cran-cookbook/general_issues.html#structuring-of-examples
+
+Your NAMESPACE contains a lot of extraneous stuff. You intend for the
+user to call functions redatam.open(), redatam.query(), and so on, but
+roxygen2 misinterpreted those as S3 methods and registered them for the
+S3 generic redatam, which doesn't do anything and isn't properly
+documented. It's best to get rid of the S3 generic and only export the
+functions by name (e.g. export(redatam.open, redatam.query)) instead of
+resorting to exportPattern("^[[:alpha:]]+"). Maybe it's best to just
+avoid dots in the function names altogether, lest something else
+misinterprets them as S3 methods.
+
+Your "Description:" field says "you need R (>=4.0)", which is better
+expressed as a separate field, "Depends: R (>= 4.0)".
+
+-- 
+Best regards,
+Ivan
+
+
+From j@|me@@@|v@dor @end|ng |rom |de@@yb|t@@com  Thu Oct 10 15:10:39 2024
+From: j@|me@@@|v@dor @end|ng |rom |de@@yb|t@@com (Jaime Salvador)
+Date: Thu, 10 Oct 2024 13:10:39 +0000
+Subject: [R-pkg-devel] Help with 2 NOTES
+In-Reply-To: <20241010113018.079bb0c9@Tarkus>
+References: <em79af66bf-7e90-400c-88a2-733409da284a@d22f2075.com>
+ <20241010113018.079bb0c9@Tarkus>
+Message-ID: <em629f01a5-d4de-4ffd-9986-b3808e6cec1f@7660d48a.com>
+
+Hi Ivan,
+
+Thanks for you reply, I appreciate your help.
+
+Actually, with your help, I fixex the issues :
+
+
+  *   I enclose between single quotes Redata, RXDB and DICX
+  *   I fixed the version of binaries downloaded, for example redatamx-core-linux-20241010.zip
+  *   The binary DLL/so library generate a LOG file in temp/redatam directory, so I remove the directory in .onUnload
+  *   The \dontrun in examples. To run the examples, we need a database, the package doesn't include a sample database, so the code can't be run. I remove \dontrun in functions that can run without a database (for example redatam_version)
+  *   All the exported functions, now have the name redatam_XXX (where XXX is open, close, etc.)
+
+Regarding to the DLL downloading during the configurarion, REDATAM is not an open source software (the source code is controlled by CELADE-CEPAL), but the binary is freely  distributed, you can get a copy from https://redatam.org/es/aplicaciones (Redatam X version)
+
+Thanks
+
+
+-------------------------------------
+Jaime Salvador
+| Ideas&Bits
+| mobile: +593 0987285748
+| email: jaime.salvador at ideasybits.com<mailto:jaime.salvador at ideasybits.com>
+| site: www.ideasybits.com<https://urldefense.com/v3/__http:/www.ideasybits.com__;!!C3eXzRIY6Mw!YcjWo_ljX1Mppy0kki8QDmz6mHQIrU1XSABeGK31GmB50zdsNenbNNyRCZvpmI0lgbWo$>
+
+
+
+------ Mensaje original ------
+De "Ivan Krylov" <ikrylov at disroot.org<mailto:ikrylov at disroot.org>>
+Para "Jaime Salvador" <jaime.salvador at ideasybits.com<mailto:jaime.salvador at ideasybits.com>>
+Cc "r-package-devel at r-project.org" <r-package-devel at r-project.org<mailto:r-package-devel at r-project.org>>
+Fecha 10/10/2024 3:30:18
+Asunto Re: [R-pkg-devel] Help with 2 NOTES
+
+Dear Jaime Salvador,
+
+Welcome to R-package-devel!
+
+? Wed, 9 Oct 2024 20:42:24 +0000
+Jaime Salvador <jaime.salvador at ideasybits.com<mailto:jaime.salvador at ideasybits.com>> ?????:
+
+New submission
+
+This one is expected for new packages.
+
+Possibly misspelled words in DESCRIPTION:
+DICX (12:67)
+RXDB (12:59)
+Redatam (2:34, 12:40)
+
+Wrap the abbreviations and software names into 'single quotes':
+https://contributor.r-project.org/cran-cookbook/description_issues.html#formatting-software-names.
+Some of the acronyms may need to be explained in the submission
+comments in the CRAN web form.
+
+I see you've tried to put the acronyms into the WORDLIST, but I think
+the interface for spell-checking the package is different (see
+?'aspell-utils') and involves saving vectors of words into .rds files
+in .aspell and describing them in .aspell/defaults.R.
+
+(If anything reads WORDLIST, why doesn't grep -r WORDLIST src on the R
+source code show anything?)
+
+* checking for detritus in the temp directory ... NOTE
+
+Found the following files/directories:
+?redatam?
+
+Some code from your package that ran during R CMD check (it's usually
+examples or tests) created the file named "redatam" in the temporary
+directory and didn't remove it afterwards. I'm not seeing any R code do
+this, so it must be something in the libredengine DLL. Can you make it
+remove its temporary files during _redatam_redatam_destroy()?
+
+There are more serious problems not flagged by R CMD check.
+
+Your code downloads a binary DLL during the configuration stage. What
+is the license under which it is shipped? Will it work on macOS? CRAN
+policy recommends including sources or downloading (and compiling on
+the fly) a fixed version rather than the latest one, although I know
+of exceptions for some open-source libraries.
+
+Almost all your examples are wrapped in \dontrun{}. Generally, this is
+only allowed for code that absolutely has no chance of running as
+written, for example, due to a missing API key:
+https://contributor.r-project.org/cran-cookbook/general_issues.html#structuring-of-examples
+
+Your NAMESPACE contains a lot of extraneous stuff. You intend for the
+user to call functions redatam.open(), redatam.query(), and so on, but
+roxygen2 misinterpreted those as S3 methods and registered them for the
+S3 generic redatam, which doesn't do anything and isn't properly
+documented. It's best to get rid of the S3 generic and only export the
+functions by name (e.g. export(redatam.open, redatam.query)) instead of
+resorting to exportPattern("^[[:alpha:]]+"). Maybe it's best to just
+avoid dots in the function names altogether, lest something else
+misinterprets them as S3 methods.
+
+Your "Description:" field says "you need R (>=4.0)", which is better
+expressed as a separate field, "Depends: R (>= 4.0)".
+
+--
+Best regards,
+Ivan
+
+	[[alternative HTML version deleted]]
+
+
+From |kry|ov @end|ng |rom d|@root@org  Thu Oct 10 15:29:17 2024
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Thu, 10 Oct 2024 16:29:17 +0300
+Subject: [R-pkg-devel] Help with 2 NOTES
+In-Reply-To: <em629f01a5-d4de-4ffd-9986-b3808e6cec1f@7660d48a.com>
+References: <em79af66bf-7e90-400c-88a2-733409da284a@d22f2075.com>
+ <20241010113018.079bb0c9@Tarkus>
+ <em629f01a5-d4de-4ffd-9986-b3808e6cec1f@7660d48a.com>
+Message-ID: <20241010162917.214ee9af@arachnoid>
+
+? Thu, 10 Oct 2024 13:10:39 +0000
+Jaime Salvador <jaime.salvador at ideasybits.com> ?????:
+
+>   *   The \dontrun in examples. To run the examples, we need a
+> database, the package doesn't include a sample database, so the code
+> can't be run. I remove \dontrun in functions that can run without a
+> database (for example redatam_version)
+
+That makes perfect sense. Can you provide a small example database as
+part of the package? It's best to exercise as much of the code of
+package as reasonably possible in tests and examples. If not, leaving
+\dontrun{} in is indeed the right choice.
+
+> Regarding to the DLL downloading during the configurarion, REDATAM is
+> not an open source software (the source code is controlled by
+> CELADE-CEPAL), but the binary is freely  distributed, you can get a
+> copy from https://redatam.org/es/aplicaciones (Redatam X version)
+
+Thank you for clarifying that. It may help to follow the example of the
+'Rblpapi' package <https://CRAN.R-project.org/package=Rblpapi> in
+specifying the license covering the package as a whole. In particular,
+you need to ensure that CRAN has the right to redistribute Redatam DLLs
+as part of the binary packages they compile. I'm not seeing a license
+covering the downloads at https://redatam.org/es/aplicaciones or
+https://redatam.org/en/software.
+
+Good luck! For best results next time you have a question, please
+provide a link to the latest version of the package source code.
+
+-- 
+Best regards,
+Ivan
+
+
