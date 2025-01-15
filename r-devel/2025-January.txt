@@ -1,0 +1,1338 @@
+From norbert@kuder @end|ng |rom gm@||@com  Thu Jan  2 15:04:57 2025
+From: norbert@kuder @end|ng |rom gm@||@com (Norbert Kuder)
+Date: Thu, 2 Jan 2025 15:04:57 +0100
+Subject: [Rd] Possible issue in stats/arima.R package
+Message-ID: <CAMUMQUSh5t2sazypdiAeOSJ2MQssNfb89jQJvvBwRbA1PwAqeA@mail.gmail.com>
+
+Hello all,
+
+I am running R version 4.4.2 (2024-10-31 ucrt) on Windows 10 x64, and
+noticed something that might be a minor bug (or at least inconsistent code)
+in the stats/arima.R package.
+I have found:
+1. A missing stop() call at line 69:
+    if (length(order) == 3) seasonal <- list(order = seasonal) else
+("\'seasonal\' is of the wrong length")
+it should be rather:
+    if (length(order) == 3) seasonal <- list(order = seasonal) else
+stop("\'seasonal\' is of the wrong length")
+
+2. An unused 'mod' variable assignment at line 190:
+
+mod <- makeARIMA(trarma[[1]], trarma[[2]], Delta, kappa, SSinit)
+
+I am trying to confirm whether this is intended behavior or possibly an
+overlooked detail. Could someone please clarify if the current logic is
+correct?
+
+Thank you.
+
+Best regards,
+Norbert Kuder
+
+	[[alternative HTML version deleted]]
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Thu Jan  2 17:20:31 2025
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Thu, 2 Jan 2025 11:20:31 -0500
+Subject: [Rd] Possible issue in stats/arima.R package
+In-Reply-To: <CAMUMQUSh5t2sazypdiAeOSJ2MQssNfb89jQJvvBwRbA1PwAqeA@mail.gmail.com>
+References: <CAMUMQUSh5t2sazypdiAeOSJ2MQssNfb89jQJvvBwRbA1PwAqeA@mail.gmail.com>
+Message-ID: <822e67f1-5900-4355-b231-a09c8691d4ae@gmail.com>
+
+On 2025-01-02 9:04 a.m., Norbert Kuder wrote:
+> Hello all,
+> 
+> I am running R version 4.4.2 (2024-10-31 ucrt) on Windows 10 x64, and
+> noticed something that might be a minor bug (or at least inconsistent code)
+> in the stats/arima.R package.
+> I have found:
+> 1. A missing stop() call at line 69:
+>      if (length(order) == 3) seasonal <- list(order = seasonal) else
+> ("\'seasonal\' is of the wrong length")
+> it should be rather:
+>      if (length(order) == 3) seasonal <- list(order = seasonal) else
+> stop("\'seasonal\' is of the wrong length")
+
+I think you're right about this one.
+
+> 
+> 2. An unused 'mod' variable assignment at line 190:
+> 
+> mod <- makeARIMA(trarma[[1]], trarma[[2]], Delta, kappa, SSinit)
+> 
+> I am trying to confirm whether this is intended behavior or possibly an
+> overlooked detail. Could someone please clarify if the current logic is
+> correct?
+> 
+
+In the R-devel source I see mod being used in the next statement:
+
+         mod <- makeARIMA(trarma[[1L]], trarma[[2L]], Delta, kappa, SSinit)
+         val <- if(ncxreg > 0L)
+             arimaSS(x - xreg %*% coef[narma + (1L:ncxreg)], mod)
+         else arimaSS(x, mod)
+
+It appears in both alternatives of the if statement.
+
+This one is strange though:  the code in the github mirror 
+(https://github.com/wch/r-source/blob/4a1ed749271c52e60a85e794e6f34b0831efb1ae/src/library/stats/R/arima.R#L256-L258) 
+is different:
+
+         mod <- makeARIMA(trarma[[1L]], trarma[[2L]], Delta, kappa, SSinit)
+         if(ncxreg > 0) x <- x - xreg %*% coef[narma + (1L:ncxreg)]
+         arimaSS(x, mod)
+
+yet the log shows no recent changes.  I'm not sure what's going on.
+
+Duncan Murdoch
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Thu Jan  2 17:28:45 2025
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Thu, 2 Jan 2025 11:28:45 -0500
+Subject: [Rd] Possible issue in stats/arima.R package
+In-Reply-To: <822e67f1-5900-4355-b231-a09c8691d4ae@gmail.com>
+References: <CAMUMQUSh5t2sazypdiAeOSJ2MQssNfb89jQJvvBwRbA1PwAqeA@mail.gmail.com>
+ <822e67f1-5900-4355-b231-a09c8691d4ae@gmail.com>
+Message-ID: <e93186db-914d-41cf-b1df-46cbc90af3b6@gmail.com>
+
+On 2025-01-02 11:20 a.m., Duncan Murdoch wrote:
+> On 2025-01-02 9:04 a.m., Norbert Kuder wrote:
+>> Hello all,
+>>
+>> I am running R version 4.4.2 (2024-10-31 ucrt) on Windows 10 x64, and
+>> noticed something that might be a minor bug (or at least inconsistent code)
+>> in the stats/arima.R package.
+>> I have found:
+>> 1. A missing stop() call at line 69:
+>>       if (length(order) == 3) seasonal <- list(order = seasonal) else
+>> ("\'seasonal\' is of the wrong length")
+>> it should be rather:
+>>       if (length(order) == 3) seasonal <- list(order = seasonal) else
+>> stop("\'seasonal\' is of the wrong length")
+> 
+> I think you're right about this one.
+> 
+>>
+>> 2. An unused 'mod' variable assignment at line 190:
+>>
+>> mod <- makeARIMA(trarma[[1]], trarma[[2]], Delta, kappa, SSinit)
+>>
+>> I am trying to confirm whether this is intended behavior or possibly an
+>> overlooked detail. Could someone please clarify if the current logic is
+>> correct?
+>>
+> 
+> In the R-devel source I see mod being used in the next statement:
+> 
+>           mod <- makeARIMA(trarma[[1L]], trarma[[2L]], Delta, kappa, SSinit)
+>           val <- if(ncxreg > 0L)
+>               arimaSS(x - xreg %*% coef[narma + (1L:ncxreg)], mod)
+>           else arimaSS(x, mod)
+> 
+> It appears in both alternatives of the if statement.
+> 
+> This one is strange though:  the code in the github mirror
+> (https://github.com/wch/r-source/blob/4a1ed749271c52e60a85e794e6f34b0831efb1ae/src/library/stats/R/arima.R#L256-L258)
+> is different:
+> 
+>           mod <- makeARIMA(trarma[[1L]], trarma[[2L]], Delta, kappa, SSinit)
+>           if(ncxreg > 0) x <- x - xreg %*% coef[narma + (1L:ncxreg)]
+>           arimaSS(x, mod)
+> 
+> yet the log shows no recent changes.  I'm not sure what's going on.
+
+Mystery solved:  code like this appears several times in that file.  In 
+the occurrence here:
+
+https://github.com/wch/r-source/blob/4a1ed749271c52e60a85e794e6f34b0831efb1ae/src/library/stats/R/arima.R#L293
+
+it does appear that the mod value isn't being used.
+
+Duncan Murdoch
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Thu Jan  2 20:42:58 2025
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Thu, 2 Jan 2025 20:42:58 +0100
+Subject: [Rd] Possible issue in stats/arima.R package
+In-Reply-To: <e93186db-914d-41cf-b1df-46cbc90af3b6@gmail.com>
+References: <CAMUMQUSh5t2sazypdiAeOSJ2MQssNfb89jQJvvBwRbA1PwAqeA@mail.gmail.com>
+ <822e67f1-5900-4355-b231-a09c8691d4ae@gmail.com>
+ <e93186db-914d-41cf-b1df-46cbc90af3b6@gmail.com>
+Message-ID: <26486.60482.328642.701605@stat.math.ethz.ch>
+
+>>>>> Duncan Murdoch 
+>>>>>     on Thu, 2 Jan 2025 11:28:45 -0500 writes:
+
+    > On 2025-01-02 11:20 a.m., Duncan Murdoch wrote:
+    >> On 2025-01-02 9:04 a.m., Norbert Kuder wrote:
+    >>> Hello all,
+    >>> 
+    >>> I am running R version 4.4.2 (2024-10-31 ucrt) on Windows 10 x64, and
+    >>> noticed something that might be a minor bug (or at least inconsistent code)
+    >>> in the stats/arima.R package.
+    >>> I have found:
+    >>> 1. A missing stop() call at line 69:
+    >>> if (length(order) == 3) seasonal <- list(order = seasonal) else
+    >>> ("\'seasonal\' is of the wrong length")
+    >>> it should be rather:
+    >>> if (length(order) == 3) seasonal <- list(order = seasonal) else
+    >>> stop("\'seasonal\' is of the wrong length")
+    >> 
+    >> I think you're right about this one.
+    >> 
+    >>> 
+    >>> 2. An unused 'mod' variable assignment at line 190:
+    >>> 
+    >>> mod <- makeARIMA(trarma[[1]], trarma[[2]], Delta, kappa, SSinit)
+    >>> 
+    >>> I am trying to confirm whether this is intended behavior or possibly an
+    >>> overlooked detail. Could someone please clarify if the current logic is
+    >>> correct?
+    >>> 
+    >> 
+    >> In the R-devel source I see mod being used in the next statement:
+    >> 
+    >> mod <- makeARIMA(trarma[[1L]], trarma[[2L]], Delta, kappa, SSinit)
+    >> val <- if(ncxreg > 0L)
+    >> arimaSS(x - xreg %*% coef[narma + (1L:ncxreg)], mod)
+    >> else arimaSS(x, mod)
+    >> 
+    >> It appears in both alternatives of the if statement.
+    >> 
+    >> This one is strange though:  the code in the github mirror
+    >> (https://github.com/wch/r-source/blob/4a1ed749271c52e60a85e794e6f34b0831efb1ae/src/library/stats/R/arima.R#L256-L258)
+    >> is different:
+    >> 
+    >> mod <- makeARIMA(trarma[[1L]], trarma[[2L]], Delta, kappa, SSinit)
+    >> if(ncxreg > 0) x <- x - xreg %*% coef[narma + (1L:ncxreg)]
+    >> arimaSS(x, mod)
+    >> 
+    >> yet the log shows no recent changes.  I'm not sure what's going on.
+
+    > Mystery solved:  code like this appears several times in that file.  In 
+    > the occurrence here:
+
+    > https://github.com/wch/r-source/blob/4a1ed749271c52e60a85e794e6f34b0831efb1ae/src/library/stats/R/arima.R#L293
+
+    > it does appear that the mod value isn't being used.
+
+    > Duncan Murdoch
+
+Thank you, Norbert and Duncan.
+A little bit (unfinished)  aRcheology showed that both parts
+have been in the arima code since Dec 11 2003 (when the code, i.e., the
+whole package 'ts') was moved / merged into package 'stats'.
+
+I'll fix and quickly test the change, and then commit it.
+
+Congratulations indeed to Norbert Kuder for finding such (small)
+blemishes of such an age!
+
+... and  Happy New yeaR!   to all readers.
+Martin
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Thu Jan  2 21:53:43 2025
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Thu, 2 Jan 2025 21:53:43 +0100
+Subject: [Rd] Possible issue in stats/arima.R package
+In-Reply-To: <26486.60482.328642.701605@stat.math.ethz.ch>
+References: <CAMUMQUSh5t2sazypdiAeOSJ2MQssNfb89jQJvvBwRbA1PwAqeA@mail.gmail.com>
+ <822e67f1-5900-4355-b231-a09c8691d4ae@gmail.com>
+ <e93186db-914d-41cf-b1df-46cbc90af3b6@gmail.com>
+ <26486.60482.328642.701605@stat.math.ethz.ch>
+Message-ID: <26486.64727.599697.148053@stat.math.ethz.ch>
+
+>>>>> Martin Maechler on Thu, 2 Jan 2025 20:42:58 +0100 writes:
+ >>>>> Duncan Murdoch on Thu, 2 Jan 2025 11:28:45 -0500 writes:
+    >> On 2025-01-02 11:20 a.m., Duncan Murdoch wrote:
+    >>> On 2025-01-02 9:04 a.m., Norbert Kuder wrote:
+    >>>> Hello all,
+    >>>> 
+    >>>> I am running R version 4.4.2 (2024-10-31 ucrt) on Windows 10 x64, and
+    >>>> noticed something that might be a minor bug (or at least inconsistent code)
+    >>>> in the stats/arima.R package.
+    >>>> I have found:
+    >>>> 1. A missing stop() call at line 69:
+    >>>>  if (length(order) == 3) seasonal <- list(order = seasonal) else
+    >>>>    ("\'seasonal\' is of the wrong length")
+    >>>> it should be rather:
+    >>>> if (length(order) == 3) seasonal <- list(order = seasonal) else
+    >>>> stop("\'seasonal\' is of the wrong length")
+    >>> 
+    >>> I think you're right about this one.
+
+well, actually, the mishap is larger:
+
+Reading the help page for arima,  'seasonal' is documented as
+
+ seasonal: A specification of the seasonal part of the ARIMA model, plus
+           the period (which defaults to ?frequency(x)?).  This may be a
+           list with components ?order? and ?period?, or just a numeric
+           vector of length 3 which specifies the seasonal ?order?.  In
+           the latter case the default period is used.
+
+Note the
+    or just a numeric vector of length 3 ... the seasonal 'order'
+part.
+If you look at the larger context of the
+
+   else ("'seasonal...
+
+part, it becomes clear that -- in order to fulfill the above
+documented behavior, it's not length(order),
+but length(seasonal) which should be 3   which leads to the
+following change :
+
+@@ -124,10 +124,11 @@
+             if(!is.numeric(seasonal$order) || length(seasonal$order) != 3L
+                || any(seasonal$order < 0L))
+                 stop("'seasonal$order' must be a non-negative numeric vector of length 3")
+-        } else if(is.numeric(order)) {
+-            if(length(order) == 3L) seasonal <- list(order=seasonal)
+-            else ("'seasonal' is of the wrong length")
+-        } else stop("'seasonal' must be a list with component 'order'")
++        } else if(is.numeric(seasonal)) { # meant to be  seasonal$order
++            if(length(seasonal) != 3L || any(seasonal < 0))
++                stop("if not a list, 'seasonal' must be a non-negative numeric vector of length 3")
++            seasonal <- list(order=seasonal)
++        } else stop("'seasonal' must be a list with component 'order' or length-3 vector")
+ 
+
+... I still plan to commit this, but it may well be that this
+change will wake up arima() use that was buggy and never detected
+till now.
+
+Martin
+
+
+From norbert@kuder @end|ng |rom gm@||@com  Fri Jan  3 17:13:36 2025
+From: norbert@kuder @end|ng |rom gm@||@com (Norbert Kuder)
+Date: Fri, 3 Jan 2025 17:13:36 +0100
+Subject: [Rd] Possible issue in stats/arima.R package
+In-Reply-To: <26486.64727.599697.148053@stat.math.ethz.ch>
+References: <CAMUMQUSh5t2sazypdiAeOSJ2MQssNfb89jQJvvBwRbA1PwAqeA@mail.gmail.com>
+ <822e67f1-5900-4355-b231-a09c8691d4ae@gmail.com>
+ <e93186db-914d-41cf-b1df-46cbc90af3b6@gmail.com>
+ <26486.60482.328642.701605@stat.math.ethz.ch>
+ <26486.64727.599697.148053@stat.math.ethz.ch>
+Message-ID: <CAMUMQUTp+PoZfUiOAZ=U1tG3PpZokknNrvjtFEg7a7YQ48XFuw@mail.gmail.com>
+
+Martin,
+
+thank you solving this issue. Anyway there is the same bug in arima0.R:
+
+https://github.com/wch/r-source/blob/4a1ed749271c52e60a85e794e6f34b0831efb1ae/src/library/stats/R/arma0.R#L79
+
+Best regards,
+Norbert Kuder
+
+czw., 2 sty 2025, 21:53 u?ytkownik Martin Maechler <
+maechler at stat.math.ethz.ch> napisa?:
+
+> >>>>> Martin Maechler on Thu, 2 Jan 2025 20:42:58 +0100 writes:
+>  >>>>> Duncan Murdoch on Thu, 2 Jan 2025 11:28:45 -0500 writes:
+>     >> On 2025-01-02 11:20 a.m., Duncan Murdoch wrote:
+>     >>> On 2025-01-02 9:04 a.m., Norbert Kuder wrote:
+>     >>>> Hello all,
+>     >>>>
+>     >>>> I am running R version 4.4.2 (2024-10-31 ucrt) on Windows 10 x64,
+> and
+>     >>>> noticed something that might be a minor bug (or at least
+> inconsistent code)
+>     >>>> in the stats/arima.R package.
+>     >>>> I have found:
+>     >>>> 1. A missing stop() call at line 69:
+>     >>>>  if (length(order) == 3) seasonal <- list(order = seasonal) else
+>     >>>>    ("\'seasonal\' is of the wrong length")
+>     >>>> it should be rather:
+>     >>>> if (length(order) == 3) seasonal <- list(order = seasonal) else
+>     >>>> stop("\'seasonal\' is of the wrong length")
+>     >>>
+>     >>> I think you're right about this one.
+>
+> well, actually, the mishap is larger:
+>
+> Reading the help page for arima,  'seasonal' is documented as
+>
+>  seasonal: A specification of the seasonal part of the ARIMA model, plus
+>            the period (which defaults to ?frequency(x)?).  This may be a
+>            list with components ?order? and ?period?, or just a numeric
+>            vector of length 3 which specifies the seasonal ?order?.  In
+>            the latter case the default period is used.
+>
+> Note the
+>     or just a numeric vector of length 3 ... the seasonal 'order'
+> part.
+> If you look at the larger context of the
+>
+>    else ("'seasonal...
+>
+> part, it becomes clear that -- in order to fulfill the above
+> documented behavior, it's not length(order),
+> but length(seasonal) which should be 3   which leads to the
+> following change :
+>
+> @@ -124,10 +124,11 @@
+>              if(!is.numeric(seasonal$order) || length(seasonal$order) != 3L
+>                 || any(seasonal$order < 0L))
+>                  stop("'seasonal$order' must be a non-negative numeric
+> vector of length 3")
+> -        } else if(is.numeric(order)) {
+> -            if(length(order) == 3L) seasonal <- list(order=seasonal)
+> -            else ("'seasonal' is of the wrong length")
+> -        } else stop("'seasonal' must be a list with component 'order'")
+> +        } else if(is.numeric(seasonal)) { # meant to be  seasonal$order
+> +            if(length(seasonal) != 3L || any(seasonal < 0))
+> +                stop("if not a list, 'seasonal' must be a non-negative
+> numeric vector of length 3")
+> +            seasonal <- list(order=seasonal)
+> +        } else stop("'seasonal' must be a list with component 'order' or
+> length-3 vector")
+>
+>
+> ... I still plan to commit this, but it may well be that this
+> change will wake up arima() use that was buggy and never detected
+> till now.
+>
+> Martin
+>
+>
+>
+
+	[[alternative HTML version deleted]]
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Fri Jan  3 17:22:34 2025
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Fri, 3 Jan 2025 17:22:34 +0100
+Subject: [Rd] Possible issue in stats/arima.R package
+In-Reply-To: <26486.60482.328642.701605@stat.math.ethz.ch>
+References: <CAMUMQUSh5t2sazypdiAeOSJ2MQssNfb89jQJvvBwRbA1PwAqeA@mail.gmail.com>
+ <822e67f1-5900-4355-b231-a09c8691d4ae@gmail.com>
+ <e93186db-914d-41cf-b1df-46cbc90af3b6@gmail.com>
+ <26486.60482.328642.701605@stat.math.ethz.ch>
+Message-ID: <26488.3786.644216.114494@stat.math.ethz.ch>
+
+>>>>> Martin Maechler on Thu, 2 Jan 2025 20:42:58 +0100 writes:
+  >>>>> Duncan Murdoch on Thu, 2 Jan 2025 11:28:45 -0500 writes:
+
+    >> On 2025-01-02 11:20 a.m., Duncan Murdoch wrote:
+    >>> On 2025-01-02 9:04 a.m., Norbert Kuder wrote:
+    >>>> Hello all,
+    >>>> 
+    >>>> I am running R version 4.4.2 (2024-10-31 ucrt) on Windows 10 x64, and
+    >>>> noticed something that might be a minor bug (or at least inconsistent code)
+    >>>> in the stats/arima.R package.
+
+    ....................
+
+    >>>> 2. An unused 'mod' variable assignment at line 190:
+    >>>> 
+    >>>> mod <- makeARIMA(trarma[[1]], trarma[[2]], Delta, kappa, SSinit)
+    >>>> 
+    >>>> I am trying to confirm whether this is intended behavior or possibly an
+    >>>> overlooked detail. Could someone please clarify if the current logic is
+    >>>> correct?
+
+    >> Mystery solved:  code like this appears several times in that file.  In 
+    >> the occurrence here:
+
+    >> https://github.com/wch/r-source/blob/4a1ed749271c52e60a85e794e6f34b0831efb1ae/src/library/stats/R/arima.R#L293
+
+    >> it does appear that the mod value isn't being used.
+
+    >> Duncan Murdoch
+
+    > Thank you, Norbert and Duncan.
+    > A little bit (unfinished)  aRcheology showed that both parts
+    > have been in the arima code since Dec 11 2003 (when the code, i.e., the
+    > whole package 'ts') was moved / merged into package 'stats'.
+
+    > I'll fix and quickly test the change, and then commit it.
+
+and testing quickly revealed what is obvious in hindsight:
+When minimizing the negative log likelihood, in
+
+    optim(<p>, armafn, ...)
+
+the armafn() is called of course and it *does* need the model,
+i.e., `mod`.
+
+==> the 2nd "inconsistency  was *not* a mistake at all: The
+
+    mod <- makeARIMA(....)
+
+line has clearly been necessary all along.
+
+Martin
+
+
+From norbert@kuder @end|ng |rom gm@||@com  Fri Jan  3 18:02:16 2025
+From: norbert@kuder @end|ng |rom gm@||@com (Norbert Kuder)
+Date: Fri, 3 Jan 2025 18:02:16 +0100
+Subject: [Rd] stats/ar.R issue - else branch never used
+Message-ID: <CAMUMQUSHKprCOdv9RsmhtwHb9YmUm9L=cbiFqE5mFy2u-cYZZQ@mail.gmail.com>
+
+Hello,
+
+There is another issue in stats/ar.R:
+
+https://github.com/wch/r-source/blob/4a1ed749271c52e60a85e794e6f34b0831efb1ae/src/library/stats/R/ar.R#L142
+https://github.com/wch/r-source/blob/4a1ed749271c52e60a85e794e6f34b0831efb1ae/src/library/stats/R/ar.R#L429
+https://github.com/wch/r-source/blob/4a1ed749271c52e60a85e794e6f34b0831efb1ae/src/library/stats/R/ar.R#L570
+
+When aic is passed as a boolean (T/F), the code does the following:
+
+maic <- min(aic)      # 0 if F, 1 if T
+xaic <- setNames(if(is.finite(maic)) xaic - min(xaic) else
+                                                    ifelse(xaic == maic, 0,
+Inf), 0L:order.max)
+
+Because maic is always 0 or 1, is.finite(maic) is always T, so the else
+branch (ifelse(xaic == maic, 0, Inf)) never executes.
+
+Please check if my finding is valid.
+
+Best regards,
+Norbert Kuder
+
+	[[alternative HTML version deleted]]
+
+
+From norbert@kuder @end|ng |rom gm@||@com  Fri Jan  3 19:06:14 2025
+From: norbert@kuder @end|ng |rom gm@||@com (Norbert Kuder)
+Date: Fri, 3 Jan 2025 19:06:14 +0100
+Subject: [Rd] stats/HoltWinters.R inverted logic in seasonal in R and C
+Message-ID: <CAMUMQUTbwVX6SrojJiH654mfVrzD4ur4bipi22FfOW4qFRtOKQ@mail.gmail.com>
+
+Hello,
+
+I have noticed a potentially confusing implementation in the HoltWinters
+function regarding the seasonal parameter mapping between R and C code:
+https://github.com/wch/r-source/blob/4a1ed749271c52e60a85e794e6f34b0831efb1ae/src/library/stats/R/HoltWinters.R#L98
+The C code interprets a seasonal value of 1 as additive and 0 as
+multiplicative.
+The R seasonal can be "additive" or "multiplicative", so the R code must
+invert the logic when calling C.
+
+The proposed solution is to define a seasonalChoice variable:
+
+hw <- function(x, alpha, beta, gamma, seasonal, start.time, f, ...) {
+    lenx <- length(x)
+    seasonalChoice <- if (seasonal == "multiplicative") 0L else 1L
+
+    .C(C_HoltWinters,
+        as.double(x),
+        lenx,
+        as.double(max(min(alpha, 1), 0)),
+        as.double(max(min(beta, 1), 0)),
+        as.double(max(min(gamma, 1), 0)),
+        as.integer(start.time),
+        as.integer(seasonalChoice),
+        as.integer(f),
+        as.integer(!is.logical(beta) || beta),
+        as.integer(!is.logical(gamma) || gamma),
+        ...
+    )
+}
+
+Please check the proposed solution.
+
+Regards,
+Norbert Kuder
+
+	[[alternative HTML version deleted]]
+
+
+From thebudget72 @end|ng |rom gm@||@com  Sat Jan  4 07:25:42 2025
+From: thebudget72 @end|ng |rom gm@||@com (Philip Rogers)
+Date: Sat, 4 Jan 2025 07:25:42 +0100
+Subject: [Rd] Fix documentation about <- and = differences
+Message-ID: <eaec60d1-ef4c-4a8f-a036-53c348ad9ba7@gmail.com>
+
+Hello R devs,
+
+this StackOverflow answer says that the R documentation is wrong: 
+https://stackoverflow.com/a/51564252/1719931
+
+Can we fi it?
+
+Best,
+
+&#8203;
+	[[alternative HTML version deleted]]
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Sat Jan  4 17:29:24 2025
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Sat, 4 Jan 2025 11:29:24 -0500
+Subject: [Rd] Fix documentation about <- and = differences
+In-Reply-To: <eaec60d1-ef4c-4a8f-a036-53c348ad9ba7@gmail.com>
+References: <eaec60d1-ef4c-4a8f-a036-53c348ad9ba7@gmail.com>
+Message-ID: <bae8a9b6-1253-4108-8133-e275193ec45c@gmail.com>
+
+On 2025-01-04 1:25 a.m., Philip Rogers wrote:
+> Hello R devs,
+> 
+> this StackOverflow answer says that the R documentation is wrong:
+> https://stackoverflow.com/a/51564252/1719931
+> 
+> Can we fi it?
+
+Why do you think the SO answer is right and the docs are wrong?  Maybe 
+the parser is just missing a user error.
+
+My own feeling is that any use of "=" as an assignment operator is too much.
+
+Duncan Murdoch
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Sat Jan  4 17:55:01 2025
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Sat, 4 Jan 2025 11:55:01 -0500
+Subject: [Rd] Fix documentation about <- and = differences
+In-Reply-To: <eaec60d1-ef4c-4a8f-a036-53c348ad9ba7@gmail.com>
+References: <eaec60d1-ef4c-4a8f-a036-53c348ad9ba7@gmail.com>
+Message-ID: <69d4067a-b140-4f41-b7eb-a01b6d44f32a@gmail.com>
+
+On 2025-01-04 1:25 a.m., Philip Rogers wrote:
+> Hello R devs,
+> 
+> this StackOverflow answer says that the R documentation is wrong:
+> https://stackoverflow.com/a/51564252/1719931
+> 
+> Can we fi it?
+
+By the way, the SO answer is wrong about the history of this.  It says 
+that this message:  https://developer.r-project.org/equalAssign.html is 
+the "original explanation by John Chambers", but in fact John committed 
+the text that is still present in the docs several months earlier,
+to both the `?assign` help page (rev 15467, 2001-08-13) and to the 
+equalAssign.html document on developer.r-project.org (rev 608, same day).
+
+Duncan Murdoch
+
+
+From ro|@nd@|u@@ @end|ng |rom thuenen@de  Tue Jan  7 07:28:37 2025
+From: ro|@nd@|u@@ @end|ng |rom thuenen@de (=?UTF-8?Q?Roland_Fu=C3=9F?=)
+Date: Tue, 7 Jan 2025 07:28:37 +0100
+Subject: [Rd] Small typo in nlme documentation
+Message-ID: <96524c6e-ba08-4388-86cf-fcc711c5aa4e@thuenen.de>
+
+Hi,
+
+I've noticed a small typo in `help("varClasses", "nlme")`. Contrary to 
+what the "Note" says, variance classes need a method for `Initialize` 
+(capital i) and not `initialize`.
+
+Best regards,
+
+Roland
+
+-- 
+Dr. Roland Fu?
+
+Th?nen-Institut f?r Agrarklimaschutz/
+Th?nen Institute of Climate-Smart Agriculture
+
+Bundesallee 65
+D-38116 Braunschweig, Germany
+
+Tel./Webex: ++49 531 25701967
+Email: roland.fuss at thuenen.de
+
+Arbeitsgruppe "Emissionsberichterstattung"/
+Working group "Emission Inventories"
+Email: emissionsinventare at thuenen.de
+
+Das Johann Heinrich von Th?nen-Institut,
+Bundesforschungsinstitut f?r L?ndliche R?ume,
+Wald und Fischerei ? kurz: Th?nen-Institut ?
+besteht aus 15 Fachinstituten, die in den
+Bereichen ?konomie, ?kologie und Technologie
+forschen und die Politik beraten.
+
+The Johann Heinrich von Th?nen Institute,
+Federal Research Institute for Rural Areas,
+Forestry and Fisheries ? Th?nen Institute in brief ?
+consists of 15 specialized institutes that
+carry out research and provide policy advice
+in the fields of economy, ecology and technology.
+
+
+From @eb@meyer @end|ng |rom |@u@de  Tue Jan  7 13:43:36 2025
+From: @eb@meyer @end|ng |rom |@u@de (Sebastian Meyer)
+Date: Tue, 7 Jan 2025 13:43:36 +0100
+Subject: [Rd] Small typo in nlme documentation
+In-Reply-To: <96524c6e-ba08-4388-86cf-fcc711c5aa4e@thuenen.de>
+References: <96524c6e-ba08-4388-86cf-fcc711c5aa4e@thuenen.de>
+Message-ID: <10fd5cb7-4e62-4672-9da6-e07974993a69@fau.de>
+
+Thanks. Fixed in the trunk.
+
+	Sebastian Meyer
+
+
+Am 07.01.25 um 07:28 schrieb Roland Fu? via R-devel:
+> Hi,
+> 
+> I've noticed a small typo in `help("varClasses", "nlme")`. Contrary to
+> what the "Note" says, variance classes need a method for `Initialize`
+> (capital i) and not `initialize`.
+> 
+> Best regards,
+> 
+> Roland
+>
+
+
+From bbo|ker @end|ng |rom gm@||@com  Wed Jan  8 16:57:47 2025
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Wed, 8 Jan 2025 10:57:47 -0500
+Subject: [Rd] binomial()$linkinv no longer accepts integer values
+Message-ID: <7dfe81b2-c7ec-49fe-8955-9c41a5771d24@gmail.com>
+
+
+As of r87537, binomial()$linkinv no longer accepts integer arguments.
+
+binomial()$linkinv(1.0)  ## 0.7310586
+binomial()$linkinv(1L)
+
+Error in binomial()$linkinv(1L) :
+   REAL() can only be applied to a 'numeric', not a 'integer'
+
+   Since R is usually so permissive/sloppy with the distinction between 
+integers and numeric/doubles, I'd argue that this is a bug ...
+
+   (This came up because it happens to break lme4's tests.)
+
+    I haven't done the archaeology to figure out when this broke/exactly 
+what change in the R code base broke it: it happened within the last 
+month or so and it's certainly something upstream of the linkinv 
+function itself, as (according to 'git blame') nothing in that function 
+has changed in the last 4 years ... (if it were of interest I could 'git 
+bisect' to figure it out but maybe someone will save me the trouble ...)
+
+   Thoughts, insights?  Should I post this to r-bugzilla?  Or suck it up 
+and accept it as the new reality?
+
+   cheers
+    Ben Bolker
+
+====
+binomial()$linkinv is:
+
+function (eta)
+.Call(C_logit_linkinv, eta)
+<environment: namespace:stats>
+
+Here is the body of the function in C code:
+
+https://github.com/r-devel/r-svn/blob/195ab0870a8131d01492f8f1d3a2ad514bc7e040/src/library/stats/src/family.c#L72C1-L89C2
+
+SEXP logit_linkinv(SEXP eta)
+{
+     SEXP ans = PROTECT(shallow_duplicate(eta));
+     int i, n = LENGTH(eta);
+     double *rans = REAL(ans), *reta = REAL(eta);
+
+     if (!n || !isReal(eta))
+	error(_("Argument %s must be a nonempty numeric vector"), "eta");
+     for (i = 0; i < n; i++) {
+	double etai = reta[i], tmp;
+	tmp = (etai < MTHRESH) ? DBL_EPSILON :
+	    ((etai > THRESH) ? INVEPS : exp(etai));
+	rans[i] = x_d_opx(tmp);
+     }
+     UNPROTECT(1);
+     return ans;
+}
+
+
+From |kry|ov @end|ng |rom d|@root@org  Wed Jan  8 17:20:11 2025
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Wed, 8 Jan 2025 19:20:11 +0300
+Subject: [Rd] binomial()$linkinv no longer accepts integer values
+In-Reply-To: <7dfe81b2-c7ec-49fe-8955-9c41a5771d24@gmail.com>
+References: <7dfe81b2-c7ec-49fe-8955-9c41a5771d24@gmail.com>
+Message-ID: <20250108192011.01b9155b@Tarkus>
+
+On Wed, 8 Jan 2025 10:57:47 -0500
+Ben Bolker <bbolker at gmail.com> wrote:
+
+> I haven't done the archaeology to figure out when this broke/exactly 
+> what change in the R code base broke it: it happened within the last 
+> month or so
+
+binomial() itself exhibits this property even in R-4.2.2 from more than
+two years ago:
+
+R -q -s -e 'getRversion(); binomial()$linkinv(1L)'
+# [1] ?4.2.2?
+# Error in binomial()$linkinv(1L) : 
+#   REAL() can only be applied to a 'numeric', not a 'integer'
+
+It's the `etas` [1] that suddenly became integer due to a change in
+seq.int():
+
+R -q -s -e 'str(seq.int(-8, 8, by=1))'
+# num [1:17] -8 -7 -6 -5 -4 -3 -2 -1 0 1 ...
+R-devel -q -s -e 'str(seq.int(-8, 8, by=1))'
+# int [1:17] -8 -7 -6 -5 -4 -3 -2 -1 0 1 ...
+
+-- 
+Best regards,
+Ivan
+
+[1]
+https://github.com/lme4/lme4/blob/54c54a320c23b34fea2f7e613928d1ebe7a3fd37/tests/testthat/test-glmFamily.R#L10C5-L10C25
+
+
+From bbo|ker @end|ng |rom gm@||@com  Wed Jan  8 17:26:24 2025
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Wed, 8 Jan 2025 11:26:24 -0500
+Subject: [Rd] binomial()$linkinv no longer accepts integer values
+In-Reply-To: <20250108192011.01b9155b@Tarkus>
+References: <7dfe81b2-c7ec-49fe-8955-9c41a5771d24@gmail.com>
+ <20250108192011.01b9155b@Tarkus>
+Message-ID: <efb07b88-fbb0-468e-95d4-307f18e7127e@gmail.com>
+
+   Thanks, that makes sense.
+
+   I guess if it never worked for integers (or hasn't worked in a long 
+time, at least) then it doesn't need to be fixed/changed ...
+
+   cheers
+    Ben
+
+
+On 2025-01-08 11:20 a.m., Ivan Krylov wrote:
+> On Wed, 8 Jan 2025 10:57:47 -0500
+> Ben Bolker <bbolker at gmail.com> wrote:
+> 
+>> I haven't done the archaeology to figure out when this broke/exactly
+>> what change in the R code base broke it: it happened within the last
+>> month or so
+> 
+> binomial() itself exhibits this property even in R-4.2.2 from more than
+> two years ago:
+> 
+> R -q -s -e 'getRversion(); binomial()$linkinv(1L)'
+> # [1] ?4.2.2?
+> # Error in binomial()$linkinv(1L) :
+> #   REAL() can only be applied to a 'numeric', not a 'integer'
+> 
+> It's the `etas` [1] that suddenly became integer due to a change in
+> seq.int():
+> 
+> R -q -s -e 'str(seq.int(-8, 8, by=1))'
+> # num [1:17] -8 -7 -6 -5 -4 -3 -2 -1 0 1 ...
+> R-devel -q -s -e 'str(seq.int(-8, 8, by=1))'
+> # int [1:17] -8 -7 -6 -5 -4 -3 -2 -1 0 1 ...
+> 
+
+-- 
+Dr. Benjamin Bolker
+Professor, Mathematics & Statistics and Biology, McMaster University
+ > E-mail is sent at my convenience; I don't expect replies outside of 
+working hours.
+
+
+From tom@@@k@||ber@ @end|ng |rom gm@||@com  Wed Jan  8 17:56:08 2025
+From: tom@@@k@||ber@ @end|ng |rom gm@||@com (Tomas Kalibera)
+Date: Wed, 8 Jan 2025 17:56:08 +0100
+Subject: [Rd] binomial()$linkinv no longer accepts integer values
+In-Reply-To: <efb07b88-fbb0-468e-95d4-307f18e7127e@gmail.com>
+References: <7dfe81b2-c7ec-49fe-8955-9c41a5771d24@gmail.com>
+ <20250108192011.01b9155b@Tarkus>
+ <efb07b88-fbb0-468e-95d4-307f18e7127e@gmail.com>
+Message-ID: <10d2110b-1119-4f97-b782-cfc01dafd64f@gmail.com>
+
+
+On 1/8/25 17:26, Ben Bolker wrote:
+> Thanks, that makes sense.
+>
+> ? I guess if it never worked for integers (or hasn't worked in a long 
+> time, at least) then it doesn't need to be fixed/changed ...
+
+Still you found out that the type check and use of REAL() in the 
+function is in wrong order. Instead of
+
+"REAL() can only be applied to a 'numeric', not a 'integer' "
+
+one should get
+
+"Argument eta must be a nonempty numeric vector"
+
+Fixed in R-devel,
+
+Best,
+Tomas
+
+
+>
+> ? cheers
+> ?? Ben
+>
+>
+> On 2025-01-08 11:20 a.m., Ivan Krylov wrote:
+>> On Wed, 8 Jan 2025 10:57:47 -0500
+>> Ben Bolker <bbolker at gmail.com> wrote:
+>>
+>>> I haven't done the archaeology to figure out when this broke/exactly
+>>> what change in the R code base broke it: it happened within the last
+>>> month or so
+>>
+>> binomial() itself exhibits this property even in R-4.2.2 from more than
+>> two years ago:
+>>
+>> R -q -s -e 'getRversion(); binomial()$linkinv(1L)'
+>> # [1] ?4.2.2?
+>> # Error in binomial()$linkinv(1L) :
+>> #?? REAL() can only be applied to a 'numeric', not a 'integer'
+>>
+>> It's the `etas` [1] that suddenly became integer due to a change in
+>> seq.int():
+>>
+>> R -q -s -e 'str(seq.int(-8, 8, by=1))'
+>> # num [1:17] -8 -7 -6 -5 -4 -3 -2 -1 0 1 ...
+>> R-devel -q -s -e 'str(seq.int(-8, 8, by=1))'
+>> # int [1:17] -8 -7 -6 -5 -4 -3 -2 -1 0 1 ...
+>>
+>
+
+
+From @|mon@urb@nek @end|ng |rom R-project@org  Wed Jan  8 23:16:45 2025
+From: @|mon@urb@nek @end|ng |rom R-project@org (Simon Urbanek)
+Date: Thu, 9 Jan 2025 11:16:45 +1300
+Subject: [Rd] binomial()$linkinv no longer accepts integer values
+In-Reply-To: <10d2110b-1119-4f97-b782-cfc01dafd64f@gmail.com>
+References: <7dfe81b2-c7ec-49fe-8955-9c41a5771d24@gmail.com>
+ <20250108192011.01b9155b@Tarkus>
+ <efb07b88-fbb0-468e-95d4-307f18e7127e@gmail.com>
+ <10d2110b-1119-4f97-b782-cfc01dafd64f@gmail.com>
+Message-ID: <CB0DF90B-8667-4301-BC61-8F532C26CFBA@R-project.org>
+
+
+
+> On 9 Jan 2025, at 05:56, Tomas Kalibera <tomas.kalibera at gmail.com> wrote:
+> 
+> 
+> On 1/8/25 17:26, Ben Bolker wrote:
+>> Thanks, that makes sense.
+>> 
+>>   I guess if it never worked for integers (or hasn't worked in a long time, at least) then it doesn't need to be fixed/changed ...
+> 
+> Still you found out that the type check and use of REAL() in the function is in wrong order. Instead of
+> 
+> "REAL() can only be applied to a 'numeric', not a 'integer' "
+> 
+> one should get
+> 
+> "Argument eta must be a nonempty numeric vector"
+> 
+
+
+But that is in practice a bit ambiguous, because
+
+> is.numeric(1L)
+[1] TRUE
+
+and integers are also of the mode numeric, so I?d argue that the previous error was more informative. I would either re-word the error to explicitly exclude integers, or coerce integers to doubles. Technically the latter would be more consistent with R, but if someone explicitly passes an integer to the inverse logit function in a real application then chances are it?s not intentional.
+
+Cheers,
+Simon
+ 
+
+> Fixed in R-devel,
+> 
+> Best,
+> Tomas
+> 
+> 
+>> 
+>>   cheers
+>>    Ben
+>> 
+>> 
+>> On 2025-01-08 11:20 a.m., Ivan Krylov wrote:
+>>> On Wed, 8 Jan 2025 10:57:47 -0500
+>>> Ben Bolker <bbolker at gmail.com> wrote:
+>>> 
+>>>> I haven't done the archaeology to figure out when this broke/exactly
+>>>> what change in the R code base broke it: it happened within the last
+>>>> month or so
+>>> 
+>>> binomial() itself exhibits this property even in R-4.2.2 from more than
+>>> two years ago:
+>>> 
+>>> R -q -s -e 'getRversion(); binomial()$linkinv(1L)'
+>>> # [1] ?4.2.2?
+>>> # Error in binomial()$linkinv(1L) :
+>>> #   REAL() can only be applied to a 'numeric', not a 'integer'
+>>> 
+>>> It's the `etas` [1] that suddenly became integer due to a change in
+>>> seq.int():
+>>> 
+>>> R -q -s -e 'str(seq.int(-8, 8, by=1))'
+>>> # num [1:17] -8 -7 -6 -5 -4 -3 -2 -1 0 1 ...
+>>> R-devel -q -s -e 'str(seq.int(-8, 8, by=1))'
+>>> # int [1:17] -8 -7 -6 -5 -4 -3 -2 -1 0 1 ...
+>>> 
+>> 
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+> 
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Thu Jan  9 11:13:11 2025
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Thu, 9 Jan 2025 11:13:11 +0100
+Subject: [Rd] binomial()$linkinv no longer accepts integer values
+In-Reply-To: <CB0DF90B-8667-4301-BC61-8F532C26CFBA@R-project.org>
+References: <7dfe81b2-c7ec-49fe-8955-9c41a5771d24@gmail.com>
+ <20250108192011.01b9155b@Tarkus>
+ <efb07b88-fbb0-468e-95d4-307f18e7127e@gmail.com>
+ <10d2110b-1119-4f97-b782-cfc01dafd64f@gmail.com>
+ <CB0DF90B-8667-4301-BC61-8F532C26CFBA@R-project.org>
+Message-ID: <26495.41271.191764.790549@stat.math.ethz.ch>
+
+>>>>> "SU" == Simon Urbanek 
+>>>>>     on Thu, 9 Jan 2025 11:16:45 +1300 writes:
+
+    >> On 9 Jan 2025, at 05:56, Tomas Kalibera <tomas.kalibera at gmail.com> wrote:
+    >> 
+    >> 
+    >> On 1/8/25 17:26, Ben Bolker wrote:
+    >>> Thanks, that makes sense.
+    >>> 
+    >>> I guess if it never worked for integers (or hasn't worked in a long time, at least) then it doesn't need to be fixed/changed ...
+    >> 
+    >> Still you found out that the type check and use of REAL() in the function is in wrong order. Instead of
+    >> 
+    >> "REAL() can only be applied to a 'numeric', not a 'integer' "
+    >> 
+    >> one should get
+    >> 
+    >> "Argument eta must be a nonempty numeric vector"
+    >> 
+
+
+    SU> But that is in practice a bit ambiguous, because
+
+    >> is.numeric(1L)
+    SU> [1] TRUE
+
+    SU> and integers are also of the mode numeric, so I?d argue that the previous error was more informative. I would either re-word the error to explicitly exclude integers, or coerce integers to doubles. Technically the latter would be more consistent with R, but if someone explicitly passes an integer to the inverse logit function in a real application then chances are it?s not intentional.
+
+I agree with Simon, I think we should do the extra step and
+allow integer (type, not just value) for binomial data inside
+the family.c code.
+
+I'll have a look, too.
+Martin
+
+    SU> Cheers,
+    SU> Simon
+ 
+
+    >> Fixed in R-devel,
+    >> 
+    >> Best,
+    >> Tomas
+    >> 
+    >>> 
+    >>> cheers
+    >>> Ben
+    >>> 
+    >>> 
+    >>> On 2025-01-08 11:20 a.m., Ivan Krylov wrote:
+    >>>> On Wed, 8 Jan 2025 10:57:47 -0500
+    >>>> Ben Bolker <bbolker at gmail.com> wrote:
+    >>>> 
+    >>>>> I haven't done the archaeology to figure out when this broke/exactly
+    >>>>> what change in the R code base broke it: it happened within the last
+    >>>>> month or so
+    >>>> 
+    >>>> binomial() itself exhibits this property even in R-4.2.2 from more than
+    >>>> two years ago:
+    >>>> 
+    >>>> R -q -s -e 'getRversion(); binomial()$linkinv(1L)'
+    >>>> # [1] ?4.2.2?
+    >>>> # Error in binomial()$linkinv(1L) :
+    >>>> #   REAL() can only be applied to a 'numeric', not a 'integer'
+    >>>> 
+    >>>> It's the `etas` [1] that suddenly became integer due to a change in
+    >>>> seq.int():
+    >>>> 
+    >>>> R -q -s -e 'str(seq.int(-8, 8, by=1))'
+    >>>> # num [1:17] -8 -7 -6 -5 -4 -3 -2 -1 0 1 ...
+    >>>> R-devel -q -s -e 'str(seq.int(-8, 8, by=1))'
+    >>>> # int [1:17] -8 -7 -6 -5 -4 -3 -2 -1 0 1 ...
+
+
+From jeroenoom@ @end|ng |rom gm@||@com  Sat Jan 11 00:16:51 2025
+From: jeroenoom@ @end|ng |rom gm@||@com (Jeroen Ooms)
+Date: Sat, 11 Jan 2025 00:16:51 +0100
+Subject: [Rd] Package compression benchmarks for zstd vs gzip
+Message-ID: <CABFfbXvHddYPsHs7j9ZzvTrPo-NX880mbh6=quZWrd1+eCjD=g@mail.gmail.com>
+
+Many distros and browsers these days use zstd as the preferred
+compression method. For example if you unpack a .deb or .rpm file on
+Debian or Fedora there is zstd archive inside. It is claimed that zstd
+offers improved compression over gzip, but (unlike lzma) it has
+comparable decompression speed. Maybe it is interesting to get an
+estimate of how much R packages would benefit from zstd.
+
+Testing this for source packages and MacOS binary packages it is easy
+as we can gunzip and recompress tar.gz files without having to extract
+the tarball itself:
+
+  OUTPUT="sizes.txt"
+  echo "FILE GZIP ZSTD" > $OUTPUT
+  for x in *gz; do
+    FILE=$(basename $x)
+    GZIP=$(wc -c "$x" | awk '{print $1}')
+    ZSTD=$(gunzip -c $x | zstd -19 | wc -c)
+    echo "$FILE $GZIP $ZSTD" | tee -a $OUTPUT
+  done
+
+Attached are results of running this script on the 500 most downloaded
+CRAN packages. It shows about 16% size reduction for sources, and 19%
+for binaries.
+
+Zstd is BSD licensed C code that can easily be embedded in any project.
+
+-------------- next part --------------
+An embedded and charset-unspecified text was scrubbed...
+Name: sources.txt
+URL: <https://stat.ethz.ch/pipermail/r-devel/attachments/20250111/90f91d5e/attachment.txt>
+
+-------------- next part --------------
+An embedded and charset-unspecified text was scrubbed...
+Name: binaries.txt
+URL: <https://stat.ethz.ch/pipermail/r-devel/attachments/20250111/90f91d5e/attachment-0001.txt>
+
+From @vr@h@m@@d|er @end|ng |rom gm@||@com  Sun Jan 12 00:41:28 2025
+From: @vr@h@m@@d|er @end|ng |rom gm@||@com (Avraham Adler)
+Date: Sat, 11 Jan 2025 18:41:28 -0500
+Subject: [Rd] Package compression benchmarks for zstd vs gzip
+In-Reply-To: <CABFfbXvHddYPsHs7j9ZzvTrPo-NX880mbh6=quZWrd1+eCjD=g@mail.gmail.com>
+References: <CABFfbXvHddYPsHs7j9ZzvTrPo-NX880mbh6=quZWrd1+eCjD=g@mail.gmail.com>
+Message-ID: <CAL6gwnL0eLEFu0kyxqubmy1CeqnCGUa3FqQ+wFUghEazyxEV1g@mail.gmail.com>
+
+zstd is accessible within R using the archive package [1]. I use it
+all the time when saving large objects, using code I adapted from [2].
+Is your suggestion to import the libraries/source code into base?
+
+[1] https://CRAN.R-project.org/package=archive
+[2] https://coolbutuseless.github.io/2018/10/02/using-lz4-and-zstandard-to-compress-files-with-saverds/
+
+On Fri, Jan 10, 2025 at 6:17?PM Jeroen Ooms <jeroenooms at gmail.com> wrote:
+>
+> Many distros and browsers these days use zstd as the preferred
+> compression method. For example if you unpack a .deb or .rpm file on
+> Debian or Fedora there is zstd archive inside. It is claimed that zstd
+> offers improved compression over gzip, but (unlike lzma) it has
+> comparable decompression speed. Maybe it is interesting to get an
+> estimate of how much R packages would benefit from zstd.
+>
+> Testing this for source packages and MacOS binary packages it is easy
+> as we can gunzip and recompress tar.gz files without having to extract
+> the tarball itself:
+>
+>   OUTPUT="sizes.txt"
+>   echo "FILE GZIP ZSTD" > $OUTPUT
+>   for x in *gz; do
+>     FILE=$(basename $x)
+>     GZIP=$(wc -c "$x" | awk '{print $1}')
+>     ZSTD=$(gunzip -c $x | zstd -19 | wc -c)
+>     echo "$FILE $GZIP $ZSTD" | tee -a $OUTPUT
+>   done
+>
+> Attached are results of running this script on the 500 most downloaded
+> CRAN packages. It shows about 16% size reduction for sources, and 19%
+> for binaries.
+>
+> Zstd is BSD licensed C code that can easily be embedded in any project.
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From henr|k@bengt@@on @end|ng |rom gm@||@com  Sun Jan 12 01:05:46 2025
+From: henr|k@bengt@@on @end|ng |rom gm@||@com (Henrik Bengtsson)
+Date: Sat, 11 Jan 2025 16:05:46 -0800
+Subject: [Rd] Package compression benchmarks for zstd vs gzip
+In-Reply-To: <CAL6gwnL0eLEFu0kyxqubmy1CeqnCGUa3FqQ+wFUghEazyxEV1g@mail.gmail.com>
+References: <CABFfbXvHddYPsHs7j9ZzvTrPo-NX880mbh6=quZWrd1+eCjD=g@mail.gmail.com>
+ <CAL6gwnL0eLEFu0kyxqubmy1CeqnCGUa3FqQ+wFUghEazyxEV1g@mail.gmail.com>
+Message-ID: <CAFDcVCS6kfkqzwR7ximTu=EJiHeuSBa0hU_r0Ze7yRi87_cLbw@mail.gmail.com>
+
+Can't speak for Jeroen, but it sounds like it's worth adding support
+for tar.zstd package files, just like how tar.gz, tar.xz, and
+tar.bzip2 are currently supported. I'd also argue for support zstd
+compression throughout R, including adding zstdfile(), support for
+saveRDS(..., compress = "zstd"), and so on. Then it could be discussed
+later what the default(s) should be.
+
+It's probably also worth looking at package compression with 'xz'
+compression. In [1], Mike FC has a graph where 'bzip2' and 'xz' seem
+to give the best compression ratios, at least for RDS files.
+
+FWIW, Mike FC submitted the 'zstdlite' package [1] to CRAN about a
+year ago, but it was removed, resubmitted, then removed again. I
+believe this was Mike FC first ever CRAN submission, but I think they
+eventually gave up. From
+https://cran.r-project.org/src/contrib/PACKAGES.in:
+
+Package: zstdlite
+X-CRAN-Comment: Removed on 2024-03-18 for repeated policy violation.
+  .
+  Does not look for suitable system 'libzstd'.
+  Spams personal email addresses of team members.
+X-CRAN-History: Removed on 2024-03-13 for policy violation and
+misrepresentation of copyright holder(s).
+  .
+  Does not even attempt to use system 'libzstd'.
+  Back on CRAN on 2024-03-17.
+
+[1] https://github.com/coolbutuseless/zstdlite
+
+/Henrik
+
+On Sat, Jan 11, 2025 at 3:41?PM Avraham Adler <avraham.adler at gmail.com> wrote:
+>
+> zstd is accessible within R using the archive package [1]. I use it
+> all the time when saving large objects, using code I adapted from [2].
+> Is your suggestion to import the libraries/source code into base?
+>
+> [1] https://CRAN.R-project.org/package=archive
+> [2] https://coolbutuseless.github.io/2018/10/02/using-lz4-and-zstandard-to-compress-files-with-saverds/
+>
+> On Fri, Jan 10, 2025 at 6:17?PM Jeroen Ooms <jeroenooms at gmail.com> wrote:
+> >
+> > Many distros and browsers these days use zstd as the preferred
+> > compression method. For example if you unpack a .deb or .rpm file on
+> > Debian or Fedora there is zstd archive inside. It is claimed that zstd
+> > offers improved compression over gzip, but (unlike lzma) it has
+> > comparable decompression speed. Maybe it is interesting to get an
+> > estimate of how much R packages would benefit from zstd.
+> >
+> > Testing this for source packages and MacOS binary packages it is easy
+> > as we can gunzip and recompress tar.gz files without having to extract
+> > the tarball itself:
+> >
+> >   OUTPUT="sizes.txt"
+> >   echo "FILE GZIP ZSTD" > $OUTPUT
+> >   for x in *gz; do
+> >     FILE=$(basename $x)
+> >     GZIP=$(wc -c "$x" | awk '{print $1}')
+> >     ZSTD=$(gunzip -c $x | zstd -19 | wc -c)
+> >     echo "$FILE $GZIP $ZSTD" | tee -a $OUTPUT
+> >   done
+> >
+> > Attached are results of running this script on the 500 most downloaded
+> > CRAN packages. It shows about 16% size reduction for sources, and 19%
+> > for binaries.
+> >
+> > Zstd is BSD licensed C code that can easily be embedded in any project.
+> > ______________________________________________
+> > R-devel at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From |kry|ov @end|ng |rom d|@root@org  Sun Jan 12 09:14:40 2025
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Sun, 12 Jan 2025 11:14:40 +0300
+Subject: [Rd] Package compression benchmarks for zstd vs gzip
+In-Reply-To: <CAFDcVCS6kfkqzwR7ximTu=EJiHeuSBa0hU_r0Ze7yRi87_cLbw@mail.gmail.com>
+References: <CABFfbXvHddYPsHs7j9ZzvTrPo-NX880mbh6=quZWrd1+eCjD=g@mail.gmail.com>
+ <CAL6gwnL0eLEFu0kyxqubmy1CeqnCGUa3FqQ+wFUghEazyxEV1g@mail.gmail.com>
+ <CAFDcVCS6kfkqzwR7ximTu=EJiHeuSBa0hU_r0Ze7yRi87_cLbw@mail.gmail.com>
+Message-ID: <20250112111440.598e4f54@Tarkus>
+
+On Sat, 11 Jan 2025 16:05:46 -0800
+Henrik Bengtsson <henrik.bengtsson at gmail.com> wrote:
+
+> It's probably also worth looking at package compression with 'xz'
+> compression. In [1], Mike FC has a graph where 'bzip2' and 'xz' seem
+> to give the best compression ratios, at least for RDS files.
+
+'bzip2' can be surprisingly good on very repetitive payloads. It
+compresses 0x80000000 zero bytes to only 1.5 KiB, much better than 'xz
+-9' with 305 KiB (with compression settings not making much
+difference), although the compression is not perfect. One terabyte of
+zeros can be compressed to 697202 bytes of repetitive compressed stream
+that can be bzipped further to 248 bytes.
+
+Binary packages are probably the most obvious target for new
+compression methods because there is no need to install them on older
+versions of R.
+
+-- 
+Best regards,
+Ivan
+
+
+From @|mon@urb@nek @end|ng |rom R-project@org  Mon Jan 13 02:26:14 2025
+From: @|mon@urb@nek @end|ng |rom R-project@org (Simon Urbanek)
+Date: Mon, 13 Jan 2025 14:26:14 +1300
+Subject: [Rd] Package compression benchmarks for zstd vs gzip
+In-Reply-To: <CABFfbXvHddYPsHs7j9ZzvTrPo-NX880mbh6=quZWrd1+eCjD=g@mail.gmail.com>
+References: <CABFfbXvHddYPsHs7j9ZzvTrPo-NX880mbh6=quZWrd1+eCjD=g@mail.gmail.com>
+Message-ID: <16544526-1245-4DF8-995E-F9289B8CF0EA@R-project.org>
+
+I think the first step would have to be to add zstd support to R. zstd is a bit controversial (as shown by the community blowback of the changes you mentioned) and their build system (calling it that is being very generous) is mess so it would require a bit of testing, but it is doable.
+
+That said, assuming the above is solved, we have been debating the change of compression at CRAN in general for a bit, but the assumptions about the file names are built into today?s tools so there would be certainly some fall-out - not just in R, but also the ecosystems around it. As you pointed out, possibly the safest place to start are binaries, since we have tighter control of those and they are used in fewer places.
+
+Personally, I think the higher priority is signing, so as we address that we may just include the compression change with it since it will require some tool changes anyway. I was thinking of using xz as that is more stable, already supported and less controversial, but I don?t think the choice really matters - it just has to be a compression which R supports (zstd and xz have different benefits, so it?s always a trade-off without a clear winner).
+
+Cheers,
+Simon
+
+
+> On 11 Jan 2025, at 12:16, Jeroen Ooms <jeroenooms at gmail.com> wrote:
+> 
+> Many distros and browsers these days use zstd as the preferred
+> compression method. For example if you unpack a .deb or .rpm file on
+> Debian or Fedora there is zstd archive inside. It is claimed that zstd
+> offers improved compression over gzip, but (unlike lzma) it has
+> comparable decompression speed. Maybe it is interesting to get an
+> estimate of how much R packages would benefit from zstd.
+> 
+> Testing this for source packages and MacOS binary packages it is easy
+> as we can gunzip and recompress tar.gz files without having to extract
+> the tarball itself:
+> 
+>  OUTPUT="sizes.txt"
+>  echo "FILE GZIP ZSTD" > $OUTPUT
+>  for x in *gz; do
+>    FILE=$(basename $x)
+>    GZIP=$(wc -c "$x" | awk '{print $1}')
+>    ZSTD=$(gunzip -c $x | zstd -19 | wc -c)
+>    echo "$FILE $GZIP $ZSTD" | tee -a $OUTPUT
+>  done
+> 
+> Attached are results of running this script on the 500 most downloaded
+> CRAN packages. It shows about 16% size reduction for sources, and 19%
+> for binaries.
+> 
+> Zstd is BSD licensed C code that can easily be embedded in any project.
+> <sources.txt><binaries.txt>______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+

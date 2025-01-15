@@ -1,0 +1,239 @@
+From mzyphur m@iii@g oii i@st@ts@org  Thu Jan  2 12:47:32 2025
+From: mzyphur m@iii@g oii i@st@ts@org (mzyphur m@iii@g oii i@st@ts@org)
+Date: Thu, 02 Jan 2025 11:47:32 +0000 (UTC)
+Subject: [R-sig-Geo] Introduction to Social Network Analysis - Free Seminar
+Message-ID: <SFgzJWhOQdGPbTzV8T-uVg@geopod-ismtpd-13>
+
+Hi everyone
+
+Instats is offering a new free seminar Introduction to Social Network Analysis <https://instats.org/seminar/introduction-to-social-network-analysis>, running Jan 17 by professor Ran Xu <https://alliedhealth.uconn.edu/person/ran-xu-phd/> from the University of Connecticut's Department of Allied Health Sciences. This seminar provides an introduction to social network analysis (SNA), equipping researchers in social sciences, population health science, and systems science with essential tools to examine relationships and behaviors in varied contexts, including mHealth and social media. Attendees will gain a practical understanding of the basics of network theory, data analysis, visualization methods, and real-world applications of SNA.
+
+Sign up today <https://instats.org/seminar/introduction-to-social-network-analysis> to secure your spot, and please feel free to tell your colleagues and students about this unique opportunity!
+
+
+Best wishes
+
+Michael Zyphur
+Director
+Institute for Statistical and Data Science
+instats.org <http://instats.org>
+	[[alternative HTML version deleted]]
+
+
+From n|ko@@tz|ok@@ @end|ng |rom gm@||@com  Mon Jan 13 15:19:23 2025
+From: n|ko@@tz|ok@@ @end|ng |rom gm@||@com (Nikolaos Tziokas)
+Date: Mon, 13 Jan 2025 14:19:23 +0000
+Subject: [R-sig-Geo] Mathematical (geometric) relationship to transform the
+ nadir-PSF to an off-nadir-PSF for any known viewing angle when downscaling
+ a satellite imagery
+Message-ID: <CAGg5H0ZNrA5E+hVw7K2NTBYr0nY1qJF+S85gn1FKGp491MKz0A@mail.gmail.com>
+
+*The problem*
+
+My goal is to use a geometric relation to calculate the support and use
+this to guide the DS (downscaling) in some way (e.g., to allow a single DS
+model to estimate a range of supports across an image, and thereby remove
+one of the confounding factors in DS, which is that there is never a single
+transform PSF. The PSF always varies across the image, i.e., a variable
+PSF. From Wang et al. (2020), I quote (The effect of the point spread
+function on downscaling continua):
+
+In downscaling, the PSF of interest is not the measurement PSF, but rather
+the transfer function between images at the original coarse and target fine
+spatial resolutions.
+
+>From a literature review perspective, most researchers apply a single
+transform parameter (usually the StD of a Gaussian filter) without taking
+into account the sensor's VA (viewing anlge). I haven't found anything
+online that could get me started, either practically (code) or
+theoretically (a research paper).
+
+To provide the whole context of the issue, the other thing is that the PSF,
+when accounting for the sensor's VA, can no longer be approximated by a
+Gaussian. So the big question that needs to be answered is what is the
+transfer function that can approximate the PSF between the image to be
+downscaled at the original coarse and target fine spatial resolution?
+
+*The dataset*
+
+The imagery to be downscaled is the VNP46A2, DNB_BRDF_Corrected_NTL, nighty
+imagery. I made sure to select an image for an area at (near) nadir. How do
+I know that? I used the Sensor_Zenith raster from the VNP46A1 product from
+the same area and date and checked the sensor's VA. Based on Li et al.
+(2022), (near) nadir VAs are considered angles up to 20 degrees.
+
+Some extra info that might be useful: VIIRS is a whiskbroom sensor (scans
+across-track), the swath of the sensor is 3000km and the IFOV is constant
+at 742m (both in along and across track directions).
+
+*Code*
+
+Although not relevant, nevertheless it might provide some insights as to
+what I am trying to do. The below code uses area-to-point regression
+Kriging (ATPRK) to DS a NTL image using only one covariate and without
+accounting for the sensor's VA.
+
+pacman::p_load(terra, atakrig, spatialEco)
+
+wd = "path/"
+
+# raster to be downscaled
+ntl <- rast(paste0(wd, "ntl.tif"))
+
+# high resolution covariate
+pop <- rast(paste0(wd, "pop.tif"))
+
+# apply gaussian filter to simulate the PSF
+pop.psf <- raster.gaussian.smooth(pop, s = 2.5, n = 5, scale = TRUE)
+
+# aggregate the filtered covariate to match NTL's pixel size
+pop.agg <- aggregate(pop.psf, 4, "mean", na.rm = TRUE)
+
+# stack the aggregated covariate and the NTL
+s <- c(ntl, pop.agg)
+names(s) <- c("ntl", "pop")
+
+# linear model
+m <- lm(ntl ~ ., s)
+
+# extract lm residuals to DS them using ATPK
+rsds <- terra::predict(s, m, na.rm = TRUE)
+
+# predict the NTL at the target high spatial resolution
+names(pop) <- "pop"
+pred <- predict(pop, m, na.rm = TRUE)
+
+# ATPK
+coords <- as.data.frame(xyFromCell(pred, 1:ncell(pred)), na.rm = TRUE)
+
+pixelsize <- res(pred)[1]
+
+# discretize raster. here I set the Gaussian's StD
+rsds.d = discretizeRaster(rsds,
+                          pixelsize,
+                          psf = "gau",
+                          sigma = 2.5)
+
+sv.ck <- deconvPointVgm(rsds.d,
+                       model = "Sph",
+                       rd = seq(0.6, 0.9, by = 0.1),
+                       maxIter = 70,
+                       nopar = FALSE)
+
+ataStartCluster(3)
+pred.atpok <- atpKriging(rsds.d,
+                         coords,
+                         sv.ck,
+                         showProgress = TRUE,
+                         nopar = FALSE)
+ataStopCluster()
+
+# convert result to raster for atp
+pred.atpok.r <-  rast(pred.atpok[,2:4])
+terra::crs(pred.atpok.r) <- "epsg:3309"
+
+ntl_atprk = pred + pred.atpok.r$pred
+
+ntl_atprk[ntl_atprk <= 0] <- 0
+
+terra::crs(ntl_atprk) <- "epsg:3309"
+
+writeRaster(ntl_atprk,
+            paste0(wd, "ds_ntl.tif"),
+            overwrite = TRUE)
+As you can see from the code, the steps where:
+
+
+   1. filter the covariate using a (single) Gaussian filter
+   2. aggregate the filtered covariate to the NTL's pixel size
+   3. linear model
+   4. predict the NTL at the target spatial scale using the lm
+   5. ATPK to DS the regression residuals
+   6. add back the DS residuals to the predicted NTL from (4)
+
+As you can see, I used a single transfer function (Gaussian filter) for the
+entire image and I completely neglected the sensor's VA. That is the
+"standard" approach when DS an image using a geostatistical method.
+
+What I am interested in is, instead of a Gaussian filter, what other
+transfer function can I use that takes into account the VA so I can model
+the PSF per pixel.
+
+I apologize in advance if the question does not fit on this site 100%, but
+I am really stuck with this issue for several weeks now.
+
+> sessionInfo()
+R version 4.4.2 (2024-10-31 ucrt)
+Platform: x86_64-w64-mingw32/x64
+Running under: Windows 10 x64 (build 19045)
+
+Matrix products: default
+
+attached base packages:
+[1] stats     graphics  grDevices utils     datasets  methods   base
+
+other attached packages:
+[1] spatialEco_2.0-3 atakrig_0.9.8.1  terra_1.8-5
+
+*Sample dataset*
+
+pacman::p_load(terra, atakrig, spatialEco)
+
+wd = "path/"
+
+# raster to be downscaled
+ntl <- rast(paste0(wd, "ntl.tif"))
+
+# high resolution covariate
+pop <- rast(paste0(wd, "pop.tif"))
+
+# sensor's VA
+va <- rast(paste0(wd, "va.tif"))
+
+pop.agg <- aggregate(pop, 4, "mean", na.rm = TRUE)
+
+s <- c(ntl, va, pop.agg)
+names(s) <- c("ntl", "va", "pop.agg")
+
+s
+
+> s
+class       : SpatRaster
+dimensions  : 10, 10, 3  (nrow, ncol, nlyr)
+resolution  : 520, 520  (x, y)
+extent      : 144820, 150020, -428610, -423410  (xmin, xmax, ymin, ymax)
+coord. ref. : NAD27 / California Albers (EPSG:3309)
+sources     : ntl.tif
+              va.tif
+              memory
+names       :       ntl,       va, pop.agg
+min values  :  26.46015, 7.929712,   3.500
+max values  : 190.10309, 8.404581,  92.875
+
+pop
+> pop
+class       : SpatRaster
+dimensions  : 40, 40, 1  (nrow, ncol, nlyr)
+resolution  : 130, 130  (x, y)
+extent      : 144820, 150020, -428610, -423410  (xmin, xmax, ymin, ymax)
+coord. ref. : NAD27 / California Albers (EPSG:3309)
+source      : pop.tif
+name        : pop
+min value   :   0
+max value   : 190
+
+I also posted the same question on GIS SE using the same title. There you
+can see an image of the NTL imagery and the VA raster. Not the best
+practice, but since there nobody replied there I thought to try here as
+well.
+
+-- 
+Tziokas Nikolaos
+Researcher
+
+Tel:(+44)07561120302
+LinkedIn <http://linkedin.com/in/nikolaos-tziokas-896081130>
+
+	[[alternative HTML version deleted]]
+
+
