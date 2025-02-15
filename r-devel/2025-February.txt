@@ -1,0 +1,1892 @@
+From |kry|ov @end|ng |rom d|@root@org  Sat Feb  1 10:39:04 2025
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Sat, 1 Feb 2025 12:39:04 +0300
+Subject: [Rd] 
+ [SPAM Warning!] Suggestion to emphasize Rboolean is unrelated
+ to LGLSXP in R-exts
+In-Reply-To: <CAPRVBcwA_j9=nPsjo272knqzK8Bdaoi6bgsGO+5YrKLhttHvDw@mail.gmail.com>
+References: <CAPRVBcwA_j9=nPsjo272knqzK8Bdaoi6bgsGO+5YrKLhttHvDw@mail.gmail.com>
+Message-ID: <20250201123904.6fc253be@Tarkus>
+
+On Thu, 30 Jan 2025 13:07:31 -0800
+Michael Chirico <michaelchirico4 at gmail.com> wrote:
+
+> There are at least dozens of other cases on CRAN [2],[3].
+
+Some of these involve casting an int to Rboolean. Best case, the int is
+compared against NA_LOGICAL beforehand, avoiding any mistake (there's
+at least one like that). Worst case, NA_LOGICAL is not considered before
+the cast, so NA will now be interpreted as TRUE. This is hard to check
+without actually reading the code.
+
+Some packages compare an Rboolean expression against NA_LOGICAL [1].
+This implies having stored an int in an Rboolean value as in the
+previous paragraph. I think that it wasn't disallowed according to the
+C standard to store NA_LOGICAL in an enumeration type wide enough to
+fit it (and it evidently worked in practice). With typedef bool
+Rboolean, storing NA_LOGICAL in an Rboolean converts it to 'true', so
+the comparison will definitely fail:
+
+DPQ src/pnchisq-it.c:530,532
+Rmpfr src/convert.c:535
+checkmate src/helper.c:102
+chron src/unpaste.c:21
+collapse src/data.table_rbindlist.c:208,258,383,384,408,431
+data.table (many; fixed in Git)
+ff src/ordermerge.c:5074 (one declaration, many comparisons)
+networkDynamic src/Rinit.c:209 src/is.active.c:75,76,96-98
+slam src/util.c:258
+this.path src/get_file_from_closure.h:13,43 src/thispath.c:14,17,19,39
+ src/ext.c:25 src/setsyspath.c:8 src/get_file_from_closure.h:13,43
+
+Four packages cast int* pointers returned by LOGICAL() to Rboolean* or
+use sizeof(Rboolean) to calculate buffer sizes in calls to memcpy()
+with LOGICAL() buffers [2]. With typedef bool Rboolean, this is a
+serious mistake, because the memory layout of the types is no longer
+compatible:
+
+bit64 src/integer64.c:576,603,914,929,942,955,968,981,994
+collapse src/data.table_rbindlist.c:19,67,105
+data.table (many; fixed in Git)
+kit src/utils.c:390
+
+I don't know Coccinelle that well and there may be additional cases I
+failed to consider. At which point is it appropriate to start notifying
+maintainers of the bugs not caught by their test suites?
+
+-- 
+Best regards,
+Ivan
+
+[1] Coccinelle script:
+@@
+typedef Rboolean;
+Rboolean E;
+@@
+* E == NA_LOGICAL
+
+[2] Coccinelle scripts:
+
+@@
+typedef Rboolean;
+int* E;
+@@
+* (Rboolean*)E
+
+This one will offer a diff to fix the bug:
+
+@@
+int *E1;
+int *E2;
+typedef Rboolean;
+@@
+(
+ memcpy
+|
+ memmove
+)
+ (E1, E2,
+ <+...
+-sizeof(Rboolean)
++sizeof(int)
+ ...+>
+ )
+
+
+From |kry|ov @end|ng |rom d|@root@org  Sun Feb  2 16:50:58 2025
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Sun, 2 Feb 2025 18:50:58 +0300
+Subject: [Rd] Suggestion to emphasize Rboolean is unrelated to LGLSXP in
+ R-exts
+In-Reply-To: <20250201123904.6fc253be@Tarkus>
+References: <CAPRVBcwA_j9=nPsjo272knqzK8Bdaoi6bgsGO+5YrKLhttHvDw@mail.gmail.com>
+ <20250201123904.6fc253be@Tarkus>
+Message-ID: <20250202185058.531317c2@Tarkus>
+
+The good news is that without a C23-enabled compiler, the problem will
+only happen to source files that #include <stdbool.h>. The bad news is
+that such a source file will technically disagree with the rest of R
+about the type of Rboolean, including the prototypes of the API
+functions that accept Rboolean:
+
+#include <stdbool.h>
+#include <Rinternals.h>
+typedef void (*pordervector1)(int *, int, SEXP, Rboolean, Rboolean);
+// ...
+pordervector1 f = R_orderVector1;
+f(pindx, length(indx), arg, nalast, decreasing);
+
+foo.c:27:17: runtime error: call to function R_orderVector1 through
+pointer to incorrect function type 'void (*)(int *, int, struct SEXPREC
+*, bool, bool)'
+/tmp/R-devel/src/main/sort.c:1135: note: R_orderVector1 defined here
+SUMMARY: UndefinedBehaviorSanitizer: undefined-behavior foo.c:27:17
+
+With sanitizers disabled, this doesn't seem to cause any real problems
+thanks to the calling convention, where both 'enum's and 'bool's are
+passed and returned in a register.
+
+-- 
+Best regards,
+Ivan
+
+
+From r|p|eybd @end|ng |rom |c|oud@com  Mon Feb  3 11:07:13 2025
+From: r|p|eybd @end|ng |rom |c|oud@com (Prof Brian Ripley)
+Date: Mon, 3 Feb 2025 10:07:13 +0000
+Subject: [Rd] Suggestion to emphasize Rboolean is unrelated to LGLSXP in
+ R-exts
+In-Reply-To: <20250202185058.531317c2@Tarkus>
+References: <CAPRVBcwA_j9=nPsjo272knqzK8Bdaoi6bgsGO+5YrKLhttHvDw@mail.gmail.com>
+ <20250201123904.6fc253be@Tarkus> <20250202185058.531317c2@Tarkus>
+Message-ID: <551e7875-03a3-4a94-99e5-751ac9c496f4@icloud.com>
+
+On 02/02/2025 15:50, Ivan Krylov via R-devel wrote:
+> The good news is that without a C23-enabled compiler, the problem will
+> only happen to source files that #include <stdbool.h>. The bad news is
+> that such a source file will technically disagree with the rest of R
+> about the type of Rboolean, including the prototypes of the API
+> functions that accept Rboolean:
+> 
+> #include <stdbool.h>
+> #include <Rinternals.h>
+> typedef void (*pordervector1)(int *, int, SEXP, Rboolean, Rboolean);
+> // ...
+> pordervector1 f = R_orderVector1;
+> f(pindx, length(indx), arg, nalast, decreasing);
+> 
+> foo.c:27:17: runtime error: call to function R_orderVector1 through
+> pointer to incorrect function type 'void (*)(int *, int, struct SEXPREC
+> *, bool, bool)'
+> /tmp/R-devel/src/main/sort.c:1135: note: R_orderVector1 defined here
+> SUMMARY: UndefinedBehaviorSanitizer: undefined-behavior foo.c:27:17
+> 
+> With sanitizers disabled, this doesn't seem to cause any real problems
+> thanks to the calling convention, where both 'enum's and 'bool's are
+> passed and returned in a register.
+
+This is work in progress, and it was not intended to apply to R-devel 
+unless configured with --with-C23 or using a compiler (such as GCC 
+pre-15) that defaults to C23.  We will back that out pending further 
+testing.
+
+-- 
+Brian D. Ripley,                  ripley at stats.ox.ac.uk
+Emeritus Professor of Applied Statistics, University of Oxford
+
+
+From r|p|eybd @end|ng |rom |c|oud@com  Mon Feb  3 18:36:28 2025
+From: r|p|eybd @end|ng |rom |c|oud@com (Prof Brian Ripley)
+Date: Mon, 3 Feb 2025 17:36:28 +0000
+Subject: [Rd] boolean and logical types -draft
+Message-ID: <93d0bc7e-9ad2-4193-b43e-34c1544bb1a7@icloud.com>
+
+Tomas,
+
+I am thinking of writing something for R-devel, and hope to have your 
+input first.
+
+I get moderated on R-devel as I am now subscribed as 
+brian.ripley at R-project.org which of course I cannot send from. So I am 
+even more discouraged from posting there.  (R-core is bad enough with 
+Luke discouraging all innovation except by him and Simon completely 
+misunderstanding the C23 status.)
+
+Thanks,
+
+Brian
+
+----------------
+
+There are several of these, and few guarantees for inter-working.
+
+a) R's logical vectors, which include a value NA for its elements.
+b) R's Rboolean type in C/C++
+
+c) C++'s bool type
+d) C23's bool type
+e) C99's _Bool type to which bool is aliased if <stdbool.h> is included.
+f) Fortran's LOGICAL type
+
+a) is currently implemented as a C int (so 32-bit) type with NA as the C 
+value NA_LOGICAL which is the same a NA_INTEGER.
+
+b) is currently implemented as a C enum with two values.  I don't know 
+of any guarantees on how that is stored except in char or an integer 
+type -- however it seems common practice to use a 32-bit type (int or 
+unsigned int would not be distinguishable).  (C23 ?6.7.3.3)  Enums can 
+have a specified data type, but we do not.
+
+C23 states that bool has 1 value bit and some padding bits (?6.2.6.2) so 
+it can be stored in char-sized storage (i.e. bytes) or multiples 
+thereof.  And that _Bool is a alternative name for bool.
+
+f) is complier-dependent: for interoperability with C or R, code should 
+use c_bool from iso_c_binding (Fortran 2003).  Fortran compilers store 
+LOGICAL in compiler-dependent ways, and for a long time we got away with 
+assuming that was equivalent to int (so LOGICAL values could be passed 
+to and from with int* on the C/R side).  But sometime around GCC 8 they 
+changed to int_least32_t, which on common platforms is the same as int 
+but does not need to be.
+
+It seems that in all cases coercion to an integer type coerces false 
+values to 0 and true values to 1 (and this is guaranteed by C23 at 
+least).  And C23 guarantees that when coercing from an integer type to 
+bool zero values are coerced to false and non-zero ones to true (bool is 
+'an unsigned integer type').  However, that does not seem to be true for 
+C++ as UB sanitizers warn on coercing values other than 0/1.
+
+I believe it to be the intention that c), d) and e) have the same 
+representation and interwork using the same compiler, but I could not 
+find that documented and see signs that e) might differ in C17 and C23 
+modes.
+
+----------------
+
+I need to look again at the C and C++ standards which with my vision I 
+need to do in very small chunks.  Oh for the vision I once had!
+
+-- 
+Brian D. Ripley,                  ripley at stats.ox.ac.uk
+Emeritus Professor of Applied Statistics, University of Oxford
+
+
+From r|p|eybd @end|ng |rom |c|oud@com  Mon Feb  3 18:39:07 2025
+From: r|p|eybd @end|ng |rom |c|oud@com (Prof Brian Ripley)
+Date: Mon, 3 Feb 2025 17:39:07 +0000
+Subject: [Rd] boolean and logical types -draft
+In-Reply-To: <93d0bc7e-9ad2-4193-b43e-34c1544bb1a7@icloud.com>
+References: <93d0bc7e-9ad2-4193-b43e-34c1544bb1a7@icloud.com>
+Message-ID: <fd059a61-57ab-4592-80e5-7a68b3b1d6d0@icloud.com>
+
+Sent in error (and not moderated).
+
+On 03/02/2025 17:36, Prof Brian Ripley via R-devel wrote:
+> Tomas,
+> 
+> I am thinking of writing something for R-devel, and hope to have your 
+> input first.
+> 
+> I get moderated on R-devel as I am now subscribed as brian.ripley at R- 
+> project.org which of course I cannot send from. So I am even more 
+> discouraged from posting there.? (R-core is bad enough with Luke 
+> discouraging all innovation except by him and Simon completely 
+> misunderstanding the C23 status.)
+> 
+> Thanks,
+> 
+> Brian
+> 
+> ----------------
+> 
+> There are several of these, and few guarantees for inter-working.
+> 
+> a) R's logical vectors, which include a value NA for its elements.
+> b) R's Rboolean type in C/C++
+> 
+> c) C++'s bool type
+> d) C23's bool type
+> e) C99's _Bool type to which bool is aliased if <stdbool.h> is included.
+> f) Fortran's LOGICAL type
+> 
+> a) is currently implemented as a C int (so 32-bit) type with NA as the C 
+> value NA_LOGICAL which is the same a NA_INTEGER.
+> 
+> b) is currently implemented as a C enum with two values.? I don't know 
+> of any guarantees on how that is stored except in char or an integer 
+> type -- however it seems common practice to use a 32-bit type (int or 
+> unsigned int would not be distinguishable).? (C23 ?6.7.3.3)? Enums can 
+> have a specified data type, but we do not.
+> 
+> C23 states that bool has 1 value bit and some padding bits (?6.2.6.2) so 
+> it can be stored in char-sized storage (i.e. bytes) or multiples 
+> thereof.? And that _Bool is a alternative name for bool.
+> 
+> f) is complier-dependent: for interoperability with C or R, code should 
+> use c_bool from iso_c_binding (Fortran 2003).? Fortran compilers store 
+> LOGICAL in compiler-dependent ways, and for a long time we got away with 
+> assuming that was equivalent to int (so LOGICAL values could be passed 
+> to and from with int* on the C/R side).? But sometime around GCC 8 they 
+> changed to int_least32_t, which on common platforms is the same as int 
+> but does not need to be.
+> 
+> It seems that in all cases coercion to an integer type coerces false 
+> values to 0 and true values to 1 (and this is guaranteed by C23 at 
+> least).? And C23 guarantees that when coercing from an integer type to 
+> bool zero values are coerced to false and non-zero ones to true (bool is 
+> 'an unsigned integer type').? However, that does not seem to be true for 
+> C++ as UB sanitizers warn on coercing values other than 0/1.
+> 
+> I believe it to be the intention that c), d) and e) have the same 
+> representation and interwork using the same compiler, but I could not 
+> find that documented and see signs that e) might differ in C17 and C23 
+> modes.
+> 
+> ----------------
+> 
+> I need to look again at the C and C++ standards which with my vision I 
+> need to do in very small chunks.? Oh for the vision I once had!
+> 
+
+
+-- 
+Brian D. Ripley,                  ripley at stats.ox.ac.uk
+Emeritus Professor of Applied Statistics, University of Oxford
+
+
+From tom@@@k@||ber@ @end|ng |rom gm@||@com  Tue Feb  4 13:45:49 2025
+From: tom@@@k@||ber@ @end|ng |rom gm@||@com (Tomas Kalibera)
+Date: Tue, 4 Feb 2025 13:45:49 +0100
+Subject: [Rd] Suggestion to emphasize Rboolean is unrelated to LGLSXP in
+ R-exts
+In-Reply-To: <20250201123904.6fc253be@Tarkus>
+References: <CAPRVBcwA_j9=nPsjo272knqzK8Bdaoi6bgsGO+5YrKLhttHvDw@mail.gmail.com>
+ <20250201123904.6fc253be@Tarkus>
+Message-ID: <b9e0a7c2-ea92-43d8-ac7d-db816bd31123@gmail.com>
+
+
+On 2/1/25 10:39, Ivan Krylov via R-devel wrote:
+> On Thu, 30 Jan 2025 13:07:31 -0800
+> Michael Chirico <michaelchirico4 at gmail.com> wrote:
+>
+>> There are at least dozens of other cases on CRAN [2],[3].
+> Some of these involve casting an int to Rboolean. Best case, the int is
+> compared against NA_LOGICAL beforehand, avoiding any mistake (there's
+> at least one like that). Worst case, NA_LOGICAL is not considered before
+> the cast, so NA will now be interpreted as TRUE. This is hard to check
+> without actually reading the code.
+>
+> Some packages compare an Rboolean expression against NA_LOGICAL [1].
+> This implies having stored an int in an Rboolean value as in the
+> previous paragraph. I think that it wasn't disallowed according to the
+> C standard to store NA_LOGICAL in an enumeration type wide enough to
+> fit it (and it evidently worked in practice). With typedef bool
+> Rboolean, storing NA_LOGICAL in an Rboolean converts it to 'true', so
+> the comparison will definitely fail:
+>
+> DPQ src/pnchisq-it.c:530,532
+> Rmpfr src/convert.c:535
+> checkmate src/helper.c:102
+> chron src/unpaste.c:21
+> collapse src/data.table_rbindlist.c:208,258,383,384,408,431
+> data.table (many; fixed in Git)
+> ff src/ordermerge.c:5074 (one declaration, many comparisons)
+> networkDynamic src/Rinit.c:209 src/is.active.c:75,76,96-98
+> slam src/util.c:258
+> this.path src/get_file_from_closure.h:13,43 src/thispath.c:14,17,19,39
+>   src/ext.c:25 src/setsyspath.c:8 src/get_file_from_closure.h:13,43
+>
+> Four packages cast int* pointers returned by LOGICAL() to Rboolean* or
+> use sizeof(Rboolean) to calculate buffer sizes in calls to memcpy()
+> with LOGICAL() buffers [2]. With typedef bool Rboolean, this is a
+> serious mistake, because the memory layout of the types is no longer
+> compatible:
+>
+> bit64 src/integer64.c:576,603,914,929,942,955,968,981,994
+> collapse src/data.table_rbindlist.c:19,67,105
+> data.table (many; fixed in Git)
+> kit src/utils.c:390
+>
+> I don't know Coccinelle that well and there may be additional cases I
+> failed to consider. At which point is it appropriate to start notifying
+> maintainers of the bugs not caught by their test suites?
+
+Yes, thanks, if you have the energy, I think it would be great if you 
+could contact the maintainers directly if you find obvious problems in 
+their packages, as much as in any open-source project. Casting int* from 
+LOGICAL() to Rboolean* falls into that category.
+
+Any bug finding tool would only find a subset of the bugs, that's ok - 
+helping to fix only some packages (and not all) is still a big help.
+
+Tomas
+
+
+From tom@@@k@||ber@ @end|ng |rom gm@||@com  Wed Feb  5 20:54:38 2025
+From: tom@@@k@||ber@ @end|ng |rom gm@||@com (Tomas Kalibera)
+Date: Wed, 5 Feb 2025 20:54:38 +0100
+Subject: [Rd] Suggestion to emphasize Rboolean is unrelated to LGLSXP in
+ R-exts
+In-Reply-To: <CAPRVBcwA_j9=nPsjo272knqzK8Bdaoi6bgsGO+5YrKLhttHvDw@mail.gmail.com>
+References: <CAPRVBcwA_j9=nPsjo272knqzK8Bdaoi6bgsGO+5YrKLhttHvDw@mail.gmail.com>
+Message-ID: <cd429917-a8dd-4503-b85e-36c721874950@gmail.com>
+
+
+On 1/30/25 22:07, Michael Chirico wrote:
+> Hello all,
+>
+> The recent change (r87656) to make Rboolean map to type 'bool', not
+> 'int', broke some tests & made me realize I've had totally the wrong
+> impression about what Rboolean actually is, and I suspect I'm not
+> alone.
+>
+> Till now, I've assumed that like Rbyte --> RAWSXP, Rboolean is the
+> _correct_ storage type for LGLSXP, while idioms like int *ip =
+> LOGICAL(...) only "happened to work" because Rboolean masks int, which
+> could change at any time.
+>
+> Actually, it turns out Rboolean only "happened to be int" because of
+> the use of 'enum', which is changing in now-and-future C standards!
+>
+> We made that mistake in 9 places [1], though only one happened to
+> break tests. There are at least dozens of other cases on CRAN [2],[3].
+>
+> Here's the current exposition on Rboolean in R-exts [4]:
+>
+>> Further, the included header R_ext/Boolean.h has enumeration constants TRUE and FALSE of type Rboolean in order to provide a way of using ?logical? variables in C consistently. This can conflict with other software: for example it conflicts with the headers in IJG?s jpeg-9 (but not earlier versions).
+> I suggest embellishing this, perhaps like so:
+>
+>> Further, the included header R_ext/Boolean.h has enumeration constants TRUE and FALSE of type Rboolean in order to provide a way of using ?logical? variables in C consistently. This has no concept of "missingness", and so is \emph{not} related to the R logical type LGLSXP. This can conflict with other software: for example it conflicts with the headers in IJG?s jpeg-9 (but not earlier versions).
+
+ ?Probably worth an extra sentence making this more explicit. I've added 
+one similar to your suggestion.
+
+Tomas
+
+> It would also be nice if this mistake could be caught by the compiler,
+> but that's another issue.
+>
+> Michael Chirico
+>
+> [1] https://github.com/Rdatatable/data.table/pull/6782/files
+> [2] https://github.com/search?q=org%3Acran+%2FRboolean.*%5CbLOGICAL%2F&type=code
+> [3] https://github.com/search?q=org%3Acran+%2FLOGICAL.*sizeof%5B%28%5DRboolean%2F&type=code
+> [4] https://cran.r-project.org/doc/manuals/r-devel/R-exts.html#Mathematical-constants
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From |kry|ov @end|ng |rom d|@root@org  Thu Feb  6 16:18:12 2025
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Thu, 6 Feb 2025 18:18:12 +0300
+Subject: [Rd] Depends: R (>= 4.1) for packages that use |> and \(...)
+In-Reply-To: <26514.5904.863904.292546@hornik.net>
+References: <20250116144121.5520a9cc@arachnoid>
+ <CAFDcVCTTVa+Ea+BoVoag0RJ7LK3P1tyPzBG9vP4U-4w6a4kKKQ@mail.gmail.com>
+ <26506.26949.241762.7373@hornik.net>
+ <26509.10892.521351.954386@hornik.net>
+ <26512.37984.542732.125792@hornik.net>
+ <CAP8nD2xthJ5TzwYdok5tjXiWyf4=Y=uGf-sf7FFQKCjzNAACOA@mail.gmail.com>
+ <20250123121008.4338cff0@Tarkus>
+ <26514.5904.863904.292546@hornik.net>
+Message-ID: <20250206181812.5155d6ed@arachnoid>
+
+On Thu, 23 Jan 2025 11:16:48 +0100
+Kurt Hornik <Kurt.Hornik at wu.ac.at> wrote:
+
+> My guess would be that the new syntax is particularly prominently used
+> in examples: if so, it would be good to also have coverage for this.
+
+In today's CRAN snapshot, there turned out to be 198 packages that use
+4.1 syntax in examples but not in code, 5 packages that use 4.2 syntax
+in examples but 4.1 in the code, and 3 packages that use 4.2 syntax in
+examples but not the code. This may be slightly imprecise because I
+don't have some of the Rd macro packages installed and run
+Rd2ex(stages=NULL) on manually-parsed Rd files without installing the
+packages.
+
+Attaching a patch that checks the syntax used in Rd examples at the
+same time as the main R code, not necessarily the best way to perform
+this check. Is it perhaps worth separating R/* checks from man/*.Rd
+checks? Should R CMD check try to reuse the Rd database from the
+installed copy of the package?
+
+-- 
+Best regards,
+Ivan
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: check_R_syntax_in_examples.patch
+Type: text/x-patch
+Size: 4000 bytes
+Desc: not available
+URL: <https://stat.ethz.ch/pipermail/r-devel/attachments/20250206/9fd89fa8/attachment.bin>
+
+From tob|@@@verbeke @end|ng |rom open@n@|yt|c@@eu  Fri Feb  7 19:20:50 2025
+From: tob|@@@verbeke @end|ng |rom open@n@|yt|c@@eu (Tobias Verbeke)
+Date: Fri, 7 Feb 2025 18:20:50 +0000
+Subject: [Rd] typo in R-exts.texi
+Message-ID: <01020194e1a4a011-d3f4864f-1f88-4fb4-b834-4c341ad9a5c6-000000@eu-west-1.amazonses.com>
+
+L.S.
+
+Please find below a tiny patch for a trivial typo.
+
+Kind regards,
+Tobias
+
+
+diff --git a/doc/manual/R-exts.texi b/doc/manual/R-exts.texi
+index c9c1015da6..e84bbd53f2 100644
+--- a/doc/manual/R-exts.texi
++++ b/doc/manual/R-exts.texi
+@@ -6814,7 +6814,7 @@ To negotiate with @I{Uwe Ligges} to host the additional components on
+ @end itemize
+ 
+ @noindent
+-Be aware that license requirements you may require you to supply the
++Be aware that license requirements may require you to supply the
+ sources for the additional components (and will if your package has a
+ GPL-like license).
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Fri Feb  7 20:15:43 2025
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Fri, 7 Feb 2025 20:15:43 +0100
+Subject: [Rd] typo in R-exts.texi
+In-Reply-To: <01020194e1a4a011-d3f4864f-1f88-4fb4-b834-4c341ad9a5c6-000000@eu-west-1.amazonses.com>
+References: <01020194e1a4a011-d3f4864f-1f88-4fb4-b834-4c341ad9a5c6-000000@eu-west-1.amazonses.com>
+Message-ID: <26534.23519.718165.560064@stat.math.ethz.ch>
+
+>>>>> Tobias Verbeke 
+>>>>>     on Fri, 7 Feb 2025 18:20:50 +0000 writes:
+
+    > L.S.  Please find below a tiny patch for a trivial typo.
+
+    > Kind regards, Tobias
+
+Thank you, Tobias!
+-->  Fixed already.
+
+Martin
+
+    > diff --git a/doc/manual/R-exts.texi b/doc/manual/R-exts.texi
+    > index c9c1015da6..e84bbd53f2 100644
+    > --- a/doc/manual/R-exts.texi
+    > +++ b/doc/manual/R-exts.texi
+    > @@ -6814,7 +6814,7 @@ To negotiate with @I{Uwe Ligges} to host the additional components on
+    > @end itemize
+ 
+    > @noindent
+    > -Be aware that license requirements you may require you to supply the
+    > +Be aware that license requirements may require you to supply the
+    > sources for the additional components (and will if your package has a
+    > GPL-like license).
+
+
+From edd @end|ng |rom deb|@n@org  Sat Feb  8 01:06:03 2025
+From: edd @end|ng |rom deb|@n@org (Dirk Eddelbuettel)
+Date: Fri, 7 Feb 2025 18:06:03 -0600
+Subject: [Rd] Another typo in R-exts.texi
+Message-ID: <26534.40939.338286.387898@rob.eddelbuettel.com>
+
+
+R Core,
+
+Here is another minor typo which I had spotted three days ago and sent to
+Brian, but have not heard back nor seen it incorporated. Doubly trivial as in
+a comment but a dual typo nevertheless. Would be nice if someone could fold
+this in. I still have the same diff here for the current r87707.
+
+Cheers, Dirk
+
+edd at rob:~/svn/r-devel$ svn diff doc/manual/R-exts.texi
+Index: doc/manual/R-exts.texi
+===================================================================
+--- doc/manual/R-exts.texi      (revision 87685)
++++ doc/manual/R-exts.texi      (working copy)
+@@ -5904,7 +5904,7 @@
+ @c RHEL 7 came with GCC 4.8, with 4.4 available.
+ @c RHEL 8 has GCC 8 with 9 available
+ @c RHEL 9 has GCC 11
+- at c All versions of Cwntos is now EOL.
++ at c All versions of Centos are now EOL.
+ A common error is to assume recent versions of compilers or OSes.  In
+ production environments `long term support' versions of OSes may be in
+ use for many years, at footnote{Ubuntu provides 5 years of support (but
+edd at rob:~/svn/r-devel$ 
+
+-- 
+dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From Kurt@Horn|k @end|ng |rom wu@@c@@t  Sat Feb  8 08:06:00 2025
+From: Kurt@Horn|k @end|ng |rom wu@@c@@t (Kurt Hornik)
+Date: Sat, 8 Feb 2025 08:06:00 +0100
+Subject: [Rd] Another typo in R-exts.texi
+In-Reply-To: <26534.40939.338286.387898@rob.eddelbuettel.com>
+References: <26534.40939.338286.387898@rob.eddelbuettel.com>
+Message-ID: <26535.600.857402.210912@hornik.net>
+
+>>>>> Dirk Eddelbuettel writes:
+
+Thanks: fixed now.
+
+Best
+-k
+
+> R Core,
+
+> Here is another minor typo which I had spotted three days ago and sent to
+> Brian, but have not heard back nor seen it incorporated. Doubly trivial as in
+> a comment but a dual typo nevertheless. Would be nice if someone could fold
+> this in. I still have the same diff here for the current r87707.
+
+> Cheers, Dirk
+
+> edd at rob:~/svn/r-devel$ svn diff doc/manual/R-exts.texi
+> Index: doc/manual/R-exts.texi
+> ===================================================================
+> --- doc/manual/R-exts.texi      (revision 87685)
+> +++ doc/manual/R-exts.texi      (working copy)
+> @@ -5904,7 +5904,7 @@
+>  @c RHEL 7 came with GCC 4.8, with 4.4 available.
+>  @c RHEL 8 has GCC 8 with 9 available
+>  @c RHEL 9 has GCC 11
+> - at c All versions of Cwntos is now EOL.
+> + at c All versions of Centos are now EOL.
+>  A common error is to assume recent versions of compilers or OSes.  In
+>  production environments `long term support' versions of OSes may be in
+>  use for many years, at footnote{Ubuntu provides 5 years of support (but
+> edd at rob:~/svn/r-devel$ 
+
+> -- 
+> dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From tob|@@@verbeke @end|ng |rom open@n@|yt|c@@eu  Mon Feb 10 10:08:18 2025
+From: tob|@@@verbeke @end|ng |rom open@n@|yt|c@@eu (Tobias Verbeke)
+Date: Mon, 10 Feb 2025 09:08:18 +0000
+Subject: [Rd] binary R packages for GNU/Linux
+Message-ID: <01020194ef1ddab7-7ce660cf-1bd2-4d56-9426-3d3930019d6a-000000@eu-west-1.amazonses.com>
+
+L.S.
+
+AFAICS the Writing R Extensions and R Installation and Administration manuals do not explicitly discuss binary R packages on GNU/Linux. Only installation from source is mentioned (https://cran.r-project.org/doc/manuals/R-admin.html#Installing-packages-1)
+and when discussing repository layouts (https://cran.r-project.org/doc/manuals/R-admin.html#Setting-up-a-package-repository) no mention is made of conventions for GNU/Linux distributions.
+
+The proprietary Package Manager (PPM) from Posit (https://packagemanager.posit.co/client/#/) does offer binary packages for GNU/Linux, but the usage of this service is restricted in ways that go against the principles of open source (https://posit.co/about/posit-service-terms-of-use/). By way of example, mirroring is not allowed and certain categories of users are excluded (age categories, competitors, ...). This is maybe expected to some, but this clearly does not offer a proper foundation for the distribution of open source R packages.
+
+For this reason I am wondering whether the R project / CRAN would not be better placed and/or open to support distribution of binary R packages on GNU/Linux.
+
+A second, orthogonal question is whether the R project can advance an official convention for the repository layout related to the distribution of binary GNU/Linux packages. Our proposal would be to use something along
+
+http://mydomain.com/bin/linux/jammy/x86_64/contrib/4.4
+
+which IMHO is more elegant than
+
+http://mydomain.com/bin/linux/jammy-x86_64/contrib/4.4
+
+(and which mimicks the documented MacOS convention
+
+http://mydomain.com/bin/macosx/big-sur-x86_64/contrib/4.4).
+
+Anyone?
+
+Obviously willing to work out details and collaborate on the topic.
+
+Kind regards,
+Tobias
+
+
+From @|mon@urb@nek @end|ng |rom R-project@org  Mon Feb 10 10:33:40 2025
+From: @|mon@urb@nek @end|ng |rom R-project@org (Simon Urbanek)
+Date: Mon, 10 Feb 2025 22:33:40 +1300
+Subject: [Rd] binary R packages for GNU/Linux
+In-Reply-To: <01020194ef1ddab7-7ce660cf-1bd2-4d56-9426-3d3930019d6a-000000@eu-west-1.amazonses.com>
+References: <01020194ef1ddab7-7ce660cf-1bd2-4d56-9426-3d3930019d6a-000000@eu-west-1.amazonses.com>
+Message-ID: <45B7CFB4-A9F9-48EA-9B68-5CEA81B2F91D@R-project.org>
+
+Tobias,
+
+although we did discuss the possibility of extending the os/toolchain/architecture notation for binary packages beyond macOS, Linux was not necessarily on the list as Linux distributions have already established ways of providing binaries, so it does not seem productive to duplicate the effort. Can you elaborate a bit more on what you had in mind? Binaries are by design specific to toolchain, distribution and architecture, so there is no such thing as a "GNU/Linux binary". The only reliable way to distribute packages in Linux is from sources or by the Linux distribution repositories. Binaries are inherently tied to system dependencies and their versions, so such concept doesn't make any sense outside of the distribution. There is no such thing as a "jammy binary" to take up your example - it would have to depend on the distribution, toolchain and all library versions as well.
+
+Cheers,
+Simon
+
+
+
+> On Feb 10, 2025, at 10:08 PM, Tobias Verbeke <tobias.verbeke at openanalytics.eu> wrote:
+> 
+> L.S.
+> 
+> AFAICS the Writing R Extensions and R Installation and Administration manuals do not explicitly discuss binary R packages on GNU/Linux. Only installation from source is mentioned (https://cran.r-project.org/doc/manuals/R-admin.html#Installing-packages-1)
+> and when discussing repository layouts (https://cran.r-project.org/doc/manuals/R-admin.html#Setting-up-a-package-repository) no mention is made of conventions for GNU/Linux distributions.
+> 
+> The proprietary Package Manager (PPM) from Posit (https://packagemanager.posit.co/client/#/) does offer binary packages for GNU/Linux, but the usage of this service is restricted in ways that go against the principles of open source (https://posit.co/about/posit-service-terms-of-use/). By way of example, mirroring is not allowed and certain categories of users are excluded (age categories, competitors, ...). This is maybe expected to some, but this clearly does not offer a proper foundation for the distribution of open source R packages.
+> 
+> For this reason I am wondering whether the R project / CRAN would not be better placed and/or open to support distribution of binary R packages on GNU/Linux.
+> 
+> A second, orthogonal question is whether the R project can advance an official convention for the repository layout related to the distribution of binary GNU/Linux packages. Our proposal would be to use something along
+> 
+> http://mydomain.com/bin/linux/jammy/x86_64/contrib/4.4
+> 
+> which IMHO is more elegant than
+> 
+> http://mydomain.com/bin/linux/jammy-x86_64/contrib/4.4
+> 
+> (and which mimicks the documented MacOS convention
+> 
+> http://mydomain.com/bin/macosx/big-sur-x86_64/contrib/4.4).
+> 
+> Anyone?
+> 
+> Obviously willing to work out details and collaborate on the topic.
+> 
+> Kind regards,
+> Tobias
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+> 
+
+
+From tob|@@@verbeke @end|ng |rom open@n@|yt|c@@eu  Mon Feb 10 12:00:05 2025
+From: tob|@@@verbeke @end|ng |rom open@n@|yt|c@@eu (Tobias Verbeke)
+Date: Mon, 10 Feb 2025 11:00:05 +0000
+Subject: [Rd] binary R packages for GNU/Linux
+In-Reply-To: <45B7CFB4-A9F9-48EA-9B68-5CEA81B2F91D@R-project.org>
+References: <01020194ef1ddab7-7ce660cf-1bd2-4d56-9426-3d3930019d6a-000000@eu-west-1.amazonses.com>
+ <45B7CFB4-A9F9-48EA-9B68-5CEA81B2F91D@R-project.org>
+Message-ID: <01020194ef842fd9-d0ae4ebf-98bb-48ea-be9d-f72bff73eda8-000000@eu-west-1.amazonses.com>
+
+Hi Simon,
+
+Thank you for your prompt reply.
+
+----- Original Message -----
+> From: "Simon Urbanek" <simon.urbanek at R-project.org>
+> To: "Tobias Verbeke" <tobias.verbeke at openanalytics.eu>
+> Cc: "r-devel at r-project.org" <r-devel at r-project.org>
+> Sent: Monday, February 10, 2025 10:33:40 AM
+> Subject: Re: [Rd] binary R packages for GNU/Linux
+
+> Tobias,
+> 
+> although we did discuss the possibility of extending the
+> os/toolchain/architecture notation for binary packages beyond macOS, Linux was
+> not necessarily on the list as Linux distributions have already established
+> ways of providing binaries, so it does not seem productive to duplicate the
+> effort. Can you elaborate a bit more on what you had in mind? Binaries are by
+> design specific to toolchain, distribution and architecture, so there is no
+> such thing as a "GNU/Linux binary". 
+
+We agree. It is just used as a generic term here to denote a package built for a specific version of a distribution for a specific architecture and its toolchain.
+
+> The only reliable way to distribute
+> packages in Linux is from sources or by the Linux distribution repositories.
+> Binaries are inherently tied to system dependencies and their versions, so such
+> concept doesn't make any sense outside of the distribution. There is no such
+> thing as a "jammy binary" to take up your example - it would have to depend on
+> the distribution, toolchain and all library versions as well.
+
+jammy is a specific version of the distribution (Ubuntu 22.04 LTS) and the architecture is included in my proposal (x86_64)
+
+http://mydomain.com/bin/linux/jammy/x86_64/contrib/4.4
+
+In my personal experience (~25y of GNU/Linux, mostly Debian, Ubuntu and CentOS) versions of the toolchain will not differ in a practically relevant way within a particular version of a distribution, so it is possible to build and distribute packages for a specific version of a distribution on a specific architecture for a specific series of R (4.4). I guess that if it was not possible, the effort would also not have been undertaken by PPM mentioned earlier. They offer (I skip the non-publicly available Linux distros) CentOS 7 (centos7), Rocky Linux 9 (rhel9), Ubuntu 20.04 (focal), Ubuntu 22.04 (jammy), Ubuntu 24.04 (noble), Debian 11 (bullseye), Debian 12 (bookworm). Another argument to demonstrate the feasibility is the r2u project (https://github.com/eddelbuettel/r2u). It offers CRAN as Ubuntu Binaries, but in order to build these Ubuntu Binaries it actually makes use of the binary R packages built by PPM. Quoting from https://eddelbuettel.github.io/r2u/: "For the CRAN binaries we either repackage P3M/RSPM/PPM builds (where available) or build natively." They cover all CRAN packages. The usage of PPM as a source is, of course, a weakness (in the grand scheme of things), but the point here is about the feasibility of building the packages in a portable way per version of a particular distribution, architecture etc.
+
+I do understand arguments pro 'distribution binaries' (e.g. dependency resolution of system dependencies), but there are also arguments pro 'CRAN binaries' (binary builds of the R packages), since it can be convenient to allow for fast installation of arbitrary R packages without the need of more general sudo rights (required for installation of distribution binaries).
+
+If R-core/CRAN maintainers agree that the answer to my first question is 'no', I am fine with that, but I can only know when asking.
+
+It still leaves the answer to my second question ('official' repository layout conventions) open. It could be: 'we think it is a bad idea, so don't propose a structure' or 'we think it is a bad idea, but propose the following structure for people with bad ideas' :-).
+
+Kind regards,
+Tobias
+
+>> On Feb 10, 2025, at 10:08 PM, Tobias Verbeke <tobias.verbeke at openanalytics.eu>
+>> wrote:
+>> 
+>> L.S.
+>> 
+>> AFAICS the Writing R Extensions and R Installation and Administration manuals do
+>> not explicitly discuss binary R packages on GNU/Linux. Only installation from
+>> source is mentioned
+>> (https://cran.r-project.org/doc/manuals/R-admin.html#Installing-packages-1)
+>> and when discussing repository layouts
+>> (https://cran.r-project.org/doc/manuals/R-admin.html#Setting-up-a-package-repository)
+>> no mention is made of conventions for GNU/Linux distributions.
+>> 
+>> The proprietary Package Manager (PPM) from Posit
+>> (https://packagemanager.posit.co/client/#/) does offer binary packages for
+>> GNU/Linux, but the usage of this service is restricted in ways that go against
+>> the principles of open source
+>> (https://posit.co/about/posit-service-terms-of-use/). By way of example,
+>> mirroring is not allowed and certain categories of users are excluded (age
+>> categories, competitors, ...). This is maybe expected to some, but this clearly
+>> does not offer a proper foundation for the distribution of open source R
+>> packages.
+>> 
+>> For this reason I am wondering whether the R project / CRAN would not be better
+>> placed and/or open to support distribution of binary R packages on GNU/Linux.
+>> 
+>> A second, orthogonal question is whether the R project can advance an official
+>> convention for the repository layout related to the distribution of binary
+>> GNU/Linux packages. Our proposal would be to use something along
+>> 
+>> http://mydomain.com/bin/linux/jammy/x86_64/contrib/4.4
+>> 
+>> which IMHO is more elegant than
+>> 
+>> http://mydomain.com/bin/linux/jammy-x86_64/contrib/4.4
+>> 
+>> (and which mimicks the documented MacOS convention
+>> 
+>> http://mydomain.com/bin/macosx/big-sur-x86_64/contrib/4.4).
+>> 
+>> Anyone?
+>> 
+>> Obviously willing to work out details and collaborate on the topic.
+>> 
+>> Kind regards,
+>> Tobias
+>> 
+>> ______________________________________________
+>> R-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From edd @end|ng |rom deb|@n@org  Mon Feb 10 14:08:45 2025
+From: edd @end|ng |rom deb|@n@org (Dirk Eddelbuettel)
+Date: Mon, 10 Feb 2025 07:08:45 -0600
+Subject: [Rd] binary R packages for GNU/Linux
+In-Reply-To: <01020194ef842fd9-d0ae4ebf-98bb-48ea-be9d-f72bff73eda8-000000@eu-west-1.amazonses.com>
+References: <01020194ef1ddab7-7ce660cf-1bd2-4d56-9426-3d3930019d6a-000000@eu-west-1.amazonses.com>
+ <45B7CFB4-A9F9-48EA-9B68-5CEA81B2F91D@R-project.org>
+ <01020194ef842fd9-d0ae4ebf-98bb-48ea-be9d-f72bff73eda8-000000@eu-west-1.amazonses.com>
+Message-ID: <26537.64093.228457.76824@rob.eddelbuettel.com>
+
+
+On 10 February 2025 at 11:00, Tobias Verbeke wrote:
+| Another argument to demonstrate the feasibility is the r2u project
+| (https://github.com/eddelbuettel/r2u). It offers CRAN as Ubuntu Binaries, but
+| in order to build these Ubuntu Binaries it actually makes use of the binary R
+| packages built by PPM. Quoting from https://eddelbuettel.github.io/r2u/: "For
+| the CRAN binaries we  either repackage P3M/RSPM/PPM builds (where
+| available) or build natively." They cover all CRAN packages. The usage of PPM
+| as a source is, of course, a weakness (in the grand scheme of things), but
+| the point here is about the feasibility of building the packages in a
+| portable way per version of a particular distribution, architecture etc.
+
+As you brought this up, allow me to clarify: The re-use (where possible) is
+simply a shortcut "where possible".  Each day when I cover updated packages,
+I hit maybe 5 per cent of packages where for reasons I still cannot decipher
+p3m.dev does not have a binary, so I build those 5 per cent from source.
+Similarly for the approx 450 BioConductor packages all builds are from
+source.
+
+Rebuilding everything from source "just because we want to" is entirely
+possible but as it is my time waiting for binaries I currently do not force
+full rebuilds but I easily could. Also note that about 22% of packages
+contain native code, leaving 78% which are not. Re-use is even simpler there
+as these 78% as they contain only (portable) R processing. So if we wanted to
+compile all native packages for Ubuntu, we could. It is a resourcing issue
+that has not yet been a prioruty for me. Inaki does it for Fedora, Detlef
+does it for OpenSUSE.
+
+The more important point of these package is the full system integration. You
+do get _all_ binary dependencies declared, exactly as a distribution-native
+package (of which Debian/Ubuntu have a bit over 1k) would. Guaranteed.
+Reliably. Fast. That is a big step up for large deployments, for testing, for
+less experienced users.
+
+So thanks for starting a discussion around this as 'we' as a community are
+falling a bit short here. One open question is if we could pull something off
+that works like the Python wheels and offers cross-distro builds, ideally
+without static linking. Your "CRAN libraries" added to the ld.so path may do
+this. I do not know how feasible / involved this would be so so far I
+concentrated on doing something simpler -- but feasible and reliable by
+working exactly as the distribution packages work.
+
+All that said, thanks for the starting this discussion!
+
+Cheers, Dirk
+
+-- 
+dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From |uc@r @end|ng |rom |edor@project@org  Mon Feb 10 14:29:54 2025
+From: |uc@r @end|ng |rom |edor@project@org (=?UTF-8?Q?I=C3=B1aki_Ucar?=)
+Date: Mon, 10 Feb 2025 14:29:54 +0100
+Subject: [Rd] binary R packages for GNU/Linux
+In-Reply-To: <26537.64093.228457.76824@rob.eddelbuettel.com>
+References: <01020194ef1ddab7-7ce660cf-1bd2-4d56-9426-3d3930019d6a-000000@eu-west-1.amazonses.com>
+ <45B7CFB4-A9F9-48EA-9B68-5CEA81B2F91D@R-project.org>
+ <01020194ef842fd9-d0ae4ebf-98bb-48ea-be9d-f72bff73eda8-000000@eu-west-1.amazonses.com>
+ <26537.64093.228457.76824@rob.eddelbuettel.com>
+Message-ID: <CALEXWq3NWC+ygA+sibqE1VdF8rEsnjvYx8dqR-xsj3JdVudYag@mail.gmail.com>
+
+On Mon, 10 Feb 2025 at 14:09, Dirk Eddelbuettel <edd at debian.org> wrote:
+>
+>
+> On 10 February 2025 at 11:00, Tobias Verbeke wrote:
+> | Another argument to demonstrate the feasibility is the r2u project
+> | (https://github.com/eddelbuettel/r2u). It offers CRAN as Ubuntu Binaries, but
+> | in order to build these Ubuntu Binaries it actually makes use of the binary R
+> | packages built by PPM. Quoting from https://eddelbuettel.github.io/r2u/: "For
+> | the CRAN binaries we  either repackage P3M/RSPM/PPM builds (where
+> | available) or build natively." They cover all CRAN packages. The usage of PPM
+> | as a source is, of course, a weakness (in the grand scheme of things), but
+> | the point here is about the feasibility of building the packages in a
+> | portable way per version of a particular distribution, architecture etc.
+>
+> As you brought this up, allow me to clarify: The re-use (where possible) is
+> simply a shortcut "where possible".  Each day when I cover updated packages,
+> I hit maybe 5 per cent of packages where for reasons I still cannot decipher
+> p3m.dev does not have a binary, so I build those 5 per cent from source.
+> Similarly for the approx 450 BioConductor packages all builds are from
+> source.
+>
+> Rebuilding everything from source "just because we want to" is entirely
+> possible but as it is my time waiting for binaries I currently do not force
+> full rebuilds but I easily could. Also note that about 22% of packages
+> contain native code, leaving 78% which are not. Re-use is even simpler there
+> as these 78% as they contain only (portable) R processing. So if we wanted to
+> compile all native packages for Ubuntu, we could. It is a resourcing issue
+> that has not yet been a prioruty for me. Inaki does it for Fedora, Detlef
+> does it for OpenSUSE.
+
+And for completeness, [1] is where we painstakingly* maintain a list
+of system dependencies, [2] is where the daily magic happens for
+keeping track of CRAN, and [3] performs the heavy-lifting and
+publishes an RPM repository with the result.
+
+[1] https://github.com/cran4linux/sysreqs
+[2] https://github.com/cran4linux/cran2copr
+[3] https://copr.fedorainfracloud.org/coprs/iucar/cran
+
+*Because, you know, SystemRequirements.
+
+> The more important point of these package is the full system integration. You
+> do get _all_ binary dependencies declared, exactly as a distribution-native
+> package (of which Debian/Ubuntu have a bit over 1k) would. Guaranteed.
+> Reliably. Fast. That is a big step up for large deployments, for testing, for
+> less experienced users.
+>
+> So thanks for starting a discussion around this as 'we' as a community are
+> falling a bit short here.
+
+Indeed, thank you, Tobias.
+
+> One open question is if we could pull something off
+> that works like the Python wheels and offers cross-distro builds, ideally
+> without static linking. Your "CRAN libraries" added to the ld.so path may do
+> this. I do not know how feasible / involved this would be so so far I
+> concentrated on doing something simpler -- but feasible and reliable by
+> working exactly as the distribution packages work.
+
+It would be perfectly feasible to maintain sync'ed builds (in terms of
+version) of system dependencies at CRAN-provided (RPM, APT...)
+repositories as compat packages for various distributions, then all
+packages could be built once and shipped everywhere (i.e. cross-distro
+builds). Collaterally, this would increase reproducibility of package
+checks to a certain extent.
+
+I offered my help in these matters in the past, but was kindly
+declined. That hand remains extended.
+
+Best,
+I?aki
+
+>
+> All that said, thanks for the starting this discussion!
+>
+> Cheers, Dirk
+>
+> --
+> dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+
+
+-- 
+I?aki ?car
+
+
+From cboett|g @end|ng |rom gm@||@com  Mon Feb 10 16:35:06 2025
+From: cboett|g @end|ng |rom gm@||@com (Carl Boettiger)
+Date: Mon, 10 Feb 2025 07:35:06 -0800
+Subject: [Rd] binary R packages for GNU/Linux
+In-Reply-To: <CALEXWq3NWC+ygA+sibqE1VdF8rEsnjvYx8dqR-xsj3JdVudYag@mail.gmail.com>
+References: <01020194ef1ddab7-7ce660cf-1bd2-4d56-9426-3d3930019d6a-000000@eu-west-1.amazonses.com>
+ <45B7CFB4-A9F9-48EA-9B68-5CEA81B2F91D@R-project.org>
+ <01020194ef842fd9-d0ae4ebf-98bb-48ea-be9d-f72bff73eda8-000000@eu-west-1.amazonses.com>
+ <26537.64093.228457.76824@rob.eddelbuettel.com>
+ <CALEXWq3NWC+ygA+sibqE1VdF8rEsnjvYx8dqR-xsj3JdVudYag@mail.gmail.com>
+Message-ID: <CAN_1p9xrJd_YHVOJ0i8H4YzOsGg7K5mSZWcShs_VHPMDvDSDpg@mail.gmail.com>
+
+Great discussion.
+
+Just to note another example I don't think was mentioned -- The r-universe
+project also builds binaries for Linux (Ubuntu latest)
+https://docs.r-universe.dev/install/binaries.html (as well as other targets
+including wasm).  It also provides binaries for Bioconductor and packages
+on any git-based version control platform (e.g. GitHub).
+
+R Universe is open source and a top-level project of the R Consortium.
+
+Cheers,
+
+Carl
+
+---
+Carl Boettiger
+http://carlboettiger.info/
+
+
+On Mon, Feb 10, 2025 at 5:30?AM I?aki Ucar <iucar at fedoraproject.org> wrote:
+
+> On Mon, 10 Feb 2025 at 14:09, Dirk Eddelbuettel <edd at debian.org> wrote:
+> >
+> >
+> > On 10 February 2025 at 11:00, Tobias Verbeke wrote:
+> > | Another argument to demonstrate the feasibility is the r2u project
+> > | (https://github.com/eddelbuettel/r2u). It offers CRAN as Ubuntu
+> Binaries, but
+> > | in order to build these Ubuntu Binaries it actually makes use of the
+> binary R
+> > | packages built by PPM. Quoting from
+> https://eddelbuettel.github.io/r2u/: "For
+> > | the CRAN binaries we  either repackage P3M/RSPM/PPM builds (where
+> > | available) or build natively." They cover all CRAN packages. The usage
+> of PPM
+> > | as a source is, of course, a weakness (in the grand scheme of things),
+> but
+> > | the point here is about the feasibility of building the packages in a
+> > | portable way per version of a particular distribution, architecture
+> etc.
+> >
+> > As you brought this up, allow me to clarify: The re-use (where possible)
+> is
+> > simply a shortcut "where possible".  Each day when I cover updated
+> packages,
+> > I hit maybe 5 per cent of packages where for reasons I still cannot
+> decipher
+> > p3m.dev does not have a binary, so I build those 5 per cent from source.
+> > Similarly for the approx 450 BioConductor packages all builds are from
+> > source.
+> >
+> > Rebuilding everything from source "just because we want to" is entirely
+> > possible but as it is my time waiting for binaries I currently do not
+> force
+> > full rebuilds but I easily could. Also note that about 22% of packages
+> > contain native code, leaving 78% which are not. Re-use is even simpler
+> there
+> > as these 78% as they contain only (portable) R processing. So if we
+> wanted to
+> > compile all native packages for Ubuntu, we could. It is a resourcing
+> issue
+> > that has not yet been a prioruty for me. Inaki does it for Fedora, Detlef
+> > does it for OpenSUSE.
+>
+> And for completeness, [1] is where we painstakingly* maintain a list
+> of system dependencies, [2] is where the daily magic happens for
+> keeping track of CRAN, and [3] performs the heavy-lifting and
+> publishes an RPM repository with the result.
+>
+> [1] https://github.com/cran4linux/sysreqs
+> [2] https://github.com/cran4linux/cran2copr
+> [3] https://copr.fedorainfracloud.org/coprs/iucar/cran
+>
+> *Because, you know, SystemRequirements.
+>
+> > The more important point of these package is the full system
+> integration. You
+> > do get _all_ binary dependencies declared, exactly as a
+> distribution-native
+> > package (of which Debian/Ubuntu have a bit over 1k) would. Guaranteed.
+> > Reliably. Fast. That is a big step up for large deployments, for
+> testing, for
+> > less experienced users.
+> >
+> > So thanks for starting a discussion around this as 'we' as a community
+> are
+> > falling a bit short here.
+>
+> Indeed, thank you, Tobias.
+>
+> > One open question is if we could pull something off
+> > that works like the Python wheels and offers cross-distro builds, ideally
+> > without static linking. Your "CRAN libraries" added to the ld.so path
+> may do
+> > this. I do not know how feasible / involved this would be so so far I
+> > concentrated on doing something simpler -- but feasible and reliable by
+> > working exactly as the distribution packages work.
+>
+> It would be perfectly feasible to maintain sync'ed builds (in terms of
+> version) of system dependencies at CRAN-provided (RPM, APT...)
+> repositories as compat packages for various distributions, then all
+> packages could be built once and shipped everywhere (i.e. cross-distro
+> builds). Collaterally, this would increase reproducibility of package
+> checks to a certain extent.
+>
+> I offered my help in these matters in the past, but was kindly
+> declined. That hand remains extended.
+>
+> Best,
+> I?aki
+>
+> >
+> > All that said, thanks for the starting this discussion!
+> >
+> > Cheers, Dirk
+> >
+> > --
+> > dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+> >
+> > ______________________________________________
+> > R-devel at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-devel
+> >
+>
+>
+> --
+> I?aki ?car
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+
+	[[alternative HTML version deleted]]
+
+
+From ||u|@@rev|||@ @end|ng |rom gm@||@com  Mon Feb 10 16:37:54 2025
+From: ||u|@@rev|||@ @end|ng |rom gm@||@com (=?UTF-8?Q?Llu=C3=ADs_Revilla?=)
+Date: Mon, 10 Feb 2025 16:37:54 +0100
+Subject: [Rd] binary R packages for GNU/Linux
+In-Reply-To: <CAN_1p9xrJd_YHVOJ0i8H4YzOsGg7K5mSZWcShs_VHPMDvDSDpg@mail.gmail.com>
+References: <01020194ef1ddab7-7ce660cf-1bd2-4d56-9426-3d3930019d6a-000000@eu-west-1.amazonses.com>
+ <45B7CFB4-A9F9-48EA-9B68-5CEA81B2F91D@R-project.org>
+ <01020194ef842fd9-d0ae4ebf-98bb-48ea-be9d-f72bff73eda8-000000@eu-west-1.amazonses.com>
+ <26537.64093.228457.76824@rob.eddelbuettel.com>
+ <CALEXWq3NWC+ygA+sibqE1VdF8rEsnjvYx8dqR-xsj3JdVudYag@mail.gmail.com>
+ <CAN_1p9xrJd_YHVOJ0i8H4YzOsGg7K5mSZWcShs_VHPMDvDSDpg@mail.gmail.com>
+Message-ID: <CAN+W6_s3pYbzKYmE0Rq=xkjSg2T-AqDTEgD_3ZGSf52-HFsg=g@mail.gmail.com>
+
+Adding a different project to this discussion:
+
+Recently at the R repository working group a project to provide them for
+multiple distributions and toolchain was presented.
+See the documentation about what do they (Patrick Schratz) share:
+https://docs.r-package-binaries.devxy.io/index.html
+
+The existence of these projects (Alpine, RedHat, Fedora, Ubuntu, r2u, P3M,
+r-universe, ...) providing binaries show there is interest even if there
+are multiple combinations of platforms, toolchains and library versions.
+If these projects cooperate between them (as shown by r2u project) and with
+CRAN, I think this will reduce duplicated effort and help the users (and
+repositories).
+Binaries could be served in multiple places matching what R requires and/or
+what the distribution uses without much more (technical) effort.
+
+Cheers,
+
+Llu?s
+
+On Mon, 10 Feb 2025 at 16:35, Carl Boettiger <cboettig at gmail.com> wrote:
+
+> Great discussion.
+>
+> Just to note another example I don't think was mentioned -- The r-universe
+> project also builds binaries for Linux (Ubuntu latest)
+> https://docs.r-universe.dev/install/binaries.html (as well as other
+> targets
+> including wasm).  It also provides binaries for Bioconductor and packages
+> on any git-based version control platform (e.g. GitHub).
+>
+> R Universe is open source and a top-level project of the R Consortium.
+>
+> Cheers,
+>
+> Carl
+>
+> ---
+> Carl Boettiger
+> http://carlboettiger.info/
+>
+>
+> On Mon, Feb 10, 2025 at 5:30?AM I?aki Ucar <iucar at fedoraproject.org>
+> wrote:
+>
+> > On Mon, 10 Feb 2025 at 14:09, Dirk Eddelbuettel <edd at debian.org> wrote:
+> > >
+> > >
+> > > On 10 February 2025 at 11:00, Tobias Verbeke wrote:
+> > > | Another argument to demonstrate the feasibility is the r2u project
+> > > | (https://github.com/eddelbuettel/r2u). It offers CRAN as Ubuntu
+> > Binaries, but
+> > > | in order to build these Ubuntu Binaries it actually makes use of the
+> > binary R
+> > > | packages built by PPM. Quoting from
+> > https://eddelbuettel.github.io/r2u/: "For
+> > > | the CRAN binaries we  either repackage P3M/RSPM/PPM builds (where
+> > > | available) or build natively." They cover all CRAN packages. The
+> usage
+> > of PPM
+> > > | as a source is, of course, a weakness (in the grand scheme of
+> things),
+> > but
+> > > | the point here is about the feasibility of building the packages in a
+> > > | portable way per version of a particular distribution, architecture
+> > etc.
+> > >
+> > > As you brought this up, allow me to clarify: The re-use (where
+> possible)
+> > is
+> > > simply a shortcut "where possible".  Each day when I cover updated
+> > packages,
+> > > I hit maybe 5 per cent of packages where for reasons I still cannot
+> > decipher
+> > > p3m.dev does not have a binary, so I build those 5 per cent from
+> source.
+> > > Similarly for the approx 450 BioConductor packages all builds are from
+> > > source.
+> > >
+> > > Rebuilding everything from source "just because we want to" is entirely
+> > > possible but as it is my time waiting for binaries I currently do not
+> > force
+> > > full rebuilds but I easily could. Also note that about 22% of packages
+> > > contain native code, leaving 78% which are not. Re-use is even simpler
+> > there
+> > > as these 78% as they contain only (portable) R processing. So if we
+> > wanted to
+> > > compile all native packages for Ubuntu, we could. It is a resourcing
+> > issue
+> > > that has not yet been a prioruty for me. Inaki does it for Fedora,
+> Detlef
+> > > does it for OpenSUSE.
+> >
+> > And for completeness, [1] is where we painstakingly* maintain a list
+> > of system dependencies, [2] is where the daily magic happens for
+> > keeping track of CRAN, and [3] performs the heavy-lifting and
+> > publishes an RPM repository with the result.
+> >
+> > [1] https://github.com/cran4linux/sysreqs
+> > [2] https://github.com/cran4linux/cran2copr
+> > [3] https://copr.fedorainfracloud.org/coprs/iucar/cran
+> >
+> > *Because, you know, SystemRequirements.
+> >
+> > > The more important point of these package is the full system
+> > integration. You
+> > > do get _all_ binary dependencies declared, exactly as a
+> > distribution-native
+> > > package (of which Debian/Ubuntu have a bit over 1k) would. Guaranteed.
+> > > Reliably. Fast. That is a big step up for large deployments, for
+> > testing, for
+> > > less experienced users.
+> > >
+> > > So thanks for starting a discussion around this as 'we' as a community
+> > are
+> > > falling a bit short here.
+> >
+> > Indeed, thank you, Tobias.
+> >
+> > > One open question is if we could pull something off
+> > > that works like the Python wheels and offers cross-distro builds,
+> ideally
+> > > without static linking. Your "CRAN libraries" added to the ld.so path
+> > may do
+> > > this. I do not know how feasible / involved this would be so so far I
+> > > concentrated on doing something simpler -- but feasible and reliable by
+> > > working exactly as the distribution packages work.
+> >
+> > It would be perfectly feasible to maintain sync'ed builds (in terms of
+> > version) of system dependencies at CRAN-provided (RPM, APT...)
+> > repositories as compat packages for various distributions, then all
+> > packages could be built once and shipped everywhere (i.e. cross-distro
+> > builds). Collaterally, this would increase reproducibility of package
+> > checks to a certain extent.
+> >
+> > I offered my help in these matters in the past, but was kindly
+> > declined. That hand remains extended.
+> >
+> > Best,
+> > I?aki
+> >
+> > >
+> > > All that said, thanks for the starting this discussion!
+> > >
+> > > Cheers, Dirk
+> > >
+> > > --
+> > > dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+> > >
+> > > ______________________________________________
+> > > R-devel at r-project.org mailing list
+> > > https://stat.ethz.ch/mailman/listinfo/r-devel
+> > >
+> >
+> >
+> > --
+> > I?aki ?car
+> >
+> > ______________________________________________
+> > R-devel at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-devel
+> >
+>
+>         [[alternative HTML version deleted]]
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+
+	[[alternative HTML version deleted]]
+
+
+From edd @end|ng |rom deb|@n@org  Mon Feb 10 17:23:53 2025
+From: edd @end|ng |rom deb|@n@org (Dirk Eddelbuettel)
+Date: Mon, 10 Feb 2025 10:23:53 -0600
+Subject: [Rd] binary R packages for GNU/Linux
+In-Reply-To: <CAN_1p9xrJd_YHVOJ0i8H4YzOsGg7K5mSZWcShs_VHPMDvDSDpg@mail.gmail.com>
+References: <01020194ef1ddab7-7ce660cf-1bd2-4d56-9426-3d3930019d6a-000000@eu-west-1.amazonses.com>
+ <45B7CFB4-A9F9-48EA-9B68-5CEA81B2F91D@R-project.org>
+ <01020194ef842fd9-d0ae4ebf-98bb-48ea-be9d-f72bff73eda8-000000@eu-west-1.amazonses.com>
+ <26537.64093.228457.76824@rob.eddelbuettel.com>
+ <CALEXWq3NWC+ygA+sibqE1VdF8rEsnjvYx8dqR-xsj3JdVudYag@mail.gmail.com>
+ <CAN_1p9xrJd_YHVOJ0i8H4YzOsGg7K5mSZWcShs_VHPMDvDSDpg@mail.gmail.com>
+Message-ID: <26538.10265.377602.143676@rob.eddelbuettel.com>
+
+
+On 10 February 2025 at 07:35, Carl Boettiger wrote:
+| Great discussion.??
+| 
+| Just to note another example I don't think was mentioned -- The r-universe
+| project also builds binaries for Linux (Ubuntu latest) https://
+| docs.r-universe.dev/install/binaries.html (as well as other targets including
+| wasm).? It also provides binaries for Bioconductor and packages on any
+| git-based version control platform (e.g. GitHub).??
+
+Yes ... but these are 'naked' binaries as created by 'R CMD INSTALL --build'
+but without system integration (and as such mirror what p3m.dev does). This
+has its merits (it is simpler, can cover more OS variants) but it is also
+more limited.
+
+What we (ie Detlef, Inaki, myself) myself do for the distros is fundamentally
+different. Both are merits, both can coexist, but I like the added 'oomph'
+you get by integrating properly with the distribution you deploy on.  Ubuntu
+is a pretty useful base case.
+
+Dirk
+
+-- 
+dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From h@w|ckh@m @end|ng |rom gm@||@com  Mon Feb 10 20:32:17 2025
+From: h@w|ckh@m @end|ng |rom gm@||@com (Hadley Wickham)
+Date: Mon, 10 Feb 2025 13:32:17 -0600
+Subject: [Rd] binary R packages for GNU/Linux
+In-Reply-To: <01020194ef1ddab7-7ce660cf-1bd2-4d56-9426-3d3930019d6a-000000@eu-west-1.amazonses.com>
+References: <01020194ef1ddab7-7ce660cf-1bd2-4d56-9426-3d3930019d6a-000000@eu-west-1.amazonses.com>
+Message-ID: <CABdHhvH--S5OP4CViFDzqupwmBVOvxbENoCBz2HWWziZU6YE9Q@mail.gmail.com>
+
+>
+>
+>
+> The proprietary Package Manager (PPM) from Posit (
+> https://packagemanager.posit.co/client/#/) does offer binary packages for
+> GNU/Linux, but the usage of this service is restricted in ways that go
+> against the principles of open source (
+> https://posit.co/about/posit-service-terms-of-use/). By way of example,
+> mirroring is not allowed and certain categories of users are excluded (age
+> categories, competitors, ...). This is maybe expected to some, but this
+> clearly does not offer a proper foundation for the distribution of open
+> source R packages.
+>
+
+If this terms of service is the main sticking point, I could certainly find
+out if we could change them. From a quick read, my personal sense (with no
+internal exploration whatsoever) is that these (a) were probably written by
+a lawyer with no specific understanding of PPM, let alone that these are
+binaries built from open-source packages, and (b) probably aren't legally
+binding anyway (since for most PPM usage, people downloading packages never
+see the TOS).
+
+Hadley
+-- 
+http://hadley.nz
+
+	[[alternative HTML version deleted]]
+
+
+From @|mon@urb@nek @end|ng |rom R-project@org  Mon Feb 10 21:48:12 2025
+From: @|mon@urb@nek @end|ng |rom R-project@org (Simon Urbanek)
+Date: Tue, 11 Feb 2025 09:48:12 +1300
+Subject: [Rd] binary R packages for GNU/Linux
+In-Reply-To: <26538.10265.377602.143676@rob.eddelbuettel.com>
+References: <01020194ef1ddab7-7ce660cf-1bd2-4d56-9426-3d3930019d6a-000000@eu-west-1.amazonses.com>
+ <45B7CFB4-A9F9-48EA-9B68-5CEA81B2F91D@R-project.org>
+ <01020194ef842fd9-d0ae4ebf-98bb-48ea-be9d-f72bff73eda8-000000@eu-west-1.amazonses.com>
+ <26537.64093.228457.76824@rob.eddelbuettel.com>
+ <CALEXWq3NWC+ygA+sibqE1VdF8rEsnjvYx8dqR-xsj3JdVudYag@mail.gmail.com>
+ <CAN_1p9xrJd_YHVOJ0i8H4YzOsGg7K5mSZWcShs_VHPMDvDSDpg@mail.gmail.com>
+ <26538.10265.377602.143676@rob.eddelbuettel.com>
+Message-ID: <71866055-9368-40A9-A139-B2772D73AF41@R-project.org>
+
+
+> On Feb 11, 2025, at 5:23 AM, Dirk Eddelbuettel <edd at debian.org> wrote:
+> 
+> 
+> On 10 February 2025 at 07:35, Carl Boettiger wrote:
+> | Great discussion.  
+> | 
+> | Just to note another example I don't think was mentioned -- The r-universe
+> | project also builds binaries for Linux (Ubuntu latest) https://
+> | docs.r-universe.dev/install/binaries.html (as well as other targets including
+> | wasm).  It also provides binaries for Bioconductor and packages on any
+> | git-based version control platform (e.g. GitHub).  
+> 
+> Yes ... but these are 'naked' binaries as created by 'R CMD INSTALL --build'
+> but without system integration (and as such mirror what p3m.dev does). This
+> has its merits (it is simpler, can cover more OS variants) but it is also
+> more limited.
+> 
+> What we (ie Detlef, Inaki, myself) myself do for the distros is fundamentally
+> different. Both are merits, both can coexist, but I like the added 'oomph'
+> you get by integrating properly with the distribution you deploy on.  Ubuntu
+> is a pretty useful base case.
+> 
+
+
+In case it wasn't clear - precisely this was my point, and I was counting on all those doing the hard work already like Dirk to speak up (thanks, Dirk and I?aki). I'm not convinced that "naked" binaries are that useful, so just creating a new subdirectory isn't a solution IMHO. It works for some cases, but not in general - many can build their specific binaries, but it doesn't mean they work for others. The real work has to be done by people that have experience like Dirk and others mentioned above, not CRAN. Any such binaries are tied to the R build (just like macOS CRAN R sets its platform/arch target so it can use the CRAN binaries), so it requires cooperation across the spectrum including the distros. That said, the Linux maintainers are certainly invited to liaise with CRAN if they think it would be beneficial to host things on CRAN - we have done in the past, but with the explosion of distros and releases the trend was to go do the distros instead.
+
+Cheers,
+Simon
+
+
+From jeroenoom@ @end|ng |rom gm@||@com  Mon Feb 10 23:19:28 2025
+From: jeroenoom@ @end|ng |rom gm@||@com (Jeroen Ooms)
+Date: Mon, 10 Feb 2025 23:19:28 +0100
+Subject: [Rd] binary R packages for GNU/Linux
+In-Reply-To: <71866055-9368-40A9-A139-B2772D73AF41@R-project.org>
+References: <01020194ef1ddab7-7ce660cf-1bd2-4d56-9426-3d3930019d6a-000000@eu-west-1.amazonses.com>
+ <45B7CFB4-A9F9-48EA-9B68-5CEA81B2F91D@R-project.org>
+ <01020194ef842fd9-d0ae4ebf-98bb-48ea-be9d-f72bff73eda8-000000@eu-west-1.amazonses.com>
+ <26537.64093.228457.76824@rob.eddelbuettel.com>
+ <CALEXWq3NWC+ygA+sibqE1VdF8rEsnjvYx8dqR-xsj3JdVudYag@mail.gmail.com>
+ <CAN_1p9xrJd_YHVOJ0i8H4YzOsGg7K5mSZWcShs_VHPMDvDSDpg@mail.gmail.com>
+ <26538.10265.377602.143676@rob.eddelbuettel.com>
+ <71866055-9368-40A9-A139-B2772D73AF41@R-project.org>
+Message-ID: <CABFfbXv7sid-Gq+aGD-QWR0zQr0rOH_0_LBGEsu2_neBTjGCng@mail.gmail.com>
+
+On Mon, Feb 10, 2025 at 9:48?PM Simon Urbanek
+<simon.urbanek at r-project.org> wrote:
+>
+>
+> > On Feb 11, 2025, at 5:23 AM, Dirk Eddelbuettel <edd at debian.org> wrote:
+> >
+> >
+> > On 10 February 2025 at 07:35, Carl Boettiger wrote:
+> > | Great discussion.
+> > |
+> > | Just to note another example I don't think was mentioned -- The r-universe
+> > | project also builds binaries for Linux (Ubuntu latest) https://
+> > | docs.r-universe.dev/install/binaries.html (as well as other targets including
+> > | wasm).  It also provides binaries for Bioconductor and packages on any
+> > | git-based version control platform (e.g. GitHub).
+> >
+> > Yes ... but these are 'naked' binaries as created by 'R CMD INSTALL --build'
+> > but without system integration (and as such mirror what p3m.dev does). This
+> > has its merits (it is simpler, can cover more OS variants) but it is also
+> > more limited.
+> >
+> > What we (ie Detlef, Inaki, myself) myself do for the distros is fundamentally
+> > different. Both are merits, both can coexist, but I like the added 'oomph'
+> > you get by integrating properly with the distribution you deploy on.  Ubuntu
+> > is a pretty useful base case.
+> >
+>
+>
+> In case it wasn't clear - precisely this was my point, and I was counting on all those doing the hard work already like Dirk to speak up (thanks, Dirk and I?aki). I'm not convinced that "naked" binaries are that useful, so just creating a new subdirectory isn't a solution IMHO. It works for some cases, but not in general - many can build their specific binaries, but it doesn't mean they work for others.
+
+The "naked binaries" are widely used, and therefore probably useful to
+many folks, me included. Some standardisation on paths would be
+incredibly useful, even if CRAN would not offer such binaries, other
+repositories could.
+
+Note that Dirks apt packages are literally repackaged binaries form
+p3m, for convenience of ubuntu (root) users. As Dirk noted, some
+people prefer installing binaries via apt rather than
+install.packages(), which is all fine, but methods both have pros and
+cons. However, any arguments against p3m based on TOS or compatibility
+will extend to the repackaged apt binaries, so I don't think that
+argument holds.
+
+
+From edd @end|ng |rom deb|@n@org  Tue Feb 11 00:07:19 2025
+From: edd @end|ng |rom deb|@n@org (Dirk Eddelbuettel)
+Date: Mon, 10 Feb 2025 17:07:19 -0600
+Subject: [Rd] binary R packages for GNU/Linux
+In-Reply-To: <CABFfbXv7sid-Gq+aGD-QWR0zQr0rOH_0_LBGEsu2_neBTjGCng@mail.gmail.com>
+References: <01020194ef1ddab7-7ce660cf-1bd2-4d56-9426-3d3930019d6a-000000@eu-west-1.amazonses.com>
+ <45B7CFB4-A9F9-48EA-9B68-5CEA81B2F91D@R-project.org>
+ <01020194ef842fd9-d0ae4ebf-98bb-48ea-be9d-f72bff73eda8-000000@eu-west-1.amazonses.com>
+ <26537.64093.228457.76824@rob.eddelbuettel.com>
+ <CALEXWq3NWC+ygA+sibqE1VdF8rEsnjvYx8dqR-xsj3JdVudYag@mail.gmail.com>
+ <CAN_1p9xrJd_YHVOJ0i8H4YzOsGg7K5mSZWcShs_VHPMDvDSDpg@mail.gmail.com>
+ <26538.10265.377602.143676@rob.eddelbuettel.com>
+ <71866055-9368-40A9-A139-B2772D73AF41@R-project.org>
+ <CABFfbXv7sid-Gq+aGD-QWR0zQr0rOH_0_LBGEsu2_neBTjGCng@mail.gmail.com>
+Message-ID: <26538.34471.622699.127451@rob.eddelbuettel.com>
+
+
+On 10 February 2025 at 23:19, Jeroen Ooms wrote:
+| The "naked binaries" are widely used, and therefore probably useful to
+| many folks, me included. Some standardisation on paths would be
+| incredibly useful, even if CRAN would not offer such binaries, other
+| repositories could.
+
+Sure, but naked binaries can (and do) break more often i.e. real example from
+just last week in another project p3m served a stringr dependency via a
+stringi binary with a wrong libicu* outside of the particular release,
+breaking.  That simply cannot and hence will not happen at r2u.
+
+But choice is good. If people want to manually manage their system
+dependencies they surely, they can also outsource it to another layer. As you
+say, all trade-offs and if you are happy with naked binaries more power to
+you. I prefer the proper integration and that's what I built. 
+
+Dirk
+
+-- 
+dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From |uc@r @end|ng |rom |edor@project@org  Tue Feb 11 09:07:21 2025
+From: |uc@r @end|ng |rom |edor@project@org (=?UTF-8?Q?I=C3=B1aki_Ucar?=)
+Date: Tue, 11 Feb 2025 09:07:21 +0100
+Subject: [Rd] binary R packages for GNU/Linux
+In-Reply-To: <26538.34471.622699.127451@rob.eddelbuettel.com>
+References: <01020194ef1ddab7-7ce660cf-1bd2-4d56-9426-3d3930019d6a-000000@eu-west-1.amazonses.com>
+ <45B7CFB4-A9F9-48EA-9B68-5CEA81B2F91D@R-project.org>
+ <01020194ef842fd9-d0ae4ebf-98bb-48ea-be9d-f72bff73eda8-000000@eu-west-1.amazonses.com>
+ <26537.64093.228457.76824@rob.eddelbuettel.com>
+ <CALEXWq3NWC+ygA+sibqE1VdF8rEsnjvYx8dqR-xsj3JdVudYag@mail.gmail.com>
+ <CAN_1p9xrJd_YHVOJ0i8H4YzOsGg7K5mSZWcShs_VHPMDvDSDpg@mail.gmail.com>
+ <26538.10265.377602.143676@rob.eddelbuettel.com>
+ <71866055-9368-40A9-A139-B2772D73AF41@R-project.org>
+ <CABFfbXv7sid-Gq+aGD-QWR0zQr0rOH_0_LBGEsu2_neBTjGCng@mail.gmail.com>
+ <26538.34471.622699.127451@rob.eddelbuettel.com>
+Message-ID: <CALEXWq019+Y5-88aoC_zyoJBvu4-ZeeLtiQmL+T_pCrQEDtCgQ@mail.gmail.com>
+
+On 10 February 2025 at 23:19, Jeroen Ooms wrote:
+> some people prefer installing binaries via apt rather than
+> install.packages(), which is all fine, but methods both have pros and
+> cons.
+
+Some people prefer having all their binaries *managed* by apt/dnf, but
+still using install.packages() to trigger that work. I count myself
+there, and that's what I built.
+
+-- 
+I?aki ?car
+
+
+From @te|@nML @end|ng |rom co||oc@t|on@@de  Tue Feb 11 10:36:53 2025
+From: @te|@nML @end|ng |rom co||oc@t|on@@de (Stephanie Evert)
+Date: Tue, 11 Feb 2025 10:36:53 +0100
+Subject: [Rd] binary R packages for GNU/Linux
+In-Reply-To: <26538.10265.377602.143676@rob.eddelbuettel.com>
+References: <01020194ef1ddab7-7ce660cf-1bd2-4d56-9426-3d3930019d6a-000000@eu-west-1.amazonses.com>
+ <45B7CFB4-A9F9-48EA-9B68-5CEA81B2F91D@R-project.org>
+ <01020194ef842fd9-d0ae4ebf-98bb-48ea-be9d-f72bff73eda8-000000@eu-west-1.amazonses.com>
+ <26537.64093.228457.76824@rob.eddelbuettel.com>
+ <CALEXWq3NWC+ygA+sibqE1VdF8rEsnjvYx8dqR-xsj3JdVudYag@mail.gmail.com>
+ <CAN_1p9xrJd_YHVOJ0i8H4YzOsGg7K5mSZWcShs_VHPMDvDSDpg@mail.gmail.com>
+ <26538.10265.377602.143676@rob.eddelbuettel.com>
+Message-ID: <9E7F2C17-8641-40B1-AB1E-E5F95E76493D@collocations.de>
+
+
+
+> On 10 Feb 2025, at 17:23, Dirk Eddelbuettel <edd at debian.org> wrote:
+> 
+> What we (ie Detlef, Inaki, myself) myself do for the distros is fundamentally
+> different. Both are merits, both can coexist, but I like the added 'oomph'
+> you get by integrating properly with the distribution you deploy on.  Ubuntu
+> is a pretty useful base case.
+
+Just a +1 on this point and many thanks to Dirk for providing r2u, which we happily use to install R packages on our Linux servers. 
+
+? Stephanie
+
+
+	[[alternative HTML version deleted]]
+
+
+From t|m@t@y|or @end|ng |rom h|ddene|eph@nt@@co@uk  Tue Feb 11 10:38:37 2025
+From: t|m@t@y|or @end|ng |rom h|ddene|eph@nt@@co@uk (Tim Taylor)
+Date: Tue, 11 Feb 2025 09:38:37 +0000
+Subject: [Rd] binary R packages for GNU/Linux
+In-Reply-To: <CALEXWq019+Y5-88aoC_zyoJBvu4-ZeeLtiQmL+T_pCrQEDtCgQ@mail.gmail.com>
+References: <01020194ef1ddab7-7ce660cf-1bd2-4d56-9426-3d3930019d6a-000000@eu-west-1.amazonses.com>
+ <45B7CFB4-A9F9-48EA-9B68-5CEA81B2F91D@R-project.org>
+ <01020194ef842fd9-d0ae4ebf-98bb-48ea-be9d-f72bff73eda8-000000@eu-west-1.amazonses.com>
+ <26537.64093.228457.76824@rob.eddelbuettel.com>
+ <CALEXWq3NWC+ygA+sibqE1VdF8rEsnjvYx8dqR-xsj3JdVudYag@mail.gmail.com>
+ <CAN_1p9xrJd_YHVOJ0i8H4YzOsGg7K5mSZWcShs_VHPMDvDSDpg@mail.gmail.com>
+ <26538.10265.377602.143676@rob.eddelbuettel.com>
+ <71866055-9368-40A9-A139-B2772D73AF41@R-project.org>
+ <CABFfbXv7sid-Gq+aGD-QWR0zQr0rOH_0_LBGEsu2_neBTjGCng@mail.gmail.com>
+ <26538.34471.622699.127451@rob.eddelbuettel.com>
+ <CALEXWq019+Y5-88aoC_zyoJBvu4-ZeeLtiQmL+T_pCrQEDtCgQ@mail.gmail.com>
+Message-ID: <55bce4c2-0124-4f2d-876f-5fbe4206d45c@app.fastmail.com>
+
+On Tue, 11 Feb 2025, at 8:07 AM, I?aki Ucar wrote:
+> On 10 February 2025 at 23:19, Jeroen Ooms wrote:
+>> some people prefer installing binaries via apt rather than
+>> install.packages(), which is all fine, but methods both have pros and
+>> cons.
+>
+> Some people prefer having all their binaries *managed* by apt/dnf, but
+> still using install.packages() to trigger that work. I count myself
+> there, and that's what I built.
+
+Ditto. It really is automagical!
+
+FWIW - I think this integration with the distributions is key to a painless experience. Perhaps a better question is to ask Dirk, I?aki et al. what their pain points are and whether they need any additional assistance? E.g. I'm aware of discussions around System Requirements that could help:
+
+https://bugs.r-project.org/show_bug.cgi?id=18586
+
+Tim
+
+
+From |kry|ov @end|ng |rom d|@root@org  Tue Feb 11 14:59:27 2025
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Tue, 11 Feb 2025 16:59:27 +0300
+Subject: [Rd] A few problems with Sys.setLanguage()
+Message-ID: <20250211165927.7fd4f2d8@arachnoid>
+
+Hello R-devel,
+
+Currently, Sys.setLanguage() interprets an empty/absent environment
+variable LANGUAGE to mean unset="en", which disagrees with gettext():
+it defaults to the LC_MESSAGES category of the current locale [1]. As a
+result, on systems with $LANGUAGE normally unset, Sys.setLanguage(...)
+returns "en" instead of the language previously in effect. I would like
+to suggest making the default unset = Sys.getlocale("LC_MESSAGES")
+instead of "en" so that Sys.setLanguage(Sys.setLanguage(anything))
+would not reset language to English. Making Sys.setLanguage() accept an
+empty string or NA to reset or remove LANGUAGE (and allowing
+Sys.setLanguage() to return that value) could also be an option.
+
+Additionally, there is a number of problems with the way
+Sys.setLanguage() handles R having started up in the C locale, some of
+them easier to solve than others.
+
+gettext() disables translation lookup only when the LC_MESSAGES locale
+category is "C" or "POSIX", so the current test for identical("C",
+Sys.getlocale()) will miss the situations when not all locale
+categories are set to "C". I think the correct test should be
+Sys.getlocale("LC_MESSAGES") %in% c("C", "POSIX", "C.UTF-8", "C.utf8").
+(On my GNU/Linux system, setting a "POSIX" locale returns it as "C",
+but I don't think that's guaranteed to happen everywhere.)
+
+So what should Sys.setLanguage(lang, force=TRUE) do when the current
+LC_MESSAGES locale category disables translation? "en_US.UTF-8" is not
+guaranteed to be present on a given system. POSIX documents 'locale -a'
+to list available locales [2], so R could attempt something like:
+
+# any locales except C.*/POSIX which disable translation?
+system("locale -a", intern = TRUE) |>
+ setdiff(c("C", "C.UTF-8", "C.utf8", "POSIX")) -> candidates
+locale <- if (any(mask <- startsWith(candidates, lang))) {
+ candidates[mask][[1]]
+} else if (length(candidates)) {
+ candidates[[1]]
+} else {
+ "en_US.UTF-8" # maybe it's available despite 'locale -a' failing?
+}
+lcSet <- Sys.setlocale("LC_MESSAGES", locale)
+
+Unfortunately, that's not all: translations are also affected by the
+LC_CTYPE category of the current locale, and gettext() will try to
+convert the translations into that locale's encoding before returning
+them. What about LC_CTYPE being "C"? Sometimes gettext() is able to
+transliterate:
+
+$ LC_CTYPE=C LANGUAGE=ru R -q -s -e 'foo'
+Oshibka: ob``ekt 'foo' ne najden
+Vy`polnenie ostanovleno
+
+And sometimes it's not:
+
+$ LC_CTYPE=C LANGUAGE=zh_CN R -q -s -e 'foo'
+??: ?????'foo'
+???? # <-- these are \x3F question marks, not replacement characters
+
+There doesn't seem to be a portable way to determine a locale with an
+encoding that would be appropriate in the current session. For example,
+on my system, only 4 locales out of 11 listed by 'locale -a' use UTF-8
+as their encoding (and sometimes UTF-8 is the wrong choice when I'm
+using 'luit' with a non-UTF-8 environment).
+
+R could try to force the same locale for LC_CTYPE as it sets
+LC_MESSAGES, or force a UTF-8 locale if it finds one, or leave LC_CTYPE
+as it is. All of these options have their downsides. How helpful is
+Sys.setLanguage(force = TRUE) in practice? 
+
+-- 
+Best regards,
+Ivan
+
+[1] The environment variables used for gettext() are listed at the
+following resources:
+https://www.gnu.org/software/gettext/manual/html_node/Locale-Environment-Variables.html
+https://pubs.opengroup.org/onlinepubs/9799919799/basedefs/V1_chap08.html#tag_08_02
+The exact lookup procedure is also documented here:
+https://pubs.opengroup.org/onlinepubs/9799919799/functions/dngettext.html
+In short, if the LC_MESSAGES category of the current locale is
+"C" or "POSIX", gettext() does not translate. (GNU gettext additionally
+disables translation for "C.UTF-8".) Otherwise it consults the LANGUAGE
+environment variable. If that variable is absent or empty, it uses the
+LC_MESSAGES category of the current locale. When a program calls
+setlocale(category, ""), $LANG provides the default value for all
+categories, which is overridden by the $LC_* variables for individual
+categories, which are all overridden by $LC_ALL.
+
+[2]
+https://pubs.opengroup.org/onlinepubs/9799919799/utilities/locale.html
+
+
+From tob|@@@verbeke @end|ng |rom open@n@|yt|c@@eu  Tue Feb 11 23:06:51 2025
+From: tob|@@@verbeke @end|ng |rom open@n@|yt|c@@eu (Tobias Verbeke)
+Date: Tue, 11 Feb 2025 22:06:51 +0000
+Subject: [Rd] binary R packages for GNU/Linux
+In-Reply-To: <CABdHhvH--S5OP4CViFDzqupwmBVOvxbENoCBz2HWWziZU6YE9Q@mail.gmail.com>
+References: <01020194ef1ddab7-7ce660cf-1bd2-4d56-9426-3d3930019d6a-000000@eu-west-1.amazonses.com>
+ <CABdHhvH--S5OP4CViFDzqupwmBVOvxbENoCBz2HWWziZU6YE9Q@mail.gmail.com>
+Message-ID: <01020194f70cfdb6-0c6b7b01-c413-4096-a1bd-349a281b5d29-000000@eu-west-1.amazonses.com>
+
+Thank you, Hadley. 
+
+It would be great indeed if this can be fixed!
+
+Kind regards,
+Tobias
+
+----- Original Message -----
+> From: "hadley wickham" <h.wickham at gmail.com>
+> To: "Tobias Verbeke" <tobias.verbeke at openanalytics.eu>
+> Cc: "r-devel at r-project.org" <r-devel at r-project.org>
+> Sent: Monday, February 10, 2025 8:32:17 PM
+> Subject: Re: [Rd] binary R packages for GNU/Linux
+
+>> The proprietary Package Manager (PPM) from Posit ( [
+>> https://packagemanager.posit.co/client/#/ |
+>> https://packagemanager.posit.co/client/#/ ] ) does offer binary packages for
+>> GNU/Linux, but the usage of this service is restricted in ways that go against
+>> the principles of open source ( [
+>> https://posit.co/about/posit-service-terms-of-use/ |
+>> https://posit.co/about/posit-service-terms-of-use/ ] ). By way of example,
+>> mirroring is not allowed and certain categories of users are excluded (age
+>> categories, competitors, ...). This is maybe expected to some, but this clearly
+>> does not offer a proper foundation for the distribution of open source R
+>> packages.
+
+> If this terms of service is the main sticking point, I could certainly find out
+> if we could change them. From a quick read, my personal sense (with no internal
+> exploration whatsoever) is that these (a) were probably written by a lawyer
+> with no specific understanding of PPM, let alone that these are binaries built
+> from open-source packages, and (b) probably aren't legally binding anyway
+> (since for most PPM usage, people downloading packages never see the TOS).
+
+> Hadley
+> --
+> [ http://hadley.nz/ | http://hadley.nz ]
+
+
+From tob|@@@verbeke @end|ng |rom open@n@|yt|c@@eu  Tue Feb 11 23:18:56 2025
+From: tob|@@@verbeke @end|ng |rom open@n@|yt|c@@eu (Tobias Verbeke)
+Date: Tue, 11 Feb 2025 22:18:56 +0000
+Subject: [Rd] binary R packages for GNU/Linux
+In-Reply-To: <26538.34471.622699.127451@rob.eddelbuettel.com>
+References: <01020194ef1ddab7-7ce660cf-1bd2-4d56-9426-3d3930019d6a-000000@eu-west-1.amazonses.com>
+ <26537.64093.228457.76824@rob.eddelbuettel.com>
+ <CALEXWq3NWC+ygA+sibqE1VdF8rEsnjvYx8dqR-xsj3JdVudYag@mail.gmail.com>
+ <CAN_1p9xrJd_YHVOJ0i8H4YzOsGg7K5mSZWcShs_VHPMDvDSDpg@mail.gmail.com>
+ <26538.10265.377602.143676@rob.eddelbuettel.com>
+ <71866055-9368-40A9-A139-B2772D73AF41@R-project.org>
+ <CABFfbXv7sid-Gq+aGD-QWR0zQr0rOH_0_LBGEsu2_neBTjGCng@mail.gmail.com>
+ <26538.34471.622699.127451@rob.eddelbuettel.com>
+Message-ID: <01020194f7180cfb-9cc4c0bd-5cb9-452e-abeb-26413431629d-000000@eu-west-1.amazonses.com>
+
+----- Original Message -----
+> From: "Dirk Eddelbuettel" <edd at debian.org>
+> To: "Jeroen Ooms" <jeroenooms at gmail.com>
+> Cc: "Simon Urbanek" <simon.urbanek at r-project.org>, "r-devel at r-project.org" <r-devel at r-project.org>, "Dirk Eddelbuettel"
+> <edd at debian.org>
+> Sent: Tuesday, February 11, 2025 12:07:19 AM
+> Subject: Re: [Rd] binary R packages for GNU/Linux
+
+> On 10 February 2025 at 23:19, Jeroen Ooms wrote:
+>| The "naked binaries" are widely used, and therefore probably useful to
+>| many folks, me included. Some standardisation on paths would be
+>| incredibly useful, even if CRAN would not offer such binaries, other
+>| repositories could.
+> 
+> Sure, but naked binaries can (and do) break more often i.e. real example from
+> just last week in another project p3m served a stringr dependency via a
+> stringi binary with a wrong libicu* outside of the particular release,
+> breaking.  That simply cannot and hence will not happen at r2u.
+> 
+> But choice is good. If people want to manually manage their system
+> dependencies they surely, they can also outsource it to another layer. As you
+> say, all trade-offs and if you are happy with naked binaries more power to
+> you. I prefer the proper integration and that's what I built.
+
+Thank you, all, for the valuable input and reactions. Let me summarize.
+
+I. choice is good 
+
+Many people find 'naked binaries' useful and many people find 'distribution binaries' useful. In our own work, we see a myriad of R deployments and installations with very different processes in place and in certain cases 'naked binaries' are more convenient than 'distribution binaries'. In other cases, it is the other way around. Both deserve their place in the R world.
+
+II. outsource to another layer
+
+In case of 'naked binaries' dependency management indeed needs to be outsourced to another layer. People typically use either a data store (e.g. the Github repo I?aki mentioned - https://github.com/cran4linux/sysreqs or others e.g. https://github.com/r-hub/r-system-requirements). Other people add a REST API on top, which is e.g. what the PPM does (sysreqs resources in https://packagemanager.posit.co/__api__/swagger/index.html#/). To give a taste of how outsourcing to another layer looks like: to build reproducible environments we automatically generate Dockerfiles starting from the R code of a project. During the process of generating the Dockerfile, the package dependencies of the relevant packages are queried (using one of the sources above) and used to automagically insert the appropriate 'apt install' commands above and prior to the relevant install.packages commands in the Dockerfile.
+
+III. goal in itself or ingredient for distribution packages
+
+The building of 'naked binaries' are a necessary step in the process of building the 'distribution packages'. To some the naked binary is the end goal (often used in combination with a data source on dependencies). To others it is part of the ingredients for the end goal (distribution package). In both scenarios, it makes sense to store these naked binaries somewhere in order not to duplicate the builds. I personally think CRAN would be a good place to store these since it would be a neutral, central place that immediately gives a seal of quality and trust.
+
+IV. repository layout
+
+Many organizations have internal repositories mimicking a CRAN layout. Also many tool developers make certain assumptions on the repository layout. E.g. if one wants versioned package installs of source packages, one goes to src/contrib/Archive/$PACKAGE_NAME/ to retrieve the version. This is not explicitly documented and I am glad to hear Jeroen thinks such standardization would be
+incredibly useful. Currently, the hosting of naked binaries actually makes use of a trick to put the packages under /src/contrib as in https://cran.r-universe.dev/bin/linux/noble/4.4/src/contrib/BayesERtools_0.2.0.tar.gz
+While handy, it is a bit odd and may be confusing to some. We can further work out the specs, but a generalization of the repository layout that allows to also have an Archive for binary packages (for Windows, MacOS, naked binaries) would be very useful to be able to have fast versioned package installation. This is important if you want to combine performance and reproducible environments (which are impossible to achieve with the latest binary versions - even when using distribution binaries). This is not a request for CRAN to offer all versions of binary packages, but if the layout is clearly specified, other package manager infrastructure (public or internal to organizations) can fill this gap.
+
+My message makes me think of the New Year Wish List mails Gabor Grothendieck tended to send out ~two decades ago (and maybe more recently) and I hope it triggers further discussion and ideas.
+
+Thanks again!
+
+Kind regards,
+Tobias
+
+
+From pd@|gd @end|ng |rom gm@||@com  Thu Feb 13 15:57:22 2025
+From: pd@|gd @end|ng |rom gm@||@com (peter dalgaard)
+Date: Thu, 13 Feb 2025 15:57:22 +0100
+Subject: [Rd] R 4.4.3 scheduled for February 28
+Message-ID: <4A3CB298-ABFF-4F42-B3BE-69F3C1F5B85C@gmail.com>
+
+Full schedule is available on developer.r-project.org (pending update from SVN).
+
+-- 
+Peter Dalgaard, Professor,
+Center for Statistics, Copenhagen Business School
+Solbjerg Plads 3, 2000 Frederiksberg, Denmark
+Phone: (+45)38153501
+Office: A 4.23
+Email: pd.mes at cbs.dk  Priv: PDalgd at gmail.com
+
+______________________________________________
+R-devel at r-project.org mailing list
+https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
