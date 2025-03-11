@@ -1,0 +1,1350 @@
+From borkrese@rch m@iii@g oii gm@ii@com  Thu Nov  5 07:47:54 2020
+From: borkrese@rch m@iii@g oii gm@ii@com (borkrese@rch m@iii@g oii gm@ii@com)
+Date: Thu, 5 Nov 2020 07:47:54 +0100
+Subject: [R-SIG-Finance] dccfit (RMGARCH): using uGARCHmultifit
+Message-ID: <000d01d6b33f$972eb320$c58c1960$@gmail.com>
+
+Anyone tried the function input uGARCHmultifit of the dccfit function from rmgarch? If so can you provide an example of how you used it and how to setup the uGARCHmultifit object? I can't figure it out.
+
+According to the documentation <https://www.rdocumentation.org/packages/rmgarch/versions/1.3-7/topics/dccfit-methods>  it should be possible to use the fit argument in dccfit where
+
+*	" fit: (A previously estimated univariate '>uGARCHmultifit object (see details)."
+
+I'd like to input my fits of several GARCH models directly into the final DCC estimation because the GARCH models where difficult to estimate (I used several optimizers).
+
+ 
+
+
+	[[alternative HTML version deleted]]
+
+
+From @|ex|o@ @end|ng |rom 4d@c@pe@com  Thu Nov  5 08:15:57 2020
+From: @|ex|o@ @end|ng |rom 4d@c@pe@com (Alexios Galanos)
+Date: Wed, 4 Nov 2020 23:15:57 -0800
+Subject: [R-SIG-Finance] dccfit (RMGARCH): using uGARCHmultifit
+In-Reply-To: <000d01d6b33f$972eb320$c58c1960$@gmail.com>
+References: <000d01d6b33f$972eb320$c58c1960$@gmail.com>
+Message-ID: <4DA4983D-1C70-46D0-A974-D88D784A523B@4dscape.com>
+
+Take a look at the examples in the inst/rmgarch.tests folder of the source package or this post from 7+ years ago: 
+
+http://www.unstarched.net/2013/01/03/the-garch-dcc-model-and-2-stage-dccmvt-estimation/
+
+-Alexios
+
+
+> On Nov 4, 2020, at 10:48 PM, borkresearch at gmail.com wrote:
+> 
+> ?Anyone tried the function input uGARCHmultifit of the dccfit function from rmgarch? If so can you provide an example of how you used it and how to setup the uGARCHmultifit object? I can't figure it out.
+> 
+> According to the documentation <https://www.rdocumentation.org/packages/rmgarch/versions/1.3-7/topics/dccfit-methods>  it should be possible to use the fit argument in dccfit where
+> 
+> *    " fit: (A previously estimated univariate '>uGARCHmultifit object (see details)."
+> 
+> I'd like to input my fits of several GARCH models directly into the final DCC estimation because the GARCH models where difficult to estimate (I used several optimizers).
+> 
+> 
+> 
+> 
+>    [[alternative HTML version deleted]]
+> 
+> _______________________________________________
+> R-SIG-Finance at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-sig-finance
+> -- Subscriber-posting only. If you want to post, subscribe first.
+> -- Also note that this is not the r-help list where general R questions should go.
+
+	[[alternative HTML version deleted]]
+
+
+From borkrese@rch m@iii@g oii gm@ii@com  Thu Nov  5 22:21:25 2020
+From: borkrese@rch m@iii@g oii gm@ii@com (borkrese@rch m@iii@g oii gm@ii@com)
+Date: Thu, 5 Nov 2020 22:21:25 +0100
+Subject: [R-SIG-Finance] dccfit (RMGARCH): using uGARCHmultifit
+In-Reply-To: <4DA4983D-1C70-46D0-A974-D88D784A523B@4dscape.com>
+References: <000d01d6b33f$972eb320$c58c1960$@gmail.com>
+ <4DA4983D-1C70-46D0-A974-D88D784A523B@4dscape.com>
+Message-ID: <000001d6b3b9$9ed0e420$dc72ac60$@gmail.com>
+
+Thanks Alexios for providing me references to examples. However, I?m not able to add a fit to the multifit object. How can I do this? See example below
+
+ 
+
+library(rmgarch)
+
+library(parallel)
+
+data(dji30retw)
+
+Dat = dji30retw[, 1:10, drop = FALSE]
+
+ 
+
+# Ten-asset example from http://www.unstarched.net/2013/01/03/the-garch-dcc-model-and-2-stage-dccmvt-estimation/
+
+ 
+
+# (1) Replicate example
+
+xspec = ugarchspec(mean.model = list(armaOrder = c(1, 1)), variance.model = list(garchOrder = c(1,1), model = 'sGARCH'), distribution.model = 'norm')
+
+uspec = multispec(replicate(10, xspec))
+
+spec1 = dccspec(uspec = uspec, dccOrder = c(1, 1), distribution = 'mvnorm')
+
+ 
+
+cl = makePSOCKcluster(10)
+
+multf = multifit(uspec, Dat, cluster = cl)
+
+multf at fit
+
+ 
+
+fit1 = dccfit(spec1, data = Dat, fit.control = list(eval.se = TRUE), fit = multf, cluster = cl)
+
+fit1 at mfit$matcoef
+
+ 
+
+# (2) subset of 9 assets. 
+
+uspec9 = multispec(replicate(9, xspec))
+
+cl9 = makePSOCKcluster(9)
+
+multf9 = multifit(uspec9, Dat[,1:9], cluster = cl9)
+
+multf9 at fit
+
+ 
+
+# (3) Suppose we want to add an additional fit (imagine it was hard to estimate)
+
+fit10 <- ugarchfit(spec=xspec,data=Dat[,10],solver.control=list(trace=0))
+
+ 
+
+multf10 <- multf9
+
+multf10 at fit[[10]] <- fit10   # to be used in  dccfit(spec10, data = cbind(Dat[,1:9],Dat[,10]), fit.control = list(eval.se = TRUE), fit = multf10, cluster = cl)
+
+ 
+
+## the last line does not seem to work: 
+
+# Error in `colnames<-`(`*tmp*`, value = asset.names) 
+
+#   attempt to set 'colnames' on an object with less than two dimensions
+
+ 
+
+Thanks, Lasse
+
+ 
+
+From: Alexios Galanos <alexios at 4dscape.com> 
+Sent: 05 November 2020 08:16
+To: borkresearch at gmail.com
+Cc: R-SIG-Finance at r-project.org
+Subject: Re: [R-SIG-Finance] dccfit (RMGARCH): using uGARCHmultifit
+
+ 
+
+Take a look at the examples in the inst/rmgarch.tests folder of the source package or this post from 7+ years ago: 
+
+http://www.unstarched.net/2013/01/03/the-garch-dcc-model-and-2-stage-dccmvt-estimation/
+
+ 
+
+-Alexios
+
+ 
+
+
+
+
+
+On Nov 4, 2020, at 10:48 PM, borkresearch at gmail.com <mailto:borkresearch at gmail.com>  wrote:
+
+?Anyone tried the function input uGARCHmultifit of the dccfit function from rmgarch? If so can you provide an example of how you used it and how to setup the uGARCHmultifit object? I can't figure it out.
+
+According to the documentation <https://www.rdocumentation.org/packages/rmgarch/versions/1.3-7/topics/dccfit-methods>  it should be possible to use the fit argument in dccfit where
+
+*    " fit: (A previously estimated univariate '>uGARCHmultifit object (see details)."
+
+I'd like to input my fits of several GARCH models directly into the final DCC estimation because the GARCH models where difficult to estimate (I used several optimizers).
+
+
+
+
+   [[alternative HTML version deleted]]
+
+_______________________________________________
+R-SIG-Finance at r-project.org <mailto:R-SIG-Finance at r-project.org>  mailing list
+https://stat.ethz.ch/mailman/listinfo/r-sig-finance
+-- Subscriber-posting only. If you want to post, subscribe first.
+-- Also note that this is not the r-help list where general R questions should go.
+
+
+	[[alternative HTML version deleted]]
+
+
+From @yh@nyuk@e|78 @end|ng |rom gm@||@com  Sat Nov  7 22:11:41 2020
+From: @yh@nyuk@e|78 @end|ng |rom gm@||@com (Ayhan yuksel)
+Date: Sun, 8 Nov 2020 00:11:41 +0300
+Subject: [R-SIG-Finance] Quantstrat Position Accounting System: Netting vs
+ Hedging Systems
+Message-ID: <CALj2E8XfwafQKyArcbHpBWMV9+u-2tALPAgrQrf2Zni_qZifhA@mail.gmail.com>
+
+Dear all,
+
+In quantstrat, as described in package documentation, orders turn into
+transactions,  transactions turn into positions, positions turn into
+trades. And the underlying logic of how you define a position (using
+netting or hedging system) or a trade (flat-to-flat or FIFO etc)
+significantly affects the mechanics of money management rules (stop loss
+etc) and trade statistics (profit factor etc).
+
+For defining positions, the netting vs hedging systems are defined as
+follows:
+https://www.metatrader5.com/en/mobile-trading/iphone/help/trade/general_concept
+
+The original implementation of quantstrat is based on a netting system
+where after having a long position, each additional long trade increases
+the current position amount (unless you have a position limit) and the
+stop-loss/take profit is applied to the total position as a whole and not
+to the individual long trades separately.
+
+My question is that is there a way to apply stop loss and take profit to
+each opened trade independently, regardless of order side (long or short)
+and previous positions? If yes, would you provide an example of it?
+
+Best regards
+Ayhan
+
+	[[alternative HTML version deleted]]
+
+
+From ||y@@k|pn|@ @end|ng |rom gm@||@com  Sat Nov  7 23:40:37 2020
+From: ||y@@k|pn|@ @end|ng |rom gm@||@com (Ilya Kipnis)
+Date: Sat, 7 Nov 2020 17:40:37 -0500
+Subject: [R-SIG-Finance] 
+ Quantstrat Position Accounting System: Netting vs Hedging Systems
+In-Reply-To: <CALj2E8XfwafQKyArcbHpBWMV9+u-2tALPAgrQrf2Zni_qZifhA@mail.gmail.com>
+References: <CALj2E8XfwafQKyArcbHpBWMV9+u-2tALPAgrQrf2Zni_qZifhA@mail.gmail.com>
+Message-ID: <CA+oJuEFRNSHFM3Mfjcg6UfSNhdxK4F3SSWN7tn4QRs4sN3km+w@mail.gmail.com>
+
+Ayhan,
+
+If I'm understanding correctly:
+
+Are you familiar with order sets?
+
+By defining a stop loss that works on a particular parent rule, that
+should do the trick.
+
+See this post:
+https://quantstrattrader.wordpress.com/2014/08/18/a-hammer-trading-system-demonstrating-custom-indicator-based-limit-orders-in-quantstrat/
+
+-Ilya
+
+On Sat, Nov 7, 2020 at 4:12 PM Ayhan yuksel <ayhanyuksel78 at gmail.com> wrote:
+
+> Dear all,
+>
+> In quantstrat, as described in package documentation, orders turn into
+> transactions,  transactions turn into positions, positions turn into
+> trades. And the underlying logic of how you define a position (using
+> netting or hedging system) or a trade (flat-to-flat or FIFO etc)
+> significantly affects the mechanics of money management rules (stop loss
+> etc) and trade statistics (profit factor etc).
+>
+> For defining positions, the netting vs hedging systems are defined as
+> follows:
+>
+> https://www.metatrader5.com/en/mobile-trading/iphone/help/trade/general_concept
+>
+> The original implementation of quantstrat is based on a netting system
+> where after having a long position, each additional long trade increases
+> the current position amount (unless you have a position limit) and the
+> stop-loss/take profit is applied to the total position as a whole and not
+> to the individual long trades separately.
+>
+> My question is that is there a way to apply stop loss and take profit to
+> each opened trade independently, regardless of order side (long or short)
+> and previous positions? If yes, would you provide an example of it?
+>
+> Best regards
+> Ayhan
+>
+>         [[alternative HTML version deleted]]
+>
+> _______________________________________________
+> R-SIG-Finance at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-sig-finance
+> -- Subscriber-posting only. If you want to post, subscribe first.
+> -- Also note that this is not the r-help list where general R questions
+> should go.
+>
+
+	[[alternative HTML version deleted]]
+
+
+From @yh@nyuk@e|78 @end|ng |rom gm@||@com  Sun Nov  8 13:40:59 2020
+From: @yh@nyuk@e|78 @end|ng |rom gm@||@com (Ayhan yuksel)
+Date: Sun, 8 Nov 2020 15:40:59 +0300
+Subject: [R-SIG-Finance] 
+ Quantstrat Position Accounting System: Netting vs Hedging Systems
+In-Reply-To: <CA+oJuEFRNSHFM3Mfjcg6UfSNhdxK4F3SSWN7tn4QRs4sN3km+w@mail.gmail.com>
+References: <CALj2E8XfwafQKyArcbHpBWMV9+u-2tALPAgrQrf2Zni_qZifhA@mail.gmail.com>
+ <CA+oJuEFRNSHFM3Mfjcg6UfSNhdxK4F3SSWN7tn4QRs4sN3km+w@mail.gmail.com>
+Message-ID: <CALj2E8VUL5tr6PCp_Zj1PhPSNzSiL8VNu5PyV_tGgttnd4H_eA@mail.gmail.com>
+
+Ilya thanks for your reply, your help is much appreciated
+
+Yes I am familiar with ordersets and orderchains, but my question is
+related to how stop loss is applied to each trade
+
+Below I put a minimal example of a strategy where we only open long trades
+with a size of 100 lots using moving average crossover, and we have a stop
+loss with a threshold of 0.001.
+
+After running the strategy on GBPUSD data, please have a look at the 3rd,
+4th and 5 th transactions. In these transactions, the strategy first have a
+long trade with  100 lot, then another long trade with 100 lot (so now our
+position is 200 lots), and then the stop loss rule is executed and the
+whole 200 lots will be closed, which means that the stop loss rule is based
+on the whole position that we have.
+
+Every time the strategy adds new long positions to the existing ones (like
+pyramiding), the stop loss rule is executed on the whole position and
+position is always flattened.
+
+My question is that is there a way to apply the stop loss rule
+**seperately** for each of the 100 lot trades, which may have different
+cost basis, so may have different stop loss prices? In this case, for
+instance, each stop loss will be executed independently and each stop loss
+transaction will have a size of -100 lots.
+
+Regards
+Ayhan
+
+###########################################
+# Example strategy
+
+library(quantstrat)
+
+source(paste0(path.package("quantstrat"),"/demo/luxor.include.R"))
+.fast = 5
+.slow = 10
+
+source(paste0(path.package("quantstrat"),"/demo/luxor.getSymbols.R"))
+
+### blotter
+
+initPortf(portfolio.st, symbols='GBPUSD', currency='USD')
+initAcct(account.st, portfolios=portfolio.st, currency='USD')
+
+### quantstrat
+
+initOrders(portfolio.st)
+
+### define strategy
+
+strategy(strategy.st, store=TRUE)
+
+
+add.indicator(strategy.st, name = "SMA",
+              arguments = list(
+                x = quote(Cl(mktdata)[,1]),
+                n = .fast
+              ),
+              label="nFast"
+)
+
+add.indicator(strategy.st, name="SMA",
+              arguments = list(
+                x = quote(Cl(mktdata)[,1]),
+                n = .slow
+              ),
+              label="nSlow"
+)
+
+### signals
+
+add.signal(strategy.st, name='sigCrossover',
+           arguments = list(
+             columns=c("nFast","nSlow"),
+             relationship="gte"
+           ),
+           label='long'
+)
+
+### rules ############
+# normal entry rules
+
+add.rule(strategy.st, name = 'ruleSignal',
+         arguments=list(sigcol='long' , sigval=TRUE,
+                        replace=FALSE,
+                        orderside='long' ,
+                        ordertype='stoplimit',
+                        prefer='High',
+                        threshold=.threshold,
+                        TxnFees=0,
+                        orderqty=100,
+                        orderset='ocolong'
+         ),
+         type='enter',
+         timespan = .timespan,
+         label='EnterLONG'
+)
+
+
+# stop-loss
+
+add.rule(strategy.st, name = 'ruleSignal',
+         arguments=list(sigcol='long' , sigval=TRUE,
+                        replace=FALSE,
+                        orderside='long',
+                        ordertype='stoplimit', tmult=TRUE, threshold=0.001,
+                        TxnFees=.txnfees,
+                        orderqty='all',
+                        orderset='ocolong'
+         ),
+         type='chain', parent='EnterLONG',
+         label='StopLossLONG',
+         enabled=TRUE
+)
+
+
+
+applyStrategy(strategy.st, portfolio.st)
+
+View(getOrderBook(portfolio.st)[[portfolio.st]]$GBPUSD)
+
+View(getTxns(portfolio.st,"GBPUSD"))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+On Sun, 8 Nov 2020 at 01:40, Ilya Kipnis <ilya.kipnis at gmail.com> wrote:
+
+> Ayhan,
+>
+> If I'm understanding correctly:
+>
+> Are you familiar with order sets?
+>
+> By defining a stop loss that works on a particular parent rule, that
+> should do the trick.
+>
+> See this post:
+> https://quantstrattrader.wordpress.com/2014/08/18/a-hammer-trading-system-demonstrating-custom-indicator-based-limit-orders-in-quantstrat/
+>
+> -Ilya
+>
+> On Sat, Nov 7, 2020 at 4:12 PM Ayhan yuksel <ayhanyuksel78 at gmail.com>
+> wrote:
+>
+>> Dear all,
+>>
+>> In quantstrat, as described in package documentation, orders turn into
+>> transactions,  transactions turn into positions, positions turn into
+>> trades. And the underlying logic of how you define a position (using
+>> netting or hedging system) or a trade (flat-to-flat or FIFO etc)
+>> significantly affects the mechanics of money management rules (stop loss
+>> etc) and trade statistics (profit factor etc).
+>>
+>> For defining positions, the netting vs hedging systems are defined as
+>> follows:
+>>
+>> https://www.metatrader5.com/en/mobile-trading/iphone/help/trade/general_concept
+>>
+>> The original implementation of quantstrat is based on a netting system
+>> where after having a long position, each additional long trade increases
+>> the current position amount (unless you have a position limit) and the
+>> stop-loss/take profit is applied to the total position as a whole and not
+>> to the individual long trades separately.
+>>
+>> My question is that is there a way to apply stop loss and take profit to
+>> each opened trade independently, regardless of order side (long or short)
+>> and previous positions? If yes, would you provide an example of it?
+>>
+>> Best regards
+>> Ayhan
+>>
+>>         [[alternative HTML version deleted]]
+>>
+>> _______________________________________________
+>> R-SIG-Finance at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-finance
+>> -- Subscriber-posting only. If you want to post, subscribe first.
+>> -- Also note that this is not the r-help list where general R questions
+>> should go.
+>>
+>
+
+	[[alternative HTML version deleted]]
+
+
+From ||y@@k|pn|@ @end|ng |rom gm@||@com  Sun Nov  8 14:21:01 2020
+From: ||y@@k|pn|@ @end|ng |rom gm@||@com (Ilya Kipnis)
+Date: Sun, 8 Nov 2020 08:21:01 -0500
+Subject: [R-SIG-Finance] 
+ Quantstrat Position Accounting System: Netting vs Hedging Systems
+In-Reply-To: <CALj2E8VUL5tr6PCp_Zj1PhPSNzSiL8VNu5PyV_tGgttnd4H_eA@mail.gmail.com>
+References: <CALj2E8XfwafQKyArcbHpBWMV9+u-2tALPAgrQrf2Zni_qZifhA@mail.gmail.com>
+ <CA+oJuEFRNSHFM3Mfjcg6UfSNhdxK4F3SSWN7tn4QRs4sN3km+w@mail.gmail.com>
+ <CALj2E8VUL5tr6PCp_Zj1PhPSNzSiL8VNu5PyV_tGgttnd4H_eA@mail.gmail.com>
+Message-ID: <CA+oJuEF06Q35VeafSPqzjszhptFyqyW_YMNHRUCZszJb-xiLYg@mail.gmail.com>
+
+Look at your stoploss rule and the orderqty it calls for. You actively
+specify orderqty = 'all'. That means to flatten the entire position.
+
+As far as a stop loss on a partial position, in your particular case, you
+can simply set that with a better specified orderqty argument by specifying
+100 lots instead of 'all'.
+
+	[[alternative HTML version deleted]]
+
+
+From @yh@nyuk@e|78 @end|ng |rom gm@||@com  Mon Nov  9 09:09:21 2020
+From: @yh@nyuk@e|78 @end|ng |rom gm@||@com (Ayhan yuksel)
+Date: Mon, 9 Nov 2020 11:09:21 +0300
+Subject: [R-SIG-Finance] 
+ Quantstrat Position Accounting System: Netting vs Hedging Systems
+In-Reply-To: <CA+oJuEF06Q35VeafSPqzjszhptFyqyW_YMNHRUCZszJb-xiLYg@mail.gmail.com>
+References: <CALj2E8XfwafQKyArcbHpBWMV9+u-2tALPAgrQrf2Zni_qZifhA@mail.gmail.com>
+ <CA+oJuEFRNSHFM3Mfjcg6UfSNhdxK4F3SSWN7tn4QRs4sN3km+w@mail.gmail.com>
+ <CALj2E8VUL5tr6PCp_Zj1PhPSNzSiL8VNu5PyV_tGgttnd4H_eA@mail.gmail.com>
+ <CA+oJuEF06Q35VeafSPqzjszhptFyqyW_YMNHRUCZszJb-xiLYg@mail.gmail.com>
+Message-ID: <CALj2E8WPwKd720UAC25TxByma-nVa6v8E8ueARJNz+mX39dW0A@mail.gmail.com>
+
+Thank you for the clarification.
+
+On Sun, 8 Nov 2020 at 16:21, Ilya Kipnis <ilya.kipnis at gmail.com> wrote:
+
+> Look at your stoploss rule and the orderqty it calls for. You actively
+> specify orderqty = 'all'. That means to flatten the entire position.
+>
+> As far as a stop loss on a partial position, in your particular case, you
+> can simply set that with a better specified orderqty argument by specifying
+> 100 lots instead of 'all'.
+>
+
+	[[alternative HTML version deleted]]
+
+
+From m@u||k@bh@tt @end|ng |rom gm@||@com  Mon Nov  9 09:15:43 2020
+From: m@u||k@bh@tt @end|ng |rom gm@||@com (Maulik Bhatt)
+Date: Mon, 9 Nov 2020 13:45:43 +0530
+Subject: [R-SIG-Finance] How can I calculate annualized log returns when the
+ year is different from a calendar year
+Message-ID: <9d93eb08-02ab-2de6-4f72-4c0cc62c0bf8@gmail.com>
+
+Dear all,
+
+I want to calculate annualized log return for a security. But the issue 
+is that the company follows financial year from April to March. So, all 
+its other ratios are calculated from April to March year. The data is 
+taken using the package tidyquant.
+
+library(tidyquant)
+
+df<- tq_get("SBIN.NS")
+
+ From the package vignette of tidyquant, the periodReturn can be 
+calculated for yearly, but in that case the year is calendar year. But I 
+want to get the return for financial year. In case of this company, the 
+financial year is from April to March. So, what modifications do I need 
+to make in order to calculate annual log return from April to March?
+
+Thanks in advance,
+
+Maulik.
+
+
+From br|@n @end|ng |rom br@verock@com  Mon Nov  9 14:29:09 2020
+From: br|@n @end|ng |rom br@verock@com (Brian G. Peterson)
+Date: Mon, 09 Nov 2020 07:29:09 -0600
+Subject: [R-SIG-Finance] 
+ How can I calculate annualized log returns when the
+ year is different from a calendar year
+In-Reply-To: <9d93eb08-02ab-2de6-4f72-4c0cc62c0bf8@gmail.com>
+References: <9d93eb08-02ab-2de6-4f72-4c0cc62c0bf8@gmail.com>
+Message-ID: <1625a1a9e0e4fac262a359c1f5607051e52661e4.camel@braverock.com>
+
+I don't use tidyquant, but you can easily use endpoints() in xts to get
+the end of March timestamps and calculate your period return that way.
+
+Brian
+
+On Mon, 2020-11-09 at 13:45 +0530, Maulik Bhatt wrote:
+> Dear all,
+> 
+> I want to calculate annualized log return for a security. But the
+> issue 
+> is that the company follows financial year from April to March. So,
+> all 
+> its other ratios are calculated from April to March year. The data is
+> taken using the package tidyquant.
+> 
+> library(tidyquant)
+> 
+> df<- tq_get("SBIN.NS")
+> 
+> ?From the package vignette of tidyquant, the periodReturn can be 
+> calculated for yearly, but in that case the year is calendar year.
+> But I 
+> want to get the return for financial year. In case of this company,
+> the 
+> financial year is from April to March. So, what modifications do I
+> need 
+> to make in order to calculate annual log return from April to March?
+> 
+> Thanks in advance,
+> 
+> Maulik.
+> 
+> _______________________________________________
+> R-SIG-Finance at r-project.org?mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-sig-finance
+> -- Subscriber-posting only. If you want to post, subscribe first.
+> -- Also note that this is not the r-help list where general R
+> questions should go.
+
+	[[alternative HTML version deleted]]
+
+
+From @yh@nyuk@e|78 @end|ng |rom gm@||@com  Thu Nov 12 11:43:49 2020
+From: @yh@nyuk@e|78 @end|ng |rom gm@||@com (Ayhan yuksel)
+Date: Thu, 12 Nov 2020 13:43:49 +0300
+Subject: [R-SIG-Finance] 
+ Quantstrat Position Accounting System: Netting vs Hedging Systems
+In-Reply-To: <CALj2E8WPwKd720UAC25TxByma-nVa6v8E8ueARJNz+mX39dW0A@mail.gmail.com>
+References: <CALj2E8XfwafQKyArcbHpBWMV9+u-2tALPAgrQrf2Zni_qZifhA@mail.gmail.com>
+ <CA+oJuEFRNSHFM3Mfjcg6UfSNhdxK4F3SSWN7tn4QRs4sN3km+w@mail.gmail.com>
+ <CALj2E8VUL5tr6PCp_Zj1PhPSNzSiL8VNu5PyV_tGgttnd4H_eA@mail.gmail.com>
+ <CA+oJuEF06Q35VeafSPqzjszhptFyqyW_YMNHRUCZszJb-xiLYg@mail.gmail.com>
+ <CALj2E8WPwKd720UAC25TxByma-nVa6v8E8ueARJNz+mX39dW0A@mail.gmail.com>
+Message-ID: <CALj2E8WnQ3zu_mZfhZk-Kj6dV8SR+LJbSMraNMZ82L1TawjR3A@mail.gmail.com>
+
+One more question to solve my case
+
+We can access the parent rule?s order price using chain.price argument  in
+rule functions.
+
+Is it also possible to access parent rule?s order size as well? I searched
+but couldn't find it
+
+Assume that the parent order may take variable position size for each
+trade. It takes one long position and then adds a second long position
+before hitting the stop loss for the first one. After that the stop loss
+for the first position is hit. We need to know the position size of the
+first trade in writing stop loss rule. Is it possible to access the
+position size of the parent rule?
+
+Thanks for your help
+Regards
+
+
+
+
+
+On 9 Nov 2020 Mon at 11:09 Ayhan yuksel <ayhanyuksel78 at gmail.com> wrote:
+
+> Thank you for the clarification.
+>
+> On Sun, 8 Nov 2020 at 16:21, Ilya Kipnis <ilya.kipnis at gmail.com> wrote:
+>
+>> Look at your stoploss rule and the orderqty it calls for. You actively
+>> specify orderqty = 'all'. That means to flatten the entire position.
+>>
+>> As far as a stop loss on a partial position, in your particular case, you
+>> can simply set that with a better specified orderqty argument by specifying
+>> 100 lots instead of 'all'.
+>>
+>
+
+	[[alternative HTML version deleted]]
+
+
+From br|@n @end|ng |rom br@verock@com  Thu Nov 12 12:28:17 2020
+From: br|@n @end|ng |rom br@verock@com (Brian G. Peterson)
+Date: Thu, 12 Nov 2020 05:28:17 -0600
+Subject: [R-SIG-Finance] 
+ Quantstrat Position Accounting System: Netting vs Hedging Systems
+In-Reply-To: <CALj2E8WnQ3zu_mZfhZk-Kj6dV8SR+LJbSMraNMZ82L1TawjR3A@mail.gmail.com>
+References: <CALj2E8XfwafQKyArcbHpBWMV9+u-2tALPAgrQrf2Zni_qZifhA@mail.gmail.com>
+ <CA+oJuEFRNSHFM3Mfjcg6UfSNhdxK4F3SSWN7tn4QRs4sN3km+w@mail.gmail.com>
+ <CALj2E8VUL5tr6PCp_Zj1PhPSNzSiL8VNu5PyV_tGgttnd4H_eA@mail.gmail.com>
+ <CA+oJuEF06Q35VeafSPqzjszhptFyqyW_YMNHRUCZszJb-xiLYg@mail.gmail.com>
+ <CALj2E8WPwKd720UAC25TxByma-nVa6v8E8ueARJNz+mX39dW0A@mail.gmail.com>
+ <CALj2E8WnQ3zu_mZfhZk-Kj6dV8SR+LJbSMraNMZ82L1TawjR3A@mail.gmail.com>
+Message-ID: <7176d4b5e308cc6788fc9e1013ca5221abd6106a.camel@braverock.com>
+
+The chained order quantity isn't directly passed to the triggered chain
+rule right now.
+
+Rules have access to the full current state, since they are path
+dependent.  
+
+So, you have two options here.  You can either?
+
+- write a custom order sizing function that queries the order status to
+check the chained rule and order to get the quantity
+
+- propose a patch/pull request to rules.R and ruleSignal.R that could
+process a chain.qty optional argument
+
+see the code in rules.R to see how we pass chain.price, and it should
+inform how you would take either of the above approaches.
+
+Regards,
+
+Brian
+
+-- 
+Brian G. Peterson
+ph: +1.773.459.4973
+im: bgpbraverock
+
+On Thu, 2020-11-12 at 13:43 +0300, Ayhan yuksel wrote:
+> One more question to solve my case
+> 
+> We can access the parent rule?s order price using chain.price
+> argument? in
+> rule functions.
+> 
+> Is it also possible to access parent rule?s order size as well? I
+> searched
+> but couldn't find it
+> 
+> Assume that the parent order may take variable position size for each
+> trade. It takes one long position and then adds a second long
+> position
+> before hitting the stop loss for the first one. After that the stop
+> loss
+> for the first position is hit. We need to know the position size of
+> the
+> first trade in writing stop loss rule. Is it possible to access the
+> position size of the parent rule?
+> 
+> Thanks for your help
+> Regards
+> 
+> 
+> 
+> 
+> 
+> On 9 Nov 2020 Mon at 11:09 Ayhan yuksel <ayhanyuksel78 at gmail.com>
+> wrote:
+> 
+> > Thank you for the clarification.
+> > 
+> > On Sun, 8 Nov 2020 at 16:21, Ilya Kipnis <ilya.kipnis at gmail.com>
+> > wrote:
+> > 
+> > > Look at your stoploss rule and the orderqty it calls for. You
+> > > actively
+> > > specify orderqty = 'all'. That means to flatten the entire
+> > > position.
+> > > 
+> > > As far as a stop loss on a partial position, in your particular
+> > > case, you
+> > > can simply set that with a better specified orderqty argument by
+> > > specifying
+> > > 100 lots instead of 'all'.
+> > > 
+> > 
+> 
+> ????????[[alternative HTML version deleted]]
+> 
+> _______________________________________________
+> R-SIG-Finance at r-project.org?mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-sig-finance
+> -- Subscriber-posting only. If you want to post, subscribe first.
+> -- Also note that this is not the r-help list where general R
+> questions should go.
+>
+
+
+From @yh@nyuk@e|78 @end|ng |rom gm@||@com  Thu Nov 12 16:06:23 2020
+From: @yh@nyuk@e|78 @end|ng |rom gm@||@com (Ayhan yuksel)
+Date: Thu, 12 Nov 2020 18:06:23 +0300
+Subject: [R-SIG-Finance] 
+ Quantstrat Position Accounting System: Netting vs Hedging Systems
+In-Reply-To: <7176d4b5e308cc6788fc9e1013ca5221abd6106a.camel@braverock.com>
+References: <CALj2E8XfwafQKyArcbHpBWMV9+u-2tALPAgrQrf2Zni_qZifhA@mail.gmail.com>
+ <CA+oJuEFRNSHFM3Mfjcg6UfSNhdxK4F3SSWN7tn4QRs4sN3km+w@mail.gmail.com>
+ <CALj2E8VUL5tr6PCp_Zj1PhPSNzSiL8VNu5PyV_tGgttnd4H_eA@mail.gmail.com>
+ <CA+oJuEF06Q35VeafSPqzjszhptFyqyW_YMNHRUCZszJb-xiLYg@mail.gmail.com>
+ <CALj2E8WPwKd720UAC25TxByma-nVa6v8E8ueARJNz+mX39dW0A@mail.gmail.com>
+ <CALj2E8WnQ3zu_mZfhZk-Kj6dV8SR+LJbSMraNMZ82L1TawjR3A@mail.gmail.com>
+ <7176d4b5e308cc6788fc9e1013ca5221abd6106a.camel@braverock.com>
+Message-ID: <CALj2E8W2C-xG+LXE032wLMGk5yP2JYy6OFCaMKzSP6f6RwH7sw@mail.gmail.com>
+
+Thank you very much for the clarification
+I will work on it
+
+Regards
+Ayhan
+
+On 12 Nov 2020 Thu at 14:28 Brian G. Peterson <brian at braverock.com> wrote:
+
+> The chained order quantity isn't directly passed to the triggered chain
+> rule right now.
+>
+> Rules have access to the full current state, since they are path
+> dependent.
+>
+> So, you have two options here.  You can either
+>
+> - write a custom order sizing function that queries the order status to
+> check the chained rule and order to get the quantity
+>
+> - propose a patch/pull request to rules.R and ruleSignal.R that could
+> process a chain.qty optional argument
+>
+> see the code in rules.R to see how we pass chain.price, and it should
+> inform how you would take either of the above approaches.
+>
+> Regards,
+>
+> Brian
+>
+> --
+> Brian G. Peterson
+> ph: +1.773.459.4973
+> im: bgpbraverock
+>
+> On Thu, 2020-11-12 at 13:43 +0300, Ayhan yuksel wrote:
+> > One more question to solve my case
+> >
+> > We can access the parent rule?s order price using chain.price
+> > argument  in
+> > rule functions.
+> >
+> > Is it also possible to access parent rule?s order size as well? I
+> > searched
+> > but couldn't find it
+> >
+> > Assume that the parent order may take variable position size for each
+> > trade. It takes one long position and then adds a second long
+> > position
+> > before hitting the stop loss for the first one. After that the stop
+> > loss
+> > for the first position is hit. We need to know the position size of
+> > the
+> > first trade in writing stop loss rule. Is it possible to access the
+> > position size of the parent rule?
+> >
+> > Thanks for your help
+> > Regards
+> >
+> >
+> >
+> >
+> >
+> > On 9 Nov 2020 Mon at 11:09 Ayhan yuksel <ayhanyuksel78 at gmail.com>
+> > wrote:
+> >
+> > > Thank you for the clarification.
+> > >
+> > > On Sun, 8 Nov 2020 at 16:21, Ilya Kipnis <ilya.kipnis at gmail.com>
+> > > wrote:
+> > >
+> > > > Look at your stoploss rule and the orderqty it calls for. You
+> > > > actively
+> > > > specify orderqty = 'all'. That means to flatten the entire
+> > > > position.
+> > > >
+> > > > As far as a stop loss on a partial position, in your particular
+> > > > case, you
+> > > > can simply set that with a better specified orderqty argument by
+> > > > specifying
+> > > > 100 lots instead of 'all'.
+> > > >
+> > >
+> >
+> >         [[alternative HTML version deleted]]
+> >
+> > _______________________________________________
+> > R-SIG-Finance at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-sig-finance
+> > -- Subscriber-posting only. If you want to post, subscribe first.
+> > -- Also note that this is not the r-help list where general R
+> > questions should go.
+> >
+>
+>
+
+	[[alternative HTML version deleted]]
+
+
+From o||ver@d| @end|ng |rom gm@||@com  Fri Nov 27 07:17:19 2020
+From: o||ver@d| @end|ng |rom gm@||@com (oliver)
+Date: Fri, 27 Nov 2020 14:17:19 +0800
+Subject: [R-SIG-Finance] Partial profits and moving SL to breakeven in
+ Quantstrat
+Message-ID: <CAMDYzbs8yneG9b2aWVgTSHnKUR_-nCFORyhtSarGZBnzsagLvg@mail.gmail.com>
+
+Is there any other way to instruct R to take half position size at first TP
+and move the new SL to breakeven?
+
+I currently take 2 runs to do this.
+
+First run: with SL and 1st TP
+Second run: with SL and no TP (Closes when indicators give signal)
+
+
+Afterwhich, I merge the results of both runs.
+
+Would appreciate some reference to achieve this.
+
+Position size is not fixed but based on ATR (package: IKTrading)
+
+Oliver
+
+	[[alternative HTML version deleted]]
+
+
+From ezequ|e|@@nt@r @end|ng |rom gm@||@com  Fri Dec 11 11:14:31 2020
+From: ezequ|e|@@nt@r @end|ng |rom gm@||@com (Ezequiel Antar)
+Date: Fri, 11 Dec 2020 10:14:31 +0000
+Subject: [R-SIG-Finance] cgarchfit (rmgarch package): cannot reconcile
+ likelihood of a Copula-GARCH model
+Message-ID: <CAGyYUSqPbKn=5rYDMyDHDkcip=KLJKSae1ejCsxjwxAg=E0_Yg@mail.gmail.com>
+
+I cannot reconcile the log-likelihood of a Copula-GARCH model.
+Below is a simple example where the marginal volatilities are constant (for
+which I use iGARCH with beta1 = 1) and have Normal distribution; and the
+copula is constant and Gaussian. In short, the model is that of
+returns having multivariate Normal distribution with constant parameters.
+I compare the likelihood from cgarchfit (= 5890.564) with the likelihood
+using the multinormal density, with both mean and covariance taken from
+cgarchfit (= 5896.262). They should be the same.
+
+Any help understanding why I cannot reconcile this will be much
+appreciated!
+
+-----------------------------------------------------------
+
+library(rmgarch)
+
+library(mvtnorm)
+
+
+
+data(dji30retw)
+
+z.t <- dji30retw[, 1:3]
+
+
+
+uspec.each <- ugarchspec(mean.model = list(armaOrder = c(0,0)),
+
+                         variance.model = list(model = "iGARCH", garchOrder
+= c(1,1)),
+
+                         distribution.model = "norm",
+
+                         fixed.pars = list(beta1 = 1, alpha1 = 0, omega =
+0))
+
+
+
+mspec <- cgarchspec(uspec = multispec(replicate(ncol(z.t), uspec.each)),
+
+                    distribution.model = list(copula = "mvnorm", method =
+"Kendall", time.varying = FALSE, transformation = "parametric"))
+
+
+
+cgarch <- cgarchfit(spec = mspec, data = z.t, solver.control=list(trace=1))
+
+
+
+likelihood(cgarch) # 5890.564
+
+
+
+mu <- coef(cgarch, type = 'garch')
+
+cov <- rcov(cgarch)[,,1]
+
+sum(dmvnorm(z.t, mean = mu, sigma = cov, log = TRUE)) # 5896.262
+
+<https://www.avast.com/sig-email?utm_medium=email&utm_source=link&utm_campaign=sig-email&utm_content=webmail>
+Virus-free.
+www.avast.com
+<https://www.avast.com/sig-email?utm_medium=email&utm_source=link&utm_campaign=sig-email&utm_content=webmail>
+<#DAB4FAD8-2DD7-40BB-A1B8-4E2AA1F9FDF2>
+
+	[[alternative HTML version deleted]]
+
+
+From d|egoperon|1971 @end|ng |rom gm@||@com  Fri Dec 11 12:26:24 2020
+From: d|egoperon|1971 @end|ng |rom gm@||@com (diego peroni)
+Date: Fri, 11 Dec 2020 12:26:24 +0100
+Subject: [R-SIG-Finance] IBrokers - reqMktData - snapshot
+In-Reply-To: <mailman.15027.3.1607684401.57258.r-sig-finance@r-project.org>
+References: <mailman.15027.3.1607684401.57258.r-sig-finance@r-project.org>
+Message-ID: <65C3C6D1-2C1D-49BB-B229-3590B828364D@gmail.com>
+
+Hi all,
+I?m using IBrokers package from GITHUB ("joshuaulrich/IBrokers")
+
+I?ve found in the code this line that BLOCKs every snapshot data request.
+
+??????????????????????????
+if(snapshot == "1") {
+   stop("Snapshot not working (?)?)
+??????????????????????????
+
+Is there a reason for that?
+
+Removing this line the snapshot requests works for me?.
+
+Thanks for your help.
+
+Diego
+	[[alternative HTML version deleted]]
+
+
+From jo@h@m@u|r|ch @end|ng |rom gm@||@com  Sun Dec 13 17:35:37 2020
+From: jo@h@m@u|r|ch @end|ng |rom gm@||@com (Joshua Ulrich)
+Date: Sun, 13 Dec 2020 10:35:37 -0600
+Subject: [R-SIG-Finance] IBrokers - reqMktData - snapshot
+In-Reply-To: <65C3C6D1-2C1D-49BB-B229-3590B828364D@gmail.com>
+References: <mailman.15027.3.1607684401.57258.r-sig-finance@r-project.org>
+ <65C3C6D1-2C1D-49BB-B229-3590B828364D@gmail.com>
+Message-ID: <CAPPM_gRPmQU_GVuug3wfzQU7jCuyGFayapQe90H8pnNJpAcHRA@mail.gmail.com>
+
+Hi Diego,
+
+Can you give me an example of a snapshot request that works for you
+when you remove the stop()?
+
+Thanks,
+Josh
+
+On Fri, Dec 11, 2020 at 5:26 AM diego peroni <diegoperoni1971 at gmail.com> wrote:
+>
+> Hi all,
+> I?m using IBrokers package from GITHUB ("joshuaulrich/IBrokers")
+>
+> I?ve found in the code this line that BLOCKs every snapshot data request.
+>
+> ??????????????????????????
+> if(snapshot == "1") {
+>    stop("Snapshot not working (?)?)
+> ??????????????????????????
+>
+> Is there a reason for that?
+>
+> Removing this line the snapshot requests works for me?.
+>
+> Thanks for your help.
+>
+> Diego
+>         [[alternative HTML version deleted]]
+>
+> _______________________________________________
+> R-SIG-Finance at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-sig-finance
+> -- Subscriber-posting only. If you want to post, subscribe first.
+> -- Also note that this is not the r-help list where general R questions should go.
+
+
+
+-- 
+Joshua Ulrich  |  about.me/joshuaulrich
+FOSS Trading  |  www.fosstrading.com
+
+
+From d|egoperon|1971 @end|ng |rom gm@||@com  Mon Dec 14 08:32:54 2020
+From: d|egoperon|1971 @end|ng |rom gm@||@com (diego peroni)
+Date: Mon, 14 Dec 2020 08:32:54 +0100
+Subject: [R-SIG-Finance] IBrokers - reqMktData - snapshot
+In-Reply-To: <CAPPM_gRPmQU_GVuug3wfzQU7jCuyGFayapQe90H8pnNJpAcHRA@mail.gmail.com>
+References: <mailman.15027.3.1607684401.57258.r-sig-finance@r-project.org>
+ <65C3C6D1-2C1D-49BB-B229-3590B828364D@gmail.com>
+ <CAPPM_gRPmQU_GVuug3wfzQU7jCuyGFayapQe90H8pnNJpAcHRA@mail.gmail.com>
+Message-ID: <7BB7AEB8-FEAC-4764-9698-FDF218C77B29@gmail.com>
+
+Hi Josh,
+
+Thanks for you answer? :-)
+
+I?ve an IB account for NYMEX futures and snapshot requests works for all instruments:
+
+ex.
+fut = twsFUT(symbol="NQ", exch="GLOBEX", expiry="202012")
+snapshot = reqMktData_modified(tws, fut, snapshot=TRUE)
+
+If I select others markets or instruments (where I don?t have real time data):
+
+reqMktDataType(tws, 3)
+fut = twsFUT("KC", exch="NYBOT", expiry="202103")
+snapshot = reqMktData_modified(tws, fut, snapshot=TRUE)
+
+But I have to change ticker mapping:
+Delayed Bid	66	Delayed bid price. See Market Data Types <https://interactivebrokers.github.io/tws-api/market_data_type.html>.	IBApi.EWrapper.tickPrice <https://interactivebrokers.github.io/tws-api/interfaceIBApi_1_1EWrapper.html#ae851ec3a1e0fa2d0964c7779b0c89718>	-
+Delayed Ask	67	Delayed ask price. See Market Data Types <https://interactivebrokers.github.io/tws-api/market_data_type.html>.	IBApi.EWrapper.tickPrice <https://interactivebrokers.github.io/tws-api/interfaceIBApi_1_1EWrapper.html#ae851ec3a1e0fa2d0964c7779b0c89718>	-
+Delayed Last	68	Delayed last traded price. See Market Data Types <https://interactivebrokers.github.io/tws-api/market_data_type.html>.	IBApi.EWrapper.tickPrice <https://interactivebrokers.github.io/tws-api/interfaceIBApi_1_1EWrapper.html#ae851ec3a1e0fa2d0964c7779b0c89718>	-
+Delayed Bid Size	69	Delayed bid size. See Market Data Types <https://interactivebrokers.github.io/tws-api/market_data_type.html>.	IBApi.EWrapper.tickSize <https://interactivebrokers.github.io/tws-api/interfaceIBApi_1_1EWrapper.html#a1844eb442fb657c0f2cc0a63e4e74eba>	-
+Delayed Ask Size	70	Delayed ask size. See Market Data Types <https://interactivebrokers.github.io/tws-api/market_data_type.html>.	IBApi.EWrapper.tickSize <https://interactivebrokers.github.io/tws-api/interfaceIBApi_1_1EWrapper.html#a1844eb442fb657c0f2cc0a63e4e74eba>	-
+Delayed Last Size	71	Delayed last size. See Market Data Types <https://interactivebrokers.github.io/tws-api/market_data_type.html>.	IBApi.EWrapper.tickSize <https://interactivebrokers.github.io/tws-api/interfaceIBApi_1_1EWrapper.html#a1844eb442fb657c0f2cc0a63e4e74eba>	-
+Delayed High Price	72	Delayed highest price of the day. See Market Data Types <https://interactivebrokers.github.io/tws-api/market_data_type.html>.	IBApi.EWrapper.tickPrice <https://interactivebrokers.github.io/tws-api/interfaceIBApi_1_1EWrapper.html#ae851ec3a1e0fa2d0964c7779b0c89718>	-
+Delayed Low Price	73	Delayed lowest price of the day. See Market Data Types <https://interactivebrokers.github.io/tws-api/market_data_type.html>	IBApi.EWrapper.tickPrice <https://interactivebrokers.github.io/tws-api/interfaceIBApi_1_1EWrapper.html#ae851ec3a1e0fa2d0964c7779b0c89718>	-
+Delayed Volume	74	Delayed traded volume of the day. See Market Data Types <https://interactivebrokers.github.io/tws-api/market_data_type.html>
+
+I know that real IB "Snapshot Market Data" service (0.03 cents per request) works just for the following instruments (does not exists for ICE/NYBOT):
+
+https://ibkr.info/article/2830 <https://ibkr.info/article/2830>
+
+??????????
+
+I?ve found that updatePortfolio doesn?t work with my TWS and I?ve remapped the following tickers:
+
+    portfolioValue = list()
+    portfolioValue$position = as.numeric(msg[13])
+    portfolioValue$marketPrice = as.numeric(msg[14])
+    portfolioValue$marketValue = as.numeric(msg[15])
+    portfolioValue$averageCost = as.numeric(msg[16])
+    portfolioValue$unrealizedPNL = as.numeric(msg[17])
+    portfolioValue$realizedPNL = as.numeric(msg[18])
+    portfolioValue$accountName = msg[19]
+
+I?m not sure that?s the right way to fix the problem or not?
+Let me know if I?m wrong.
+
+Thanks for your help!
+
+Regards
+
+Diego
+
+
+
+
+
+> On 13 Dec 2020, at 17:35, Joshua Ulrich <josh.m.ulrich at gmail.com> wrote:
+> 
+> Hi Diego,
+> 
+> Can you give me an example of a snapshot request that works for you
+> when you remove the stop()?
+> 
+> Thanks,
+> Josh
+> 
+> On Fri, Dec 11, 2020 at 5:26 AM diego peroni <diegoperoni1971 at gmail.com> wrote:
+>> 
+>> Hi all,
+>> I?m using IBrokers package from GITHUB ("joshuaulrich/IBrokers")
+>> 
+>> I?ve found in the code this line that BLOCKs every snapshot data request.
+>> 
+>> ??????????????????????????
+>> if(snapshot == "1") {
+>>   stop("Snapshot not working (?)?)
+>> ??????????????????????????
+>> 
+>> Is there a reason for that?
+>> 
+>> Removing this line the snapshot requests works for me?.
+>> 
+>> Thanks for your help.
+>> 
+>> Diego
+>>        [[alternative HTML version deleted]]
+>> 
+>> _______________________________________________
+>> R-SIG-Finance at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-finance
+>> -- Subscriber-posting only. If you want to post, subscribe first.
+>> -- Also note that this is not the r-help list where general R questions should go.
+> 
+> 
+> 
+> -- 
+> Joshua Ulrich  |  about.me/joshuaulrich
+> FOSS Trading  |  www.fosstrading.com
+
+
+	[[alternative HTML version deleted]]
+
+
+From @gent@ @end|ng |rom medd@t@|nc@com  Tue Dec 29 02:28:00 2020
+From: @gent@ @end|ng |rom medd@t@|nc@com (H)
+Date: Mon, 28 Dec 2020 20:28:00 -0500
+Subject: [R-SIG-Finance] EDGAR filing data and corporate actions
+Message-ID: <b5c8a12f-1e35-04be-7d2a-6097e8b3f28e@meddatainc.com>
+
+I would like to begin analyzing corporate filings from SEC and also have a need for information on corporate actions such as splits, dividends, ex-dividend dates etc etc. I already have stock price information (but not number of shares outstanding etc.) from another source.
+
+Googling I found the edgar package which allows me to retrieve various information from the EDGAR database given the CIK for a company. One of the functions take a partial company name as an alternative to CIK but I have yet to find a function which takes a partial company name and retrieves any number of CIK numbers for that entity, as well as previous company names etc. Does such a function exist in edgar? Or perhaps in another package? The alternative would be to do this manually on the SEC website but I would rather automate it.
+
+Second, it seems Yahoo Finance has some corporate action data but I did not see that I could retrieve eg ex-dividend dates. Is this possible? Or are there other, better sources that are either free or can be used for a certain number of API calls/day?
+
+Thanks!
+
+
+From @gent@ @end|ng |rom medd@t@|nc@com  Tue Dec 29 02:29:24 2020
+From: @gent@ @end|ng |rom medd@t@|nc@com (H)
+Date: Mon, 28 Dec 2020 20:29:24 -0500
+Subject: [R-SIG-Finance] EDGAR filing data and corporate actions
+In-Reply-To: <b5c8a12f-1e35-04be-7d2a-6097e8b3f28e@meddatainc.com>
+References: <b5c8a12f-1e35-04be-7d2a-6097e8b3f28e@meddatainc.com>
+Message-ID: <8e5ed22f-8f66-ff25-cfce-a9093e2b9d72@meddatainc.com>
+
+On 12/28/2020 08:28 PM, H wrote:
+> I would like to begin analyzing corporate filings from SEC and also have a need for information on corporate actions such as splits, dividends, ex-dividend dates etc etc. I already have stock price information (but not number of shares outstanding etc.) from another source.
+>
+> Googling I found the edgar package which allows me to retrieve various information from the EDGAR database given the CIK for a company. One of the functions take a partial company name as an alternative to CIK but I have yet to find a function which takes a partial company name and retrieves any number of CIK numbers for that entity, as well as previous company names etc. Does such a function exist in edgar? Or perhaps in another package? The alternative would be to do this manually on the SEC website but I would rather automate it.
+>
+> Second, it seems Yahoo Finance has some corporate action data but I did not see that I could retrieve eg ex-dividend dates. Is this possible? Or are there other, better sources that are either free or can be used for a certain number of API calls/day?
+>
+> Thanks!
+>
+Just stumbled across edgarWebR which seems to address the CIK issue etc.
+
+
+From |@|z7r @end|ng |rom gm@||@com  Thu Dec 31 21:10:40 2020
+From: |@|z7r @end|ng |rom gm@||@com (faiz rasool)
+Date: Fri, 1 Jan 2021 01:10:40 +0500
+Subject: [R-SIG-Finance] =?utf-8?q?Praising_the_Binancer_package_from_a_b?=
+	=?utf-8?q?lind_user=E2=80=99s_perspective_and_few_questions_about_?=
+	=?utf-8?q?technical_indicators=2E?=
+Message-ID: <CAFhDWBWs=JRRvwL8UM29KaprkGV=6tO_La+evmNxBsgA=UXr0Q@mail.gmail.com>
+
+Hi all,
+I am a totally blind R user. Few days ago I got to know about the
+Binancer package. This package solved one of the biggest issues I was
+facing while learning about trading on Binance. The problem of how a
+blind user can view candle stick charts to make trading decisions.
+The functions in Binancer packaged allowed me to download candle stick
+charts and order book in R environment from Binance. After downloading
+I used write.CSV function to read data in Microsoft Excel. It has
+significantly improved things for me.
+ I?d like to say that R in general and in this case Binancer package
+has many time made possible those things which were otherwise not
+possible for me as a blind  computer user.
+Now to my questions. Is there a function in Binancer package that I
+have not found yet that allows me to download information of technical
+indicators like RSI and other indicators? If Binancer does not have
+this feature currently then are there any other R packages that will
+help me in downloading the information about technical indicators from
+crypto   currency exchanges to R environment.
+One last question is there any R package that supports the BitMax
+exchange? I think there is a package that supports BitMex exchange but
+I have not come across a package that supports BitMax.
+If currently it is not possible to download technical indicators from
+exchanges then I do hope that if any package developer is reading this
+email will consider bringing this functionality to R as blind users
+will like me will really benefit from it.
+
+Regards,
+Faiz.
+PS I sent this email to R-help list and I was advised to send this
+mail to this group. I was also told to Google RSI and find R packages.
+But I am not sure I found what I was hoping to find. A  simple
+function like Binance_depth to get  information of several indicators
+such as RSI, moving averages and so on.
+
+
+From jo@h@m@u|r|ch @end|ng |rom gm@||@com  Thu Dec 31 21:19:05 2020
+From: jo@h@m@u|r|ch @end|ng |rom gm@||@com (Joshua Ulrich)
+Date: Thu, 31 Dec 2020 14:19:05 -0600
+Subject: [R-SIG-Finance] 
+	=?utf-8?q?Praising_the_Binancer_package_from_a_b?=
+	=?utf-8?q?lind_user=E2=80=99s_perspective_and_few_questions_about_?=
+	=?utf-8?q?technical_indicators=2E?=
+In-Reply-To: <CAFhDWBWs=JRRvwL8UM29KaprkGV=6tO_La+evmNxBsgA=UXr0Q@mail.gmail.com>
+References: <CAFhDWBWs=JRRvwL8UM29KaprkGV=6tO_La+evmNxBsgA=UXr0Q@mail.gmail.com>
+Message-ID: <CAPPM_gRBcEcqc-sLz2yHnY6+n-WDZRBziHbx_6B64xkmZ3YTxw@mail.gmail.com>
+
+Hi Faiz,
+
+On Thu, Dec 31, 2020 at 2:10 PM faiz rasool <faiz7r at gmail.com> wrote:
+>
+> Hi all,
+>
+> I am a totally blind R user. Few days ago I got to know about the
+> Binancer package. This package solved one of the biggest issues I was
+> facing while learning about trading on Binance. The problem of how a
+> blind user can view candle stick charts to make trading decisions.
+>
+> The functions in Binancer packaged allowed me to download candle stick
+> charts and order book in R environment from Binance. After downloading
+> I used write.CSV function to read data in Microsoft Excel. It has
+> significantly improved things for me.
+>
+>  I?d like to say that R in general and in this case Binancer package
+> has many time made possible those things which were otherwise not
+> possible for me as a blind  computer user.
+>
+> Now to my questions. Is there a function in Binancer package that I
+> have not found yet that allows me to download information of technical
+> indicators like RSI and other indicators? If Binancer does not have
+> this feature currently then are there any other R packages that will
+> help me in downloading the information about technical indicators from
+> crypto currency exchanges to R environment.
+
+I recommend that you calculate indicator values yourself.  If you
+download them, you will be limited to parameter values provided by the
+data provider.  You can calculate all the popular indicators with
+functions in the TTR package.
+
+> One last question is there any R package that supports the BitMax
+> exchange? I think there is a package that supports BitMex exchange but
+> I have not come across a package that supports BitMax.
+>
+> If currently it is not possible to download technical indicators from
+> exchanges then I do hope that if any package developer is reading this
+> email will consider bringing this functionality to R as blind users
+> will like me will really benefit from it.
+>
+I'm the author of TTR, and maintain quantmod, xts, and some other
+packages.  I'm interested in what I can do to help make those packages
+more accessible to users with sight impairments.  Please email me
+directly, since that is off-topic for this list.
+
+Best,
+Josh
+
+> Regards,
+> Faiz.
+> PS I sent this email to R-help list and I was advised to send this
+> mail to this group. I was also told to Google RSI and find R packages.
+> But I am not sure I found what I was hoping to find. A  simple
+> function like Binance_depth to get  information of several indicators
+> such as RSI, moving averages and so on.
+>
+> _______________________________________________
+> R-SIG-Finance at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-sig-finance
+> -- Subscriber-posting only. If you want to post, subscribe first.
+> -- Also note that this is not the r-help list where general R questions should go.
+
+
+
+--
+Joshua Ulrich  |  about.me/joshuaulrich
+FOSS Trading  |  www.fosstrading.com
+
+
