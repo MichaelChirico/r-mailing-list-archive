@@ -27,3 +27,11 @@ We track the following archives (file an issue to get a new list added):
 ## `r-sig-mac`: Special interest group (SIC) on Mac + R
 
 > This list might be used also for bug reports or feature requests on the R application for OS X.
+
+## `r-sig-geo`: Special interest group (SIC) on using geographical data and mapping
+
+> A mailing list for discussing the development and use of R functions and packages for handling and analysis of spatial, and particularly geographical, data. The list also covers mapping and cartographic issues, and interfaces between R and geographical information systems.
+
+## `r-sig-finance`: Special interest group (SIC) on R in finance
+
+> A mailing list for discussing the use of R in finance.
