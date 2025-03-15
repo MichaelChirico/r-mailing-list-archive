@@ -2887,3 +2887,176 @@ Size: 665 bytes
 Desc: OpenPGP digital signature
 URL: <https://stat.ethz.ch/pipermail/r-devel/attachments/20250310/365bb625/attachment.sig>
 
+From ||u|@@rev|||@ @end|ng |rom gm@||@com  Tue Mar 11 23:29:34 2025
+From: ||u|@@rev|||@ @end|ng |rom gm@||@com (=?UTF-8?Q?Llu=C3=ADs_Revilla?=)
+Date: Tue, 11 Mar 2025 23:29:34 +0100
+Subject: [Rd] write_PACKAGES's fields default
+In-Reply-To: <945a0cfd-76ea-402b-941f-6f74474ec156@statistik.tu-dortmund.de>
+References: <CAN+W6_uyiPFrxZY+1jpZfWr2OuyB8GjZWGasyKe3-0=Uj2R3iQ@mail.gmail.com>
+ <945a0cfd-76ea-402b-941f-6f74474ec156@statistik.tu-dortmund.de>
+Message-ID: <CAN+W6_so=Vgc3AhBFLscff9YGwNCb8NjRC-aJLxVkENObqyzaw@mail.gmail.com>
+
+Dear Uwe,
+
+I would like to outline three key reasons, in increasing order of
+importance, for my proposal:
+
+1) The current documentation does not fully reflect actual repository
+practices. The available documentation suggests that
+available.packages provides "details corresponding to packages
+currently available at one or more repositories." However, in
+practice, this function serves mostly one purpose: retrieving
+information for installation. This dual purpose likely explains its
+high frequency of use, but it does not align precisely with its
+documented functionality.
+
+2) The function already provides more fields than the mandatory
+canonical ones outlined in the Writing R Extensions (WRE) manual:
+'Package', 'Version', 'License', 'Description', 'Title', 'Author', and
+'Maintainer' [1]. Expanding the available fields would benefit users,
+package developers, and repository maintainers by offering greater
+transparency and usability.
+
+3) The absence of the 'Additional_repositories' field in the output
+often forces users to resort to complex manual installations when
+repository installations fail. Additionally, exposing the 'Packaged'
+field could provide clarity about whether a package update was made by
+the repository team or the original maintainer. Anticipating useful
+fields is an ongoing challenge, adopting a flexible yet comprehensive
+approach would better serve the community.
+
+Regarding performance considerations, the available.packages output is
+cached for one hour by default. While increasing this cache duration
+might reduce repository demand, I have observed approximately 50
+updates per day on CRAN (with significantly fewer on Bioconductor due
+to synchronized releases). The frequency of updates has grown
+alongside the number of packages on CRAN (up to 2022). Extending the
+cache duration may reduce bandwidth usage, but it would also delay
+users from accessing the latest package updates. The impact on the
+server load and connection times remain unclear, particularly if the
+file size increases.
+
+To mitigate any performance slowdowns resulting from the addition of
+new fields, I am considering providing a patch to optimize certain
+steps in install.packages related to available.packages output.
+Potential improvements include vectorizing package dependency
+extraction and converting the output object to a matrix format before
+comparisons. Additionally, the package_version function required to
+compare versions seems slow too. There may be other opportunities for
+speed and memory optimizations as well.
+
+Concerning concerns about writing performance, the documentation on
+update_PACKAGES indicates that the penalty for adding new fields would
+be incurred once per field added. The impact at CRAN's scale or how it
+scales with the number of fields and packages is unclear. Writing the
+file with multiple new fields at once would be preferable to
+incremental updates.
+
+I initially proposed expanding and reusing existing functions. A
+common alternative approach to providing this information would also
+be appreciated. Other repositories have adopted different distribution
+methods, as reflected in these private functions, and adding this
+feature would not prevent using of those methods, but could raise them
+to a canonical status on R itself.
+
+I appreciate your time considering this.
+Best,
+
+Llu?s
+
+[1]: https://cran.r-project.org/doc/manuals/r-devel/R-exts.html#The-DESCRIPTION-file
+
+
+On Mon, 10 Mar 2025 at 14:37, Uwe Ligges
+<ligges at statistik.tu-dortmund.de> wrote:
+>
+>
+>
+> On 01.03.2025 13:07, Llu?s Revilla wrote:
+> > Dear list,
+> >
+> > I'm trying to get some details from repositories with
+> > available.packages. However, despite being included on the DESCRIPTION
+> > files they are not available.
+> >
+> > ap <- utils::available.packages(fields = "Additional_repositories",
+> >      filters = c("CRAN", "duplicates"),
+> >      ignore_repo_cache =  TRUE,
+> >      repos = "https://cran.r-project.org")
+> > ap[, "Additional_repositories"] |> is.na() |> all()
+> > ## [1] TRUE
+> >
+> > However, some packages like Seurat have the Additional_repositories
+> > field [2]. If I try with another repository (Bioconductor software
+> > repository):
+> >
+> > ap <- available.packages(fields = "biocViews",
+> >      ignore_repo_cache =  TRUE,
+> >      repos = "https://bioconductor.org/packages/3.21/bioc")
+> > ap[, "biocViews"] |> is.na() |> all()
+> > ## [1] TRUE
+> >
+> > It also misses the BiocViews field compulsory on that repository.
+> > Both repositories use tools::write_PACKAGES [3][4] to generate the
+> > file read by available.packages. This function writes by default
+> > fields "needed by available.packages".
+> >
+> > However, it is unclear what is needed for available.packages.
+> > According to its documentation, it returns "details corresponding to
+> > packages currently available at one or more repositories". To me this
+> > would mean that fields on the DESCRIPTION files should appear, but the
+> > default of write_PACKAGES doesn't write other fields besides
+> > '"Package"', '"Version"', '"Priority"',  '"Depends"', '"Imports"',
+> > '"LinkingTo"', '"Suggests"', '"Enhances"', '"OS_type"', '"License"'
+> > and '"Archs"'.
+> >
+> > I could approach each repository and ask to include more fields.
+> > However, to match the documentation on available.packages and help all
+> > repository administrators it would make sense to change the default on
+> > write_PACKAGES.
+> > Could the default fields be changed, so
+> > that all fields available on packages' DESCRIPTION to
+> > PACKAGES(.gz,.rds). Perhaps with fields = TRUE?
+> > If this is too much it would be great if fields documented by Writing
+> > R Extensions are written on PACKAGES.
+> > This modification would make it easier for all to reuse repository data.
+> >
+> > Many thanks for your consideration,
+> >
+> > Llu?s
+> >
+> > PD: From CRAN perspective CRAN_packages_db() function can be used to
+> > get Additional_repositories, but this is limited to CRAN and won't
+> > work for BiocViews on Bioconductor or for other arbitrary fields like
+> > '"RoxygenNote"'.
+>
+>
+> I'd indeed use
+>
+> Cpdb <- tools:::CRAN_package_db()
+> Bpdb <- tools:::BioC_package_db()
+>
+> for the two mentioned repos. ALso, PACLAGES.... is downloaded very
+> frequently and should not grow too much.
+>
+> Is there a use case why available.packages() should provide this info
+> while not being less performant for package installatons etc.?
+>
+> Best,
+> Uwe Ligges
+>
+>
+>
+>
+> >
+> > [1]: https://stat.ethz.ch/pipermail/r-devel/2024-June/083477.html
+> > [2]: https://cran.r-project.org/package=Seurat
+> > [3]: https://svn.r-project.org/R-dev-web/trunk/CRAN/QA/Uwe/make/writeCRANPackages.R
+> > [4]: https://github.com/Bioconductor/BBS/blob/devel/utils/makePropagationStatusDb.R#L348
+> >
+> > ______________________________________________
+> > R-devel at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+
+
