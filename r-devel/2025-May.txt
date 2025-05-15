@@ -1,0 +1,1601 @@
+From cybergeorge2020 @end|ng |rom gm@||@com  Mon May  5 19:18:42 2025
+From: cybergeorge2020 @end|ng |rom gm@||@com (Tomek Gieorgijewski)
+Date: Mon, 5 May 2025 19:18:42 +0200
+Subject: [Rd] 
+ sqrt(.Machine$double.xmax)^2 == Inf, but only on Windows in R
+In-Reply-To: <mailman.54875.5.1746007202.43683.r-devel@r-project.org>
+References: <mailman.54875.5.1746007202.43683.r-devel@r-project.org>
+Message-ID: <CAFGdzpo+dd5oHkfsfhgUYQvmTrEVtKOedjC_D2FZb7391+K9xg@mail.gmail.com>
+
+Hello!
+
+My three Groschen:
+
+On MacOS (Intel CPU) and R 4.4.3 I report:
+> dput(.Machine$double.xmax, control = 'hex')
+0x1.fffffffffffffp+1023
+> dput(sqrt(.Machine$double.xmax), control = 'hex')
+0x1.fffffffffffffp+511
+> dput(sqrt(.Machine$double.xmax)^2, control = 'hex')
+0x1.ffffffffffffep+1023
+so as Ivan tested on Linux:
+
+> ...which differs from R on Linux:
+>
+> dput(.Machine$double.xmax, control = 'hex')
+> # 0x1.fffffffffffffp+1023
+> dput(sqrt(.Machine$double.xmax), control = 'hex')
+> # 0x1.fffffffffffffp+511
+> dput(sqrt(.Machine$double.xmax)^2, control = 'hex')
+> # 0x1.ffffffffffffep+1023
+>
+> --
+> Best regards,
+> Ivan
+>
+> --
+Also I've found when I was researching sqrt algorithms that on x86_64 GCC
+implements `sqrt` using machine instruction `sqrtsd` (sqrt scalar double):
+https://sourceware.org/git/?p=glibc.git;a=blob;f=sysdeps/x86_64/fpu/e_sqrt.c;h=33b59f67c10252bf8982303db2159f5a51c1ad9d;hb=f59f7adb4a00b7784cab1becdf257366104587b7
+
+So if it's used, on recent Intel CPUs should return consistent results
+among different platforms.
+I wonder what happens on Windows in this matter.
+--
+Also, to test what clang does, I compiled simple program doing square root
+of double value to assembly.
+It also shows usage of machine instruction:
+`sqrtsd  %xmm0, %xmm0`
+
+I guess OP reports the problem in consistency between R implementations on
+different OSs than precision itself.
+
+regards,
+Tomek.
+
+	[[alternative HTML version deleted]]
+
+
+From m|ch@e|ch|r|co4 @end|ng |rom gm@||@com  Tue May  6 08:35:57 2025
+From: m|ch@e|ch|r|co4 @end|ng |rom gm@||@com (Michael Chirico)
+Date: Mon, 5 May 2025 23:35:57 -0700
+Subject: [Rd] Recommend/clarify in ?utils::news that h2/h3 markdown
+ hierarchy is preferable to h1/h2
+Message-ID: <CAPRVBcxPtRETMPRNquOSfGsAZwYeBa9Enj3uHKBz9S9xPfcmpg@mail.gmail.com>
+
+The current wording in ?utils::news reads to me as implying we should
+use `#` and `##` for the respective version, category headings [1]:
+
+> File NEWS.md should contain the news in Markdown..., with the
+> primary heading level giving the version number... Where available,
+> secondary headings are taken to indicate categories.
+
+This style is quite common in R packages, but it trips the alarms of
+basically every markdown linter/style guide -- advice against using
+multiple <h1> tags in HTML abounds (e.g. [2], [3], [4]). There is some
+nuance, but I haven't seen anything suggesting those exceptions
+definitely apply for R package NEWS files.
+
+Anyway, utils::news _is_ perfectly happy with NEWS files using `##`
+and `###` instead [5]; this is documented in an internal comment [6].
+
+Is there an argument against (1) directly advocating h2/h3 usage in
+?utils::news; or, more softly, (2) documenting that any (L,L+1) pair,
+1<=L<=5, where 'L' gives version numbers as described, will be
+accepted when producing the news database? Note that doing so is
+perfectly back-compatible -- we needn't change the code at all, only
+its documentation.
+
+Mike C
+
+[1] https://github.com/r-devel/r-svn/blob/72d8171a54532ffe0fd44306caa0ee953cecc91e/src/library/utils/man/news.Rd#L95-L100
+[2] https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/Heading_Elements
+[3] https://yoast.com/one-h1-heading-per-post/
+[4] https://www.youtube.com/watch?v=GIn5qJKU8VM
+[5] https://gist.github.com/MichaelChirico/49f51edeecc288d7aabf6bc53cb1aa89
+[6] https://github.com/r-devel/r-svn/blob/72d8171a54532ffe0fd44306caa0ee953cecc91e/src/library/tools/R/news.R#L790-L807
+
+
+From @tephem@t|c|@n @end|ng |rom gm@||@com  Fri May  9 03:09:22 2025
+From: @tephem@t|c|@n @end|ng |rom gm@||@com (Stephen Wade)
+Date: Fri, 9 May 2025 11:09:22 +1000
+Subject: [Rd] array-bound error with GCC 13/14
+Message-ID: <CAHG+78w0m5_qFrsdghAje1K-SP5GdLpZt3i2DGQN+i8FVLBwFg@mail.gmail.com>
+
+The literanger package is no longer passing on CRAN
+(https://CRAN.R-project.org/package=literanger) due to array-bound
+warnings in GCC 13.3 and 14.2 (more details below).
+
+This _looks_ to me like one of either a) a compiler bug, b) a false
+positive, or c) (very unlikely) something in the standard library
+implementation.
+
+Have others seen warnings like this recently, and if so, what have you
+done about them? The warning did not appear in clang, nor with GCC
+15.1.0 on CRAN's Fedora test service.
+
+Firstly, the relevant code snippet:
+
+/** Compute adjusted p-values using Benjamini/Hochberg method */
+inline std::vector<double> adjust_pvalues(const std::vector<double> &
+unadjusted) {
+
+    const size_t n_pvalue = unadjusted.size();
+    if (n_pvalue < 2) return unadjusted; /* <-- WARNING HERE */
+
+    std::vector<double> adjusted(n_pvalue, 0);
+    /* Do some other stuff */
+    return adjusted;
+
+}
+
+
+Secondly, the warning (on my own machine, using GCC 13.2.0, which also
+has this problem):
+
+    inlined from ?std::vector<double> literanger::adjust_pvalues(const
+std::vector<double>&)? at ../src/literanger/utility_math.h:99:48:
+/usr/include/c++/13/bits/stl_algobase.h:437:30: warning: ?void*
+__builtin_memmove(void*, const void*, long unsigned int)? writing
+between 9 and 9223372036854775807 bytes into a region of size 8
+overflows the destination [-Wstringop-overflow=]
+  437 |             __builtin_memmove(__result, __first, sizeof(_Tp) * _Num);
+
+
+From |kry|ov @end|ng |rom d|@root@org  Fri May  9 15:17:55 2025
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Fri, 9 May 2025 16:17:55 +0300
+Subject: [Rd] array-bound error with GCC 13/14
+In-Reply-To: <CAHG+78w0m5_qFrsdghAje1K-SP5GdLpZt3i2DGQN+i8FVLBwFg@mail.gmail.com>
+References: <CAHG+78w0m5_qFrsdghAje1K-SP5GdLpZt3i2DGQN+i8FVLBwFg@mail.gmail.com>
+Message-ID: <20250509161755.1da23a4b@trisector>
+
+? Fri, 9 May 2025 11:09:22 +1000
+Stephen Wade <stephematician at gmail.com> ?????:
+
+>     inlined from ?std::vector<double> literanger::adjust_pvalues(const
+> std::vector<double>&)? at ../src/literanger/utility_math.h:99:48:
+> /usr/include/c++/13/bits/stl_algobase.h:437:30: warning: ?void*
+> __builtin_memmove(void*, const void*, long unsigned int)? writing
+> between 9 and 9223372036854775807 bytes into a region of size 8
+> overflows the destination [-Wstringop-overflow=]
+>   437 |      __builtin_memmove(__result, __first, sizeof(_Tp) * _Num);
+
+The same problem (different reproducer, slightly different warning, but
+same place in the standard library and similar circumstances) has been
+reported as a false positive in GCC, Bug 109717:
+https://gcc.gnu.org/bugzilla/show_bug.cgi?id=109717
+
+There are comments by GCC developers acknowledging that the overflow
+detection may "detect" overflows in code paths that cannot be taken,
+but they don't see an easy way to fix the warnings on the compiler side.
+
+-- 
+Best regards,
+Ivan
+
+
+From kev|nu@hey @end|ng |rom gm@||@com  Fri May  9 19:29:06 2025
+From: kev|nu@hey @end|ng |rom gm@||@com (Kevin Ushey)
+Date: Fri, 9 May 2025 10:29:06 -0700
+Subject: [Rd] array-bound error with GCC 13/14
+In-Reply-To: <20250509161755.1da23a4b@trisector>
+References: <CAHG+78w0m5_qFrsdghAje1K-SP5GdLpZt3i2DGQN+i8FVLBwFg@mail.gmail.com>
+ <20250509161755.1da23a4b@trisector>
+Message-ID: <CAJXgQP1WVwAsBfzMD_aEukHhcVCivjBCzWQ7Yp37=+CX=mRjzQ@mail.gmail.com>
+
+Hopefully a member of the CRAN team will tell me I'm wrong, but I
+think whether or not there is a compiler bug is ultimately irrelevant
+-- packages on CRAN must compile cleanly even with potentially-buggy
+development versions of compilers.
+
+So, whether or not there is a bug in gcc is moot -- you'll need to
+find a way to avoid triggering this issue in your package code.
+
+Best,
+Kevin
+
+On Fri, May 9, 2025 at 6:18?AM Ivan Krylov via R-devel
+<r-devel at r-project.org> wrote:
+>
+> ? Fri, 9 May 2025 11:09:22 +1000
+> Stephen Wade <stephematician at gmail.com> ?????:
+>
+> >     inlined from ?std::vector<double> literanger::adjust_pvalues(const
+> > std::vector<double>&)? at ../src/literanger/utility_math.h:99:48:
+> > /usr/include/c++/13/bits/stl_algobase.h:437:30: warning: ?void*
+> > __builtin_memmove(void*, const void*, long unsigned int)? writing
+> > between 9 and 9223372036854775807 bytes into a region of size 8
+> > overflows the destination [-Wstringop-overflow=]
+> >   437 |      __builtin_memmove(__result, __first, sizeof(_Tp) * _Num);
+>
+> The same problem (different reproducer, slightly different warning, but
+> same place in the standard library and similar circumstances) has been
+> reported as a false positive in GCC, Bug 109717:
+> https://gcc.gnu.org/bugzilla/show_bug.cgi?id=109717
+>
+> There are comments by GCC developers acknowledging that the overflow
+> detection may "detect" overflows in code paths that cannot be taken,
+> but they don't see an easy way to fix the warnings on the compiler side.
+>
+> --
+> Best regards,
+> Ivan
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From o||v|er@benz @end|ng |rom b-d@t@@ch  Fri May  9 20:16:52 2025
+From: o||v|er@benz @end|ng |rom b-d@t@@ch (Olivier Benz)
+Date: Fri, 9 May 2025 18:16:52 +0000
+Subject: [Rd] array-bound error with GCC 13/14
+In-Reply-To: <CAJXgQP1WVwAsBfzMD_aEukHhcVCivjBCzWQ7Yp37=+CX=mRjzQ@mail.gmail.com>
+References: <CAHG+78w0m5_qFrsdghAje1K-SP5GdLpZt3i2DGQN+i8FVLBwFg@mail.gmail.com>
+ <20250509161755.1da23a4b@trisector>
+ <CAJXgQP1WVwAsBfzMD_aEukHhcVCivjBCzWQ7Yp37=+CX=mRjzQ@mail.gmail.com>
+Message-ID: <09705F8C-F441-4435-9091-E5606F668C17@b-data.ch>
+
+
+> On 9 May 2025, at 19:29, Kevin Ushey <kevinushey at gmail.com> wrote:
+> 
+> Hopefully a member of the CRAN team will tell me I'm wrong, but I
+> think whether or not there is a compiler bug is ultimately irrelevant
+> -- packages on CRAN must compile cleanly even with potentially-buggy
+> development versions of compilers.
+
+I disagree. This would be even worse than rejecting packages that use deprecated code.
+
+xref: https://github.com/nx10/httpgd/issues/218
+
+> 
+> So, whether or not there is a bug in gcc is moot -- you'll need to
+> find a way to avoid triggering this issue in your package code.
+> 
+> Best,
+> Kevin
+> 
+> On Fri, May 9, 2025 at 6:18?AM Ivan Krylov via R-devel
+> <r-devel at r-project.org> wrote:
+>> 
+>> ? Fri, 9 May 2025 11:09:22 +1000
+>> Stephen Wade <stephematician at gmail.com> ?????:
+>> 
+>>>    inlined from ?std::vector<double> literanger::adjust_pvalues(const
+>>> std::vector<double>&)? at ../src/literanger/utility_math.h:99:48:
+>>> /usr/include/c++/13/bits/stl_algobase.h:437:30: warning: ?void*
+>>> __builtin_memmove(void*, const void*, long unsigned int)? writing
+>>> between 9 and 9223372036854775807 bytes into a region of size 8
+>>> overflows the destination [-Wstringop-overflow=]
+>>>  437 |      __builtin_memmove(__result, __first, sizeof(_Tp) * _Num);
+>> 
+>> The same problem (different reproducer, slightly different warning, but
+>> same place in the standard library and similar circumstances) has been
+>> reported as a false positive in GCC, Bug 109717:
+>> https://gcc.gnu.org/bugzilla/show_bug.cgi?id=109717
+>> 
+>> There are comments by GCC developers acknowledging that the overflow
+>> detection may "detect" overflows in code paths that cannot be taken,
+>> but they don't see an easy way to fix the warnings on the compiler side.
+>> 
+>> --
+>> Best regards,
+>> Ivan
+>> 
+>> ______________________________________________
+>> R-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-devel
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+--
+benz0li.b-data.io | @benz0li | olivier.benz at b-data.ch
+
+
+From henr|k@bengt@@on @end|ng |rom gm@||@com  Sun May 11 19:58:18 2025
+From: henr|k@bengt@@on @end|ng |rom gm@||@com (Henrik Bengtsson)
+Date: Sun, 11 May 2025 10:58:18 -0700
+Subject: [Rd] Is it possible to gracefully interrupt a child R process on MS
+ Windows?
+Message-ID: <CAFDcVCTbOwjucSMMWJaC_FFy4B5Ho9kJ+t=s6ZjR+1mxxw3XVA@mail.gmail.com>
+
+In help("pskill", package = "tools") is says:
+
+  Only SIGINT and SIGTERM will be defined on Windows, and pskill will
+always use the Windows system call TerminateProcess.
+
+As far as I understand it, TerminateProcess [1] terminates the process
+"quite abruptly". Specifically, it is not possible for the process to
+intercept the termination and gracefully shutdown. In R terms, we
+cannot rely on:
+
+tryCatch({
+  ...
+}, interrupt = function(int) {
+  ## cleanup
+})
+
+Similarly, it does not look like R itself can exit gracefully. For
+example, when signalling pskill(pid, signal = SIGINT) to another R
+process, that R process leaves behind its tempdir(). In contrast, if
+the user interrupts the process interactively (Ctrl-C), there is an
+'interrupt' condition that can be caught, and R cleans up after itself
+before exiting.
+
+QUESTION:
+
+Is it possible to gracefully interrupt a child R process on MS
+Windows, e.g. a PSOCK cluster node? (I don't think so, but I figure
+it's worth asking)
+
+
+SUGGESTIONS:
+
+Also, if my understanding that TerminateProcess is abrupt is correct,
+and there is no way to exit gracefully, would it make sense to clarify
+this fact in help("pskill", package = "tools")? Right now you either
+have to know how 'TerminateProcess' works, or run various tests on MS
+Windows to figure out the current behavior.
+
+Also, would a better signal mapping be:
+
+  Only SIGKILL will be defined on Windows, and pskill will always use
+the Windows system call TerminateProcess. Signals SIGINT and SIGTERM
+are supported for backward compatible reasons, but are effectively
+identical to SIGKILL.
+
+? That would change the expectations on what will happen for people
+coming from the POSIX world.
+
+[1] https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-terminateprocess
+
+/Henrik
+
+
+From |kry|ov @end|ng |rom d|@root@org  Sun May 11 23:37:44 2025
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Mon, 12 May 2025 00:37:44 +0300
+Subject: [Rd] 
+ Is it possible to gracefully interrupt a child R process on MS
+ Windows?
+In-Reply-To: <CAFDcVCTbOwjucSMMWJaC_FFy4B5Ho9kJ+t=s6ZjR+1mxxw3XVA@mail.gmail.com>
+References: <CAFDcVCTbOwjucSMMWJaC_FFy4B5Ho9kJ+t=s6ZjR+1mxxw3XVA@mail.gmail.com>
+Message-ID: <20250512003744.7b2f0c56@Tarkus>
+
+On Sun, 11 May 2025 10:58:18 -0700
+Henrik Bengtsson <henrik.bengtsson at gmail.com> wrote:
+
+> Is it possible to gracefully interrupt a child R process on MS
+> Windows, e.g. a PSOCK cluster node?
+
+Not in the general case (I think, based on the code paths leading to
+Rf_onintr() on Windows), but PSOCK cluster nodes are instances of
+Rscript.exe running the terminal front-end, and the terminal front-end
+interrupts R upon receipt of Ctrl+C and Ctrl+Break console events:
+https://learn.microsoft.com/en-us/windows/console/setconsolectrlhandler
+
+This makes it possible for ps::ps_interrupt() to spawn a child process
+to attach to the console where Rscript.exe is running and generate this
+event:
+https://github.com/r-lib/ps/blob/042d4836ac584c95a59985171fdfa3b6baf2fa6c/src/interrupt.c#L33-L35
+
+This probably needs specially written code in the children that expects
+to be interrupted in order to work reliably, but interrupting the
+children and then interrupting the parent and submitting another job to
+the PSOCK cluster seems to have worked for me on R-4.5.0.
+
+-- 
+Best regards,
+Ivan
+
+
+From m|ch@e|ch|r|co4 @end|ng |rom gm@||@com  Mon May 12 00:35:10 2025
+From: m|ch@e|ch|r|co4 @end|ng |rom gm@||@com (Michael Chirico)
+Date: Sun, 11 May 2025 15:35:10 -0700
+Subject: [Rd] Why does format.default skip dispatch for list items?
+Message-ID: <CAPRVBcw_RstY-EWXMOHpMvQnPEtRyrZ74hTnsp7695jW64B7yQ@mail.gmail.com>
+
+This is the documented behavior since r35262 (2005), from ?format
+
+> If x is a list, the result is a character vector obtained by applying format.default(x, ...) to each element of the list
+
+One consequence is that we can't add "nice" printing methods for
+list-of-object columns in data.frames:
+
+https://github.com/eddelbuettel/rprotobuf/issues/109
+
+library(RProtoBuf)
+person_desc <- P("tutorial.Person")
+DF <- data.frame(id = 1:2)
+DF$person = list(person_desc$new(name = "Me"), person_desc$new(name =
+"You", email = "y at u.com"))
+
+DF
+#   id                                                  person
+# 1  1 <S4 class ?Message? [package ?RProtoBuf?] with 2 slots>
+# 2  2 <S4 class ?Message? [package ?RProtoBuf?] with 2 slots>
+             ^ from format.default, with option to make it more informative
+
+One assumes that at this point, there are back-compatibility concerns
+since this is the documented behavior.
+
+Is there no other option than to make the 'person' column itself an S3
+class with an associated format method?
+
+
+From tom@@@k@||ber@ @end|ng |rom gm@||@com  Mon May 12 09:57:14 2025
+From: tom@@@k@||ber@ @end|ng |rom gm@||@com (Tomas Kalibera)
+Date: Mon, 12 May 2025 09:57:14 +0200
+Subject: [Rd] 
+ Is it possible to gracefully interrupt a child R process on MS
+ Windows?
+In-Reply-To: <CAFDcVCTbOwjucSMMWJaC_FFy4B5Ho9kJ+t=s6ZjR+1mxxw3XVA@mail.gmail.com>
+References: <CAFDcVCTbOwjucSMMWJaC_FFy4B5Ho9kJ+t=s6ZjR+1mxxw3XVA@mail.gmail.com>
+Message-ID: <e0ead7ab-de27-473b-baf7-751f81cbf801@gmail.com>
+
+I think for reliability and portability of termination, one needs to 
+implement an application-specific termination protocol on both ends. 
+Only within specific application constraints, one can also define what 
+graceful termination means. Typically, one also has other expectations 
+from the termination process - such that the processes will terminate in 
+some finite time/soon. In some cases one also may require certain 
+behavior of the cleanup code (such as that wouldn't take long, wouldn't 
+do some things, etc), to meet the specific termination requirements. And 
+it may require some behavior of the non-cleanup code as well (such as 
+polling in some intervals).
+
+Using signals to terminate a process even on Unix may not be seen as 
+graceful enough, either. It is not just a Windows problem.
+
+Yes, TerminateProcess() on Windows will not allow the target process to 
+run any cleanup. The documentation of "pskill" names 
+"TerminateProcess()" explicitly so that the readers interested in the 
+details can follow Microsoft documentation. But I think one should avoid 
+using pskill()/signals for termination and instead use an 
+application-level termination protocol. The parallel package, PSOCK, has 
+one, based on socket connections, so perhaps one can take some 
+inspiration from there.
+
+Best
+Tomas
+
+On 5/11/25 19:58, Henrik Bengtsson wrote:
+> In help("pskill", package = "tools") is says:
+>
+>    Only SIGINT and SIGTERM will be defined on Windows, and pskill will
+> always use the Windows system call TerminateProcess.
+>
+> As far as I understand it, TerminateProcess [1] terminates the process
+> "quite abruptly". Specifically, it is not possible for the process to
+> intercept the termination and gracefully shutdown. In R terms, we
+> cannot rely on:
+>
+> tryCatch({
+>    ...
+> }, interrupt = function(int) {
+>    ## cleanup
+> })
+>
+> Similarly, it does not look like R itself can exit gracefully. For
+> example, when signalling pskill(pid, signal = SIGINT) to another R
+> process, that R process leaves behind its tempdir(). In contrast, if
+> the user interrupts the process interactively (Ctrl-C), there is an
+> 'interrupt' condition that can be caught, and R cleans up after itself
+> before exiting.
+>
+> QUESTION:
+>
+> Is it possible to gracefully interrupt a child R process on MS
+> Windows, e.g. a PSOCK cluster node? (I don't think so, but I figure
+> it's worth asking)
+>
+>
+> SUGGESTIONS:
+>
+> Also, if my understanding that TerminateProcess is abrupt is correct,
+> and there is no way to exit gracefully, would it make sense to clarify
+> this fact in help("pskill", package = "tools")? Right now you either
+> have to know how 'TerminateProcess' works, or run various tests on MS
+> Windows to figure out the current behavior.
+>
+> Also, would a better signal mapping be:
+>
+>    Only SIGKILL will be defined on Windows, and pskill will always use
+> the Windows system call TerminateProcess. Signals SIGINT and SIGTERM
+> are supported for backward compatible reasons, but are effectively
+> identical to SIGKILL.
+>
+> ? That would change the expectations on what will happen for people
+> coming from the POSIX world.
+>
+> [1] https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-terminateprocess
+>
+> /Henrik
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From tom@@@k@||ber@ @end|ng |rom gm@||@com  Mon May 12 14:02:10 2025
+From: tom@@@k@||ber@ @end|ng |rom gm@||@com (Tomas Kalibera)
+Date: Mon, 12 May 2025 14:02:10 +0200
+Subject: [Rd] array-bound error with GCC 13/14
+In-Reply-To: <CAHG+78w0m5_qFrsdghAje1K-SP5GdLpZt3i2DGQN+i8FVLBwFg@mail.gmail.com>
+References: <CAHG+78w0m5_qFrsdghAje1K-SP5GdLpZt3i2DGQN+i8FVLBwFg@mail.gmail.com>
+Message-ID: <ca22beb9-2215-46ef-b82c-398682b6dc62@gmail.com>
+
+
+On 5/9/25 03:09, Stephen Wade wrote:
+> The literanger package is no longer passing on CRAN
+> (https://CRAN.R-project.org/package=literanger) due to array-bound
+> warnings in GCC 13.3 and 14.2 (more details below).
+>
+> This _looks_ to me like one of either a) a compiler bug, b) a false
+> positive, or c) (very unlikely) something in the standard library
+> implementation.
+>
+> Have others seen warnings like this recently, and if so, what have you
+> done about them? The warning did not appear in clang, nor with GCC
+> 15.1.0 on CRAN's Fedora test service.
+>
+> Firstly, the relevant code snippet:
+>
+> /** Compute adjusted p-values using Benjamini/Hochberg method */
+> inline std::vector<double> adjust_pvalues(const std::vector<double> &
+> unadjusted) {
+>
+>      const size_t n_pvalue = unadjusted.size();
+>      if (n_pvalue < 2) return unadjusted; /* <-- WARNING HERE */
+>
+>      std::vector<double> adjusted(n_pvalue, 0);
+>      /* Do some other stuff */
+>      return adjusted;
+>
+> }
+>
+>
+> Secondly, the warning (on my own machine, using GCC 13.2.0, which also
+> has this problem):
+>
+>      inlined from ?std::vector<double> literanger::adjust_pvalues(const
+> std::vector<double>&)? at ../src/literanger/utility_math.h:99:48:
+> /usr/include/c++/13/bits/stl_algobase.h:437:30: warning: ?void*
+> __builtin_memmove(void*, const void*, long unsigned int)? writing
+> between 9 and 9223372036854775807 bytes into a region of size 8
+> overflows the destination [-Wstringop-overflow=]
+>    437 |             __builtin_memmove(__result, __first, sizeof(_Tp) * _Num);
+
+Perhaps you could try creating a minimal reproducible example, 
+standalone C++ program, which still reproduces the warning, and report 
+to GCC (or libstdc++). You may get a response it is a duplicate of the 
+bug Ivan identified, but it still might be useful to have that 
+confirmed. It might also become clearer which problem the compiler seems 
+to see there - so give a hint for a workaround.
+
+Even if it gets confirmed as a compiler bug, it might be useful to work 
+it around when possible so that your code builds cleanly, particularly 
+if it doesn't complicate the code much. We are doing the same thing with 
+various warnings in base R - we try to simplify/change the code to help 
+the compiler see it is correct. Also, sometimes one finds on the way 
+that there actually is a (sometimes theoretical but, still) problem.
+
+Once you have a minimal reproducible example it might also be easier to 
+experiment with work-arounds.
+
+Best
+Tomas
+
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From tom@@@k@||ber@ @end|ng |rom gm@||@com  Mon May 12 16:41:06 2025
+From: tom@@@k@||ber@ @end|ng |rom gm@||@com (Tomas Kalibera)
+Date: Mon, 12 May 2025 16:41:06 +0200
+Subject: [Rd] on.exit() handler being interrupted by time limit
+In-Reply-To: <3f30fa29-21ea-4db6-9d92-043796cb60b1@gmail.com>
+References: <3f30fa29-21ea-4db6-9d92-043796cb60b1@gmail.com>
+Message-ID: <c64bb185-ec7d-4b31-a5ea-7b733088b116@gmail.com>
+
+
+On 4/27/25 22:19, Duncan Murdoch wrote:
+>
+> BTW, the help for setTimeLimit() says that the time limit check 
+> happens frequently during `Sys.sleep()`, but that doesn't appear to be 
+> true. I've tried a variation on the code above which sleeps for 20 
+> seconds, even with a time limit of 1 second.
+
+Regarding base R, this works for me in Linux:
+
+ > setTimeLimit(elapsed=10)
+ > for(i in 1:1000) Sys.sleep(0.1)
+Error in Sys.sleep(0.1) : reached elapsed time limit
+
+That is,? the loop gets interrupted after about 10s.
+
+Reading the code of R, there is a check in Sys.sleep(), but only after 
+the first wait (in a loop, iteratively waiting for the required 
+duration). When polled events are not active, the first wait is the 
+whole duration.
+
+I would read the documentation of ?setTimeLimit as that the check 
+happens during Sys.sleep(), but not necessarily frequently, that 
+"frequently" only refers to R code. And then the documentation would 
+seem correct (or at least not contradicted). On the other hand, right, 
+we could change Rsleep() to use a shorter sleep when elapsed time limit 
+is in place, and that wouldn't contradict the documentation, either.
+
+Best
+Tomas
+
+
+>
+> Duncan Murdoch
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From Kurt@Horn|k @end|ng |rom wu@@c@@t  Mon May 12 19:28:53 2025
+From: Kurt@Horn|k @end|ng |rom wu@@c@@t (Kurt Hornik)
+Date: Mon, 12 May 2025 19:28:53 +0200
+Subject: [Rd] Recommend/clarify in ?utils::news that h2/h3 markdown
+ hierarchy is preferable to h1/h2
+In-Reply-To: <CAPRVBcxPtRETMPRNquOSfGsAZwYeBa9Enj3uHKBz9S9xPfcmpg@mail.gmail.com>
+References: <CAPRVBcxPtRETMPRNquOSfGsAZwYeBa9Enj3uHKBz9S9xPfcmpg@mail.gmail.com>
+Message-ID: <26658.12245.891719.774227@hornik.net>
+
+>>>>> Michael Chirico writes:
+
+Thanks.  Should be ok to change the wording (provided this can be done
+without confusing maintainers).  
+
+Perhaps you could make a suggestion? :-)
+
+Best
+-k
+
+> The current wording in ?utils::news reads to me as implying we should
+> use `#` and `##` for the respective version, category headings [1]:
+
+>> File NEWS.md should contain the news in Markdown..., with the
+>> primary heading level giving the version number... Where available,
+>> secondary headings are taken to indicate categories.
+
+> This style is quite common in R packages, but it trips the alarms of
+> basically every markdown linter/style guide -- advice against using
+> multiple <h1> tags in HTML abounds (e.g. [2], [3], [4]). There is some
+> nuance, but I haven't seen anything suggesting those exceptions
+> definitely apply for R package NEWS files.
+
+> Anyway, utils::news _is_ perfectly happy with NEWS files using `##`
+> and `###` instead [5]; this is documented in an internal comment [6].
+
+> Is there an argument against (1) directly advocating h2/h3 usage in
+> ?utils::news; or, more softly, (2) documenting that any (L,L+1) pair,
+> 1<=L<=5, where 'L' gives version numbers as described, will be
+> accepted when producing the news database? Note that doing so is
+> perfectly back-compatible -- we needn't change the code at all, only
+> its documentation.
+
+> Mike C
+
+> [1] https://github.com/r-devel/r-svn/blob/72d8171a54532ffe0fd44306caa0ee953cecc91e/src/library/utils/man/news.Rd#L95-L100
+> [2] https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/Heading_Elements
+> [3] https://yoast.com/one-h1-heading-per-post/
+> [4] https://www.youtube.com/watch?v=GIn5qJKU8VM
+> [5] https://gist.github.com/MichaelChirico/49f51edeecc288d7aabf6bc53cb1aa89
+> [6] https://github.com/r-devel/r-svn/blob/72d8171a54532ffe0fd44306caa0ee953cecc91e/src/library/tools/R/news.R#L790-L807
+
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From m|ch@e|ch|r|co4 @end|ng |rom gm@||@com  Mon May 12 19:55:55 2025
+From: m|ch@e|ch|r|co4 @end|ng |rom gm@||@com (Michael Chirico)
+Date: Mon, 12 May 2025 10:55:55 -0700
+Subject: [Rd] Recommend/clarify in ?utils::news that h2/h3 markdown
+ hierarchy is preferable to h1/h2
+In-Reply-To: <26658.12245.891719.774227@hornik.net>
+References: <CAPRVBcxPtRETMPRNquOSfGsAZwYeBa9Enj3uHKBz9S9xPfcmpg@mail.gmail.com>
+ <26658.12245.891719.774227@hornik.net>
+Message-ID: <CAPRVBcyP=6ZNDfSi-uUE40DPFx4rwm4zhb2qJAkus=3Mh4N7gw@mail.gmail.com>
+
+Sounds good. Moving over to Bugzilla:
+
+https://bugs.r-project.org/attachment.cgi?id=3480&action=diff
+
+On Mon, May 12, 2025 at 10:29?AM Kurt Hornik <Kurt.Hornik at wu.ac.at> wrote:
+>
+> >>>>> Michael Chirico writes:
+>
+> Thanks.  Should be ok to change the wording (provided this can be done
+> without confusing maintainers).
+>
+> Perhaps you could make a suggestion? :-)
+>
+> Best
+> -k
+>
+> > The current wording in ?utils::news reads to me as implying we should
+> > use `#` and `##` for the respective version, category headings [1]:
+>
+> >> File NEWS.md should contain the news in Markdown..., with the
+> >> primary heading level giving the version number... Where available,
+> >> secondary headings are taken to indicate categories.
+>
+> > This style is quite common in R packages, but it trips the alarms of
+> > basically every markdown linter/style guide -- advice against using
+> > multiple <h1> tags in HTML abounds (e.g. [2], [3], [4]). There is some
+> > nuance, but I haven't seen anything suggesting those exceptions
+> > definitely apply for R package NEWS files.
+>
+> > Anyway, utils::news _is_ perfectly happy with NEWS files using `##`
+> > and `###` instead [5]; this is documented in an internal comment [6].
+>
+> > Is there an argument against (1) directly advocating h2/h3 usage in
+> > ?utils::news; or, more softly, (2) documenting that any (L,L+1) pair,
+> > 1<=L<=5, where 'L' gives version numbers as described, will be
+> > accepted when producing the news database? Note that doing so is
+> > perfectly back-compatible -- we needn't change the code at all, only
+> > its documentation.
+>
+> > Mike C
+>
+> > [1] https://github.com/r-devel/r-svn/blob/72d8171a54532ffe0fd44306caa0ee953cecc91e/src/library/utils/man/news.Rd#L95-L100
+> > [2] https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/Heading_Elements
+> > [3] https://yoast.com/one-h1-heading-per-post/
+> > [4] https://www.youtube.com/watch?v=GIn5qJKU8VM
+> > [5] https://gist.github.com/MichaelChirico/49f51edeecc288d7aabf6bc53cb1aa89
+> > [6] https://github.com/r-devel/r-svn/blob/72d8171a54532ffe0fd44306caa0ee953cecc91e/src/library/tools/R/news.R#L790-L807
+>
+> > ______________________________________________
+> > R-devel at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From henr|k@bengt@@on @end|ng |rom gm@||@com  Mon May 12 21:52:26 2025
+From: henr|k@bengt@@on @end|ng |rom gm@||@com (Henrik Bengtsson)
+Date: Mon, 12 May 2025 12:52:26 -0700
+Subject: [Rd] 
+ Is it possible to gracefully interrupt a child R process on MS
+ Windows?
+In-Reply-To: <e0ead7ab-de27-473b-baf7-751f81cbf801@gmail.com>
+References: <CAFDcVCTbOwjucSMMWJaC_FFy4B5Ho9kJ+t=s6ZjR+1mxxw3XVA@mail.gmail.com>
+ <e0ead7ab-de27-473b-baf7-751f81cbf801@gmail.com>
+Message-ID: <CAFDcVCT3uBRxSsm4vTjGH_5w6NdVH38L8MVhGi0vZfbwdobzmA@mail.gmail.com>
+
+Thanks all.
+
+I can confirm that 'GenerateConsoleCtrlEvent', which Kevin and Ivan
+referred to, works. I have verified that ps::ps_interrupt() can
+trigger an interrupt of an Rscript process running in the background,
+which then R detects as a user-interrupt (think Ctrl-C) and signals an
+'interrupt' condition, which can be caught using calling handlers. If
+`tools::pskill(pid, signal = SIGINT)` could implement this approach, I
+think we end up with a consistent behavior of SIGINT across operating
+systems in base R.
+
+
+Regarding SIGINT for gracefully shutting down R processes:
+
+I think SIGINT is an obvious candidate for providing running processes
+a "preemption warning", before killing the process. That way the
+affected process gets a chance to exit gracefully, e.g. cleaning up
+files, closing connections, etc. In R, we already have most of this
+infrastructure in place, e.g. R_CheckUserInterrupt() and signalling of
+the 'interrupt' condition.
+
+Although one of my immediate uses cases is parallel R clusters, I'm
+after a general solution here. There are plenty of use cases where one
+would like to give an R process a chance to exit gracefully on
+request. This has work also when the R process is busy in the middle
+of some computation, which why I think SIGINT is the best candidate.
+
+> Using signals to terminate a process even on Unix may not be seen as
+graceful enough, either. It is not just a Windows problem.
+
+I agree with this, but it takes us a long way. It is already a
+de-facto standard to use POSIX signals this way in high-performance
+compute (HPC) environments. HPC schedulers give running jobs
+"preemption warnings" via POSIX signals. For instance, when a job is
+approaching its maximum run-time, the scheduler will let the job know
+in advance that it is about to be terminated. For example, Grid Engine
+signals SIGUSR2 twice (immediately after each other), and 60 seconds
+later SIGKILL is signaled. Similarly, Slurm sends a SIGTERM and then a
+SIGKILL after 30 seconds. The exact signals and grace periods can be
+configured globally, but I think also by the user at time of
+submission for some schedulers. Users can of course also customize it
+by having tools and shell traps that translate one signal to another,
+e.g. main job script receives a SIGUSR2 and resignals it as a SIGINT.
+
+> I think for reliability and portability of termination, one needs to implement an application-specific termination protocol on both ends.
+
+Maybe I misunderstand your proposal, but I don't think a custom
+termination protocol can meet the same needs as a handling interrupts.
+If it would be an API, then all parts of the R software stack need to
+be aware of that API, e.g. polling it frequently to check if there is
+a request to be shutdown. This is where I think R_CheckUserInterrupt()
+excels.
+
+> Yes, TerminateProcess() on Windows will not allow the target process to run any cleanup.
+
+Thanks for confirming - I wasn't 100% sure.
+
+> But I think one should avoid using pskill()/signals for termination and instead use an application-level termination protocol. The parallel package, PSOCK, has one, based on socket connections, so perhaps one can take some inspiration from there.
+
+We might be talking about different use cases. If we take a parallel
+cluster, the preferred way to shut it down is parallel::stopCluster().
+However, that will only take place when all workers are done with
+their current tasks and are ready to receive new commands from the
+parent process, including the "please-shut-yourself-down" command.
+That can take minutes, hours, days, or even never happen if the worker
+is stuck in an infinite loop. A harsher approach would be to just
+close the socket connection on the parent's end, but even that won't
+shut down the worker until it attempts to use that connection. So, we
+need a way to interrupt the worker also when the worker is busy. This
+will free up compute (CPU and memory) resources sooner. This might be
+based on an active decision of the user (Ctrl-C in the parent, or
+explicit function call), but also automatically if we know the results
+from the workers are no longer of value. The system might also signal
+such a shutdown, e.g. HPC scheduler or host rebooting. We can handle
+this already now using base R, but on Windows we cannot terminate a
+worker gracefully from R, because we cannot send a signal that
+resembles SIGINT.
+
+Thanks,
+
+Henrik
+
+On Mon, May 12, 2025 at 12:57?AM Tomas Kalibera
+<tomas.kalibera at gmail.com> wrote:
+>
+> I think for reliability and portability of termination, one needs to
+> implement an application-specific termination protocol on both ends.
+> Only within specific application constraints, one can also define what
+> graceful termination means. Typically, one also has other expectations
+> from the termination process - such that the processes will terminate in
+> some finite time/soon. In some cases one also may require certain
+> behavior of the cleanup code (such as that wouldn't take long, wouldn't
+> do some things, etc), to meet the specific termination requirements. And
+> it may require some behavior of the non-cleanup code as well (such as
+> polling in some intervals).
+>
+> Using signals to terminate a process even on Unix may not be seen as
+> graceful enough, either. It is not just a Windows problem.
+>
+> Yes, TerminateProcess() on Windows will not allow the target process to
+> run any cleanup. The documentation of "pskill" names
+> "TerminateProcess()" explicitly so that the readers interested in the
+> details can follow Microsoft documentation. But I think one should avoid
+> using pskill()/signals for termination and instead use an
+> application-level termination protocol. The parallel package, PSOCK, has
+> one, based on socket connections, so perhaps one can take some
+> inspiration from there.
+>
+> Best
+> Tomas
+>
+> On 5/11/25 19:58, Henrik Bengtsson wrote:
+> > In help("pskill", package = "tools") is says:
+> >
+> >    Only SIGINT and SIGTERM will be defined on Windows, and pskill will
+> > always use the Windows system call TerminateProcess.
+> >
+> > As far as I understand it, TerminateProcess [1] terminates the process
+> > "quite abruptly". Specifically, it is not possible for the process to
+> > intercept the termination and gracefully shutdown. In R terms, we
+> > cannot rely on:
+> >
+> > tryCatch({
+> >    ...
+> > }, interrupt = function(int) {
+> >    ## cleanup
+> > })
+> >
+> > Similarly, it does not look like R itself can exit gracefully. For
+> > example, when signalling pskill(pid, signal = SIGINT) to another R
+> > process, that R process leaves behind its tempdir(). In contrast, if
+> > the user interrupts the process interactively (Ctrl-C), there is an
+> > 'interrupt' condition that can be caught, and R cleans up after itself
+> > before exiting.
+> >
+> > QUESTION:
+> >
+> > Is it possible to gracefully interrupt a child R process on MS
+> > Windows, e.g. a PSOCK cluster node? (I don't think so, but I figure
+> > it's worth asking)
+> >
+> >
+> > SUGGESTIONS:
+> >
+> > Also, if my understanding that TerminateProcess is abrupt is correct,
+> > and there is no way to exit gracefully, would it make sense to clarify
+> > this fact in help("pskill", package = "tools")? Right now you either
+> > have to know how 'TerminateProcess' works, or run various tests on MS
+> > Windows to figure out the current behavior.
+> >
+> > Also, would a better signal mapping be:
+> >
+> >    Only SIGKILL will be defined on Windows, and pskill will always use
+> > the Windows system call TerminateProcess. Signals SIGINT and SIGTERM
+> > are supported for backward compatible reasons, but are effectively
+> > identical to SIGKILL.
+> >
+> > ? That would change the expectations on what will happen for people
+> > coming from the POSIX world.
+> >
+> > [1] https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-terminateprocess
+> >
+> > /Henrik
+> >
+> > ______________________________________________
+> > R-devel at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From @tephem@t|c|@n @end|ng |rom gm@||@com  Tue May 13 02:31:48 2025
+From: @tephem@t|c|@n @end|ng |rom gm@||@com (Stephen Wade)
+Date: Tue, 13 May 2025 10:31:48 +1000
+Subject: [Rd] array-bound error with GCC 13/14
+In-Reply-To: <ca22beb9-2215-46ef-b82c-398682b6dc62@gmail.com>
+References: <CAHG+78w0m5_qFrsdghAje1K-SP5GdLpZt3i2DGQN+i8FVLBwFg@mail.gmail.com>
+ <ca22beb9-2215-46ef-b82c-398682b6dc62@gmail.com>
+Message-ID: <CAHG+78zZ1XFMJBdRP5_rxsykUdTmuuzxK1+6zoKoRnpAzm4_KQ@mail.gmail.com>
+
+After (a lot) more work, including looking for MWE (see
+https://godbolt.org/z/38nnaEcrf), I am confident this is a bug which
+has already been resolved:
+https://gcc.gnu.org/bugzilla/show_bug.cgi?id=111415.
+
+The bug only occurs when optimisation is enabled (-O1 to -O3 at
+least), on GCC 12.4, 13.1--13.3, and 14.1--14.2.
+
+The question is "what is the correct remedy for the package on CRAN"?
+Making the code _unnecessarily_ complicated compels GCC to avoid an
+optimisation pattern that is causing the warning, e.g.
+
+inline std::vector<double> adjust_pvalues(const std::vector<double> &
+unadjusted) {
+
+    const size_t n_pvalue = unadjusted.size();
+    if (n_pvalue < 2) {
+#if  ( __GNUC__ == 12 && __GNUC_MINOR__ > 3 && __GNUC_MINOR__ < 5 ) || \
+    ( __GNUC__ == 13 && __GNUC_MINOR__ < 4 ) || \
+    ( __GNUC__ == 14 && __GNUC_MINOR__ < 3 )
+    std::vector<double> kludge(n_pvalue);
+    kludge = unadjusted;
+    return kludge; /* no warning produced */
+#else
+        return unadjusted;
+#endif
+    }
+
+    std::vector<double> adjusted(n_pvalue, 0);
+    /* Do some other stuff */
+    return adjusted;
+}
+
+That is _not_ "good" code practice (in my view). I would only put this
+in a `cran_release` branch of the repository because it's not
+something I'd like to see in `main`. That means a (manual) merge into
+`cran_release` each time I release the package for the next few years
+until CRAN uses compilers that don't produce that warning. Annoying,
+but not a deal-breaker. All this tells me (not that it is a bad
+policy) that the CRAN policy isn't always going to produce the best
+outcome in terms of code practise (again, in my view).
+
+On Mon, May 12, 2025 at 10:02?PM Tomas Kalibera
+<tomas.kalibera at gmail.com> wrote:
+>
+>
+> On 5/9/25 03:09, Stephen Wade wrote:
+> > The literanger package is no longer passing on CRAN
+> > (https://CRAN.R-project.org/package=literanger) due to array-bound
+> > warnings in GCC 13.3 and 14.2 (more details below).
+> >
+> > This _looks_ to me like one of either a) a compiler bug, b) a false
+> > positive, or c) (very unlikely) something in the standard library
+> > implementation.
+> >
+> > Have others seen warnings like this recently, and if so, what have you
+> > done about them? The warning did not appear in clang, nor with GCC
+> > 15.1.0 on CRAN's Fedora test service.
+> >
+> > Firstly, the relevant code snippet:
+> >
+> > /** Compute adjusted p-values using Benjamini/Hochberg method */
+> > inline std::vector<double> adjust_pvalues(const std::vector<double> &
+> > unadjusted) {
+> >
+> >      const size_t n_pvalue = unadjusted.size();
+> >      if (n_pvalue < 2) return unadjusted; /* <-- WARNING HERE */
+> >
+> >      std::vector<double> adjusted(n_pvalue, 0);
+> >      /* Do some other stuff */
+> >      return adjusted;
+> >
+> > }
+> >
+> >
+> > Secondly, the warning (on my own machine, using GCC 13.2.0, which also
+> > has this problem):
+> >
+> >      inlined from ?std::vector<double> literanger::adjust_pvalues(const
+> > std::vector<double>&)? at ../src/literanger/utility_math.h:99:48:
+> > /usr/include/c++/13/bits/stl_algobase.h:437:30: warning: ?void*
+> > __builtin_memmove(void*, const void*, long unsigned int)? writing
+> > between 9 and 9223372036854775807 bytes into a region of size 8
+> > overflows the destination [-Wstringop-overflow=]
+> >    437 |             __builtin_memmove(__result, __first, sizeof(_Tp) * _Num);
+>
+> Perhaps you could try creating a minimal reproducible example,
+> standalone C++ program, which still reproduces the warning, and report
+> to GCC (or libstdc++). You may get a response it is a duplicate of the
+> bug Ivan identified, but it still might be useful to have that
+> confirmed. It might also become clearer which problem the compiler seems
+> to see there - so give a hint for a workaround.
+>
+> Even if it gets confirmed as a compiler bug, it might be useful to work
+> it around when possible so that your code builds cleanly, particularly
+> if it doesn't complicate the code much. We are doing the same thing with
+> various warnings in base R - we try to simplify/change the code to help
+> the compiler see it is correct. Also, sometimes one finds on the way
+> that there actually is a (sometimes theoretical but, still) problem.
+>
+> Once you have a minimal reproducible example it might also be easier to
+> experiment with work-arounds.
+>
+> Best
+> Tomas
+>
+> >
+> > ______________________________________________
+> > R-devel at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From kev|nu@hey @end|ng |rom gm@||@com  Tue May 13 03:33:45 2025
+From: kev|nu@hey @end|ng |rom gm@||@com (Kevin Ushey)
+Date: Mon, 12 May 2025 18:33:45 -0700
+Subject: [Rd] array-bound error with GCC 13/14
+In-Reply-To: <CAHG+78zZ1XFMJBdRP5_rxsykUdTmuuzxK1+6zoKoRnpAzm4_KQ@mail.gmail.com>
+References: <CAHG+78w0m5_qFrsdghAje1K-SP5GdLpZt3i2DGQN+i8FVLBwFg@mail.gmail.com>
+ <ca22beb9-2215-46ef-b82c-398682b6dc62@gmail.com>
+ <CAHG+78zZ1XFMJBdRP5_rxsykUdTmuuzxK1+6zoKoRnpAzm4_KQ@mail.gmail.com>
+Message-ID: <CAJXgQP2qRpVWO365HqeYOtHa1oyM=_jw_744tBub5KQJsKbdBw@mail.gmail.com>
+
+Hi Stephen,
+
+I still believe your best option is still to just submit a version of
+your package that includes a workaround for this compiler issue.
+
+You could, in theory, try to contact the CRAN maintainers at
+CRAN at r-project.org, and either (1) request an exception for your
+package, or (2) request that they update the compilers used so that
+this issue no longer occurs. However, the repository policy states:
+
+    The time of the volunteers is CRAN?s most precious resource
+
+and so you're unlikely to be successful in petitioning for their time,
+even if your diagnosis of the issue is correct. Especially so now,
+since you have a workaround for the issue in question. (Of course, I
+could be wrong; I obviously cannot speak for them.)
+
+I would strongly recommend just biting your tongue and submitting a
+version of your package with the workaround.
+
+My own personal view: we must unfortunately accept that "good" code is
+not necessarily neat nor concise code, and I say this as someone who
+also hates having to write these sorts of kludges. However, what
+ultimately matters is whether your software works as expected on the
+systems where it is run; from that perspective, your kludge achieves
+that goal on more systems than your code would otherwise.
+
+Best,
+Kevin
+
+On Mon, May 12, 2025 at 5:32?PM Stephen Wade <stephematician at gmail.com> wrote:
+>
+> After (a lot) more work, including looking for MWE (see
+> https://godbolt.org/z/38nnaEcrf), I am confident this is a bug which
+> has already been resolved:
+> https://gcc.gnu.org/bugzilla/show_bug.cgi?id=111415.
+>
+> The bug only occurs when optimisation is enabled (-O1 to -O3 at
+> least), on GCC 12.4, 13.1--13.3, and 14.1--14.2.
+>
+> The question is "what is the correct remedy for the package on CRAN"?
+> Making the code _unnecessarily_ complicated compels GCC to avoid an
+> optimisation pattern that is causing the warning, e.g.
+>
+> inline std::vector<double> adjust_pvalues(const std::vector<double> &
+> unadjusted) {
+>
+>     const size_t n_pvalue = unadjusted.size();
+>     if (n_pvalue < 2) {
+> #if  ( __GNUC__ == 12 && __GNUC_MINOR__ > 3 && __GNUC_MINOR__ < 5 ) || \
+>     ( __GNUC__ == 13 && __GNUC_MINOR__ < 4 ) || \
+>     ( __GNUC__ == 14 && __GNUC_MINOR__ < 3 )
+>     std::vector<double> kludge(n_pvalue);
+>     kludge = unadjusted;
+>     return kludge; /* no warning produced */
+> #else
+>         return unadjusted;
+> #endif
+>     }
+>
+>     std::vector<double> adjusted(n_pvalue, 0);
+>     /* Do some other stuff */
+>     return adjusted;
+> }
+>
+> That is _not_ "good" code practice (in my view). I would only put this
+> in a `cran_release` branch of the repository because it's not
+> something I'd like to see in `main`. That means a (manual) merge into
+> `cran_release` each time I release the package for the next few years
+> until CRAN uses compilers that don't produce that warning. Annoying,
+> but not a deal-breaker. All this tells me (not that it is a bad
+> policy) that the CRAN policy isn't always going to produce the best
+> outcome in terms of code practise (again, in my view).
+>
+> On Mon, May 12, 2025 at 10:02?PM Tomas Kalibera
+> <tomas.kalibera at gmail.com> wrote:
+> >
+> >
+> > On 5/9/25 03:09, Stephen Wade wrote:
+> > > The literanger package is no longer passing on CRAN
+> > > (https://CRAN.R-project.org/package=literanger) due to array-bound
+> > > warnings in GCC 13.3 and 14.2 (more details below).
+> > >
+> > > This _looks_ to me like one of either a) a compiler bug, b) a false
+> > > positive, or c) (very unlikely) something in the standard library
+> > > implementation.
+> > >
+> > > Have others seen warnings like this recently, and if so, what have you
+> > > done about them? The warning did not appear in clang, nor with GCC
+> > > 15.1.0 on CRAN's Fedora test service.
+> > >
+> > > Firstly, the relevant code snippet:
+> > >
+> > > /** Compute adjusted p-values using Benjamini/Hochberg method */
+> > > inline std::vector<double> adjust_pvalues(const std::vector<double> &
+> > > unadjusted) {
+> > >
+> > >      const size_t n_pvalue = unadjusted.size();
+> > >      if (n_pvalue < 2) return unadjusted; /* <-- WARNING HERE */
+> > >
+> > >      std::vector<double> adjusted(n_pvalue, 0);
+> > >      /* Do some other stuff */
+> > >      return adjusted;
+> > >
+> > > }
+> > >
+> > >
+> > > Secondly, the warning (on my own machine, using GCC 13.2.0, which also
+> > > has this problem):
+> > >
+> > >      inlined from ?std::vector<double> literanger::adjust_pvalues(const
+> > > std::vector<double>&)? at ../src/literanger/utility_math.h:99:48:
+> > > /usr/include/c++/13/bits/stl_algobase.h:437:30: warning: ?void*
+> > > __builtin_memmove(void*, const void*, long unsigned int)? writing
+> > > between 9 and 9223372036854775807 bytes into a region of size 8
+> > > overflows the destination [-Wstringop-overflow=]
+> > >    437 |             __builtin_memmove(__result, __first, sizeof(_Tp) * _Num);
+> >
+> > Perhaps you could try creating a minimal reproducible example,
+> > standalone C++ program, which still reproduces the warning, and report
+> > to GCC (or libstdc++). You may get a response it is a duplicate of the
+> > bug Ivan identified, but it still might be useful to have that
+> > confirmed. It might also become clearer which problem the compiler seems
+> > to see there - so give a hint for a workaround.
+> >
+> > Even if it gets confirmed as a compiler bug, it might be useful to work
+> > it around when possible so that your code builds cleanly, particularly
+> > if it doesn't complicate the code much. We are doing the same thing with
+> > various warnings in base R - we try to simplify/change the code to help
+> > the compiler see it is correct. Also, sometimes one finds on the way
+> > that there actually is a (sometimes theoretical but, still) problem.
+> >
+> > Once you have a minimal reproducible example it might also be easier to
+> > experiment with work-arounds.
+> >
+> > Best
+> > Tomas
+> >
+> > >
+> > > ______________________________________________
+> > > R-devel at r-project.org mailing list
+> > > https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From @tephem@t|c|@n @end|ng |rom gm@||@com  Tue May 13 04:48:32 2025
+From: @tephem@t|c|@n @end|ng |rom gm@||@com (Stephen Wade)
+Date: Tue, 13 May 2025 12:48:32 +1000
+Subject: [Rd] array-bound error with GCC 13/14
+In-Reply-To: <CAJXgQP2qRpVWO365HqeYOtHa1oyM=_jw_744tBub5KQJsKbdBw@mail.gmail.com>
+References: <CAHG+78w0m5_qFrsdghAje1K-SP5GdLpZt3i2DGQN+i8FVLBwFg@mail.gmail.com>
+ <ca22beb9-2215-46ef-b82c-398682b6dc62@gmail.com>
+ <CAHG+78zZ1XFMJBdRP5_rxsykUdTmuuzxK1+6zoKoRnpAzm4_KQ@mail.gmail.com>
+ <CAJXgQP2qRpVWO365HqeYOtHa1oyM=_jw_744tBub5KQJsKbdBw@mail.gmail.com>
+Message-ID: <CAHG+78wEv3jYu+F9ygJAFkc5owR2cDjfezg-39qwpCMh7pFi2Q@mail.gmail.com>
+
+Thanks, I agree with the course of action, especially given literanger
+seems to be the only casualty. I'm just making note that the policy
+doesn't necessarily generate the outcome we want. No policy ever will!
+I 100% appreciate CRAN volunteers' efforts.
+
+In this case, the compiler is generating a false positive - I'm
+reasonably sure of this having looked at the assembly generated. The
+kludge doesn't make the library perform 'as expected' on more systems
+=> the kludge means the _compiler_ performs 'as expected' (on more
+systems). With the kludge: the code will perform marginally worse at
+run time => we are trading some runtime performance to avoid a
+(build-time) bug confined to the build tools, and it takes additional
+effort to maintain. Such is life.
+
+On Tue, May 13, 2025 at 11:34?AM Kevin Ushey <kevinushey at gmail.com> wrote:
+>
+> Hi Stephen,
+>
+> I still believe your best option is still to just submit a version of
+> your package that includes a workaround for this compiler issue.
+>
+> You could, in theory, try to contact the CRAN maintainers at
+> CRAN at r-project.org, and either (1) request an exception for your
+> package, or (2) request that they update the compilers used so that
+> this issue no longer occurs. However, the repository policy states:
+>
+>     The time of the volunteers is CRAN?s most precious resource
+>
+> and so you're unlikely to be successful in petitioning for their time,
+> even if your diagnosis of the issue is correct. Especially so now,
+> since you have a workaround for the issue in question. (Of course, I
+> could be wrong; I obviously cannot speak for them.)
+>
+> I would strongly recommend just biting your tongue and submitting a
+> version of your package with the workaround.
+>
+> My own personal view: we must unfortunately accept that "good" code is
+> not necessarily neat nor concise code, and I say this as someone who
+> also hates having to write these sorts of kludges. However, what
+> ultimately matters is whether your software works as expected on the
+> systems where it is run; from that perspective, your kludge achieves
+> that goal on more systems than your code would otherwise.
+>
+> Best,
+> Kevin
+>
+> On Mon, May 12, 2025 at 5:32?PM Stephen Wade <stephematician at gmail.com> wrote:
+> >
+> > After (a lot) more work, including looking for MWE (see
+> > https://godbolt.org/z/38nnaEcrf), I am confident this is a bug which
+> > has already been resolved:
+> > https://gcc.gnu.org/bugzilla/show_bug.cgi?id=111415.
+> >
+> > The bug only occurs when optimisation is enabled (-O1 to -O3 at
+> > least), on GCC 12.4, 13.1--13.3, and 14.1--14.2.
+> >
+> > The question is "what is the correct remedy for the package on CRAN"?
+> > Making the code _unnecessarily_ complicated compels GCC to avoid an
+> > optimisation pattern that is causing the warning, e.g.
+> >
+> > inline std::vector<double> adjust_pvalues(const std::vector<double> &
+> > unadjusted) {
+> >
+> >     const size_t n_pvalue = unadjusted.size();
+> >     if (n_pvalue < 2) {
+> > #if  ( __GNUC__ == 12 && __GNUC_MINOR__ > 3 && __GNUC_MINOR__ < 5 ) || \
+> >     ( __GNUC__ == 13 && __GNUC_MINOR__ < 4 ) || \
+> >     ( __GNUC__ == 14 && __GNUC_MINOR__ < 3 )
+> >     std::vector<double> kludge(n_pvalue);
+> >     kludge = unadjusted;
+> >     return kludge; /* no warning produced */
+> > #else
+> >         return unadjusted;
+> > #endif
+> >     }
+> >
+> >     std::vector<double> adjusted(n_pvalue, 0);
+> >     /* Do some other stuff */
+> >     return adjusted;
+> > }
+> >
+> > That is _not_ "good" code practice (in my view). I would only put this
+> > in a `cran_release` branch of the repository because it's not
+> > something I'd like to see in `main`. That means a (manual) merge into
+> > `cran_release` each time I release the package for the next few years
+> > until CRAN uses compilers that don't produce that warning. Annoying,
+> > but not a deal-breaker. All this tells me (not that it is a bad
+> > policy) that the CRAN policy isn't always going to produce the best
+> > outcome in terms of code practise (again, in my view).
+> >
+> > On Mon, May 12, 2025 at 10:02?PM Tomas Kalibera
+> > <tomas.kalibera at gmail.com> wrote:
+> > >
+> > >
+> > > On 5/9/25 03:09, Stephen Wade wrote:
+> > > > The literanger package is no longer passing on CRAN
+> > > > (https://CRAN.R-project.org/package=literanger) due to array-bound
+> > > > warnings in GCC 13.3 and 14.2 (more details below).
+> > > >
+> > > > This _looks_ to me like one of either a) a compiler bug, b) a false
+> > > > positive, or c) (very unlikely) something in the standard library
+> > > > implementation.
+> > > >
+> > > > Have others seen warnings like this recently, and if so, what have you
+> > > > done about them? The warning did not appear in clang, nor with GCC
+> > > > 15.1.0 on CRAN's Fedora test service.
+> > > >
+> > > > Firstly, the relevant code snippet:
+> > > >
+> > > > /** Compute adjusted p-values using Benjamini/Hochberg method */
+> > > > inline std::vector<double> adjust_pvalues(const std::vector<double> &
+> > > > unadjusted) {
+> > > >
+> > > >      const size_t n_pvalue = unadjusted.size();
+> > > >      if (n_pvalue < 2) return unadjusted; /* <-- WARNING HERE */
+> > > >
+> > > >      std::vector<double> adjusted(n_pvalue, 0);
+> > > >      /* Do some other stuff */
+> > > >      return adjusted;
+> > > >
+> > > > }
+> > > >
+> > > >
+> > > > Secondly, the warning (on my own machine, using GCC 13.2.0, which also
+> > > > has this problem):
+> > > >
+> > > >      inlined from ?std::vector<double> literanger::adjust_pvalues(const
+> > > > std::vector<double>&)? at ../src/literanger/utility_math.h:99:48:
+> > > > /usr/include/c++/13/bits/stl_algobase.h:437:30: warning: ?void*
+> > > > __builtin_memmove(void*, const void*, long unsigned int)? writing
+> > > > between 9 and 9223372036854775807 bytes into a region of size 8
+> > > > overflows the destination [-Wstringop-overflow=]
+> > > >    437 |             __builtin_memmove(__result, __first, sizeof(_Tp) * _Num);
+> > >
+> > > Perhaps you could try creating a minimal reproducible example,
+> > > standalone C++ program, which still reproduces the warning, and report
+> > > to GCC (or libstdc++). You may get a response it is a duplicate of the
+> > > bug Ivan identified, but it still might be useful to have that
+> > > confirmed. It might also become clearer which problem the compiler seems
+> > > to see there - so give a hint for a workaround.
+> > >
+> > > Even if it gets confirmed as a compiler bug, it might be useful to work
+> > > it around when possible so that your code builds cleanly, particularly
+> > > if it doesn't complicate the code much. We are doing the same thing with
+> > > various warnings in base R - we try to simplify/change the code to help
+> > > the compiler see it is correct. Also, sometimes one finds on the way
+> > > that there actually is a (sometimes theoretical but, still) problem.
+> > >
+> > > Once you have a minimal reproducible example it might also be easier to
+> > > experiment with work-arounds.
+> > >
+> > > Best
+> > > Tomas
+> > >
+> > > >
+> > > > ______________________________________________
+> > > > R-devel at r-project.org mailing list
+> > > > https://stat.ethz.ch/mailman/listinfo/r-devel
+> >
+> > ______________________________________________
+> > R-devel at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From Kurt@Horn|k @end|ng |rom wu@@c@@t  Tue May 13 10:56:39 2025
+From: Kurt@Horn|k @end|ng |rom wu@@c@@t (Kurt Hornik)
+Date: Tue, 13 May 2025 10:56:39 +0200
+Subject: [Rd] array-bound error with GCC 13/14
+In-Reply-To: <CAHG+78wEv3jYu+F9ygJAFkc5owR2cDjfezg-39qwpCMh7pFi2Q@mail.gmail.com>
+References: <CAHG+78w0m5_qFrsdghAje1K-SP5GdLpZt3i2DGQN+i8FVLBwFg@mail.gmail.com>
+ <ca22beb9-2215-46ef-b82c-398682b6dc62@gmail.com>
+ <CAHG+78zZ1XFMJBdRP5_rxsykUdTmuuzxK1+6zoKoRnpAzm4_KQ@mail.gmail.com>
+ <CAJXgQP2qRpVWO365HqeYOtHa1oyM=_jw_744tBub5KQJsKbdBw@mail.gmail.com>
+ <CAHG+78wEv3jYu+F9ygJAFkc5owR2cDjfezg-39qwpCMh7pFi2Q@mail.gmail.com>
+Message-ID: <26659.2375.436301.759924@hornik.net>
+
+>>>>> Stephen Wade writes:
+
+Thanks to everyone so far.
+
+Indeed, packages
+
+  GenomeAdmixR SpatialKWD literanger
+
+all give the same include/c++/14/bits/stl_algobase.h:452:30
+-Warray-bounds= warning for the GCC 14.2.0 compilers used for Debian
+testing and windows, but not for GCC 15.1.0 used for Fedora, and also
+not for gcc-snapshot on Debian testing (which shows its version as
+16.0.0 20250502). 
+
+So I will close the issues reported for these packages.
+
+Of course, if there was a simple workaround it would be great to use
+this, as we cannot (easily) work around the WARNINGs for the submission
+checks.  
+
+Best
+-k
+
+> Thanks, I agree with the course of action, especially given literanger
+> seems to be the only casualty. I'm just making note that the policy
+> doesn't necessarily generate the outcome we want. No policy ever will!
+> I 100% appreciate CRAN volunteers' efforts.
+
+> In this case, the compiler is generating a false positive - I'm
+> reasonably sure of this having looked at the assembly generated. The
+> kludge doesn't make the library perform 'as expected' on more systems
+> => the kludge means the _compiler_ performs 'as expected' (on more
+> systems). With the kludge: the code will perform marginally worse at
+> run time => we are trading some runtime performance to avoid a
+> (build-time) bug confined to the build tools, and it takes additional
+> effort to maintain. Such is life.
+
+> On Tue, May 13, 2025 at 11:34?AM Kevin Ushey <kevinushey at gmail.com> wrote:
+>> 
+>> Hi Stephen,
+>> 
+>> I still believe your best option is still to just submit a version of
+>> your package that includes a workaround for this compiler issue.
+>> 
+>> You could, in theory, try to contact the CRAN maintainers at
+>> CRAN at r-project.org, and either (1) request an exception for your
+>> package, or (2) request that they update the compilers used so that
+>> this issue no longer occurs. However, the repository policy states:
+>> 
+>> The time of the volunteers is CRAN?s most precious resource
+>> 
+>> and so you're unlikely to be successful in petitioning for their time,
+>> even if your diagnosis of the issue is correct. Especially so now,
+>> since you have a workaround for the issue in question. (Of course, I
+>> could be wrong; I obviously cannot speak for them.)
+>> 
+>> I would strongly recommend just biting your tongue and submitting a
+>> version of your package with the workaround.
+>> 
+>> My own personal view: we must unfortunately accept that "good" code is
+>> not necessarily neat nor concise code, and I say this as someone who
+>> also hates having to write these sorts of kludges. However, what
+>> ultimately matters is whether your software works as expected on the
+>> systems where it is run; from that perspective, your kludge achieves
+>> that goal on more systems than your code would otherwise.
+>> 
+>> Best,
+>> Kevin
+>> 
+>> On Mon, May 12, 2025 at 5:32?PM Stephen Wade <stephematician at gmail.com> wrote:
+>> >
+>> > After (a lot) more work, including looking for MWE (see
+>> > https://godbolt.org/z/38nnaEcrf), I am confident this is a bug which
+>> > has already been resolved:
+>> > https://gcc.gnu.org/bugzilla/show_bug.cgi?id=111415.
+>> >
+>> > The bug only occurs when optimisation is enabled (-O1 to -O3 at
+>> > least), on GCC 12.4, 13.1--13.3, and 14.1--14.2.
+>> >
+>> > The question is "what is the correct remedy for the package on CRAN"?
+>> > Making the code _unnecessarily_ complicated compels GCC to avoid an
+>> > optimisation pattern that is causing the warning, e.g.
+>> >
+>> > inline std::vector<double> adjust_pvalues(const std::vector<double> &
+>> > unadjusted) {
+>> >
+>> >     const size_t n_pvalue = unadjusted.size();
+>> >     if (n_pvalue < 2) {
+>> > #if  ( __GNUC__ == 12 && __GNUC_MINOR__ > 3 && __GNUC_MINOR__ < 5 ) || \
+>> >     ( __GNUC__ == 13 && __GNUC_MINOR__ < 4 ) || \
+>> >     ( __GNUC__ == 14 && __GNUC_MINOR__ < 3 )
+>> >     std::vector<double> kludge(n_pvalue);
+>> >     kludge = unadjusted;
+>> >     return kludge; /* no warning produced */
+>> > #else
+>> >         return unadjusted;
+>> > #endif
+>> >     }
+>> >
+>> >     std::vector<double> adjusted(n_pvalue, 0);
+>> >     /* Do some other stuff */
+>> >     return adjusted;
+>> > }
+>> >
+>> > That is _not_ "good" code practice (in my view). I would only put this
+>> > in a `cran_release` branch of the repository because it's not
+>> > something I'd like to see in `main`. That means a (manual) merge into
+>> > `cran_release` each time I release the package for the next few years
+>> > until CRAN uses compilers that don't produce that warning. Annoying,
+>> > but not a deal-breaker. All this tells me (not that it is a bad
+>> > policy) that the CRAN policy isn't always going to produce the best
+>> > outcome in terms of code practise (again, in my view).
+>> >
+>> > On Mon, May 12, 2025 at 10:02?PM Tomas Kalibera
+>> > <tomas.kalibera at gmail.com> wrote:
+>> > >
+>> > >
+>> > > On 5/9/25 03:09, Stephen Wade wrote:
+>> > > > The literanger package is no longer passing on CRAN
+>> > > > (https://CRAN.R-project.org/package=literanger) due to array-bound
+>> > > > warnings in GCC 13.3 and 14.2 (more details below).
+>> > > >
+>> > > > This _looks_ to me like one of either a) a compiler bug, b) a false
+>> > > > positive, or c) (very unlikely) something in the standard library
+>> > > > implementation.
+>> > > >
+>> > > > Have others seen warnings like this recently, and if so, what have you
+>> > > > done about them? The warning did not appear in clang, nor with GCC
+>> > > > 15.1.0 on CRAN's Fedora test service.
+>> > > >
+>> > > > Firstly, the relevant code snippet:
+>> > > >
+>> > > > /** Compute adjusted p-values using Benjamini/Hochberg method */
+>> > > > inline std::vector<double> adjust_pvalues(const std::vector<double> &
+>> > > > unadjusted) {
+>> > > >
+>> > > >      const size_t n_pvalue = unadjusted.size();
+>> > > >      if (n_pvalue < 2) return unadjusted; /* <-- WARNING HERE */
+>> > > >
+>> > > >      std::vector<double> adjusted(n_pvalue, 0);
+>> > > >      /* Do some other stuff */
+>> > > >      return adjusted;
+>> > > >
+>> > > > }
+>> > > >
+>> > > >
+>> > > > Secondly, the warning (on my own machine, using GCC 13.2.0, which also
+>> > > > has this problem):
+>> > > >
+>> > > >      inlined from ?std::vector<double> literanger::adjust_pvalues(const
+>> > > > std::vector<double>&)? at ../src/literanger/utility_math.h:99:48:
+>> > > > /usr/include/c++/13/bits/stl_algobase.h:437:30: warning: ?void*
+>> > > > __builtin_memmove(void*, const void*, long unsigned int)? writing
+>> > > > between 9 and 9223372036854775807 bytes into a region of size 8
+>> > > > overflows the destination [-Wstringop-overflow=]
+>> > > >    437 |             __builtin_memmove(__result, __first, sizeof(_Tp) * _Num);
+>> > >
+>> > > Perhaps you could try creating a minimal reproducible example,
+>> > > standalone C++ program, which still reproduces the warning, and report
+>> > > to GCC (or libstdc++). You may get a response it is a duplicate of the
+>> > > bug Ivan identified, but it still might be useful to have that
+>> > > confirmed. It might also become clearer which problem the compiler seems
+>> > > to see there - so give a hint for a workaround.
+>> > >
+>> > > Even if it gets confirmed as a compiler bug, it might be useful to work
+>> > > it around when possible so that your code builds cleanly, particularly
+>> > > if it doesn't complicate the code much. We are doing the same thing with
+>> > > various warnings in base R - we try to simplify/change the code to help
+>> > > the compiler see it is correct. Also, sometimes one finds on the way
+>> > > that there actually is a (sometimes theoretical but, still) problem.
+>> > >
+>> > > Once you have a minimal reproducible example it might also be easier to
+>> > > experiment with work-arounds.
+>> > >
+>> > > Best
+>> > > Tomas
+>> > >
+>> > > >
+>> > > > ______________________________________________
+>> > > > R-devel at r-project.org mailing list
+>> > > > https://stat.ethz.ch/mailman/listinfo/r-devel
+>> >
+>> > ______________________________________________
+>> > R-devel at r-project.org mailing list
+>> > https://stat.ethz.ch/mailman/listinfo/r-devel
+
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+

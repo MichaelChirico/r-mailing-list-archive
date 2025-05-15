@@ -1,0 +1,111 @@
+From du@@@@dr|@n @end|ng |rom gm@||@com  Tue May  6 18:54:51 2025
+From: du@@@@dr|@n @end|ng |rom gm@||@com (=?UTF-8?B?QWRyaWFuIER1yJlh?=)
+Date: Tue, 6 May 2025 19:54:51 +0300
+Subject: [R-SIG-Mac] OpenMP and MacOS (silicon)
+Message-ID: <CAJ=0CtBA+PjN5Y4jCfChXBYsKapUw6g1p618ES6s3=u9PcNj0w@mail.gmail.com>
+
+Dear All,
+
+I followed with great interest the latest exchange regarding the status of
+the OpenMP under MacOS, learned a great deal of things and now join others
+in thanking Simon and team for making this possible.
+
+This message is just to share my own experience. In following the least
+effort path, my rather quick and painless procedure involves:
+- installing R from CRAN
+- installing GCC and OpenMP via homebrew
+- (not using Xcode, but) using only the Command Line Tools
+- building my package locally
+
+This seems to work, and for that I have two Makevars files. The first is
+located in ~/.R/, containing:
+CC = /opt/homebrew/bin/gcc-14
+CXX = /opt/homebrew/bin/g++-14
+CXX11 = /opt/homebrew/bin/g++-14
+CXX14 = /opt/homebrew/bin/g++-14
+CXX17 = /opt/homebrew/bin/g++-14
+
+The second Makevars file is package specific, in the src/ directory,
+containing:
+PKG_CFLAGS = -fopenmp -O3 -mcpu=apple-m2 -mtune=apple-m2
+PKG_CXXFLAGS = -fopenmp -O3 -mcpu=apple-m2 -mtune=apple-m2
+PKG_LIBS = -fopenmp
+
+I did read (and duly acknowledged) Simon's advice to use R's binaries and
+settings to make everything work on CRAN, it's just that building the
+package locally allows me to use particular flags, for instance "-O3" that
+indicates <speed>, as far as I understand.
+
+I found that various Makevars settings make a huge difference in terms of
+speed, and since speed matters most to me, I try to find the most
+appropriate flags for my own use. Fine-tuning for "apple-m2", plus -O3,
+made my OpenMP code run about 3 times faster than regular OpenMP.
+
+Again, far from me to say this suits everyone's needs, and this procedure
+probably departs from the best practices, it's just something that works
+well in my case.
+
+In hoping this proves useful to anyone, my 2 cents,
+Adrian
+
+	[[alternative HTML version deleted]]
+
+
+From ger@ophii m@iii@g oii gmx@@et  Fri May  9 15:10:18 2025
+From: ger@ophii m@iii@g oii gmx@@et (ger@ophii m@iii@g oii gmx@@et)
+Date: Fri, 9 May 2025 13:10:18 +0000
+Subject: [R-SIG-Mac] 
+ Clarifying the status of OMP in CRAN binaries on Mac
+Message-ID: <trinity-a256c4f7-a1e8-4547-bf94-feae391536ef-1746796218666@trinity-msg-rest-gmx-gmx-live-f4858f84-nllhc>
+
+Hey,
+
+I'm a bit late to the party, but I was just made aware of this thread in my GitHub thread (https://github.com/Rdatatable/data.table/issues/6949), which is very related to the one mentioned here.
+
+To make it as short as possible, I am unable to build data.table from source since Xcode 16.3, which expected reading this thread. I thought I was using the OpenMP from LLVM 19.1.0, which should work again with Xcode 16.3. While doing some research I stumbled over an old R-help thread by me that states that R is always using the libomp.dylib bundled with R (/Library/Frameworks/R.framework/Versions/4.x-arm64/Resources/lib/libomp.dylib). Here's the R-help thread just in case: https://stat.ethz.ch/pipermail/r-help/2024-April/479157.html. Turns out I never really solved this issue since other stuff came up, but now this haunts me again :). I always untar the .tar.gz archive from https://mac.r-project.org/openmp/ as mentioned there and then use a ~/.R/Makevars also as mentioned there, but how do I actually tell R to use the libomp.dylib in /usr/local/lib and not /Library/Frameworks/R.framework/Versions/4.x-arm64/Resources/lib/, when building a package from source?
+
+Thank in advance,
+Philipp
+
+
+From @|mon@urb@nek @end|ng |rom R-project@org  Sat May 10 02:55:33 2025
+From: @|mon@urb@nek @end|ng |rom R-project@org (Simon Urbanek)
+Date: Sat, 10 May 2025 12:55:33 +1200
+Subject: [R-SIG-Mac] 
+ Clarifying the status of OMP in CRAN binaries on Mac
+In-Reply-To: <trinity-a256c4f7-a1e8-4547-bf94-feae391536ef-1746796218666@trinity-msg-rest-gmx-gmx-live-f4858f84-nllhc>
+References: <trinity-a256c4f7-a1e8-4547-bf94-feae391536ef-1746796218666@trinity-msg-rest-gmx-gmx-live-f4858f84-nllhc>
+Message-ID: <D6B845EC-D92F-4F42-ABBE-FAD346380390@R-project.org>
+
+Philipp,
+
+the instructions (if really insist on using Xcode 16.3 - not recommended) are here: https://mac.r-project.org/openmp/ relevant part quoted:
+
+"Note: If you are using CRAN R binary and there is a potential conflict between its run-time and your run-time (which is generally a bad idea!) then you can force the use of your binary by replacing -lomp above with /usr/local/lib/libomp.dylib (note that lack of -l!)."
+
+i.e., you set PKG_LIBS=/usr/local/lib/libomp.dylib when compiling data.table.
+
+Note, however that you then have to re-compile *all* packages that may use OpenMP as your result will be incompatible with the CRAN binaries.
+
+Cheers,
+Simon
+
+
+> On May 10, 2025, at 1:10 AM, Philipp Schneider via R-SIG-Mac <r-sig-mac at r-project.org> wrote:
+> 
+> Hey,
+> 
+> I'm a bit late to the party, but I was just made aware of this thread in my GitHub thread (https://github.com/Rdatatable/data.table/issues/6949), which is very related to the one mentioned here.
+> 
+> To make it as short as possible, I am unable to build data.table from source since Xcode 16.3, which expected reading this thread. I thought I was using the OpenMP from LLVM 19.1.0, which should work again with Xcode 16.3. While doing some research I stumbled over an old R-help thread by me that states that R is always using the libomp.dylib bundled with R (/Library/Frameworks/R.framework/Versions/4.x-arm64/Resources/lib/libomp.dylib). Here's the R-help thread just in case: https://stat.ethz.ch/pipermail/r-help/2024-April/479157.html. Turns out I never really solved this issue since other stuff came up, but now this haunts me again :). I always untar the .tar.gz archive from https://mac.r-project.org/openmp/ as mentioned there and then use a ~/.R/Makevars also as mentioned there, but how do I actually tell R to use the libomp.dylib in /usr/local/lib and not /Library/Frameworks/R.framework/Versions/4.x-arm64/Resources/lib/, when building a package from source?
+> 
+> Thank in advance,
+> Philipp
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+> 
+
+
