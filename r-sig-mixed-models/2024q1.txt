@@ -1,0 +1,4254 @@
+From rupprecht @end|ng |rom unbc@c@  Mon Jan  1 00:07:44 2024
+From: rupprecht @end|ng |rom unbc@c@ (Meaghan Rupprecht)
+Date: Sun, 31 Dec 2023 23:07:44 +0000
+Subject: [R-sig-ME] GAMM (gamm4) warning: Hessian vs. RX var-cov
+Message-ID: <YT4PR01MB9832490C244D2DB3A09A640FA363A@YT4PR01MB9832.CANPRD01.PROD.OUTLOOK.COM>
+
+Good afternoon and Happy New Year everyone~
+
+I am running a series of models using various records of fish catch from different datasets. Datasets include a different number of records but are being modelled with the same general formula (the number of records in each dataset ranges from ~3,000 to ~20,000).
+
+The general model formula is as follows:
+fit <-
+    uGamm(catch ~ s(effort, k = 30) + s(month, bs = 'cc', k = 12) + s(year, k = 15) + s(habitat, k = 15) + s(pop_dens, k = 15) + s(X,Y, bs= 'ts', k = 15) + s(saberes_boat_id, bs = 're') + s(landing_mun, bs = 're') + s(basin_id, bs = 're'),
+          family = Gamma(link = 'log'),
+          data = fish_catch,
+          control = glmerControl(optimizer = 'bobyqa',
+                                 optCtrl = list(maxfun = 2e5)),
+          lme4 = TRUE)
+
+I am using the uGamm wrapper so that I can complete model averaging with the MuMIn package, but the models are being run with gamm4.
+
+The resulting models of several datasets provide me with the following warning when I attempt model selection with MuMIn::model.sel():
+Warning messages:
+1: In vcov(object, use.hessian = use.hessian) :
+  variance-covariance matrix computed from finite-difference Hessian is
+not positive definite or contains NA values: falling back to var-cov estimated from RX
+2: In vcov.merMod(object, correlation = correlation, sigm = sig) :
+  variance-covariance matrix computed from finite-difference Hessian is
+not positive definite or contains NA values: falling back to var-cov estimated from RX
+
+With the above information in mind, I have several questions.
+
+  1.  Are the model results using the smaller datasets less reliable due to this warning?
+  2.  Can move forward with model selection and averaging with these errors present?
+  3.  If I can't move forward with model selection, how can I address these errors and get to the point where I can complete model selection and averaging?
+
+Best,
+Meaghan
+
+	[[alternative HTML version deleted]]
+
+
+From bbo|ker @end|ng |rom gm@||@com  Mon Jan  1 01:42:00 2024
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Sun, 31 Dec 2023 19:42:00 -0500
+Subject: [R-sig-ME] GAMM (gamm4) warning: Hessian vs. RX var-cov
+In-Reply-To: <YT4PR01MB9832490C244D2DB3A09A640FA363A@YT4PR01MB9832.CANPRD01.PROD.OUTLOOK.COM>
+References: <YT4PR01MB9832490C244D2DB3A09A640FA363A@YT4PR01MB9832.CANPRD01.PROD.OUTLOOK.COM>
+Message-ID: <3d72e98e-21f3-4029-bf27-9e4212bc9943@gmail.com>
+
+   These warnings should not affect the log-likelihood/AIC values in any 
+case, they only refer to estimates of the covariance matrices of the 
+fixed-effect parameters (which in this case will probably correspond to 
+the non-penalized linear terms associated with most of the smooths).
+
+  1. I'm not sure why use say "the smaller data sets" in this case: are 
+you getting the warnings mostly with the models of smaller data sets? 
+(You don't say that explicitly.)
+
+2. I think it is probably OK to move forward with model selection and 
+averaging.
+
+The main thing to check is that the standard errors of the 
+parameters/predictions seem reasonable.
+
+   As a cross-check you could try fitting the same model with glmmTMB: I 
+believe this model could also be fitted with the latest version of 
+glmmTMB (although I would recommend using random effects of the form 
+(1|boat_id) rather than s(boat_id, bs = 're') for the terms with bs = 're'
+
+   A gold standard for the covariance estimates, if you're worried about 
+this, is to run parametric bootstraps (or cluster-aware bootstraps as in 
+the lmeresampler package), although I'm not sure how well these work 
+with gamm4/uGamm models ...
+
+On 2023-12-31 6:07 p.m., Meaghan Rupprecht wrote:
+> Good afternoon and Happy New Year everyone~
+> 
+> I am running a series of models using various records of fish catch from different datasets. Datasets include a different number of records but are being modelled with the same general formula (the number of records in each dataset ranges from ~3,000 to ~20,000).
+> 
+> The general model formula is as follows:
+> fit <-
+>      uGamm(catch ~ s(effort, k = 30) + s(month, bs = 'cc', k = 12) + s(year, k = 15) + s(habitat, k = 15) + s(pop_dens, k = 15) + s(X,Y, bs= 'ts', k = 15) + s(saberes_boat_id, bs = 're') + s(landing_mun, bs = 're') + s(basin_id, bs = 're'),
+>            family = Gamma(link = 'log'),
+>            data = fish_catch,
+>            control = glmerControl(optimizer = 'bobyqa',
+>                                   optCtrl = list(maxfun = 2e5)),
+>            lme4 = TRUE)
+> 
+> I am using the uGamm wrapper so that I can complete model averaging with the MuMIn package, but the models are being run with gamm4.
+> 
+> The resulting models of several datasets provide me with the following warning when I attempt model selection with MuMIn::model.sel():
+> Warning messages:
+> 1: In vcov(object, use.hessian = use.hessian) :
+>    variance-covariance matrix computed from finite-difference Hessian is
+> not positive definite or contains NA values: falling back to var-cov estimated from RX
+> 2: In vcov.merMod(object, correlation = correlation, sigm = sig) :
+>    variance-covariance matrix computed from finite-difference Hessian is
+> not positive definite or contains NA values: falling back to var-cov estimated from RX
+> 
+> With the above information in mind, I have several questions.
+> 
+>    1.  Are the model results using the smaller datasets less reliable due to this warning?
+>    2.  Can move forward with model selection and averaging with these errors present?
+>    3.  If I can't move forward with model selection, how can I address these errors and get to the point where I can complete model selection and averaging?
+> 
+> Best,
+> Meaghan
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> _______________________________________________
+> R-sig-mixed-models at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Thu Jan  4 09:05:58 2024
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Thu, 4 Jan 2024 09:05:58 +0100
+Subject: [R-sig-ME] 
+ Implications of modeling residuals in multilevel models
+In-Reply-To: <099e162e-0a4b-42ab-aac0-4fd307a24503@gmail.com>
+References: <CACgv6yV1_fXFD8LfEP+U+Jvz2=_G7ZpGQ=StH86JvqOdxqRZ0A@mail.gmail.com>
+ <CACgv6yU3o-BP+GNeTX4j+Gz-4P7J68Axshkb+4b+18Jh9mRQNg@mail.gmail.com>
+ <4c12b847-328a-459c-9bd3-08b8099b072d@gmail.com>
+ <CACgv6yU-pMdE-rLkNKx4muJ_h7XYBLvERrnUDe-n8=dLNBDkhQ@mail.gmail.com>
+ <099e162e-0a4b-42ab-aac0-4fd307a24503@gmail.com>
+Message-ID: <26006.26342.560210.768021@stat.math.ethz.ch>
+
+>>>>> Ben Bolker 
+>>>>>     on Fri, 22 Dec 2023 17:07:13 -0500 writes:
+
+    > On 2023-12-22 4:50 p.m., Simon Harmel wrote:
+    >> Dear?Ben,
+    >> 
+    >> These are exactly what I was?looking for! Thank you so much. Please 
+    >> allow me to clarify my 2nd?question.
+    >> 
+    >> When I compare predict(MODEL) with predict(model_with_no_resid_modeled), 
+    >> the former looks quite normal and unimodal in shape but the latter looks 
+    >> multi-model (see the illustration below).
+    >> 
+    >> This made me think: should a good-fitting model produce normally 
+    >> distributed predicted values? And does such a model do a better?job of 
+    >> predicting?the value?of random draw?from the y population?
+
+    > Ideally the *marginal* (overall) distribution of *predictions* 
+    > should match the marginal distribution of the response variable (this is 
+    > what the 'posterior predictive check' panel of 
+    > performance::check_model() does).  
+
+Well, only approximately and only if you have enough degrees of freedom.
+Remember the simple (homo schedastic) LS case where
+
+    Cov(Y^) = \sigma^2 * (I - P)
+
+P = H is the projection / hat matrix  X' (X'X)^{-1} X
+So, the variances of Y^_i are *smaller* than those of the Y_i
+
+
+    > If the marginal distribution of your 
+    > data is skewed, then the marginal distribution of your prediction should 
+    > be skewed in the same way -- if it's not, then it's not doing a good job 
+    > describing the data.
+
+    > m <- lm(mpg ~ cyl + disp, mtcars)
+    > performance::check_model(m, check = "pp_check")
+
+    > This is a different story from the *residuals* (which tell you 
+    > something about the conditional distribution, not the marginal 
+    > distribution ...)
+
+
+    >> ? ? ? ? ? ? ? ?*
+    >> ? ? ? ? ? ? * * *
+    >> ? ? ? ?* * * * * * *
+    >> ? ?* * * * * * * * * *
+    >> * * * * * * * * * * * *
+    >> -------------------------? vs:
+    >> ? ? ? ? ? ? ? ? ? ? ? ? *
+    >> ? ? ? ? ? ? ? ? ? ? ? * *
+    >> ? ? ? *? ? ? ? ? ? ?* * *
+    >> ? ?* *? ?* *? ? ?* * * *
+    >> * * * * * * * * * * * *
+    >> -------------------------
+    >> 
+    >> On Fri, Dec 22, 2023 at 12:30?PM Ben Bolker <bbolker at gmail.com 
+    >> <mailto:bbolker at gmail.com>> wrote:
+    >> 
+    >> ? ?This slipped through the cracks.
+    >> 
+    >> On 2023-12-22 1:10 p.m., Simon Harmel wrote:
+    >> > Hello All,
+    >> >
+    >> > Just a follow-up, can we say the model I sketched above is a
+    >> location-scale
+    >> > model?
+    >> >
+    >> > Thanks,
+    >> > Simon
+    >> >
+    >> > On Sat, Dec 16, 2023 at 9:30?PM Simon Harmel
+    >> <sim.harmel at gmail.com <mailto:sim.harmel at gmail.com>> wrote:
+    >> >
+    >> >> Hello All,
+    >> >>
+    >> >> I have a highly skewed dataset.
+    >> 
+    >> ? ?As may have been said before, the *marginal* distribution of your
+    >> data set (e.g., what you get if you plot hist(y)) is irrelevant/doesn't
+    >> matter at all (the models make no assumptions about the marginal
+    >> distribution)
+    >> 
+    >> ? But, my MODEL of choice below shows
+    >> >> drastically improved, normally distributed residuals (and
+    >> predicted values)
+    >> >> compared to other models whose residuals are not modeled.
+    >> >>
+    >> >> Three quick questions:
+    >> >>
+    >> >> 1- Is MODEL below assuming that my data come from a population
+    >> that looks
+    >> >> normal once "X1_categorical" and "X2_numeric" are taken into account
+    >> >> as modeled in MODEL?
+    >> 
+    >> ? ?Yes, the *conditional distribution* of y is Gaussian (but not IID
+    >> because you have specified correlation and variance (weights)
+    >> structures).
+    >> 
+    >> 
+    >> >> 2- Do these normally distributed predictions work better for a
+    >> subject
+    >> >> randomly drawn from a similarly skewed population with a
+    >> >> known "X1_categorical" and "X2_numeric"?
+    >> 
+    >> ? ?Don't think I understand what this means.
+    >> 
+    >> >> 3- I think the distribution of residuals mirrors that of the
+    >> data. If so,
+    >> >> is it correct to say MODEL below is actually **trimming** my
+    >> highly skewed
+    >> >> data as if it was distributed as:
+    >> 
+    >> ? ?That seems an odd way to put it.? I would say that, if the
+    >> residuals
+    >> look Normally distributed, that means that the covariates in the model
+    >> are accounting for the skew.
+    >> 
+    >> Here's an example of a dataset where the marginal distribution is
+    >> heavily skewed but the conditional distribution is (exactly) Normal:
+    >> 
+    >> set.seed(101)
+    >> x <- rgamma(1000, shape = 1)
+    >> y <- rnorm(1000, mean = x, sd = 0.1)
+    >> hist(y)
+    >> 
+    >> qqnorm(residuals(lm(y~x)))
+    >> 
+    >> ? ?Heteroscedasticity (but not autocorrelation) will also change the
+    >> distribution of the residuals, but I don't think it's necessary to
+    >> illustrate the point here.
+    >> 
+    >> ? ?I think it would be fair to call this a location-scale model since
+    >> you are modeling both the location (mean) and the scale (SD/variance),
+    >> although often people use the term for models where there is a random
+    >> effect in both the location and the scale model.
+    >> 
+    >> 
+    >> 
+    >> 
+    >> 
+    >> >> ```
+    >> >> hist(resid(MODEL, type = "normalized"))
+    >> >> ```
+    >> >>
+    >> >>? ?MODEL <- nlme::lme(y ~ X1_categorical + X2_numeric ...,
+    >> >>? ? ? ? ? ?random = ~1| subject,
+    >> >>? ? ? ? ? ?data = data,
+    >> >>? ? ? ? ? ?correlation = corSymm(~1|subject),
+    >> >>? ? ? ? ? ?weights = varComb(varIdent(form = ~ 1 |? X1_categorical ),
+    >> >>? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? varPower(form = ~ 
+    >> X2_numeric )))
+    >> >>
+    >> >> Thanks,
+    >> >> Simon
+    >> >>
+    >> >
+    >> >? ? ? ?[[alternative HTML version deleted]]
+    >> >
+    >> > _______________________________________________
+    >> > R-sig-mixed-models at r-project.org
+    >> <mailto:R-sig-mixed-models at r-project.org> mailing list
+    >> > https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+    >> <https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models>
+    >> 
+    >> -- 
+    >> Dr. Benjamin Bolker
+    >> Professor, Mathematics & Statistics and Biology, McMaster University
+    >> Director, School of Computational Science and Engineering
+    >> (Acting) Graduate chair, Mathematics & Statistics
+    >> ?> E-mail is sent at my convenience; I don't expect replies outside of
+    >> working hours.
+    >> 
+    >> _______________________________________________
+    >> R-sig-mixed-models at r-project.org
+    >> <mailto:R-sig-mixed-models at r-project.org> mailing list
+    >> https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+    >> <https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models>
+    >> 
+
+    > -- 
+    > Dr. Benjamin Bolker
+    > Professor, Mathematics & Statistics and Biology, McMaster University
+    > Director, School of Computational Science and Engineering
+    > (Acting) Graduate chair, Mathematics & Statistics
+    >> E-mail is sent at my convenience; I don't expect replies outside of 
+    > working hours.
+
+    > _______________________________________________
+    > R-sig-mixed-models at r-project.org mailing list
+    > https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+
+
+From g@|v|n @end|ng |rom u@|bert@@c@  Sun Jan  7 04:56:10 2024
+From: g@|v|n @end|ng |rom u@|bert@@c@ (Atticus Harrigan)
+Date: Sat, 6 Jan 2024 20:56:10 -0700
+Subject: [R-sig-ME] Allow.new.levels
+Message-ID: <44196810-64BC-474C-B5F5-B67BCB0E1841@ualberta.ca>
+
+Hello! I am wondering about the allow.new.levels option.
+In the documentation it says:
+
+|allow.new.levels|    
+logical if new levels (or NA values) in|newdata| are allowed. If FALSE (default), such new values in |newdata|will trigger an error; if TRUE, then the prediction will use the unconditional (population-level) values for data with previously unobserved levels (or NAs).
+
+I am wondering what is mean in the the last clause. Is this saying that it will set an effect as its general proportion of the outcome? Or would it be more accurate to say that it uses all the previously unobserved data and averages out their values?
+
+
+From @|m@h@rme| @end|ng |rom gm@||@com  Sun Jan 14 17:40:54 2024
+From: @|m@h@rme| @end|ng |rom gm@||@com (Simon Harmel)
+Date: Sun, 14 Jan 2024 10:40:54 -0600
+Subject: [R-sig-ME] location-scale models in nlme
+Message-ID: <CACgv6yUm=nncGPWL5kmdSjzAsyf2tig4cksOyf4paEkvCwc7jA@mail.gmail.com>
+
+Dear Ben and List Members,
+
+I'm following up on this (
+https://stat.ethz.ch/pipermail/r-sig-mixed-models/2023q4/030552.html)
+thread. There, Ben noted that my MODEL (below) qualifies as a
+"location-scale" model.
+
+Q: Usually for the scale part of a location-scale model, the linear model
+uses a log link to guarantee that the estimate of scale is positive:
+
+log(scale_i) = a_0 + b_1*x_i1+ ... + b_n*x_ip  (for p predictors of scale)
+
+But in the MODEL that I sketched below, how such a guarantee is made?
+
+Thanks, Simon
+MODEL <- nlme::lme(y ~ X1_categorical + X2_numeric ...,
+         random = ~1| subject,
+         data = data,
+         correlation = corSymm(~1|subject),
+         weights = varComb(varIdent(form = ~ 1 |  X1_categorical ),
+                                          varPower(form = ~  X2_numeric )))
+
+	[[alternative HTML version deleted]]
+
+
+From bbo|ker @end|ng |rom gm@||@com  Sun Jan 14 21:00:39 2024
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Sun, 14 Jan 2024 15:00:39 -0500
+Subject: [R-sig-ME] location-scale models in nlme
+In-Reply-To: <CACgv6yUm=nncGPWL5kmdSjzAsyf2tig4cksOyf4paEkvCwc7jA@mail.gmail.com>
+References: <CACgv6yUm=nncGPWL5kmdSjzAsyf2tig4cksOyf4paEkvCwc7jA@mail.gmail.com>
+Message-ID: <717d5cda-0334-4f06-9ef4-e858bc028c7e@gmail.com>
+
+    For varIdent (from ?nlme::varIdent),
+
+  For identifiability reasons, the
+      coefficients of the variance function represent the ratios between
+      the variances and a reference variance (corresponding to a
+      reference group level).
+
+   I assume that this is internally parameterized via something like (1) 
+a model matrix constructed with ~ <grouping factor> and (2) a log link, 
+to ensure that the ratios are all positive
+
+  For varPower,
+
+s2(v) = |v|^(2*t)
+
+  -- notice it uses the absolute value of the covariate. So that term 
+will also be positive.
+
+varComb uses a product; the product of two positive values will also be 
+positive ...
+
+On 2024-01-14 11:40 a.m., Simon Harmel wrote:
+> Dear Ben and List Members,
+> 
+> I'm following up on this 
+> (https://stat.ethz.ch/pipermail/r-sig-mixed-models/2023q4/030552.html 
+> <https://stat.ethz.ch/pipermail/r-sig-mixed-models/2023q4/030552.html>) 
+> thread. There, Ben noted that my MODEL (below) qualifies as a 
+> "location-scale" model.
+> 
+> Q: Usually for the scale part of a location-scale model, the linear 
+> model uses a log link to guarantee that the estimate of scale is positive:
+> 
+> log(scale_i) = a_0 + b_1*x_i1+ ... + b_n*x_ip? (for p predictors of scale)
+> 
+> But in the MODEL that I sketched below, how such a guarantee?is made?
+> 
+> Thanks, Simon
+> MODEL <- nlme::lme(y ~ X1_categorical + X2_numeric ...,
+>  ? ? ? ? ?random = ~1| subject,
+>  ? ? ? ? ?data = data,
+>  ? ? ? ? ?correlation = corSymm(~1|subject),
+>  ? ? ? ? ?weights = varComb(varIdent(form = ~ 1 |? X1_categorical ),
+>  ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? varPower(form = ~? X2_numeric )))
+> 
+
+-- 
+Dr. Benjamin Bolker
+Professor, Mathematics & Statistics and Biology, McMaster University
+Director, School of Computational Science and Engineering
+(Acting) Graduate chair, Mathematics & Statistics
+ > E-mail is sent at my convenience; I don't expect replies outside of 
+working hours.
+
+
+From @|m@h@rme| @end|ng |rom gm@||@com  Sun Jan 14 22:44:25 2024
+From: @|m@h@rme| @end|ng |rom gm@||@com (Simon Harmel)
+Date: Sun, 14 Jan 2024 15:44:25 -0600
+Subject: [R-sig-ME] location-scale models in nlme
+In-Reply-To: <717d5cda-0334-4f06-9ef4-e858bc028c7e@gmail.com>
+References: <CACgv6yUm=nncGPWL5kmdSjzAsyf2tig4cksOyf4paEkvCwc7jA@mail.gmail.com>
+ <717d5cda-0334-4f06-9ef4-e858bc028c7e@gmail.com>
+Message-ID: <CACgv6yWfO8t517Nw9a_NG0rm-Z0NUef7GyErbp=zg4fmmUjHiQ@mail.gmail.com>
+
+Thanks so much, Ben. I conclude that the users of lme() don't need to
+convert the output for "varIdent()" or "varPower()" back due to a link
+function to get the estimates of the relevant Level-1 residual variances.
+This is because the former gives out the proportions between residual
+variances with respect to a reference level in a categorical variable, and
+the latter gives out "t", which the user can insert
+in: (sigma(MODEL)^2)*abs(data$X2_numeric)^(2*t) to obtain the relationship
+between  X2_numeric and the residual variance.
+
+Ben, as both a mathematical and applied expert, which location-scale
+approach, do you think, is more preferable? The one implemented in nlme()
+or the one that allows modeling the scale using:  log(scale_i) = a_0 +
+b_1*x_i1+ ... + b_n*x_ip  (for p predictors of scale) ??
+
+Thank you so very much for sharing your perspective,
+Simon
+
+
+
+
+
+On Sun, Jan 14, 2024 at 2:00?PM Ben Bolker <bbolker at gmail.com> wrote:
+
+>     For varIdent (from ?nlme::varIdent),
+>
+>   For identifiability reasons, the
+>       coefficients of the variance function represent the ratios between
+>       the variances and a reference variance (corresponding to a
+>       reference group level).
+>
+>    I assume that this is internally parameterized via something like (1)
+> a model matrix constructed with ~ <grouping factor> and (2) a log link,
+> to ensure that the ratios are all positive
+>
+>   For varPower,
+>
+> s2(v) = |v|^(2*t)
+>
+>   -- notice it uses the absolute value of the covariate. So that term
+> will also be positive.
+>
+> varComb uses a product; the product of two positive values will also be
+> positive ...
+>
+> On 2024-01-14 11:40 a.m., Simon Harmel wrote:
+> > Dear Ben and List Members,
+> >
+> > I'm following up on this
+> > (https://stat.ethz.ch/pipermail/r-sig-mixed-models/2023q4/030552.html
+> > <https://stat.ethz.ch/pipermail/r-sig-mixed-models/2023q4/030552.html>)
+> > thread. There, Ben noted that my MODEL (below) qualifies as a
+> > "location-scale" model.
+> >
+> > Q: Usually for the scale part of a location-scale model, the linear
+> > model uses a log link to guarantee that the estimate of scale is
+> positive:
+> >
+> > log(scale_i) = a_0 + b_1*x_i1+ ... + b_n*x_ip  (for p predictors of
+> scale)
+> >
+> > But in the MODEL that I sketched below, how such a guarantee is made?
+> >
+> > Thanks, Simon
+> > MODEL <- nlme::lme(y ~ X1_categorical + X2_numeric ...,
+> >           random = ~1| subject,
+> >           data = data,
+> >           correlation = corSymm(~1|subject),
+> >           weights = varComb(varIdent(form = ~ 1 |  X1_categorical ),
+> >                                            varPower(form = ~  X2_numeric
+> )))
+> >
+>
+> --
+> Dr. Benjamin Bolker
+> Professor, Mathematics & Statistics and Biology, McMaster University
+> Director, School of Computational Science and Engineering
+> (Acting) Graduate chair, Mathematics & Statistics
+>  > E-mail is sent at my convenience; I don't expect replies outside of
+> working hours.
+>
+
+	[[alternative HTML version deleted]]
+
+
+From @|m@h@rme| @end|ng |rom gm@||@com  Sun Jan 14 22:47:30 2024
+From: @|m@h@rme| @end|ng |rom gm@||@com (Simon Harmel)
+Date: Sun, 14 Jan 2024 15:47:30 -0600
+Subject: [R-sig-ME] location-scale models in nlme
+In-Reply-To: <CACgv6yWfO8t517Nw9a_NG0rm-Z0NUef7GyErbp=zg4fmmUjHiQ@mail.gmail.com>
+References: <CACgv6yUm=nncGPWL5kmdSjzAsyf2tig4cksOyf4paEkvCwc7jA@mail.gmail.com>
+ <717d5cda-0334-4f06-9ef4-e858bc028c7e@gmail.com>
+ <CACgv6yWfO8t517Nw9a_NG0rm-Z0NUef7GyErbp=zg4fmmUjHiQ@mail.gmail.com>
+Message-ID: <CACgv6yXvURmFRrrKEpKSq4BtGEDBQ-xscn_BqWEqYi+77+eWEw@mail.gmail.com>
+
+When I say "more preferable", I mean for instance, in terms of flexibility,
+and generality (e.g., approach b subsuming approach a or vice versa).
+
+On Sun, Jan 14, 2024 at 3:44?PM Simon Harmel <sim.harmel at gmail.com> wrote:
+
+> Thanks so much, Ben. I conclude that the users of lme() don't need to
+> convert the output for "varIdent()" or "varPower()" back due to a link
+> function to get the estimates of the relevant Level-1 residual variances.
+> This is because the former gives out the proportions between residual
+> variances with respect to a reference level in a categorical variable, and
+> the latter gives out "t", which the user can insert
+> in: (sigma(MODEL)^2)*abs(data$X2_numeric)^(2*t) to obtain the relationship
+> between  X2_numeric and the residual variance.
+>
+> Ben, as both a mathematical and applied expert, which location-scale
+> approach, do you think, is more preferable? The one implemented in nlme()
+> or the one that allows modeling the scale using:  log(scale_i) = a_0 +
+> b_1*x_i1+ ... + b_n*x_ip  (for p predictors of scale) ??
+>
+> Thank you so very much for sharing your perspective,
+> Simon
+>
+>
+>
+>
+>
+> On Sun, Jan 14, 2024 at 2:00?PM Ben Bolker <bbolker at gmail.com> wrote:
+>
+>>     For varIdent (from ?nlme::varIdent),
+>>
+>>   For identifiability reasons, the
+>>       coefficients of the variance function represent the ratios between
+>>       the variances and a reference variance (corresponding to a
+>>       reference group level).
+>>
+>>    I assume that this is internally parameterized via something like (1)
+>> a model matrix constructed with ~ <grouping factor> and (2) a log link,
+>> to ensure that the ratios are all positive
+>>
+>>   For varPower,
+>>
+>> s2(v) = |v|^(2*t)
+>>
+>>   -- notice it uses the absolute value of the covariate. So that term
+>> will also be positive.
+>>
+>> varComb uses a product; the product of two positive values will also be
+>> positive ...
+>>
+>> On 2024-01-14 11:40 a.m., Simon Harmel wrote:
+>> > Dear Ben and List Members,
+>> >
+>> > I'm following up on this
+>> > (https://stat.ethz.ch/pipermail/r-sig-mixed-models/2023q4/030552.html
+>> > <https://stat.ethz.ch/pipermail/r-sig-mixed-models/2023q4/030552.html>)
+>>
+>> > thread. There, Ben noted that my MODEL (below) qualifies as a
+>> > "location-scale" model.
+>> >
+>> > Q: Usually for the scale part of a location-scale model, the linear
+>> > model uses a log link to guarantee that the estimate of scale is
+>> positive:
+>> >
+>> > log(scale_i) = a_0 + b_1*x_i1+ ... + b_n*x_ip  (for p predictors of
+>> scale)
+>> >
+>> > But in the MODEL that I sketched below, how such a guarantee is made?
+>> >
+>> > Thanks, Simon
+>> > MODEL <- nlme::lme(y ~ X1_categorical + X2_numeric ...,
+>> >           random = ~1| subject,
+>> >           data = data,
+>> >           correlation = corSymm(~1|subject),
+>> >           weights = varComb(varIdent(form = ~ 1 |  X1_categorical ),
+>> >                                            varPower(form = ~
+>> X2_numeric )))
+>> >
+>>
+>> --
+>> Dr. Benjamin Bolker
+>> Professor, Mathematics & Statistics and Biology, McMaster University
+>> Director, School of Computational Science and Engineering
+>> (Acting) Graduate chair, Mathematics & Statistics
+>>  > E-mail is sent at my convenience; I don't expect replies outside of
+>> working hours.
+>>
+>
+
+	[[alternative HTML version deleted]]
+
+
+From bbo|ker @end|ng |rom gm@||@com  Mon Jan 15 00:06:15 2024
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Sun, 14 Jan 2024 18:06:15 -0500
+Subject: [R-sig-ME] location-scale models in nlme
+In-Reply-To: <CACgv6yXvURmFRrrKEpKSq4BtGEDBQ-xscn_BqWEqYi+77+eWEw@mail.gmail.com>
+References: <CACgv6yUm=nncGPWL5kmdSjzAsyf2tig4cksOyf4paEkvCwc7jA@mail.gmail.com>
+ <717d5cda-0334-4f06-9ef4-e858bc028c7e@gmail.com>
+ <CACgv6yWfO8t517Nw9a_NG0rm-Z0NUef7GyErbp=zg4fmmUjHiQ@mail.gmail.com>
+ <CACgv6yXvURmFRrrKEpKSq4BtGEDBQ-xscn_BqWEqYi+77+eWEw@mail.gmail.com>
+Message-ID: <f67f449a-29aa-4698-a072-29e4dc9bb451@gmail.com>
+
+    I think it's pretty close to a toss-up.
+
+   The main advantage of the specific implementation found in nlme is 
+that it allows the *fitted value estimate* to be used as a predictor 
+(i.e., specifically implementing a dispersion model based on the (log) 
+mean rather than on other covariates.  I would guess that most 
+implementations of the log-scale approach do not allow this, i.e. they 
+only work with external/previously available covariates.
+
+   If one allowed "fitted value" and "log of fitted value" as 
+predictors, then most of the variance models available in lme could also 
+be specified in the log-link framework.
+
+   I have been thinking about implementing something like this in 
+glmmTMB for a long time but haven't gotten around to it ... 
+https://github.com/glmmTMB/glmmTMB/issues/125
+
+On 2024-01-14 4:47 p.m., Simon Harmel wrote:
+> When I say "more preferable", I mean for instance, in terms of 
+> flexibility, and generality (e.g., approach b subsuming?approach a or 
+> vice versa).
+> 
+> On Sun, Jan 14, 2024 at 3:44?PM Simon Harmel <sim.harmel at gmail.com 
+> <mailto:sim.harmel at gmail.com>> wrote:
+> 
+>     Thanks so much, Ben. I conclude that the users of lme() don't need
+>     to convert the output for "varIdent()" or "varPower()" back due to a
+>     link function to get the estimates of the relevant Level-1 residual
+>     variances. This is because the former gives out the proportions
+>     between residual variances with respect to a reference?level in a
+>     categorical variable, and the latter gives out "t", which the user
+>     can insert in:?(sigma(MODEL)^2)*abs(data$X2_numeric)^(2*t) to obtain
+>     the relationship between X2_numeric and the?residual variance.
+> 
+>     Ben, as both a mathematical and applied expert, which location-scale
+>     approach, do you think, is more preferable? The one implemented in
+>     nlme() or the one that allows modeling the scale using: 
+>     log(scale_i) = a_0 + b_1*x_i1+ ... + b_n*x_ip? (for p predictors of
+>     scale) ??
+> 
+>     Thank you so very much for sharing your perspective,
+>     Simon
+> 
+> 
+> 
+> 
+> 
+>     On Sun, Jan 14, 2024 at 2:00?PM Ben Bolker <bbolker at gmail.com
+>     <mailto:bbolker at gmail.com>> wrote:
+> 
+>          ? ? For varIdent (from ?nlme::varIdent),
+> 
+>          ? For identifiability reasons, the
+>          ? ? ? coefficients of the variance function represent the
+>         ratios between
+>          ? ? ? the variances and a reference variance (corresponding to a
+>          ? ? ? reference group level).
+> 
+>          ? ?I assume that this is internally parameterized via something
+>         like (1)
+>         a model matrix constructed with ~ <grouping factor> and (2) a
+>         log link,
+>         to ensure that the ratios are all positive
+> 
+>          ? For varPower,
+> 
+>         s2(v) = |v|^(2*t)
+> 
+>          ? -- notice it uses the absolute value of the covariate. So
+>         that term
+>         will also be positive.
+> 
+>         varComb uses a product; the product of two positive values will
+>         also be
+>         positive ...
+> 
+>         On 2024-01-14 11:40 a.m., Simon Harmel wrote:
+>          > Dear Ben and List Members,
+>          >
+>          > I'm following up on this
+>          >
+>         (https://stat.ethz.ch/pipermail/r-sig-mixed-models/2023q4/030552.html <https://stat.ethz.ch/pipermail/r-sig-mixed-models/2023q4/030552.html>
+>          >
+>         <https://stat.ethz.ch/pipermail/r-sig-mixed-models/2023q4/030552.html <https://stat.ethz.ch/pipermail/r-sig-mixed-models/2023q4/030552.html>>)
+>          > thread. There, Ben noted that my MODEL (below) qualifies as a
+>          > "location-scale" model.
+>          >
+>          > Q: Usually for the scale part of a location-scale model, the
+>         linear
+>          > model uses a log link to guarantee that the estimate of scale
+>         is positive:
+>          >
+>          > log(scale_i) = a_0 + b_1*x_i1+ ... + b_n*x_ip? (for p
+>         predictors of scale)
+>          >
+>          > But in the MODEL that I sketched below, how such a
+>         guarantee?is made?
+>          >
+>          > Thanks, Simon
+>          > MODEL <- nlme::lme(y ~ X1_categorical + X2_numeric ...,
+>          >? ? ? ? ? ?random = ~1| subject,
+>          >? ? ? ? ? ?data = data,
+>          >? ? ? ? ? ?correlation = corSymm(~1|subject),
+>          >? ? ? ? ? ?weights = varComb(varIdent(form = ~ 1 | 
+>         X1_categorical ),
+>          >? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? varPower(form = ~ 
+>         X2_numeric )))
+>          >
+> 
+>         -- 
+>         Dr. Benjamin Bolker
+>         Professor, Mathematics & Statistics and Biology, McMaster University
+>         Director, School of Computational Science and Engineering
+>         (Acting) Graduate chair, Mathematics & Statistics
+>          ?> E-mail is sent at my convenience; I don't expect replies
+>         outside of
+>         working hours.
+> 
+
+-- 
+Dr. Benjamin Bolker
+Professor, Mathematics & Statistics and Biology, McMaster University
+Director, School of Computational Science and Engineering
+(Acting) Graduate chair, Mathematics & Statistics
+ > E-mail is sent at my convenience; I don't expect replies outside of 
+working hours.
+
+
+From @|m@h@rme| @end|ng |rom gm@||@com  Mon Jan 15 00:56:23 2024
+From: @|m@h@rme| @end|ng |rom gm@||@com (Simon Harmel)
+Date: Sun, 14 Jan 2024 17:56:23 -0600
+Subject: [R-sig-ME] location-scale models in nlme
+In-Reply-To: <f67f449a-29aa-4698-a072-29e4dc9bb451@gmail.com>
+References: <CACgv6yUm=nncGPWL5kmdSjzAsyf2tig4cksOyf4paEkvCwc7jA@mail.gmail.com>
+ <717d5cda-0334-4f06-9ef4-e858bc028c7e@gmail.com>
+ <CACgv6yWfO8t517Nw9a_NG0rm-Z0NUef7GyErbp=zg4fmmUjHiQ@mail.gmail.com>
+ <CACgv6yXvURmFRrrKEpKSq4BtGEDBQ-xscn_BqWEqYi+77+eWEw@mail.gmail.com>
+ <f67f449a-29aa-4698-a072-29e4dc9bb451@gmail.com>
+Message-ID: <CACgv6yWrXiZ0oDQBMEdpZJrAfF-U9CRjPqUUuF-ngDTZYfgt+Q@mail.gmail.com>
+
+Thanks so much, Ben! I didn't know that nlme uses "fitted value estimates"
+as predictors!! I know I'm being a pain, but could you please briefly help
+me contextualize this in the model below?  Or maybe the MODEL below doesn't
+use "fitted value estimates" as X1_categorical + X2_numeric are both
+external covariates?
+
+
+MODEL <- nlme::lme(y ~ X1_categorical + X2_numeric ...,
+         random = ~1| subject,
+         data = data,
+         correlation = corSymm(~1|subject),
+         weights = varComb(varIdent(form = ~ 1 |  X1_categorical ),
+                                          varPower(form = ~  X2_numeric )))
+
+On Sun, Jan 14, 2024 at 5:06?PM Ben Bolker <bbolker at gmail.com> wrote:
+
+>     I think it's pretty close to a toss-up.
+>
+>    The main advantage of the specific implementation found in nlme is
+> that it allows the *fitted value estimate* to be used as a predictor
+> (i.e., specifically implementing a dispersion model based on the (log)
+> mean rather than on other covariates.  I would guess that most
+> implementations of the log-scale approach do not allow this, i.e. they
+> only work with external/previously available covariates.
+>
+>    If one allowed "fitted value" and "log of fitted value" as
+> predictors, then most of the variance models available in lme could also
+> be specified in the log-link framework.
+>
+>    I have been thinking about implementing something like this in
+> glmmTMB for a long time but haven't gotten around to it ...
+> https://github.com/glmmTMB/glmmTMB/issues/125
+>
+> On 2024-01-14 4:47 p.m., Simon Harmel wrote:
+> > When I say "more preferable", I mean for instance, in terms of
+> > flexibility, and generality (e.g., approach b subsuming approach a or
+> > vice versa).
+> >
+> > On Sun, Jan 14, 2024 at 3:44?PM Simon Harmel <sim.harmel at gmail.com
+> > <mailto:sim.harmel at gmail.com>> wrote:
+> >
+> >     Thanks so much, Ben. I conclude that the users of lme() don't need
+> >     to convert the output for "varIdent()" or "varPower()" back due to a
+> >     link function to get the estimates of the relevant Level-1 residual
+> >     variances. This is because the former gives out the proportions
+> >     between residual variances with respect to a reference level in a
+> >     categorical variable, and the latter gives out "t", which the user
+> >     can insert in: (sigma(MODEL)^2)*abs(data$X2_numeric)^(2*t) to obtain
+> >     the relationship between X2_numeric and the residual variance.
+> >
+> >     Ben, as both a mathematical and applied expert, which location-scale
+> >     approach, do you think, is more preferable? The one implemented in
+> >     nlme() or the one that allows modeling the scale using:
+> >     log(scale_i) = a_0 + b_1*x_i1+ ... + b_n*x_ip  (for p predictors of
+> >     scale) ??
+> >
+> >     Thank you so very much for sharing your perspective,
+> >     Simon
+> >
+> >
+> >
+> >
+> >
+> >     On Sun, Jan 14, 2024 at 2:00?PM Ben Bolker <bbolker at gmail.com
+> >     <mailto:bbolker at gmail.com>> wrote:
+> >
+> >              For varIdent (from ?nlme::varIdent),
+> >
+> >            For identifiability reasons, the
+> >                coefficients of the variance function represent the
+> >         ratios between
+> >                the variances and a reference variance (corresponding to a
+> >                reference group level).
+> >
+> >             I assume that this is internally parameterized via something
+> >         like (1)
+> >         a model matrix constructed with ~ <grouping factor> and (2) a
+> >         log link,
+> >         to ensure that the ratios are all positive
+> >
+> >            For varPower,
+> >
+> >         s2(v) = |v|^(2*t)
+> >
+> >            -- notice it uses the absolute value of the covariate. So
+> >         that term
+> >         will also be positive.
+> >
+> >         varComb uses a product; the product of two positive values will
+> >         also be
+> >         positive ...
+> >
+> >         On 2024-01-14 11:40 a.m., Simon Harmel wrote:
+> >          > Dear Ben and List Members,
+> >          >
+> >          > I'm following up on this
+> >          >
+> >         (
+> https://stat.ethz.ch/pipermail/r-sig-mixed-models/2023q4/030552.html <
+> https://stat.ethz.ch/pipermail/r-sig-mixed-models/2023q4/030552.html>
+> >          >
+> >         <
+> https://stat.ethz.ch/pipermail/r-sig-mixed-models/2023q4/030552.html <
+> https://stat.ethz.ch/pipermail/r-sig-mixed-models/2023q4/030552.html>>)
+> >          > thread. There, Ben noted that my MODEL (below) qualifies as a
+> >          > "location-scale" model.
+> >          >
+> >          > Q: Usually for the scale part of a location-scale model, the
+> >         linear
+> >          > model uses a log link to guarantee that the estimate of scale
+> >         is positive:
+> >          >
+> >          > log(scale_i) = a_0 + b_1*x_i1+ ... + b_n*x_ip  (for p
+> >         predictors of scale)
+> >          >
+> >          > But in the MODEL that I sketched below, how such a
+> >         guarantee is made?
+> >          >
+> >          > Thanks, Simon
+> >          > MODEL <- nlme::lme(y ~ X1_categorical + X2_numeric ...,
+> >          >           random = ~1| subject,
+> >          >           data = data,
+> >          >           correlation = corSymm(~1|subject),
+> >          >           weights = varComb(varIdent(form = ~ 1 |
+> >         X1_categorical ),
+> >          >                                            varPower(form = ~
+> >         X2_numeric )))
+> >          >
+> >
+> >         --
+> >         Dr. Benjamin Bolker
+> >         Professor, Mathematics & Statistics and Biology, McMaster
+> University
+> >         Director, School of Computational Science and Engineering
+> >         (Acting) Graduate chair, Mathematics & Statistics
+> >           > E-mail is sent at my convenience; I don't expect replies
+> >         outside of
+> >         working hours.
+> >
+>
+> --
+> Dr. Benjamin Bolker
+> Professor, Mathematics & Statistics and Biology, McMaster University
+> Director, School of Computational Science and Engineering
+> (Acting) Graduate chair, Mathematics & Statistics
+>  > E-mail is sent at my convenience; I don't expect replies outside of
+> working hours.
+>
+
+	[[alternative HTML version deleted]]
+
+
+From bbo|ker @end|ng |rom gm@||@com  Mon Jan 15 00:59:51 2024
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Sun, 14 Jan 2024 18:59:51 -0500
+Subject: [R-sig-ME] location-scale models in nlme
+In-Reply-To: <CACgv6yWrXiZ0oDQBMEdpZJrAfF-U9CRjPqUUuF-ngDTZYfgt+Q@mail.gmail.com>
+References: <CACgv6yUm=nncGPWL5kmdSjzAsyf2tig4cksOyf4paEkvCwc7jA@mail.gmail.com>
+ <717d5cda-0334-4f06-9ef4-e858bc028c7e@gmail.com>
+ <CACgv6yWfO8t517Nw9a_NG0rm-Z0NUef7GyErbp=zg4fmmUjHiQ@mail.gmail.com>
+ <CACgv6yXvURmFRrrKEpKSq4BtGEDBQ-xscn_BqWEqYi+77+eWEw@mail.gmail.com>
+ <f67f449a-29aa-4698-a072-29e4dc9bb451@gmail.com>
+ <CACgv6yWrXiZ0oDQBMEdpZJrAfF-U9CRjPqUUuF-ngDTZYfgt+Q@mail.gmail.com>
+Message-ID: <3b4b3a63-2b7c-49b9-9e0f-e043b9465c4f@gmail.com>
+
+    From ?nlme::varExp (I think there are similar explanations in docs 
+for other functions):
+
+For the `form` argument
+
+ > The variance covariate must evaluate to a numeric vector and may involve
+expressions using ?"."?, representing a fitted model object
+from which fitted values (?fitted(.)?) and residuals
+(?resid(.)?) can be extracted (this allows the variance
+covariate to be updated during the optimization of an object
+function).
+
+...
+
+ > Defaults to ?~ fitted(.)? representing a variance covariate given by 
+the fitted values of a fitted model object and no grouping factor.
+
+   So yes, it's not relevant in your case.
+
+
+On 2024-01-14 6:56 p.m., Simon Harmel wrote:
+> Thanks so much, Ben! I didn't know that nlme uses "fitted value 
+> estimates" as predictors!! I know I'm being a pain, but could you please 
+> briefly help me contextualize this in the model below?? Or maybe the 
+> MODEL below doesn't use "fitted value estimates" as X1_categorical + 
+> X2_numeric are both external covariates?
+> 
+> 
+> MODEL <- nlme::lme(y ~ X1_categorical + X2_numeric ...,
+>  ? ? ? ? ?random = ~1| subject,
+>  ? ? ? ? ?data = data,
+>  ? ? ? ? ?correlation = corSymm(~1|subject),
+>  ? ? ? ? ?weights = varComb(varIdent(form = ~ 1 |? X1_categorical ),
+>  ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? varPower(form = ~? X2_numeric )))
+> 
+> On Sun, Jan 14, 2024 at 5:06?PM Ben Bolker <bbolker at gmail.com 
+> <mailto:bbolker at gmail.com>> wrote:
+> 
+>      ? ? I think it's pretty close to a toss-up.
+> 
+>      ? ?The main advantage of the specific implementation found in nlme is
+>     that it allows the *fitted value estimate* to be used as a predictor
+>     (i.e., specifically implementing a dispersion model based on the (log)
+>     mean rather than on other covariates.? I would guess that most
+>     implementations of the log-scale approach do not allow this, i.e. they
+>     only work with external/previously available covariates.
+> 
+>      ? ?If one allowed "fitted value" and "log of fitted value" as
+>     predictors, then most of the variance models available in lme could
+>     also
+>     be specified in the log-link framework.
+> 
+>      ? ?I have been thinking about implementing something like this in
+>     glmmTMB for a long time but haven't gotten around to it ...
+>     https://github.com/glmmTMB/glmmTMB/issues/125
+>     <https://github.com/glmmTMB/glmmTMB/issues/125>
+> 
+>     On 2024-01-14 4:47 p.m., Simon Harmel wrote:
+>      > When I say "more preferable", I mean for instance, in terms of
+>      > flexibility, and generality (e.g., approach b subsuming?approach
+>     a or
+>      > vice versa).
+>      >
+>      > On Sun, Jan 14, 2024 at 3:44?PM Simon Harmel
+>     <sim.harmel at gmail.com <mailto:sim.harmel at gmail.com>
+>      > <mailto:sim.harmel at gmail.com <mailto:sim.harmel at gmail.com>>> wrote:
+>      >
+>      >? ? ?Thanks so much, Ben. I conclude that the users of lme() don't
+>     need
+>      >? ? ?to convert the output for "varIdent()" or "varPower()" back
+>     due to a
+>      >? ? ?link function to get the estimates of the relevant Level-1
+>     residual
+>      >? ? ?variances. This is because the former gives out the proportions
+>      >? ? ?between residual variances with respect to a reference?level in a
+>      >? ? ?categorical variable, and the latter gives out "t", which the
+>     user
+>      >? ? ?can insert in:?(sigma(MODEL)^2)*abs(data$X2_numeric)^(2*t) to
+>     obtain
+>      >? ? ?the relationship between X2_numeric and the?residual variance.
+>      >
+>      >? ? ?Ben, as both a mathematical and applied expert, which
+>     location-scale
+>      >? ? ?approach, do you think, is more preferable? The one
+>     implemented in
+>      >? ? ?nlme() or the one that allows modeling the scale using:
+>      >? ? ?log(scale_i) = a_0 + b_1*x_i1+ ... + b_n*x_ip? (for p
+>     predictors of
+>      >? ? ?scale) ??
+>      >
+>      >? ? ?Thank you so very much for sharing your perspective,
+>      >? ? ?Simon
+>      >
+>      >
+>      >
+>      >
+>      >
+>      >? ? ?On Sun, Jan 14, 2024 at 2:00?PM Ben Bolker <bbolker at gmail.com
+>     <mailto:bbolker at gmail.com>
+>      >? ? ?<mailto:bbolker at gmail.com <mailto:bbolker at gmail.com>>> wrote:
+>      >
+>      >? ? ? ? ? ? ? For varIdent (from ?nlme::varIdent),
+>      >
+>      >? ? ? ? ? ? For identifiability reasons, the
+>      >? ? ? ? ? ? ? ? coefficients of the variance function represent the
+>      >? ? ? ? ?ratios between
+>      >? ? ? ? ? ? ? ? the variances and a reference variance
+>     (corresponding to a
+>      >? ? ? ? ? ? ? ? reference group level).
+>      >
+>      >? ? ? ? ? ? ?I assume that this is internally parameterized via
+>     something
+>      >? ? ? ? ?like (1)
+>      >? ? ? ? ?a model matrix constructed with ~ <grouping factor> and (2) a
+>      >? ? ? ? ?log link,
+>      >? ? ? ? ?to ensure that the ratios are all positive
+>      >
+>      >? ? ? ? ? ? For varPower,
+>      >
+>      >? ? ? ? ?s2(v) = |v|^(2*t)
+>      >
+>      >? ? ? ? ? ? -- notice it uses the absolute value of the covariate. So
+>      >? ? ? ? ?that term
+>      >? ? ? ? ?will also be positive.
+>      >
+>      >? ? ? ? ?varComb uses a product; the product of two positive
+>     values will
+>      >? ? ? ? ?also be
+>      >? ? ? ? ?positive ...
+>      >
+>      >? ? ? ? ?On 2024-01-14 11:40 a.m., Simon Harmel wrote:
+>      >? ? ? ? ? > Dear Ben and List Members,
+>      >? ? ? ? ? >
+>      >? ? ? ? ? > I'm following up on this
+>      >? ? ? ? ? >
+>      >       
+>      ?(https://stat.ethz.ch/pipermail/r-sig-mixed-models/2023q4/030552.html <https://stat.ethz.ch/pipermail/r-sig-mixed-models/2023q4/030552.html> <https://stat.ethz.ch/pipermail/r-sig-mixed-models/2023q4/030552.html <https://stat.ethz.ch/pipermail/r-sig-mixed-models/2023q4/030552.html>>
+>      >? ? ? ? ? >
+>      >       
+>      ?<https://stat.ethz.ch/pipermail/r-sig-mixed-models/2023q4/030552.html <https://stat.ethz.ch/pipermail/r-sig-mixed-models/2023q4/030552.html> <https://stat.ethz.ch/pipermail/r-sig-mixed-models/2023q4/030552.html <https://stat.ethz.ch/pipermail/r-sig-mixed-models/2023q4/030552.html>>>)
+>      >? ? ? ? ? > thread. There, Ben noted that my MODEL (below)
+>     qualifies as a
+>      >? ? ? ? ? > "location-scale" model.
+>      >? ? ? ? ? >
+>      >? ? ? ? ? > Q: Usually for the scale part of a location-scale
+>     model, the
+>      >? ? ? ? ?linear
+>      >? ? ? ? ? > model uses a log link to guarantee that the estimate
+>     of scale
+>      >? ? ? ? ?is positive:
+>      >? ? ? ? ? >
+>      >? ? ? ? ? > log(scale_i) = a_0 + b_1*x_i1+ ... + b_n*x_ip? (for p
+>      >? ? ? ? ?predictors of scale)
+>      >? ? ? ? ? >
+>      >? ? ? ? ? > But in the MODEL that I sketched below, how such a
+>      >? ? ? ? ?guarantee?is made?
+>      >? ? ? ? ? >
+>      >? ? ? ? ? > Thanks, Simon
+>      >? ? ? ? ? > MODEL <- nlme::lme(y ~ X1_categorical + X2_numeric ...,
+>      >? ? ? ? ? >? ? ? ? ? ?random = ~1| subject,
+>      >? ? ? ? ? >? ? ? ? ? ?data = data,
+>      >? ? ? ? ? >? ? ? ? ? ?correlation = corSymm(~1|subject),
+>      >? ? ? ? ? >? ? ? ? ? ?weights = varComb(varIdent(form = ~ 1 |
+>      >? ? ? ? ?X1_categorical ),
+>      >? ? ? ? ? >                                           
+>     varPower(form = ~
+>      >? ? ? ? ?X2_numeric )))
+>      >? ? ? ? ? >
+>      >
+>      >? ? ? ? ?--
+>      >? ? ? ? ?Dr. Benjamin Bolker
+>      >? ? ? ? ?Professor, Mathematics & Statistics and Biology, McMaster
+>     University
+>      >? ? ? ? ?Director, School of Computational Science and Engineering
+>      >? ? ? ? ?(Acting) Graduate chair, Mathematics & Statistics
+>      >? ? ? ? ? ?> E-mail is sent at my convenience; I don't expect replies
+>      >? ? ? ? ?outside of
+>      >? ? ? ? ?working hours.
+>      >
+> 
+>     -- 
+>     Dr. Benjamin Bolker
+>     Professor, Mathematics & Statistics and Biology, McMaster University
+>     Director, School of Computational Science and Engineering
+>     (Acting) Graduate chair, Mathematics & Statistics
+>      ?> E-mail is sent at my convenience; I don't expect replies outside of
+>     working hours.
+> 
+
+-- 
+Dr. Benjamin Bolker
+Professor, Mathematics & Statistics and Biology, McMaster University
+Director, School of Computational Science and Engineering
+(Acting) Graduate chair, Mathematics & Statistics
+ > E-mail is sent at my convenience; I don't expect replies outside of 
+working hours.
+
+
+From @|m@h@rme| @end|ng |rom gm@||@com  Mon Jan 15 01:25:41 2024
+From: @|m@h@rme| @end|ng |rom gm@||@com (Simon Harmel)
+Date: Sun, 14 Jan 2024 18:25:41 -0600
+Subject: [R-sig-ME] location-scale models in nlme
+In-Reply-To: <3b4b3a63-2b7c-49b9-9e0f-e043b9465c4f@gmail.com>
+References: <CACgv6yUm=nncGPWL5kmdSjzAsyf2tig4cksOyf4paEkvCwc7jA@mail.gmail.com>
+ <717d5cda-0334-4f06-9ef4-e858bc028c7e@gmail.com>
+ <CACgv6yWfO8t517Nw9a_NG0rm-Z0NUef7GyErbp=zg4fmmUjHiQ@mail.gmail.com>
+ <CACgv6yXvURmFRrrKEpKSq4BtGEDBQ-xscn_BqWEqYi+77+eWEw@mail.gmail.com>
+ <f67f449a-29aa-4698-a072-29e4dc9bb451@gmail.com>
+ <CACgv6yWrXiZ0oDQBMEdpZJrAfF-U9CRjPqUUuF-ngDTZYfgt+Q@mail.gmail.com>
+ <3b4b3a63-2b7c-49b9-9e0f-e043b9465c4f@gmail.com>
+Message-ID: <CACgv6yWaNyXabNZbbfcnKzHxRd1uuYMC16cVx6cFjCZXn7vEww@mail.gmail.com>
+
+Thank you! That's correct, for three of the variance functions (varExp,
+varPower, varConstPower), "form=" defaults to "fitted(.)", which I suppose
+acknowledges the power relation between residual variance and the fitted
+values (I think this, to some extent, accounts for endogeneity, the
+relation between explained and unexplained variance in a DV).
+
+What surprised me in that explanation was that the user can also use "form
+= ~ resid(.)", how is this even possible?
+
+
+
+On Sun, Jan 14, 2024 at 6:00?PM Ben Bolker <bbolker at gmail.com> wrote:
+
+>     From ?nlme::varExp (I think there are similar explanations in docs
+> for other functions):
+>
+> For the `form` argument
+>
+>  > The variance covariate must evaluate to a numeric vector and may involve
+> expressions using ?"."?, representing a fitted model object
+> from which fitted values (?fitted(.)?) and residuals
+> (?resid(.)?) can be extracted (this allows the variance
+> covariate to be updated during the optimization of an object
+> function).
+>
+> ...
+>
+>  > Defaults to ?~ fitted(.)? representing a variance covariate given by
+> the fitted values of a fitted model object and no grouping factor.
+>
+>    So yes, it's not relevant in your case.
+>
+>
+> On 2024-01-14 6:56 p.m., Simon Harmel wrote:
+> > Thanks so much, Ben! I didn't know that nlme uses "fitted value
+> > estimates" as predictors!! I know I'm being a pain, but could you please
+> > briefly help me contextualize this in the model below?  Or maybe the
+> > MODEL below doesn't use "fitted value estimates" as X1_categorical +
+> > X2_numeric are both external covariates?
+> >
+> >
+> > MODEL <- nlme::lme(y ~ X1_categorical + X2_numeric ...,
+> >           random = ~1| subject,
+> >           data = data,
+> >           correlation = corSymm(~1|subject),
+> >           weights = varComb(varIdent(form = ~ 1 |  X1_categorical ),
+> >                                            varPower(form = ~  X2_numeric
+> )))
+> >
+> > On Sun, Jan 14, 2024 at 5:06?PM Ben Bolker <bbolker at gmail.com
+> > <mailto:bbolker at gmail.com>> wrote:
+> >
+> >          I think it's pretty close to a toss-up.
+> >
+> >         The main advantage of the specific implementation found in nlme
+> is
+> >     that it allows the *fitted value estimate* to be used as a predictor
+> >     (i.e., specifically implementing a dispersion model based on the
+> (log)
+> >     mean rather than on other covariates.  I would guess that most
+> >     implementations of the log-scale approach do not allow this, i.e.
+> they
+> >     only work with external/previously available covariates.
+> >
+> >         If one allowed "fitted value" and "log of fitted value" as
+> >     predictors, then most of the variance models available in lme could
+> >     also
+> >     be specified in the log-link framework.
+> >
+> >         I have been thinking about implementing something like this in
+> >     glmmTMB for a long time but haven't gotten around to it ...
+> >     https://github.com/glmmTMB/glmmTMB/issues/125
+> >     <https://github.com/glmmTMB/glmmTMB/issues/125>
+> >
+> >     On 2024-01-14 4:47 p.m., Simon Harmel wrote:
+> >      > When I say "more preferable", I mean for instance, in terms of
+> >      > flexibility, and generality (e.g., approach b subsuming approach
+> >     a or
+> >      > vice versa).
+> >      >
+> >      > On Sun, Jan 14, 2024 at 3:44?PM Simon Harmel
+> >     <sim.harmel at gmail.com <mailto:sim.harmel at gmail.com>
+> >      > <mailto:sim.harmel at gmail.com <mailto:sim.harmel at gmail.com>>>
+> wrote:
+> >      >
+> >      >     Thanks so much, Ben. I conclude that the users of lme() don't
+> >     need
+> >      >     to convert the output for "varIdent()" or "varPower()" back
+> >     due to a
+> >      >     link function to get the estimates of the relevant Level-1
+> >     residual
+> >      >     variances. This is because the former gives out the
+> proportions
+> >      >     between residual variances with respect to a reference level
+> in a
+> >      >     categorical variable, and the latter gives out "t", which the
+> >     user
+> >      >     can insert in: (sigma(MODEL)^2)*abs(data$X2_numeric)^(2*t) to
+> >     obtain
+> >      >     the relationship between X2_numeric and the residual variance.
+> >      >
+> >      >     Ben, as both a mathematical and applied expert, which
+> >     location-scale
+> >      >     approach, do you think, is more preferable? The one
+> >     implemented in
+> >      >     nlme() or the one that allows modeling the scale using:
+> >      >     log(scale_i) = a_0 + b_1*x_i1+ ... + b_n*x_ip  (for p
+> >     predictors of
+> >      >     scale) ??
+> >      >
+> >      >     Thank you so very much for sharing your perspective,
+> >      >     Simon
+> >      >
+> >      >
+> >      >
+> >      >
+> >      >
+> >      >     On Sun, Jan 14, 2024 at 2:00?PM Ben Bolker <bbolker at gmail.com
+> >     <mailto:bbolker at gmail.com>
+> >      >     <mailto:bbolker at gmail.com <mailto:bbolker at gmail.com>>> wrote:
+> >      >
+> >      >              For varIdent (from ?nlme::varIdent),
+> >      >
+> >      >            For identifiability reasons, the
+> >      >                coefficients of the variance function represent the
+> >      >         ratios between
+> >      >                the variances and a reference variance
+> >     (corresponding to a
+> >      >                reference group level).
+> >      >
+> >      >             I assume that this is internally parameterized via
+> >     something
+> >      >         like (1)
+> >      >         a model matrix constructed with ~ <grouping factor> and
+> (2) a
+> >      >         log link,
+> >      >         to ensure that the ratios are all positive
+> >      >
+> >      >            For varPower,
+> >      >
+> >      >         s2(v) = |v|^(2*t)
+> >      >
+> >      >            -- notice it uses the absolute value of the covariate.
+> So
+> >      >         that term
+> >      >         will also be positive.
+> >      >
+> >      >         varComb uses a product; the product of two positive
+> >     values will
+> >      >         also be
+> >      >         positive ...
+> >      >
+> >      >         On 2024-01-14 11:40 a.m., Simon Harmel wrote:
+> >      >          > Dear Ben and List Members,
+> >      >          >
+> >      >          > I'm following up on this
+> >      >          >
+> >      >
+> >       (
+> https://stat.ethz.ch/pipermail/r-sig-mixed-models/2023q4/030552.html <
+> https://stat.ethz.ch/pipermail/r-sig-mixed-models/2023q4/030552.html> <
+> https://stat.ethz.ch/pipermail/r-sig-mixed-models/2023q4/030552.html <
+> https://stat.ethz.ch/pipermail/r-sig-mixed-models/2023q4/030552.html>>
+> >      >          >
+> >      >
+> >       <
+> https://stat.ethz.ch/pipermail/r-sig-mixed-models/2023q4/030552.html <
+> https://stat.ethz.ch/pipermail/r-sig-mixed-models/2023q4/030552.html> <
+> https://stat.ethz.ch/pipermail/r-sig-mixed-models/2023q4/030552.html <
+> https://stat.ethz.ch/pipermail/r-sig-mixed-models/2023q4/030552.html>>>)
+> >      >          > thread. There, Ben noted that my MODEL (below)
+> >     qualifies as a
+> >      >          > "location-scale" model.
+> >      >          >
+> >      >          > Q: Usually for the scale part of a location-scale
+> >     model, the
+> >      >         linear
+> >      >          > model uses a log link to guarantee that the estimate
+> >     of scale
+> >      >         is positive:
+> >      >          >
+> >      >          > log(scale_i) = a_0 + b_1*x_i1+ ... + b_n*x_ip  (for p
+> >      >         predictors of scale)
+> >      >          >
+> >      >          > But in the MODEL that I sketched below, how such a
+> >      >         guarantee is made?
+> >      >          >
+> >      >          > Thanks, Simon
+> >      >          > MODEL <- nlme::lme(y ~ X1_categorical + X2_numeric ...,
+> >      >          >           random = ~1| subject,
+> >      >          >           data = data,
+> >      >          >           correlation = corSymm(~1|subject),
+> >      >          >           weights = varComb(varIdent(form = ~ 1 |
+> >      >         X1_categorical ),
+> >      >          >
+> >     varPower(form = ~
+> >      >         X2_numeric )))
+> >      >          >
+> >      >
+> >      >         --
+> >      >         Dr. Benjamin Bolker
+> >      >         Professor, Mathematics & Statistics and Biology, McMaster
+> >     University
+> >      >         Director, School of Computational Science and Engineering
+> >      >         (Acting) Graduate chair, Mathematics & Statistics
+> >      >           > E-mail is sent at my convenience; I don't expect
+> replies
+> >      >         outside of
+> >      >         working hours.
+> >      >
+> >
+> >     --
+> >     Dr. Benjamin Bolker
+> >     Professor, Mathematics & Statistics and Biology, McMaster University
+> >     Director, School of Computational Science and Engineering
+> >     (Acting) Graduate chair, Mathematics & Statistics
+> >       > E-mail is sent at my convenience; I don't expect replies outside
+> of
+> >     working hours.
+> >
+>
+> --
+> Dr. Benjamin Bolker
+> Professor, Mathematics & Statistics and Biology, McMaster University
+> Director, School of Computational Science and Engineering
+> (Acting) Graduate chair, Mathematics & Statistics
+>  > E-mail is sent at my convenience; I don't expect replies outside of
+> working hours.
+>
+
+	[[alternative HTML version deleted]]
+
+
+From @d@m@@@roebuck @end|ng |rom gm@||@com  Fri Jan 19 15:36:01 2024
+From: @d@m@@@roebuck @end|ng |rom gm@||@com (Adam Roebuck)
+Date: Fri, 19 Jan 2024 09:36:01 -0500
+Subject: [R-sig-ME] Plotting models with quadratic trends
+Message-ID: <CAHdm598Zhmsth7Y2DfytA9+AJtUS0oSEEzxWVyJfLjQM+Mymbg@mail.gmail.com>
+
+Hello,
+
+I apologize in advance if this is not the correct venue for this question.
+I have been searching for a way to plot models with quadratic interactions
+in R for months now. Each time I search, I typically end up falling back on
+calculating point estimates in Excel. If anyone has any suggestions, I
+would greatly appreciate it.
+
+My model specification is as follows:
+
+mod<-lme(DV~1+linear+quad+cov1+var1+(linear*var1)+(quad*var1),
+
+random=~1+lvl1|lvl2,
+
+data=dat,method="ML",
+
+control=list(opt="optim"),correlation=corAR1())
+
+Both interactions with the time variables are significant, and so I would
+like to find a way to plot them in R instead of Excel.
+
+Thanks,
+Adam
+
+	[[alternative HTML version deleted]]
+
+
+From Tom_Ph|||pp| @end|ng |rom np@@gov  Fri Jan 19 18:58:24 2024
+From: Tom_Ph|||pp| @end|ng |rom np@@gov (Philippi, Tom)
+Date: Fri, 19 Jan 2024 17:58:24 +0000
+Subject: [R-sig-ME] [EXTERNAL]  Plotting models with quadratic trends
+In-Reply-To: <CAHdm598Zhmsth7Y2DfytA9+AJtUS0oSEEzxWVyJfLjQM+Mymbg@mail.gmail.com>
+References: <CAHdm598Zhmsth7Y2DfytA9+AJtUS0oSEEzxWVyJfLjQM+Mymbg@mail.gmail.com>
+Message-ID: <SA1PR09MB81289D666C758874BF56BC92F3702@SA1PR09MB8128.namprd09.prod.outlook.com>
+
+I'll jump in because I think this is an easy question not requiring the experts.
+
+My general approach is to create a skeleton dataset with the combination of values I want to graph the fit over (range of linear, quad, cov1, var 1), then use nlme::predict() on my lme object and that skeleton.  The hard part is then what to actually graph: surfaces of predicted DV as functions of linear & var1 at average or slices of cov1, separate surfaces for different values of lvl1, or something else that shows informative aspects of the fit.  [I'm assuming quad is literally linear^2, perhaps with some centering, so graphing predicted against linear would show the curve due to linear and quad in the model.  For such a model you can be pretty coarse in the grid of values in skeleton, as the surface or slice lines can use smoothing to interpolate in the graphing stage.]
+
+lme4, mgcv, and most other packages I use to fit models have predict functions for their model object types.
+
+Tom
+
+
+-----Original Message-----
+From: R-sig-mixed-models <r-sig-mixed-models-bounces at r-project.org> On Behalf Of Adam Roebuck
+Sent: Friday, January 19, 2024 6:36 AM
+To: r-sig-mixed-models at r-project.org
+Subject: [EXTERNAL] [R-sig-ME] Plotting models with quadratic trends
+
+
+
+ This email has been received from outside of DOI - Use caution before clicking on links, opening attachments, or responding.
+
+
+
+Hello,
+
+I apologize in advance if this is not the correct venue for this question.
+I have been searching for a way to plot models with quadratic interactions in R for months now. Each time I search, I typically end up falling back on calculating point estimates in Excel. If anyone has any suggestions, I would greatly appreciate it.
+
+My model specification is as follows:
+
+mod<-lme(DV~1+linear+quad+cov1+var1+(linear*var1)+(quad*var1),
+
+random=~1+lvl1|lvl2,
+
+data=dat,method="ML",
+
+control=list(opt="optim"),correlation=corAR1())
+
+Both interactions with the time variables are significant, and so I would like to find a way to plot them in R instead of Excel.
+
+Thanks,
+Adam
+
+        [[alternative HTML version deleted]]
+
+_______________________________________________
+R-sig-mixed-models at r-project.org mailing list
+https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+
+
+From gu|||@ume@|mon@@2 @end|ng |rom gm@||@com  Fri Jan 19 19:30:07 2024
+From: gu|||@ume@|mon@@2 @end|ng |rom gm@||@com (Guillaume Adeux)
+Date: Fri, 19 Jan 2024 19:30:07 +0100
+Subject: [R-sig-ME] Plotting models with quadratic trends
+In-Reply-To: <CAHdm598Zhmsth7Y2DfytA9+AJtUS0oSEEzxWVyJfLjQM+Mymbg@mail.gmail.com>
+References: <CAHdm598Zhmsth7Y2DfytA9+AJtUS0oSEEzxWVyJfLjQM+Mymbg@mail.gmail.com>
+Message-ID: <CAENiVe9RBZk-RGnk2eH0Q0p+grGDK3mZshFhbWLNyY6XbK-W9w@mail.gmail.com>
+
+Hi,
+An alternative could be to code your linear and quadratic effect as
+poly(Var,2) (this ensures orthogonality) and use ggemmeans() or ggeffects()
+(the difference between the two will depend on whether you have non focal
+factors or not) . Something along these lines :
+require("ggeffects")
+require("emmeans")
+*plot(ggemmeans(mod,terms="Var[all]"))*
+If you want to look at interactions with factors, you can add :
+*plot(ggemmeans(mod,terms=c("Var[all]","YourFactor")))*
+You can also condition on specific values of other covariates.
+This is well detailed/illustrated if you type "difference between ggpredict
+and ggeffects" in your browser.
+To go further, these linear and quadratic effects can be compared using
+emtrends():
+*emtrends(mod, ~ YourFactor | degree, "Var", max.degree = 2)*
+You can wrap that in a pairs() call for pairwise comparisons.
+Have a good weekend,
+GA2
+
+
+
+<https://www.avast.com/sig-email?utm_medium=email&utm_source=link&utm_campaign=sig-email&utm_content=webmail>
+Virus-free.www.avast.com
+<https://www.avast.com/sig-email?utm_medium=email&utm_source=link&utm_campaign=sig-email&utm_content=webmail>
+<#DAB4FAD8-2DD7-40BB-A1B8-4E2AA1F9FDF2>
+
+Le ven. 19 janv. 2024 ? 15:36, Adam Roebuck <adam.a.roebuck at gmail.com> a
+?crit :
+
+> Hello,
+>
+> I apologize in advance if this is not the correct venue for this question.
+> I have been searching for a way to plot models with quadratic interactions
+> in R for months now. Each time I search, I typically end up falling back on
+> calculating point estimates in Excel. If anyone has any suggestions, I
+> would greatly appreciate it.
+>
+> My model specification is as follows:
+>
+> mod<-lme(DV~1+linear+quad+cov1+var1+(linear*var1)+(quad*var1),
+>
+> random=~1+lvl1|lvl2,
+>
+> data=dat,method="ML",
+>
+> control=list(opt="optim"),correlation=corAR1())
+>
+> Both interactions with the time variables are significant, and so I would
+> like to find a way to plot them in R instead of Excel.
+>
+> Thanks,
+> Adam
+>
+>         [[alternative HTML version deleted]]
+>
+> _______________________________________________
+> R-sig-mixed-models at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+>
+
+	[[alternative HTML version deleted]]
+
+
+From v@r|n@@ch@ @end|ng |rom y@hoo@|r  Sat Jan 20 11:20:11 2024
+From: v@r|n@@ch@ @end|ng |rom y@hoo@|r (varin sacha)
+Date: Sat, 20 Jan 2024 10:20:11 +0000 (UTC)
+Subject: [R-sig-ME] Scatterplot of predicted country-specific intercepts and
+ slopes
+References: <630943915.962409.1705746011248.ref@mail.yahoo.com>
+Message-ID: <630943915.962409.1705746011248@mail.yahoo.com>
+
+Dear R-experts,
+
+Here below a toy example with lmer (lme4).
+
+I would like to draw a scatterplot of the predicted country-specific intercepts and slopes. I guess my scatterplot is not complete. Something is missing. How to finish my R code, thanks.
+
+###################################################?
+Score=c(423,412,543,354,564,435,467,567,501,567,512,435,467,589,691,564,345,412,423,501,456,567,534,456,478,498,490,561,456,432,345,322,612,589,512,498,567,564,555,456)
+?
+Time=c(1,2,3,4,1,2,3,4,1,2,3,4,1,2,3,4,1,2,3,4,1,2,3,4,1,2,3,4,1,2,3,4,1,2,3,4,1,2,3,4)
+?
+Country=c("France", "France", "France", "France", "Germany", "Germany", "Germany", "Germany", "Italy", "Italy", "Italy", "Italy", "UK", "UK", "UK", "UK", "USA", "USA", "USA", "USA", "Australia", "Australia", "Australia", "Australia", "Japan", "Japan", "Japan", "Japan", "Korea", "Korea", "Korea", "Korea", "Spain", "Spain", "Spain", "Spain", "Belgium", "Belgium", "Belgium", "Belgium")
+?
+library(lme4)
+?
+a <- lmer(Score ~ Time + (Time | Country))
+?
+?
+plot(Time, Score, type="n")
+for (i in ranef(a)[[1]] [,1] ) {
+abline(fixef(a)[1] + i, fixef(a)[2])
+}
+
+###########################################################
+
+
+From @d@m@@@roebuck @end|ng |rom gm@||@com  Mon Jan 22 18:09:52 2024
+From: @d@m@@@roebuck @end|ng |rom gm@||@com (Adam Roebuck)
+Date: Mon, 22 Jan 2024 12:09:52 -0500
+Subject: [R-sig-ME] Plotting models with quadratic trends
+In-Reply-To: <CAENiVe9RBZk-RGnk2eH0Q0p+grGDK3mZshFhbWLNyY6XbK-W9w@mail.gmail.com>
+References: <CAHdm598Zhmsth7Y2DfytA9+AJtUS0oSEEzxWVyJfLjQM+Mymbg@mail.gmail.com>
+ <CAENiVe9RBZk-RGnk2eH0Q0p+grGDK3mZshFhbWLNyY6XbK-W9w@mail.gmail.com>
+Message-ID: <CAHdm598-Tw9G4pWeR+ikx8kObPpU7cE-zb5JJNyhGQDyEorrBg@mail.gmail.com>
+
+Just want to send along a quick thank you to Guillaume Adeux and Tom
+Philippi. Both of your recommendations worked beautifully.
+
+Have a great week,
+Adam
+
+On Fri, Jan 19, 2024 at 1:30?PM Guillaume Adeux <guillaumesimon.a2 at gmail.com>
+wrote:
+
+> Hi,
+> An alternative could be to code your linear and quadratic effect as
+> poly(Var,2) (this ensures orthogonality) and use ggemmeans() or ggeffects()
+> (the difference between the two will depend on whether you have non focal
+> factors or not) . Something along these lines :
+> require("ggeffects")
+> require("emmeans")
+> *plot(ggemmeans(mod,terms="Var[all]"))*
+> If you want to look at interactions with factors, you can add :
+> *plot(ggemmeans(mod,terms=c("Var[all]","YourFactor")))*
+> You can also condition on specific values of other covariates.
+> This is well detailed/illustrated if you type "difference between
+> ggpredict and ggeffects" in your browser.
+> To go further, these linear and quadratic effects can be compared using
+> emtrends():
+> *emtrends(mod, ~ YourFactor | degree, "Var", max.degree = 2)*
+> You can wrap that in a pairs() call for pairwise comparisons.
+> Have a good weekend,
+> GA2
+>
+>
+>
+>
+> <https://www.avast.com/sig-email?utm_medium=email&utm_source=link&utm_campaign=sig-email&utm_content=webmail>
+> Virus-free.www.avast.com
+> <https://www.avast.com/sig-email?utm_medium=email&utm_source=link&utm_campaign=sig-email&utm_content=webmail>
+> <#m_-6732050243265228395_DAB4FAD8-2DD7-40BB-A1B8-4E2AA1F9FDF2>
+>
+> Le ven. 19 janv. 2024 ? 15:36, Adam Roebuck <adam.a.roebuck at gmail.com> a
+> ?crit :
+>
+>> Hello,
+>>
+>> I apologize in advance if this is not the correct venue for this question.
+>> I have been searching for a way to plot models with quadratic interactions
+>> in R for months now. Each time I search, I typically end up falling back
+>> on
+>> calculating point estimates in Excel. If anyone has any suggestions, I
+>> would greatly appreciate it.
+>>
+>> My model specification is as follows:
+>>
+>> mod<-lme(DV~1+linear+quad+cov1+var1+(linear*var1)+(quad*var1),
+>>
+>> random=~1+lvl1|lvl2,
+>>
+>> data=dat,method="ML",
+>>
+>> control=list(opt="optim"),correlation=corAR1())
+>>
+>> Both interactions with the time variables are significant, and so I would
+>> like to find a way to plot them in R instead of Excel.
+>>
+>> Thanks,
+>> Adam
+>>
+>>         [[alternative HTML version deleted]]
+>>
+>> _______________________________________________
+>> R-sig-mixed-models at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+>>
+>
+
+	[[alternative HTML version deleted]]
+
+
+From d@iuedecke m@iii@g oii uke@de  Mon Jan 22 20:22:40 2024
+From: d@iuedecke m@iii@g oii uke@de (d@iuedecke m@iii@g oii uke@de)
+Date: Mon, 22 Jan 2024 20:22:40 +0100
+Subject: [R-sig-ME] [EXT] Re:  Plotting models with quadratic trends
+In-Reply-To: <CAHdm598-Tw9G4pWeR+ikx8kObPpU7cE-zb5JJNyhGQDyEorrBg@mail.gmail.com>
+References: <CAHdm598Zhmsth7Y2DfytA9+AJtUS0oSEEzxWVyJfLjQM+Mymbg@mail.gmail.com>
+ <CAENiVe9RBZk-RGnk2eH0Q0p+grGDK3mZshFhbWLNyY6XbK-W9w@mail.gmail.com>
+ <CAHdm598-Tw9G4pWeR+ikx8kObPpU7cE-zb5JJNyhGQDyEorrBg@mail.gmail.com>
+Message-ID: <000401da4d68$5e365ed0$1aa31c70$@uke.de>
+
+Hi Adam,
+just a short follow-up, meanwhile you can also calculate contrasts and pairwise comparisons using ggeffects. See following examples / vignettes, starting with this one (the other two vignettes belonging to this series are references/linked in the document).
+
+https://strengejacke.github.io/ggeffects/articles/introduction_comparisons_1.html
+
+Best
+Daniel
+
+-----Urspr?ngliche Nachricht-----
+Von: R-sig-mixed-models <r-sig-mixed-models-bounces at r-project.org> Im Auftrag von Adam Roebuck
+Gesendet: Montag, 22. Januar 2024 18:10
+An: Guillaume Adeux <guillaumesimon.a2 at gmail.com>
+Cc: r-sig-mixed-models at r-project.org
+Betreff: [EXT] Re: [R-sig-ME] Plotting models with quadratic trends
+
+Just want to send along a quick thank you to Guillaume Adeux and Tom Philippi. Both of your recommendations worked beautifully.
+
+Have a great week,
+Adam
+
+On Fri, Jan 19, 2024 at 1:30?PM Guillaume Adeux <guillaumesimon.a2 at gmail.com>
+wrote:
+
+> Hi,
+> An alternative could be to code your linear and quadratic effect as
+> poly(Var,2) (this ensures orthogonality) and use ggemmeans() or 
+> ggeffects() (the difference between the two will depend on whether you 
+> have non focal factors or not) . Something along these lines :
+> require("ggeffects")
+> require("emmeans")
+> *plot(ggemmeans(mod,terms="Var[all]"))*
+> If you want to look at interactions with factors, you can add :
+> *plot(ggemmeans(mod,terms=c("Var[all]","YourFactor")))*
+> You can also condition on specific values of other covariates.
+> This is well detailed/illustrated if you type "difference between 
+> ggpredict and ggeffects" in your browser.
+> To go further, these linear and quadratic effects can be compared 
+> using
+> emtrends():
+> *emtrends(mod, ~ YourFactor | degree, "Var", max.degree = 2)* You can 
+> wrap that in a pairs() call for pairwise comparisons.
+> Have a good weekend,
+> GA2
+>
+>
+>
+>
+> <https://www.avast.com/sig-email?utm_medium=email&utm_source=link&utm_
+> campaign=sig-email&utm_content=webmail>
+> Virus-free.www.avast.com
+> <https://www.avast.com/sig-email?utm_medium=email&utm_source=link&utm_
+> campaign=sig-email&utm_content=webmail>
+> <#m_-6732050243265228395_DAB4FAD8-2DD7-40BB-A1B8-4E2AA1F9FDF2>
+>
+> Le ven. 19 janv. 2024 ? 15:36, Adam Roebuck <adam.a.roebuck at gmail.com> 
+> a ?crit :
+>
+>> Hello,
+>>
+>> I apologize in advance if this is not the correct venue for this question.
+>> I have been searching for a way to plot models with quadratic 
+>> interactions in R for months now. Each time I search, I typically end 
+>> up falling back on calculating point estimates in Excel. If anyone 
+>> has any suggestions, I would greatly appreciate it.
+>>
+>> My model specification is as follows:
+>>
+>> mod<-lme(DV~1+linear+quad+cov1+var1+(linear*var1)+(quad*var1),
+>>
+>> random=~1+lvl1|lvl2,
+>>
+>> data=dat,method="ML",
+>>
+>> control=list(opt="optim"),correlation=corAR1())
+>>
+>> Both interactions with the time variables are significant, and so I 
+>> would like to find a way to plot them in R instead of Excel.
+>>
+>> Thanks,
+>> Adam
+>>
+>>         [[alternative HTML version deleted]]
+>>
+>> _______________________________________________
+>> R-sig-mixed-models at r-project.org mailing list 
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+>>
+>
+
+	[[alternative HTML version deleted]]
+
+_______________________________________________
+R-sig-mixed-models at r-project.org mailing list https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+
+--
+
+_____________________________________________________________________
+
+Universit?tsklinikum Hamburg-Eppendorf; K?rperschaft des ?ffentlichen Rechts; Gerichtsstand: Hamburg | www.uke.de
+Vorstandsmitglieder: Prof. Dr. Christian Gerloff (Vorsitzender), Joachim Pr?l?, Prof. Dr. Blanche Schwappach-Pignataro, Matthias Waldmann (komm.)
+_____________________________________________________________________
+
+SAVE PAPER - THINK BEFORE PRINTING
+
+From Ann@@Schu|ze @end|ng |rom z|-m@nnhe|m@de  Thu Jan 25 10:16:43 2024
+From: Ann@@Schu|ze @end|ng |rom z|-m@nnhe|m@de (Schulze, Anna)
+Date: Thu, 25 Jan 2024 09:16:43 +0000
+Subject: [R-sig-ME] specifying random intercepts for repeated measures mixed
+ factorial design
+Message-ID: <e7f1f69490f647dc94fe8e6bbb9c1880@zi-mannheim.de>
+
+Dear mixed-models experts,
+
+I?m struggling to specify the correct random effect structure to analyze the data of a virtual reality experiment we conducted with
+a patient and a healthy control group. I?ve read (and learned) a lot in the last months, but still struggle to apply this to my data
+structure, therefore I would be very grateful for every hint.
+
+
+Shortly to our paradigm:
+
+Participants were asked to read out the same 9 questions (asking for advice or support) in the same order consecutively to 8 different
+
+avatars (first, all questions are asked to the first avatar, then to the second, etc., 72 trials in total). The answers of the avatars differed
+
+with regard to social acceptance and rejection and whether the avatars explained their response or not. Therefore, the answers can be
+
+characterized on the two factors 1) reaction (rejection=0/acceptance=1) and 2) explanation (no=0/yes=1), (with 18 trials for each of the
+
+four combinations).
+
+                                    --> 2 (within) x 2 (within) x 2 (between) repeated measures design
+
+Participants were asked to assess the avatar?s benevolence towards them after each answer by adjusting a slider on a scale
+(=dependent variable). The slider started in the middle of the scale at the beginning of each of the eight conversations and
+did not jump back between trials, but remained at the height set.
+
+Among the avatars, the number of answers that were rejecting or accepting as well as with and without explanations was balanced.
+The frequencies, combined occurrences, and sequence of all four types of answers were also evenly distributed across all avatars.
+The response pattern assigned to each avatar remained consistent across participants, assigning a distinct ?personality? to each
+avatar. The presentation order of the avatars was randomized.
+
+The dataset looks like this:
+
+Subj.   Group             Avatar          Question        Reaction         Explanation       Rating
+
+1          HC                  1                      1                      1                     0                      9
+1          HC                  1                      2                      0                     1                      8
+?        ?                    ?                    ?                    ?                    ?                    ?
+32        BPD                8                      9                      0                     1                      10
+
+In short, we are interested in whether and how the groups differ in their ratings dependent on the experimental factors,
+so my fixed effects look like this: rating ~ group * reaction * explanation
+
+Regarding the random intercepts, I assume
+1) repeated measures on both experimental factors and
+2) a crossed random factor structure (multiple observations per subject due to multiple rated answers, multiple observations per answer due to multiple subjects).
+In addition, since our virtual characters all had their specific answer pattern, appearance and voice, the slider did not jump back
+to the middle after each rating and also the specific nature of the nine questions asked might influence the ratings,
+we wanted to include the contextual factors ?avatar? and ?question?.
+
+For point 1), I?ve seen two different approaches:
+a) (1 | subject/reaction/explanation)
+b) (1 | subject) + (1 | reaction:subject)+ (1 | explanation:subject)
+
+Since I assume reaction and explanation are crossed, I would have guessed the second one is correct, but in this case the df?s for the
+3-way interaction explode to 4319 ? I understand that df?s in mixed models are complicated estimations, but 4319 looks suspicious for
+64 subjects and I?m afraid that the dependencies in our data were not correctly accounted for ? do exploding df?s indicate a problem?
+
+For point 2), is a direct specification of a by-answer intercept (1-72) or indirect specification via random intercepts for combination
+the contextual factors avatar (1-8) and question (1-9) or a combination of answers, avatars and questions correct?
+a) (1 | avatar) + (1 | question)
+b) (1 | avatar / question)
+c) (1 | avatar) + (1 | question) + (1 | answer)
+d) (1 | avatar / question) + (1 | answer)
+
+Was there anything useful in my combinations or might the solution be something completely different? Thank you very much in advance, especially for reading this rather long mail!
+
+
+Best,
+
+
+Anna Schulze
+
+Psychologist
+
+Central Institute for Mmental Health Mannheim
+
+	[[alternative HTML version deleted]]
+
+
+From mo|||eebrook@ @end|ng |rom gm@||@com  Wed Jan 31 17:40:36 2024
+From: mo|||eebrook@ @end|ng |rom gm@||@com (Mollie Brooks)
+Date: Wed, 31 Jan 2024 17:40:36 +0100
+Subject: [R-sig-ME] free beginner course: Flexible regression modelling with
+ glmmTMB
+Message-ID: <BFF8863C-D312-465C-9197-57C5D402B85C@gmail.com>
+
+Dear r-sig-mixed-models,
+
+In case you know of anyone who would like to take a beginner?s course on glmmTMB or any instructors who might be interested in doing a "flipped classroom", I would like to offer this resource. Hans Skaug created this website for his course last year and now it is public. It includes short teaching videos (about 10 minutes each) that he and I recorded and there are additional exercises by Karl Ove Hufthammer that extend the topics further. Many of the examples in the videos are from ecology, while the exercises focus more on data from medicine.
+
+https://mitt.uib.no/courses/41856
+
+There is also some information for teachers who might want to use the website as part of their course
+https://mitt.uib.no/courses/41856/pages/for-teachers?module_item_id=462813
+
+! Due to our full time jobs, we will not be able to answer questions from students, but we are open to constructive feedback on the GitHub page where the code and slides are hosted.
+
+Please pass this information on, if you know any students or teachers who could use it.
+
+Best wishes,
+Mollie
+
+???????????????
+Senior Researcher
+National Institute of Aquatic Resources
+Technical University of Denmark
+https://orbit.dtu.dk/en/persons/mollie-elizabeth-brooks
+	[[alternative HTML version deleted]]
+
+
+From hedyeh@h @end|ng |rom u@c@edu  Fri Feb  9 21:42:24 2024
+From: hedyeh@h @end|ng |rom u@c@edu (Hedyeh Ahmadi)
+Date: Fri, 9 Feb 2024 20:42:24 +0000
+Subject: [R-sig-ME] Distributional Assumption in lmer()
+Message-ID: <SJ0PR07MB764851466AC47785ADC30483D14B2@SJ0PR07MB7648.namprd07.prod.outlook.com>
+
+Hello All,
+I was wondering if there is a way to implement t-distribution assumption instead of family ="Gaussian" assumption in the lmer() function.
+
+I am asking since I have been seeing heavy tails in my outcomes and it shows up in my residual diagnostic QQplot hence I think a t-distribution would be more appropriate compared to Normal distribution.
+
+Any help would be greatly appreciated.
+
+Best,
+
+Hedyeh Ahmadi, Ph.D.
+Statistician
+Keck School of Medicine
+Department of Preventive Medicine
+University of Southern California
+
+LinkedIn
+www.linkedin.com/in/hedyeh-ahmadi<http://www.linkedin.com/in/hedyeh-ahmadi>
+
+
+
+
+
+	[[alternative HTML version deleted]]
+
+
+From bo|kerb @end|ng |rom mcm@@ter@c@  Fri Feb  9 22:34:30 2024
+From: bo|kerb @end|ng |rom mcm@@ter@c@ (Ben Bolker)
+Date: Fri, 9 Feb 2024 16:34:30 -0500
+Subject: [R-sig-ME] Distributional Assumption in lmer()
+In-Reply-To: <SJ0PR07MB764851466AC47785ADC30483D14B2@SJ0PR07MB7648.namprd07.prod.outlook.com>
+References: <SJ0PR07MB764851466AC47785ADC30483D14B2@SJ0PR07MB7648.namprd07.prod.outlook.com>
+Message-ID: <17217dda-6850-4add-a195-e1fc45e810fe@mcmaster.ca>
+
+   No, but:
+
+(1) glmmTMB has this (family = t_family)
+(2) you can achieve a similar goal with the robustlmm package
+
+   cheers
+    Ben Bolker
+
+
+On 2024-02-09 3:42 p.m., Hedyeh Ahmadi wrote:
+> Hello All,
+> I was wondering if there is a way to implement t-distribution assumption instead of family ="Gaussian" assumption in the lmer() function.
+> 
+> I am asking since I have been seeing heavy tails in my outcomes and it shows up in my residual diagnostic QQplot hence I think a t-distribution would be more appropriate compared to Normal distribution.
+> 
+> Any help would be greatly appreciated.
+> 
+> Best,
+> 
+> Hedyeh Ahmadi, Ph.D.
+> Statistician
+> Keck School of Medicine
+> Department of Preventive Medicine
+> University of Southern California
+> 
+> LinkedIn
+> www.linkedin.com/in/hedyeh-ahmadi<http://www.linkedin.com/in/hedyeh-ahmadi>
+> 
+> 
+> 
+> 
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> _______________________________________________
+> R-sig-mixed-models at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+
+-- 
+Dr. Benjamin Bolker
+Professor, Mathematics & Statistics and Biology, McMaster University
+Director, School of Computational Science and Engineering
+  Associate chair (graduate, math), Mathematics & Statistics
+   > E-mail is sent at my convenience; I don't expect replies outside of
+working hours.
+
+
+From hedyeh@h @end|ng |rom u@c@edu  Fri Feb  9 23:01:13 2024
+From: hedyeh@h @end|ng |rom u@c@edu (Hedyeh Ahmadi)
+Date: Fri, 9 Feb 2024 22:01:13 +0000
+Subject: [R-sig-ME] Distributional Assumption in lmer()
+In-Reply-To: <17217dda-6850-4add-a195-e1fc45e810fe@mcmaster.ca>
+References: <SJ0PR07MB764851466AC47785ADC30483D14B2@SJ0PR07MB7648.namprd07.prod.outlook.com>
+ <17217dda-6850-4add-a195-e1fc45e810fe@mcmaster.ca>
+Message-ID: <SJ0PR07MB7648C6DE2D7561EDAF8E8724D14B2@SJ0PR07MB7648.namprd07.prod.outlook.com>
+
+Thank you for the quick and informative reply.
+
+Best,
+
+Hedyeh Ahmadi, Ph.D.
+Statistician
+Keck School of Medicine
+Department of Preventive Medicine
+University of Southern California
+
+LinkedIn
+www.linkedin.com/in/hedyeh-ahmadi<http://www.linkedin.com/in/hedyeh-ahmadi>
+
+
+
+
+________________________________
+From: R-sig-mixed-models <r-sig-mixed-models-bounces at r-project.org> on behalf of Ben Bolker <bolkerb at mcmaster.ca>
+Sent: Friday, February 9, 2024 1:34 PM
+To: r-sig-mixed-models at r-project.org <r-sig-mixed-models at r-project.org>
+Subject: Re: [R-sig-ME] Distributional Assumption in lmer()
+
+   No, but:
+
+(1) glmmTMB has this (family = t_family)
+(2) you can achieve a similar goal with the robustlmm package
+
+   cheers
+    Ben Bolker
+
+
+On 2024-02-09 3:42 p.m., Hedyeh Ahmadi wrote:
+> Hello All,
+> I was wondering if there is a way to implement t-distribution assumption instead of family ="Gaussian" assumption in the lmer() function.
+>
+> I am asking since I have been seeing heavy tails in my outcomes and it shows up in my residual diagnostic QQplot hence I think a t-distribution would be more appropriate compared to Normal distribution.
+>
+> Any help would be greatly appreciated.
+>
+> Best,
+>
+> Hedyeh Ahmadi, Ph.D.
+> Statistician
+> Keck School of Medicine
+> Department of Preventive Medicine
+> University of Southern California
+>
+> LinkedIn
+> https://urldefense.com/v3/__http://www.linkedin.com/in/hedyeh-ahmadi__;!!LIr3w8kk_Xxm!owK3rp5BYaR9BZh-ZgTlsXIxdM3aebgcexnD7meyFOmfUi7AnsDslFD8XZYGRhYRJxXflAbk6pYGdIIuWgI$ <https://urldefense.com/v3/__http://www.linkedin.com/in/hedyeh-ahmadi__;!!LIr3w8kk_Xxm!owK3rp5BYaR9BZh-ZgTlsXIxdM3aebgcexnD7meyFOmfUi7AnsDslFD8XZYGRhYRJxXflAbk6pYGdIIuWgI$ >
+>
+>
+>
+>
+>
+>        [[alternative HTML version deleted]]
+>
+> _______________________________________________
+> R-sig-mixed-models at r-project.org mailing list
+> https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models__;!!LIr3w8kk_Xxm!owK3rp5BYaR9BZh-ZgTlsXIxdM3aebgcexnD7meyFOmfUi7AnsDslFD8XZYGRhYRJxXflAbk6pYGRRULy-w$
+
+--
+Dr. Benjamin Bolker
+Professor, Mathematics & Statistics and Biology, McMaster University
+Director, School of Computational Science and Engineering
+  Associate chair (graduate, math), Mathematics & Statistics
+   > E-mail is sent at my convenience; I don't expect replies outside of
+working hours.
+
+_______________________________________________
+R-sig-mixed-models at r-project.org mailing list
+https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models__;!!LIr3w8kk_Xxm!owK3rp5BYaR9BZh-ZgTlsXIxdM3aebgcexnD7meyFOmfUi7AnsDslFD8XZYGRhYRJxXflAbk6pYGRRULy-w$
+
+	[[alternative HTML version deleted]]
+
+
+From bbo|ker @end|ng |rom gm@||@com  Fri Feb  9 23:04:10 2024
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Fri, 9 Feb 2024 17:04:10 -0500
+Subject: [R-sig-ME] Distributional Assumption in lmer()
+In-Reply-To: <SJ0PR07MB7648C6DE2D7561EDAF8E8724D14B2@SJ0PR07MB7648.namprd07.prod.outlook.com>
+References: <SJ0PR07MB764851466AC47785ADC30483D14B2@SJ0PR07MB7648.namprd07.prod.outlook.com>
+ <17217dda-6850-4add-a195-e1fc45e810fe@mcmaster.ca>
+ <SJ0PR07MB7648C6DE2D7561EDAF8E8724D14B2@SJ0PR07MB7648.namprd07.prod.outlook.com>
+Message-ID: <4d004014-b8d5-4b99-b43b-2791a9b8385d@gmail.com>
+
+   For what it's worth I think you can probably also do this in brms, if 
+you want to go down the Bayesian rabbit hole ...
+
+On 2024-02-09 5:01 p.m., Hedyeh Ahmadi wrote:
+> Thank you for the quick and informative reply.
+> 
+> Best,
+> 
+> Hedyeh Ahmadi, Ph.D.
+> Statistician
+> Keck School of Medicine
+> Department of Preventive Medicine
+> University of Southern California
+> 
+> LinkedIn
+> www.linkedin.com/in/hedyeh-ahmadi<http://www.linkedin.com/in/hedyeh-ahmadi>
+> 
+> 
+> 
+> 
+> ________________________________
+> From: R-sig-mixed-models <r-sig-mixed-models-bounces at r-project.org> on behalf of Ben Bolker <bolkerb at mcmaster.ca>
+> Sent: Friday, February 9, 2024 1:34 PM
+> To: r-sig-mixed-models at r-project.org <r-sig-mixed-models at r-project.org>
+> Subject: Re: [R-sig-ME] Distributional Assumption in lmer()
+> 
+>     No, but:
+> 
+> (1) glmmTMB has this (family = t_family)
+> (2) you can achieve a similar goal with the robustlmm package
+> 
+>     cheers
+>      Ben Bolker
+> 
+> 
+> On 2024-02-09 3:42 p.m., Hedyeh Ahmadi wrote:
+>> Hello All,
+>> I was wondering if there is a way to implement t-distribution assumption instead of family ="Gaussian" assumption in the lmer() function.
+>>
+>> I am asking since I have been seeing heavy tails in my outcomes and it shows up in my residual diagnostic QQplot hence I think a t-distribution would be more appropriate compared to Normal distribution.
+>>
+>> Any help would be greatly appreciated.
+>>
+>> Best,
+>>
+>> Hedyeh Ahmadi, Ph.D.
+>> Statistician
+>> Keck School of Medicine
+>> Department of Preventive Medicine
+>> University of Southern California
+>>
+>> LinkedIn
+>> https://urldefense.com/v3/__http://www.linkedin.com/in/hedyeh-ahmadi__;!!LIr3w8kk_Xxm!owK3rp5BYaR9BZh-ZgTlsXIxdM3aebgcexnD7meyFOmfUi7AnsDslFD8XZYGRhYRJxXflAbk6pYGdIIuWgI$ <https://urldefense.com/v3/__http://www.linkedin.com/in/hedyeh-ahmadi__;!!LIr3w8kk_Xxm!owK3rp5BYaR9BZh-ZgTlsXIxdM3aebgcexnD7meyFOmfUi7AnsDslFD8XZYGRhYRJxXflAbk6pYGdIIuWgI$ >
+>>
+>>
+>>
+>>
+>>
+>>         [[alternative HTML version deleted]]
+>>
+>> _______________________________________________
+>> R-sig-mixed-models at r-project.org mailing list
+>> https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models__;!!LIr3w8kk_Xxm!owK3rp5BYaR9BZh-ZgTlsXIxdM3aebgcexnD7meyFOmfUi7AnsDslFD8XZYGRhYRJxXflAbk6pYGRRULy-w$
+> 
+> --
+> Dr. Benjamin Bolker
+> Professor, Mathematics & Statistics and Biology, McMaster University
+> Director, School of Computational Science and Engineering
+>    Associate chair (graduate, math), Mathematics & Statistics
+>     > E-mail is sent at my convenience; I don't expect replies outside of
+> working hours.
+> 
+> _______________________________________________
+> R-sig-mixed-models at r-project.org mailing list
+> https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models__;!!LIr3w8kk_Xxm!owK3rp5BYaR9BZh-ZgTlsXIxdM3aebgcexnD7meyFOmfUi7AnsDslFD8XZYGRhYRJxXflAbk6pYGRRULy-w$
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> _______________________________________________
+> R-sig-mixed-models at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+
+
+From d@r|zopou|o@ @end|ng |rom er@@mu@mc@n|  Sat Feb 10 15:45:34 2024
+From: d@r|zopou|o@ @end|ng |rom er@@mu@mc@n| (Dimitris Rizopoulos)
+Date: Sat, 10 Feb 2024 14:45:34 +0000
+Subject: [R-sig-ME] Distributional Assumption in lmer()
+In-Reply-To: <4d004014-b8d5-4b99-b43b-2791a9b8385d@gmail.com>
+References: <SJ0PR07MB764851466AC47785ADC30483D14B2@SJ0PR07MB7648.namprd07.prod.outlook.com>
+ <17217dda-6850-4add-a195-e1fc45e810fe@mcmaster.ca>
+ <SJ0PR07MB7648C6DE2D7561EDAF8E8724D14B2@SJ0PR07MB7648.namprd07.prod.outlook.com>
+ <4d004014-b8d5-4b99-b43b-2791a9b8385d@gmail.com>
+Message-ID: <DU0PR04MB93712F00591449150CF60FF7E84A2@DU0PR04MB9371.eurprd04.prod.outlook.com>
+
+It?s also available in GLMMadaptive: https://drizopoulos.github.io/GLMMadaptive/articles/Custom_Models.html
+
+________________________________
+???: ? ??????? R-sig-mixed-models <r-sig-mixed-models-bounces at r-project.org> ?? ?????? ??? ?????? Ben Bolker <bbolker at gmail.com>
+????????: ?????????, ??????????? 9, 2024 23:11
+????: r-sig-mixed-models at r-project.org <r-sig-mixed-models at r-project.org>
+????: Re: [R-sig-ME] Distributional Assumption in lmer()
+
+
+
+Waarschuwing: Deze e-mail is afkomstig van buiten de organisatie. Klik niet op links en open geen bijlagen, tenzij u de afzender herkent en weet dat de inhoud veilig is.
+Caution: This email originated from outside of the organization. Do not click links or open attachments unless you recognize the sender and know the content is safe.
+
+
+
+   For what it's worth I think you can probably also do this in brms, if
+you want to go down the Bayesian rabbit hole ...
+
+On 2024-02-09 5:01 p.m., Hedyeh Ahmadi wrote:
+> Thank you for the quick and informative reply.
+>
+> Best,
+>
+> Hedyeh Ahmadi, Ph.D.
+> Statistician
+> Keck School of Medicine
+> Department of Preventive Medicine
+> University of Southern California
+>
+> LinkedIn
+> https://eur01.safelinks.protection.outlook.com/?url=http%3A%2F%2Fwww.linkedin.com%2Fin%2Fhedyeh-ahmadi&data=05%7C02%7Cd.rizopoulos%40erasmusmc.nl%7Caebf617ef97a430fd59808dc29bc1797%7C526638ba6af34b0fa532a1a511f4ac80%7C0%7C0%7C638431135044801031%7CUnknown%7CTWFpbGZsb3d8eyJWIjoiMC4wLjAwMDAiLCJQIjoiV2luMzIiLCJBTiI6Ik1haWwiLCJXVCI6Mn0%3D%7C0%7C%7C%7C&sdata=BflyM0EjMbj50sgQGJ%2FhucVgmaEwHNvTKeBcjExX6rc%3D&reserved=0<https://eur01.safelinks.protection.outlook.com/?url=http%3A%2F%2Fwww.linkedin.com%2Fin%2Fhedyeh-ahmadi&data=05%7C02%7Cd.rizopoulos%40erasmusmc.nl%7Caebf617ef97a430fd59808dc29bc1797%7C526638ba6af34b0fa532a1a511f4ac80%7C0%7C0%7C638431135044810000%7CUnknown%7CTWFpbGZsb3d8eyJWIjoiMC4wLjAwMDAiLCJQIjoiV2luMzIiLCJBTiI6Ik1haWwiLCJXVCI6Mn0%3D%7C0%7C%7C%7C&sdata=UWfXvLGMF6N20VDCaxX1TobXCRjBr6RiPTtDyQmyAwk%3D&reserved=0><http://www.linkedin.com/in/hedyeh-ahmadi>
+>
+>
+>
+>
+> ________________________________
+> From: R-sig-mixed-models <r-sig-mixed-models-bounces at r-project.org> on behalf of Ben Bolker <bolkerb at mcmaster.ca>
+> Sent: Friday, February 9, 2024 1:34 PM
+> To: r-sig-mixed-models at r-project.org <r-sig-mixed-models at r-project.org>
+> Subject: Re: [R-sig-ME] Distributional Assumption in lmer()
+>
+>     No, but:
+>
+> (1) glmmTMB has this (family = t_family)
+> (2) you can achieve a similar goal with the robustlmm package
+>
+>     cheers
+>      Ben Bolker
+>
+>
+> On 2024-02-09 3:42 p.m., Hedyeh Ahmadi wrote:
+>> Hello All,
+>> I was wondering if there is a way to implement t-distribution assumption instead of family ="Gaussian" assumption in the lmer() function.
+>>
+>> I am asking since I have been seeing heavy tails in my outcomes and it shows up in my residual diagnostic QQplot hence I think a t-distribution would be more appropriate compared to Normal distribution.
+>>
+>> Any help would be greatly appreciated.
+>>
+>> Best,
+>>
+>> Hedyeh Ahmadi, Ph.D.
+>> Statistician
+>> Keck School of Medicine
+>> Department of Preventive Medicine
+>> University of Southern California
+>>
+>> LinkedIn
+>> https://eur01.safelinks.protection.outlook.com/?url=https%3A%2F%2Furldefense.com%2Fv3%2F__http%3A%2F%2Fwww.linkedin.com%2Fin%2Fhedyeh-ahmadi__%3B!!LIr3w8kk_Xxm!owK3rp5BYaR9BZh-ZgTlsXIxdM3aebgcexnD7meyFOmfUi7AnsDslFD8XZYGRhYRJxXflAbk6pYGdIIuWgI%24&data=05%7C02%7Cd.rizopoulos%40erasmusmc.nl%7Caebf617ef97a430fd59808dc29bc1797%7C526638ba6af34b0fa532a1a511f4ac80%7C0%7C0%7C638431135044815898%7CUnknown%7CTWFpbGZsb3d8eyJWIjoiMC4wLjAwMDAiLCJQIjoiV2luMzIiLCJBTiI6Ik1haWwiLCJXVCI6Mn0%3D%7C0%7C%7C%7C&sdata=ygMjmU88ZBOHB6GHbBzmvkOaERIvZz4oisAmezhG06A%3D&reserved=0<https://urldefense.com/v3/__http://www.linkedin.com/in/hedyeh-ahmadi__;!!LIr3w8kk_Xxm!owK3rp5BYaR9BZh-ZgTlsXIxdM3aebgcexnD7meyFOmfUi7AnsDslFD8XZYGRhYRJxXflAbk6pYGdIIuWgI$> <https://eur01.safelinks.protection.outlook.com/?url=https%3A%2F%2Furldefense.com%2Fv3%2F__http%3A%2F%2Fwww.linkedin.com%2Fin%2Fhedyeh-ahmadi__%3B!!LIr3w8kk_Xxm!owK3rp5BYaR9BZh-ZgTlsXIxdM3aebgcexnD7meyFOmfUi7AnsDslFD8XZYGRhYRJxXflAbk6pYGdIIuWgI%24&data=05%7C02%7Cd.rizopoulos%40erasmusmc.nl%7Caebf617ef97a430fd59808dc29bc1797%7C526638ba6af34b0fa532a1a511f4ac80%7C0%7C0%7C638431135044821234%7CUnknown%7CTWFpbGZsb3d8eyJWIjoiMC4wLjAwMDAiLCJQIjoiV2luMzIiLCJBTiI6Ik1haWwiLCJXVCI6Mn0%3D%7C0%7C%7C%7C&sdata=FMIbPehAFvXEAYBcP0BcGneyPDg0d41AOF%2B4FBu%2FzqQ%3D&reserved=0 >
+>>
+>>
+>>
+>>
+>>
+>>         [[alternative HTML version deleted]]
+>>
+>> _______________________________________________
+>> R-sig-mixed-models at r-project.org mailing list
+>> https://eur01.safelinks.protection.outlook.com/?url=https%3A%2F%2Furldefense.com%2Fv3%2F__https%3A%2F%2Fstat.ethz.ch%2Fmailman%2Flistinfo%2Fr-sig-mixed-models__%3B!!LIr3w8kk_Xxm!owK3rp5BYaR9BZh-ZgTlsXIxdM3aebgcexnD7meyFOmfUi7AnsDslFD8XZYGRhYRJxXflAbk6pYGRRULy-w%24&data=05%7C02%7Cd.rizopoulos%40erasmusmc.nl%7Caebf617ef97a430fd59808dc29bc1797%7C526638ba6af34b0fa532a1a511f4ac80%7C0%7C0%7C638431135044825917%7CUnknown%7CTWFpbGZsb3d8eyJWIjoiMC4wLjAwMDAiLCJQIjoiV2luMzIiLCJBTiI6Ik1haWwiLCJXVCI6Mn0%3D%7C0%7C%7C%7C&sdata=XXOQQb3Bq2TsD15mA4JLybKm%2FfcunRxP5h4LqfPjibg%3D&reserved=0<https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models__;!!LIr3w8kk_Xxm!owK3rp5BYaR9BZh-ZgTlsXIxdM3aebgcexnD7meyFOmfUi7AnsDslFD8XZYGRhYRJxXflAbk6pYGRRULy-w$>
+>
+> --
+> Dr. Benjamin Bolker
+> Professor, Mathematics & Statistics and Biology, McMaster University
+> Director, School of Computational Science and Engineering
+>    Associate chair (graduate, math), Mathematics & Statistics
+>     > E-mail is sent at my convenience; I don't expect replies outside of
+> working hours.
+>
+> _______________________________________________
+> R-sig-mixed-models at r-project.org mailing list
+> https://eur01.safelinks.protection.outlook.com/?url=https%3A%2F%2Furldefense.com%2Fv3%2F__https%3A%2F%2Fstat.ethz.ch%2Fmailman%2Flistinfo%2Fr-sig-mixed-models__%3B!!LIr3w8kk_Xxm!owK3rp5BYaR9BZh-ZgTlsXIxdM3aebgcexnD7meyFOmfUi7AnsDslFD8XZYGRhYRJxXflAbk6pYGRRULy-w%24&data=05%7C02%7Cd.rizopoulos%40erasmusmc.nl%7Caebf617ef97a430fd59808dc29bc1797%7C526638ba6af34b0fa532a1a511f4ac80%7C0%7C0%7C638431135044830659%7CUnknown%7CTWFpbGZsb3d8eyJWIjoiMC4wLjAwMDAiLCJQIjoiV2luMzIiLCJBTiI6Ik1haWwiLCJXVCI6Mn0%3D%7C0%7C%7C%7C&sdata=%2BmYtfJH%2BgN0%2F%2F7BU%2BVPYkAJeen7r%2B8XAPHnLttJdywk%3D&reserved=0<https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models__;!!LIr3w8kk_Xxm!owK3rp5BYaR9BZh-ZgTlsXIxdM3aebgcexnD7meyFOmfUi7AnsDslFD8XZYGRhYRJxXflAbk6pYGRRULy-w$>
+>
+>       [[alternative HTML version deleted]]
+>
+> _______________________________________________
+> R-sig-mixed-models at r-project.org mailing list
+> https://eur01.safelinks.protection.outlook.com/?url=https%3A%2F%2Fstat.ethz.ch%2Fmailman%2Flistinfo%2Fr-sig-mixed-models&data=05%7C02%7Cd.rizopoulos%40erasmusmc.nl%7Caebf617ef97a430fd59808dc29bc1797%7C526638ba6af34b0fa532a1a511f4ac80%7C0%7C0%7C638431135044835348%7CUnknown%7CTWFpbGZsb3d8eyJWIjoiMC4wLjAwMDAiLCJQIjoiV2luMzIiLCJBTiI6Ik1haWwiLCJXVCI6Mn0%3D%7C0%7C%7C%7C&sdata=t4c9TyhKRgr31Q2ENbFuv8gcHZK8wAAfhEtOLGCBG%2FM%3D&reserved=0<https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models>
+
+_______________________________________________
+R-sig-mixed-models at r-project.org mailing list
+https://eur01.safelinks.protection.outlook.com/?url=https%3A%2F%2Fstat.ethz.ch%2Fmailman%2Flistinfo%2Fr-sig-mixed-models&data=05%7C02%7Cd.rizopoulos%40erasmusmc.nl%7Caebf617ef97a430fd59808dc29bc1797%7C526638ba6af34b0fa532a1a511f4ac80%7C0%7C0%7C638431135044840607%7CUnknown%7CTWFpbGZsb3d8eyJWIjoiMC4wLjAwMDAiLCJQIjoiV2luMzIiLCJBTiI6Ik1haWwiLCJXVCI6Mn0%3D%7C0%7C%7C%7C&sdata=wsMypblJAp8STHQ28siavAUI5yMVM9JCEEGssnpc2PA%3D&reserved=0<https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models>
+
+	[[alternative HTML version deleted]]
+
+
+From bbo|ker @end|ng |rom gm@||@com  Sat Feb 10 19:07:10 2024
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Sat, 10 Feb 2024 13:07:10 -0500
+Subject: [R-sig-ME] Distributional Assumption in lmer()
+In-Reply-To: <DU0PR04MB93712F00591449150CF60FF7E84A2@DU0PR04MB9371.eurprd04.prod.outlook.com>
+References: <SJ0PR07MB764851466AC47785ADC30483D14B2@SJ0PR07MB7648.namprd07.prod.outlook.com>
+ <17217dda-6850-4add-a195-e1fc45e810fe@mcmaster.ca>
+ <SJ0PR07MB7648C6DE2D7561EDAF8E8724D14B2@SJ0PR07MB7648.namprd07.prod.outlook.com>
+ <4d004014-b8d5-4b99-b43b-2791a9b8385d@gmail.com>
+ <DU0PR04MB93712F00591449150CF60FF7E84A2@DU0PR04MB9371.eurprd04.prod.outlook.com>
+Message-ID: <d3b80d0d-f55d-4f95-9cf1-7ca233085566@gmail.com>
+
+   Yes.
+
+  The mixed models task view 
+<https://cran.r-project.org/web/views/MixedModels.html> says:
+
+Robust/heavy-tailed estimation (downweighting the importance of extreme 
+observations): robustlmm, robustBLME (Bayesian robust LME), CRTgeeDR for 
+the doubly robust inverse probability weighted augmented GEE estimator. 
+Some packages (brms, bamlss, mgcv with family = "scat", nlmixr2) allow 
+heavy-tailed response distributions such as Student-t.
+
+   (I just added glmmTMB and GLMMadaptive to this list of packages)
+
+
+On 2024-02-10 9:45 a.m., Dimitris Rizopoulos wrote:
+> It?s also available in GLMMadaptive: 
+> https://drizopoulos.github.io/GLMMadaptive/articles/Custom_Models.html 
+> <https://drizopoulos.github.io/GLMMadaptive/articles/Custom_Models.html>
+> 
+> ------------------------------------------------------------------------
+> *???:* ? ??????? R-sig-mixed-models 
+> <r-sig-mixed-models-bounces at r-project.org> ?? ?????? ??? ?????? Ben 
+> Bolker <bbolker at gmail.com>
+> *????????:* ?????????, ??????????? 9, 2024 23:11
+> *????:* r-sig-mixed-models at r-project.org <r-sig-mixed-models at r-project.org>
+> *????:* Re: [R-sig-ME] Distributional Assumption in lmer()
+> 
+> 
+> Waarschuwing: Deze e-mail is afkomstig van buiten de organisatie. Klik 
+> niet op links en open geen bijlagen, tenzij u de afzender herkent en 
+> weet dat de inhoud veilig is.
+> Caution: This email originated from outside of the organization. Do not 
+> click links or open attachments unless you recognize the sender and know 
+> the content is safe.
+> 
+> 
+> 
+>  ?? For what it's worth I think you can probably also do this in brms, if
+> you want to go down the Bayesian rabbit hole ...
+> 
+> On 2024-02-09 5:01 p.m., Hedyeh Ahmadi wrote:
+>> Thank you for the quick and informative reply.
+>>
+>> Best,
+>>
+>> Hedyeh Ahmadi, Ph.D.
+>> Statistician
+>> Keck School of Medicine
+>> Department of Preventive Medicine
+>> University of Southern California
+>>
+>> LinkedIn
+>> https://eur01.safelinks.protection.outlook.com/?url=http%3A%2F%2Fwww.linkedin.com%2Fin%2Fhedyeh-ahmadi&data=05%7C02%7Cd.rizopoulos%40erasmusmc.nl%7Caebf617ef97a430fd59808dc29bc1797%7C526638ba6af34b0fa532a1a511f4ac80%7C0%7C0%7C638431135044801031%7CUnknown%7CTWFpbGZsb3d8eyJWIjoiMC4wLjAwMDAiLCJQIjoiV2luMzIiLCJBTiI6Ik1haWwiLCJXVCI6Mn0%3D%7C0%7C%7C%7C&sdata=BflyM0EjMbj50sgQGJ%2FhucVgmaEwHNvTKeBcjExX6rc%3D&reserved=0<https://eur01.safelinks.protection.outlook.com/?url=http%3A%2F%2Fwww.linkedin.com%2Fin%2Fhedyeh-ahmadi&data=05%7C02%7Cd.rizopoulos%40erasmusmc.nl%7Caebf617ef97a430fd59808dc29bc1797%7C526638ba6af34b0fa532a1a511f4ac80%7C0%7C0%7C638431135044810000%7CUnknown%7CTWFpbGZsb3d8eyJWIjoiMC4wLjAwMDAiLCJQIjoiV2luMzIiLCJBTiI6Ik1haWwiLCJXVCI6Mn0%3D%7C0%7C%7C%7C&sdata=UWfXvLGMF6N20VDCaxX1TobXCRjBr6RiPTtDyQmyAwk%3D&reserved=0> <http://www.linkedin.com/in/hedyeh-ahmadi>
+>>
+>>
+>>
+>>
+>> ________________________________
+>> From: R-sig-mixed-models <r-sig-mixed-models-bounces at r-project.org> on behalf of Ben Bolker <bolkerb at mcmaster.ca>
+>> Sent: Friday, February 9, 2024 1:34 PM
+>> To: r-sig-mixed-models at r-project.org <r-sig-mixed-models at r-project.org>
+>> Subject: Re: [R-sig-ME] Distributional Assumption in lmer()
+>>
+>>???? No, but:
+>>
+>> (1) glmmTMB has this (family = t_family)
+>> (2) you can achieve a similar goal with the robustlmm package
+>>
+>>???? cheers
+>>????? Ben Bolker
+>>
+>>
+>> On 2024-02-09 3:42 p.m., Hedyeh Ahmadi wrote:
+>>> Hello All,
+>>> I was wondering if there is a way to implement t-distribution assumption instead of family ="Gaussian" assumption in the lmer() function.
+>>>
+>>> I am asking since I have been seeing heavy tails in my outcomes and it shows up in my residual diagnostic QQplot hence I think a t-distribution would be more appropriate compared to Normal distribution.
+>>>
+>>> Any help would be greatly appreciated.
+>>>
+>>> Best,
+>>>
+>>> Hedyeh Ahmadi, Ph.D.
+>>> Statistician
+>>> Keck School of Medicine
+>>> Department of Preventive Medicine
+>>> University of Southern California
+>>>
+>>> LinkedIn
+>>> https://eur01.safelinks.protection.outlook.com/?url=https%3A%2F%2Furldefense.com%2Fv3%2F__http%3A%2F%2Fwww.linkedin.com%2Fin%2Fhedyeh-ahmadi__%3B!!LIr3w8kk_Xxm!owK3rp5BYaR9BZh-ZgTlsXIxdM3aebgcexnD7meyFOmfUi7AnsDslFD8XZYGRhYRJxXflAbk6pYGdIIuWgI%24&data=05%7C02%7Cd.rizopoulos%40erasmusmc.nl%7Caebf617ef97a430fd59808dc29bc1797%7C526638ba6af34b0fa532a1a511f4ac80%7C0%7C0%7C638431135044815898%7CUnknown%7CTWFpbGZsb3d8eyJWIjoiMC4wLjAwMDAiLCJQIjoiV2luMzIiLCJBTiI6Ik1haWwiLCJXVCI6Mn0%3D%7C0%7C%7C%7C&sdata=ygMjmU88ZBOHB6GHbBzmvkOaERIvZz4oisAmezhG06A%3D&reserved=0 <https://urldefense.com/v3/__http://www.linkedin.com/in/hedyeh-ahmadi__;!!LIr3w8kk_Xxm!owK3rp5BYaR9BZh-ZgTlsXIxdM3aebgcexnD7meyFOmfUi7AnsDslFD8XZYGRhYRJxXflAbk6pYGdIIuWgI$> <https://eur01.safelinks.protection.outlook.com/?url=https%3A%2F%2Furldefense.com%2Fv3%2F__http%3A%2F%2Fwww.linkedin.com%2Fin%2Fhedyeh-ahmadi__%3B!!LIr3w8kk_Xxm!owK3rp5BYaR9BZh-ZgTlsXIxdM3aebgcexnD7meyFOmfUi7AnsDslFD8XZYGRhYRJxXflAbk6pYGdIIuWgI%24&data=05%7C02%7Cd.rizopoulos%40erasmusmc.nl%7Caebf617ef97a430fd59808dc29bc1797%7C526638ba6af34b0fa532a1a511f4ac80%7C0%7C0%7C638431135044821234%7CUnknown%7CTWFpbGZsb3d8eyJWIjoiMC4wLjAwMDAiLCJQIjoiV2luMzIiLCJBTiI6Ik1haWwiLCJXVCI6Mn0%3D%7C0%7C%7C%7C&sdata=FMIbPehAFvXEAYBcP0BcGneyPDg0d41AOF%2B4FBu%2FzqQ%3D&reserved=0 >
+>>>
+>>>
+>>>
+>>>
+>>>
+>>>???????? [[alternative HTML version deleted]]
+>>>
+>>> _______________________________________________
+>>> R-sig-mixed-models at r-project.org mailing list
+>>> https://eur01.safelinks.protection.outlook.com/?url=https%3A%2F%2Furldefense.com%2Fv3%2F__https%3A%2F%2Fstat.ethz.ch%2Fmailman%2Flistinfo%2Fr-sig-mixed-models__%3B!!LIr3w8kk_Xxm!owK3rp5BYaR9BZh-ZgTlsXIxdM3aebgcexnD7meyFOmfUi7AnsDslFD8XZYGRhYRJxXflAbk6pYGRRULy-w%24&data=05%7C02%7Cd.rizopoulos%40erasmusmc.nl%7Caebf617ef97a430fd59808dc29bc1797%7C526638ba6af34b0fa532a1a511f4ac80%7C0%7C0%7C638431135044825917%7CUnknown%7CTWFpbGZsb3d8eyJWIjoiMC4wLjAwMDAiLCJQIjoiV2luMzIiLCJBTiI6Ik1haWwiLCJXVCI6Mn0%3D%7C0%7C%7C%7C&sdata=XXOQQb3Bq2TsD15mA4JLybKm%2FfcunRxP5h4LqfPjibg%3D&reserved=0 <https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models__;!!LIr3w8kk_Xxm!owK3rp5BYaR9BZh-ZgTlsXIxdM3aebgcexnD7meyFOmfUi7AnsDslFD8XZYGRhYRJxXflAbk6pYGRRULy-w$>
+>>
+>> --
+>> Dr. Benjamin Bolker
+>> Professor, Mathematics & Statistics and Biology, McMaster University
+>> Director, School of Computational Science and Engineering
+>>??? Associate chair (graduate, math), Mathematics & Statistics
+>>???? > E-mail is sent at my convenience; I don't expect replies outside of
+>> working hours.
+>>
+>> _______________________________________________
+>> R-sig-mixed-models at r-project.org mailing list
+>> https://eur01.safelinks.protection.outlook.com/?url=https%3A%2F%2Furldefense.com%2Fv3%2F__https%3A%2F%2Fstat.ethz.ch%2Fmailman%2Flistinfo%2Fr-sig-mixed-models__%3B!!LIr3w8kk_Xxm!owK3rp5BYaR9BZh-ZgTlsXIxdM3aebgcexnD7meyFOmfUi7AnsDslFD8XZYGRhYRJxXflAbk6pYGRRULy-w%24&data=05%7C02%7Cd.rizopoulos%40erasmusmc.nl%7Caebf617ef97a430fd59808dc29bc1797%7C526638ba6af34b0fa532a1a511f4ac80%7C0%7C0%7C638431135044830659%7CUnknown%7CTWFpbGZsb3d8eyJWIjoiMC4wLjAwMDAiLCJQIjoiV2luMzIiLCJBTiI6Ik1haWwiLCJXVCI6Mn0%3D%7C0%7C%7C%7C&sdata=%2BmYtfJH%2BgN0%2F%2F7BU%2BVPYkAJeen7r%2B8XAPHnLttJdywk%3D&reserved=0 <https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models__;!!LIr3w8kk_Xxm!owK3rp5BYaR9BZh-ZgTlsXIxdM3aebgcexnD7meyFOmfUi7AnsDslFD8XZYGRhYRJxXflAbk6pYGRRULy-w$>
+>>
+>>?????? [[alternative HTML version deleted]]
+>>
+>> _______________________________________________
+>> R-sig-mixed-models at r-project.org mailing list
+>> https://eur01.safelinks.protection.outlook.com/?url=https%3A%2F%2Fstat.ethz.ch%2Fmailman%2Flistinfo%2Fr-sig-mixed-models&data=05%7C02%7Cd.rizopoulos%40erasmusmc.nl%7Caebf617ef97a430fd59808dc29bc1797%7C526638ba6af34b0fa532a1a511f4ac80%7C0%7C0%7C638431135044835348%7CUnknown%7CTWFpbGZsb3d8eyJWIjoiMC4wLjAwMDAiLCJQIjoiV2luMzIiLCJBTiI6Ik1haWwiLCJXVCI6Mn0%3D%7C0%7C%7C%7C&sdata=t4c9TyhKRgr31Q2ENbFuv8gcHZK8wAAfhEtOLGCBG%2FM%3D&reserved=0 <https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models>
+> 
+> _______________________________________________
+> R-sig-mixed-models at r-project.org mailing list
+> https://eur01.safelinks.protection.outlook.com/?url=https%3A%2F%2Fstat.ethz.ch%2Fmailman%2Flistinfo%2Fr-sig-mixed-models&data=05%7C02%7Cd.rizopoulos%40erasmusmc.nl%7Caebf617ef97a430fd59808dc29bc1797%7C526638ba6af34b0fa532a1a511f4ac80%7C0%7C0%7C638431135044840607%7CUnknown%7CTWFpbGZsb3d8eyJWIjoiMC4wLjAwMDAiLCJQIjoiV2luMzIiLCJBTiI6Ik1haWwiLCJXVCI6Mn0%3D%7C0%7C%7C%7C&sdata=wsMypblJAp8STHQ28siavAUI5yMVM9JCEEGssnpc2PA%3D&reserved=0 <https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models>
+
+From k@|m@n@toth @end|ng |rom protonm@||@com  Sun Feb 18 15:25:56 2024
+From: k@|m@n@toth @end|ng |rom protonm@||@com (kalman.toth)
+Date: Sun, 18 Feb 2024 14:25:56 +0000
+Subject: [R-sig-ME] negatively biased variance estimates of random factors
+ with few levels
+Message-ID: <QyMq0y57wxI-meXZ_y8IZ6e-YgemTWzfY1PSL97htJRJCxrnoxlq1dPF2ORoxFQ9sMtedtpq5P_HDL2-v-DjrZnPyUdLjzWbWjEzff--qsM=@protonmail.com>
+
+Dear List Members,
+
+On the glmmFAQ webpage Ben Bolker writes:
+
+?Treating factors with small numbers of levels as random will in the best case lead to very small and/or imprecise estimates of random effects; in the worst case it will lead to various numerical difficulties such as lack of convergence, zero variance estimates, etc.. (A small [simulation exercise](https://rpubs.com/bbolker/4187) shows that at least the estimates of the standard deviation are downwardly biased in this case; it?s not clear whether/how this bias would affect the point estimates of fixed effects or their estimated confidence intervals.) In the classical method-of-moments approach these problems may not arise (because the sums of squares are always well defined as long as there are at least two units), but the underlying problems of lack of power are there nevertheless. ?
+
+I am struggling to understand the reasons behind the potential bias in REML estimates when dealing with a small number of factor levels. To explore this issue, I modified Ben Bolker?s simulation as follows:
+
+- set the sd1/sd2 ratio to 5/1 (to reduce the number of zero variance estimates and eliminate the possibility of causing bias)
+
+- compared the REML estimates with ANOVA because 1) the ANOVA variance estimates are expected to be unbiased and 2) for these datasets the two estimates should be the same
+
+- extended the simulation to sample sizes 3, 5, 10 and 20
+
+My conclusions based on the extended simulation are:
+
+- Consistency of REML and ANOVA estimates: the estimates are indeed the same
+
+- Negative bias: Both methods give negatively biased estimates!?
+
+- Impact of sample size: the magnitude of bias decreases as the sample size increases (11, 7, 4, and 1% for sample sizes 3, 5, 10 and 20, respectively) but sample sizes as large as 20 or 50 might be still negatively biased
+
+I am particularly interested in addressing the treatment of factors conceptually viewed as random effects but having only a few factor levels. This scenario is common in the datasets I work with. I understand that there can be issue with the power and the SE can be large if the sample size is small. But why would both ANOVA and REML estimates be biased? And what could be done about the bias apart from treating the factor as fixed? (I prefer to treat them as fixed if they really have few levels e.g. 3-4 but not with 8-10 levels)
+
+Regards,
+
+Kalman
+
+Please, find here the modified simulation:
+
+nrep <- 5
+
+simfun <- function(n1 = 20, n2 = nrep, sd1 = 1, sd2 = 0.2) {
+d <- expand.grid(f1 = factor(seq(n1)), f2 = factor(seq(n2)))
+u1 <- rnorm(n1, mean = 0, sd = sd1)
+d$y <- rnorm(n1 * n2, mean = u1, sd = sd2)
+d
+}
+require(lme4)
+fitfun <- function(d = simfun()) {
+lme <- sqrt(unlist(VarCorr(lmer(y ~ (1 | f1), data = d))))
+MSb <- summary(aov(y ~ f1, data = d))[[1]]['Mean Sq']['f1',]
+MSw <- summary(aov(y ~ f1, data = d))[[1]]['Mean Sq']['Residuals',]
+an <- sqrt((MSb-MSw)/nrep)
+list(lme = lme, anova = an)
+}
+
+set.seed(101)
+nsim = 500
+sd_dist0 <- replicate(nsim, fitfun())
+sd_dist1 <- replicate(nsim, fitfun(simfun(n1 = 10)))
+sd_dist2 <- replicate(nsim, fitfun(simfun(n1 = 5)))
+sd_dist3 <- replicate(nsim, fitfun(simfun(n1 = 3)))
+sd_List <- list(lme.20 = unlist(sd_dist0[1,]), lme.10 = unlist(sd_dist1[1,]), lme.5 = unlist(sd_dist2[1,]), lme.3 = unlist(sd_dist3[1,]),
+anova.20 = unlist(sd_dist0[2,]), anova.10 = unlist(sd_dist1[2,]), anova.5 = unlist(sd_dist2[2,]), anova.3 = unlist(sd_dist3[2,]))
+
+#sd_List <- list(n1.5 = sd_dist1, n1.3 = sd_dist2)
+
+plotfun <- function(x, title) {
+par(las = 1, bty = "l")
+hist(x, breaks = 50, col = "gray", main = title, xlab = "est. sd", freq = FALSE)
+}
+
+par(mfrow = c(2, 4))
+invisible(mapply(plotfun, sd_List, names(sd_List)))
+
+sapply(sd_List, function(x) mean(x == 0 | is.na(x)))
+
+sfun <- function(x) {
+r <- list(mean = mean(x, na.rm=T), mean2 = mean(x[which(x > 1e-5 )]), sem = sd(x, na.rm=T)/sqrt(length(x)))
+r <- with(r, c(r, list(lwr = mean - 2 * sem, upr = mean + 2 * sem)))
+unlist(r)
+}
+print(s_tab <- sapply(sd_List, sfun), digits = 3)
+
+bias_pct <- round((s_tab["mean", ] - 1) * 100)
+bias_pct2 <- round((s_tab["mean2", ] - 1) * 100)
+bias_pct
+bias_pct2 # bias without zero SD estimates
+	[[alternative HTML version deleted]]
+
+
+From j|ox @end|ng |rom mcm@@ter@c@  Sun Feb 18 16:38:52 2024
+From: j|ox @end|ng |rom mcm@@ter@c@ (John Fox)
+Date: Sun, 18 Feb 2024 10:38:52 -0500
+Subject: [R-sig-ME] 
+ negatively biased variance estimates of random factors
+ with few levels
+In-Reply-To: <QyMq0y57wxI-meXZ_y8IZ6e-YgemTWzfY1PSL97htJRJCxrnoxlq1dPF2ORoxFQ9sMtedtpq5P_HDL2-v-DjrZnPyUdLjzWbWjEzff--qsM=@protonmail.com>
+References: <QyMq0y57wxI-meXZ_y8IZ6e-YgemTWzfY1PSL97htJRJCxrnoxlq1dPF2ORoxFQ9sMtedtpq5P_HDL2-v-DjrZnPyUdLjzWbWjEzff--qsM=@protonmail.com>
+Message-ID: <64723ded-a297-4d1d-9918-6e0716bf0894@mcmaster.ca>
+
+Dear Kalman,
+
+Could it be as simple as the variance being an unbiased estimator, so 
+the standard deviation is biased?
+
+I reran your simulation with two small modifications: I saved the 
+variances and I increased the number of samples (nsim) from 500 to 5000, 
+obtaining
+
+ > bias_pct
+   lme.20   lme.10    lme.5    lme.3 anova.20 anova.10  anova.5
+       -2        0        0        0       -2        0        0
+  anova.3
+        0
+ > bias_pct2 # bias without zero SD estimates
+   lme.20   lme.10    lme.5    lme.3 anova.20 anova.10  anova.5
+       -1        0        0        1       -1        0        0
+  anova.3
+        1
+
+Does that help?
+
+John
+
+-- 
+John Fox, Professor Emeritus
+McMaster University
+Hamilton, Ontario, Canada
+web: https://www.john-fox.ca/
+On 2024-02-18 9:25 a.m., kalman.toth via R-sig-mixed-models wrote:
+> Caution: External email.
+> 
+> 
+> Dear List Members,
+> 
+> On the glmmFAQ webpage Ben Bolker writes:
+> 
+> ?Treating factors with small numbers of levels as random will in the best case lead to very small and/or imprecise estimates of random effects; in the worst case it will lead to various numerical difficulties such as lack of convergence, zero variance estimates, etc.. (A small [simulation exercise](https://rpubs.com/bbolker/4187) shows that at least the estimates of the standard deviation are downwardly biased in this case; it?s not clear whether/how this bias would affect the point estimates of fixed effects or their estimated confidence intervals.) In the classical method-of-moments approach these problems may not arise (because the sums of squares are always well defined as long as there are at least two units), but the underlying problems of lack of power are there nevertheless. ?
+> 
+> I am struggling to understand the reasons behind the potential bias in REML estimates when dealing with a small number of factor levels. To explore this issue, I modified Ben Bolker?s simulation as follows:
+> 
+> - set the sd1/sd2 ratio to 5/1 (to reduce the number of zero variance estimates and eliminate the possibility of causing bias)
+> 
+> - compared the REML estimates with ANOVA because 1) the ANOVA variance estimates are expected to be unbiased and 2) for these datasets the two estimates should be the same
+> 
+> - extended the simulation to sample sizes 3, 5, 10 and 20
+> 
+> My conclusions based on the extended simulation are:
+> 
+> - Consistency of REML and ANOVA estimates: the estimates are indeed the same
+> 
+> - Negative bias: Both methods give negatively biased estimates!?
+> 
+> - Impact of sample size: the magnitude of bias decreases as the sample size increases (11, 7, 4, and 1% for sample sizes 3, 5, 10 and 20, respectively) but sample sizes as large as 20 or 50 might be still negatively biased
+> 
+> I am particularly interested in addressing the treatment of factors conceptually viewed as random effects but having only a few factor levels. This scenario is common in the datasets I work with. I understand that there can be issue with the power and the SE can be large if the sample size is small. But why would both ANOVA and REML estimates be biased? And what could be done about the bias apart from treating the factor as fixed? (I prefer to treat them as fixed if they really have few levels e.g. 3-4 but not with 8-10 levels)
+> 
+> Regards,
+> 
+> Kalman
+> 
+> Please, find here the modified simulation:
+> 
+> nrep <- 5
+> 
+> simfun <- function(n1 = 20, n2 = nrep, sd1 = 1, sd2 = 0.2) {
+> d <- expand.grid(f1 = factor(seq(n1)), f2 = factor(seq(n2)))
+> u1 <- rnorm(n1, mean = 0, sd = sd1)
+> d$y <- rnorm(n1 * n2, mean = u1, sd = sd2)
+> d
+> }
+> require(lme4)
+> fitfun <- function(d = simfun()) {
+> lme <- sqrt(unlist(VarCorr(lmer(y ~ (1 | f1), data = d))))
+> MSb <- summary(aov(y ~ f1, data = d))[[1]]['Mean Sq']['f1',]
+> MSw <- summary(aov(y ~ f1, data = d))[[1]]['Mean Sq']['Residuals',]
+> an <- sqrt((MSb-MSw)/nrep)
+> list(lme = lme, anova = an)
+> }
+> 
+> set.seed(101)
+> nsim = 500
+> sd_dist0 <- replicate(nsim, fitfun())
+> sd_dist1 <- replicate(nsim, fitfun(simfun(n1 = 10)))
+> sd_dist2 <- replicate(nsim, fitfun(simfun(n1 = 5)))
+> sd_dist3 <- replicate(nsim, fitfun(simfun(n1 = 3)))
+> sd_List <- list(lme.20 = unlist(sd_dist0[1,]), lme.10 = unlist(sd_dist1[1,]), lme.5 = unlist(sd_dist2[1,]), lme.3 = unlist(sd_dist3[1,]),
+> anova.20 = unlist(sd_dist0[2,]), anova.10 = unlist(sd_dist1[2,]), anova.5 = unlist(sd_dist2[2,]), anova.3 = unlist(sd_dist3[2,]))
+> 
+> #sd_List <- list(n1.5 = sd_dist1, n1.3 = sd_dist2)
+> 
+> plotfun <- function(x, title) {
+> par(las = 1, bty = "l")
+> hist(x, breaks = 50, col = "gray", main = title, xlab = "est. sd", freq = FALSE)
+> }
+> 
+> par(mfrow = c(2, 4))
+> invisible(mapply(plotfun, sd_List, names(sd_List)))
+> 
+> sapply(sd_List, function(x) mean(x == 0 | is.na(x)))
+> 
+> sfun <- function(x) {
+> r <- list(mean = mean(x, na.rm=T), mean2 = mean(x[which(x > 1e-5 )]), sem = sd(x, na.rm=T)/sqrt(length(x)))
+> r <- with(r, c(r, list(lwr = mean - 2 * sem, upr = mean + 2 * sem)))
+> unlist(r)
+> }
+> print(s_tab <- sapply(sd_List, sfun), digits = 3)
+> 
+> bias_pct <- round((s_tab["mean", ] - 1) * 100)
+> bias_pct2 <- round((s_tab["mean2", ] - 1) * 100)
+> bias_pct
+> bias_pct2 # bias without zero SD estimates
+>          [[alternative HTML version deleted]]
+> 
+> _______________________________________________
+> R-sig-mixed-models at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+
+
+From k@|m@n@toth @end|ng |rom protonm@||@com  Sun Feb 18 17:22:16 2024
+From: k@|m@n@toth @end|ng |rom protonm@||@com (kalman.toth)
+Date: Sun, 18 Feb 2024 16:22:16 +0000
+Subject: [R-sig-ME] 
+ negatively biased variance estimates of random factors
+ with few levels
+In-Reply-To: <64723ded-a297-4d1d-9918-6e0716bf0894@mcmaster.ca>
+References: <QyMq0y57wxI-meXZ_y8IZ6e-YgemTWzfY1PSL97htJRJCxrnoxlq1dPF2ORoxFQ9sMtedtpq5P_HDL2-v-DjrZnPyUdLjzWbWjEzff--qsM=@protonmail.com>
+ <64723ded-a297-4d1d-9918-6e0716bf0894@mcmaster.ca>
+Message-ID: <sEm-OC47Rs12RskZpBBrjXzf6A8zYWD4JxUd4cKL6Ng-DSWyk60lcj8X7bwbelfDfzhiacF4YgaRvR95KNBSroAu5Gj5b0J2WKraR68J5sc=@protonmail.com>
+
+Dear John,
+
+This seems quite convincing. ;)
+Thanks a lot!
+
+Kalman
+
+
+On Sunday, February 18th, 2024 at 4:38 PM, John Fox <jfox at mcmaster.ca> wrote:
+
+> Dear Kalman,
+> 
+> Could it be as simple as the variance being an unbiased estimator, so
+> the standard deviation is biased?
+> 
+> I reran your simulation with two small modifications: I saved the
+> variances and I increased the number of samples (nsim) from 500 to 5000,
+> obtaining
+> 
+> > bias_pct
+> 
+> lme.20 lme.10 lme.5 lme.3 anova.20 anova.10 anova.5
+> -2 0 0 0 -2 0 0
+> anova.3
+> 0
+> 
+> > bias_pct2 # bias without zero SD estimates
+> 
+> lme.20 lme.10 lme.5 lme.3 anova.20 anova.10 anova.5
+> -1 0 0 1 -1 0 0
+> anova.3
+> 1
+> 
+> Does that help?
+> 
+> John
+> 
+> --
+> John Fox, Professor Emeritus
+> McMaster University
+> Hamilton, Ontario, Canada
+> web: https://www.john-fox.ca/
+> On 2024-02-18 9:25 a.m., kalman.toth via R-sig-mixed-models wrote:
+> 
+> > Caution: External email.
+> > 
+> > Dear List Members,
+> > 
+> > On the glmmFAQ webpage Ben Bolker writes:
+> > 
+> > ?Treating factors with small numbers of levels as random will in the best case lead to very small and/or imprecise estimates of random effects; in the worst case it will lead to various numerical difficulties such as lack of convergence, zero variance estimates, etc.. (A small simulation exercise shows that at least the estimates of the standard deviation are downwardly biased in this case; it?s not clear whether/how this bias would affect the point estimates of fixed effects or their estimated confidence intervals.) In the classical method-of-moments approach these problems may not arise (because the sums of squares are always well defined as long as there are at least two units), but the underlying problems of lack of power are there nevertheless. ?
+> > 
+> > I am struggling to understand the reasons behind the potential bias in REML estimates when dealing with a small number of factor levels. To explore this issue, I modified Ben Bolker?s simulation as follows:
+> > 
+> > - set the sd1/sd2 ratio to 5/1 (to reduce the number of zero variance estimates and eliminate the possibility of causing bias)
+> > 
+> > - compared the REML estimates with ANOVA because 1) the ANOVA variance estimates are expected to be unbiased and 2) for these datasets the two estimates should be the same
+> > 
+> > - extended the simulation to sample sizes 3, 5, 10 and 20
+> > 
+> > My conclusions based on the extended simulation are:
+> > 
+> > - Consistency of REML and ANOVA estimates: the estimates are indeed the same
+> > 
+> > - Negative bias: Both methods give negatively biased estimates!?
+> > 
+> > - Impact of sample size: the magnitude of bias decreases as the sample size increases (11, 7, 4, and 1% for sample sizes 3, 5, 10 and 20, respectively) but sample sizes as large as 20 or 50 might be still negatively biased
+> > 
+> > I am particularly interested in addressing the treatment of factors conceptually viewed as random effects but having only a few factor levels. This scenario is common in the datasets I work with. I understand that there can be issue with the power and the SE can be large if the sample size is small. But why would both ANOVA and REML estimates be biased? And what could be done about the bias apart from treating the factor as fixed? (I prefer to treat them as fixed if they really have few levels e.g. 3-4 but not with 8-10 levels)
+> > 
+> > Regards,
+> > 
+> > Kalman
+> > 
+> > Please, find here the modified simulation:
+> > 
+> > nrep <- 5
+> > 
+> > simfun <- function(n1 = 20, n2 = nrep, sd1 = 1, sd2 = 0.2) {
+> > d <- expand.grid(f1 = factor(seq(n1)), f2 = factor(seq(n2)))
+> > u1 <- rnorm(n1, mean = 0, sd = sd1)
+> > d$y <- rnorm(n1 * n2, mean = u1, sd = sd2)
+> > d
+> > }
+> > require(lme4)
+> > fitfun <- function(d = simfun()) {
+> > lme <- sqrt(unlist(VarCorr(lmer(y ~ (1 | f1), data = d))))
+> > MSb <- summary(aov(y ~ f1, data = d))[[1]]['Mean Sq']['f1',]
+> > MSw <- summary(aov(y ~ f1, data = d))[[1]]['Mean Sq']['Residuals',]
+> > an <- sqrt((MSb-MSw)/nrep)
+> > list(lme = lme, anova = an)
+> > }
+> > 
+> > set.seed(101)
+> > nsim = 500
+> > sd_dist0 <- replicate(nsim, fitfun())
+> > sd_dist1 <- replicate(nsim, fitfun(simfun(n1 = 10)))
+> > sd_dist2 <- replicate(nsim, fitfun(simfun(n1 = 5)))
+> > sd_dist3 <- replicate(nsim, fitfun(simfun(n1 = 3)))
+> > sd_List <- list(lme.20 = unlist(sd_dist0[1,]), lme.10 = unlist(sd_dist1[1,]), lme.5 = unlist(sd_dist2[1,]), lme.3 = unlist(sd_dist3[1,]),
+> > anova.20 = unlist(sd_dist0[2,]), anova.10 = unlist(sd_dist1[2,]), anova.5 = unlist(sd_dist2[2,]), anova.3 = unlist(sd_dist3[2,]))
+> > 
+> > #sd_List <- list(n1.5 = sd_dist1, n1.3 = sd_dist2)
+> > 
+> > plotfun <- function(x, title) {
+> > par(las = 1, bty = "l")
+> > hist(x, breaks = 50, col = "gray", main = title, xlab = "est. sd", freq = FALSE)
+> > }
+> > 
+> > par(mfrow = c(2, 4))
+> > invisible(mapply(plotfun, sd_List, names(sd_List)))
+> > 
+> > sapply(sd_List, function(x) mean(x == 0 | is.na(x)))
+> > 
+> > sfun <- function(x) {
+> > r <- list(mean = mean(x, na.rm=T), mean2 = mean(x[which(x > 1e-5 )]), sem = sd(x, na.rm=T)/sqrt(length(x)))
+> > r <- with(r, c(r, list(lwr = mean - 2 * sem, upr = mean + 2 * sem)))
+> > unlist(r)
+> > }
+> > print(s_tab <- sapply(sd_List, sfun), digits = 3)
+> > 
+> > bias_pct <- round((s_tab["mean", ] - 1) * 100)
+> > bias_pct2 <- round((s_tab["mean2", ] - 1) * 100)
+> > bias_pct
+> > bias_pct2 # bias without zero SD estimates
+> > [[alternative HTML version deleted]]
+> > 
+> > _______________________________________________
+> > R-sig-mixed-models at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+
+
+From j|ox @end|ng |rom mcm@@ter@c@  Sun Feb 18 19:15:22 2024
+From: j|ox @end|ng |rom mcm@@ter@c@ (John Fox)
+Date: Sun, 18 Feb 2024 13:15:22 -0500
+Subject: [R-sig-ME] 
+ negatively biased variance estimates of random factors
+ with few levels
+In-Reply-To: <sEm-OC47Rs12RskZpBBrjXzf6A8zYWD4JxUd4cKL6Ng-DSWyk60lcj8X7bwbelfDfzhiacF4YgaRvR95KNBSroAu5Gj5b0J2WKraR68J5sc=@protonmail.com>
+References: <QyMq0y57wxI-meXZ_y8IZ6e-YgemTWzfY1PSL97htJRJCxrnoxlq1dPF2ORoxFQ9sMtedtpq5P_HDL2-v-DjrZnPyUdLjzWbWjEzff--qsM=@protonmail.com>
+ <64723ded-a297-4d1d-9918-6e0716bf0894@mcmaster.ca>
+ <sEm-OC47Rs12RskZpBBrjXzf6A8zYWD4JxUd4cKL6Ng-DSWyk60lcj8X7bwbelfDfzhiacF4YgaRvR95KNBSroAu5Gj5b0J2WKraR68J5sc=@protonmail.com>
+Message-ID: <a0aabaeb-8d7b-49e4-8f68-8288eada68a1@mcmaster.ca>
+
+Dear Kalman,
+
+I forgot to mention that I think that when, as here, it's possible to 
+get 0 (or negative) variance component estimates, it's not quite right 
+to censor or remove these values when estimating the expectation of the 
+estimator. That's not much of an issue here, where the only 0 estimates 
+are for n = 3, and even in this case they're rare.
+
+Best,
+John
+
+
+On 2024-02-18 11:22 a.m., kalman.toth wrote:
+> [You don't often get email from kalman.toth at protonmail.com. Learn why this is important at https://aka.ms/LearnAboutSenderIdentification ]
+> 
+> Caution: External email.
+> 
+> 
+> Dear John,
+> 
+> This seems quite convincing. ;)
+> Thanks a lot!
+> 
+> Kalman
+> 
+> 
+> On Sunday, February 18th, 2024 at 4:38 PM, John Fox <jfox at mcmaster.ca> wrote:
+> 
+>> Dear Kalman,
+>>
+>> Could it be as simple as the variance being an unbiased estimator, so
+>> the standard deviation is biased?
+>>
+>> I reran your simulation with two small modifications: I saved the
+>> variances and I increased the number of samples (nsim) from 500 to 5000,
+>> obtaining
+>>
+>>> bias_pct
+>>
+>> lme.20 lme.10 lme.5 lme.3 anova.20 anova.10 anova.5
+>> -2 0 0 0 -2 0 0
+>> anova.3
+>> 0
+>>
+>>> bias_pct2 # bias without zero SD estimates
+>>
+>> lme.20 lme.10 lme.5 lme.3 anova.20 anova.10 anova.5
+>> -1 0 0 1 -1 0 0
+>> anova.3
+>> 1
+>>
+>> Does that help?
+>>
+>> John
+>>
+>> --
+>> John Fox, Professor Emeritus
+>> McMaster University
+>> Hamilton, Ontario, Canada
+>> web: https://www.john-fox.ca/
+>> On 2024-02-18 9:25 a.m., kalman.toth via R-sig-mixed-models wrote:
+>>
+>>> Caution: External email.
+>>>
+>>> Dear List Members,
+>>>
+>>> On the glmmFAQ webpage Ben Bolker writes:
+>>>
+>>> ?Treating factors with small numbers of levels as random will in the best case lead to very small and/or imprecise estimates of random effects; in the worst case it will lead to various numerical difficulties such as lack of convergence, zero variance estimates, etc.. (A small simulation exercise shows that at least the estimates of the standard deviation are downwardly biased in this case; it?s not clear whether/how this bias would affect the point estimates of fixed effects or their estimated confidence intervals.) In the classical method-of-moments approach these problems may not arise (because the sums of squares are always well defined as long as there are at least two units), but the underlying problems of lack of power are there nevertheless. ?
+>>>
+>>> I am struggling to understand the reasons behind the potential bias in REML estimates when dealing with a small number of factor levels. To explore this issue, I modified Ben Bolker?s simulation as follows:
+>>>
+>>> - set the sd1/sd2 ratio to 5/1 (to reduce the number of zero variance estimates and eliminate the possibility of causing bias)
+>>>
+>>> - compared the REML estimates with ANOVA because 1) the ANOVA variance estimates are expected to be unbiased and 2) for these datasets the two estimates should be the same
+>>>
+>>> - extended the simulation to sample sizes 3, 5, 10 and 20
+>>>
+>>> My conclusions based on the extended simulation are:
+>>>
+>>> - Consistency of REML and ANOVA estimates: the estimates are indeed the same
+>>>
+>>> - Negative bias: Both methods give negatively biased estimates!?
+>>>
+>>> - Impact of sample size: the magnitude of bias decreases as the sample size increases (11, 7, 4, and 1% for sample sizes 3, 5, 10 and 20, respectively) but sample sizes as large as 20 or 50 might be still negatively biased
+>>>
+>>> I am particularly interested in addressing the treatment of factors conceptually viewed as random effects but having only a few factor levels. This scenario is common in the datasets I work with. I understand that there can be issue with the power and the SE can be large if the sample size is small. But why would both ANOVA and REML estimates be biased? And what could be done about the bias apart from treating the factor as fixed? (I prefer to treat them as fixed if they really have few levels e.g. 3-4 but not with 8-10 levels)
+>>>
+>>> Regards,
+>>>
+>>> Kalman
+>>>
+>>> Please, find here the modified simulation:
+>>>
+>>> nrep <- 5
+>>>
+>>> simfun <- function(n1 = 20, n2 = nrep, sd1 = 1, sd2 = 0.2) {
+>>> d <- expand.grid(f1 = factor(seq(n1)), f2 = factor(seq(n2)))
+>>> u1 <- rnorm(n1, mean = 0, sd = sd1)
+>>> d$y <- rnorm(n1 * n2, mean = u1, sd = sd2)
+>>> d
+>>> }
+>>> require(lme4)
+>>> fitfun <- function(d = simfun()) {
+>>> lme <- sqrt(unlist(VarCorr(lmer(y ~ (1 | f1), data = d))))
+>>> MSb <- summary(aov(y ~ f1, data = d))[[1]]['Mean Sq']['f1',]
+>>> MSw <- summary(aov(y ~ f1, data = d))[[1]]['Mean Sq']['Residuals',]
+>>> an <- sqrt((MSb-MSw)/nrep)
+>>> list(lme = lme, anova = an)
+>>> }
+>>>
+>>> set.seed(101)
+>>> nsim = 500
+>>> sd_dist0 <- replicate(nsim, fitfun())
+>>> sd_dist1 <- replicate(nsim, fitfun(simfun(n1 = 10)))
+>>> sd_dist2 <- replicate(nsim, fitfun(simfun(n1 = 5)))
+>>> sd_dist3 <- replicate(nsim, fitfun(simfun(n1 = 3)))
+>>> sd_List <- list(lme.20 = unlist(sd_dist0[1,]), lme.10 = unlist(sd_dist1[1,]), lme.5 = unlist(sd_dist2[1,]), lme.3 = unlist(sd_dist3[1,]),
+>>> anova.20 = unlist(sd_dist0[2,]), anova.10 = unlist(sd_dist1[2,]), anova.5 = unlist(sd_dist2[2,]), anova.3 = unlist(sd_dist3[2,]))
+>>>
+>>> #sd_List <- list(n1.5 = sd_dist1, n1.3 = sd_dist2)
+>>>
+>>> plotfun <- function(x, title) {
+>>> par(las = 1, bty = "l")
+>>> hist(x, breaks = 50, col = "gray", main = title, xlab = "est. sd", freq = FALSE)
+>>> }
+>>>
+>>> par(mfrow = c(2, 4))
+>>> invisible(mapply(plotfun, sd_List, names(sd_List)))
+>>>
+>>> sapply(sd_List, function(x) mean(x == 0 | is.na(x)))
+>>>
+>>> sfun <- function(x) {
+>>> r <- list(mean = mean(x, na.rm=T), mean2 = mean(x[which(x > 1e-5 )]), sem = sd(x, na.rm=T)/sqrt(length(x)))
+>>> r <- with(r, c(r, list(lwr = mean - 2 * sem, upr = mean + 2 * sem)))
+>>> unlist(r)
+>>> }
+>>> print(s_tab <- sapply(sd_List, sfun), digits = 3)
+>>>
+>>> bias_pct <- round((s_tab["mean", ] - 1) * 100)
+>>> bias_pct2 <- round((s_tab["mean2", ] - 1) * 100)
+>>> bias_pct
+>>> bias_pct2 # bias without zero SD estimates
+>>> [[alternative HTML version deleted]]
+>>>
+>>> _______________________________________________
+>>> R-sig-mixed-models at r-project.org mailing list
+>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+
+
+From k@|m@n@toth @end|ng |rom protonm@||@com  Sun Feb 18 19:23:19 2024
+From: k@|m@n@toth @end|ng |rom protonm@||@com (kalman.toth)
+Date: Sun, 18 Feb 2024 18:23:19 +0000
+Subject: [R-sig-ME] 
+ negatively biased variance estimates of random factors
+ with few levels
+In-Reply-To: <a0aabaeb-8d7b-49e4-8f68-8288eada68a1@mcmaster.ca>
+References: <QyMq0y57wxI-meXZ_y8IZ6e-YgemTWzfY1PSL97htJRJCxrnoxlq1dPF2ORoxFQ9sMtedtpq5P_HDL2-v-DjrZnPyUdLjzWbWjEzff--qsM=@protonmail.com>
+ <64723ded-a297-4d1d-9918-6e0716bf0894@mcmaster.ca>
+ <sEm-OC47Rs12RskZpBBrjXzf6A8zYWD4JxUd4cKL6Ng-DSWyk60lcj8X7bwbelfDfzhiacF4YgaRvR95KNBSroAu5Gj5b0J2WKraR68J5sc=@protonmail.com>
+ <a0aabaeb-8d7b-49e4-8f68-8288eada68a1@mcmaster.ca>
+Message-ID: <sXfTRZwDPrykvM_g9uC0-ZFs5CQnr6w2PiBU51ysvFDVPdeobPOlwVa68cBX3WiuF912bdMbdGuLtboR5B7-SXjcME2IKDibv8ENtQXc2PM=@protonmail.com>
+
+Dear John,
+
+Thanks! I also noticed this while 'playing' with the simulation.
+
+Regards,
+Kalman
+
+On Sunday, February 18th, 2024 at 7:15 PM, John Fox <jfox at mcmaster.ca> wrote:
+
+> Dear Kalman,
+> 
+> I forgot to mention that I think that when, as here, it's possible to
+> get 0 (or negative) variance component estimates, it's not quite right
+> to censor or remove these values when estimating the expectation of the
+> estimator. That's not much of an issue here, where the only 0 estimates
+> are for n = 3, and even in this case they're rare.
+> 
+> Best,
+> John
+> 
+> 
+> On 2024-02-18 11:22 a.m., kalman.toth wrote:
+> 
+> > [You don't often get email from kalman.toth at protonmail.com. Learn why this is important at https://aka.ms/LearnAboutSenderIdentification ]
+> > 
+> > Caution: External email.
+> > 
+> > Dear John,
+> > 
+> > This seems quite convincing. ;)
+> > Thanks a lot!
+> > 
+> > Kalman
+> > 
+> > On Sunday, February 18th, 2024 at 4:38 PM, John Fox jfox at mcmaster.ca wrote:
+> > 
+> > > Dear Kalman,
+> > > 
+> > > Could it be as simple as the variance being an unbiased estimator, so
+> > > the standard deviation is biased?
+> > > 
+> > > I reran your simulation with two small modifications: I saved the
+> > > variances and I increased the number of samples (nsim) from 500 to 5000,
+> > > obtaining
+> > > 
+> > > > bias_pct
+> > > 
+> > > lme.20 lme.10 lme.5 lme.3 anova.20 anova.10 anova.5
+> > > -2 0 0 0 -2 0 0
+> > > anova.3
+> > > 0
+> > > 
+> > > > bias_pct2 # bias without zero SD estimates
+> > > 
+> > > lme.20 lme.10 lme.5 lme.3 anova.20 anova.10 anova.5
+> > > -1 0 0 1 -1 0 0
+> > > anova.3
+> > > 1
+> > > 
+> > > Does that help?
+> > > 
+> > > John
+> > > 
+> > > --
+> > > John Fox, Professor Emeritus
+> > > McMaster University
+> > > Hamilton, Ontario, Canada
+> > > web: https://www.john-fox.ca/
+> > > On 2024-02-18 9:25 a.m., kalman.toth via R-sig-mixed-models wrote:
+> > > 
+> > > > Caution: External email.
+> > > > 
+> > > > Dear List Members,
+> > > > 
+> > > > On the glmmFAQ webpage Ben Bolker writes:
+> > > > 
+> > > > ?Treating factors with small numbers of levels as random will in the best case lead to very small and/or imprecise estimates of random effects; in the worst case it will lead to various numerical difficulties such as lack of convergence, zero variance estimates, etc.. (A small simulation exercise shows that at least the estimates of the standard deviation are downwardly biased in this case; it?s not clear whether/how this bias would affect the point estimates of fixed effects or their estimated confidence intervals.) In the classical method-of-moments approach these problems may not arise (because the sums of squares are always well defined as long as there are at least two units), but the underlying problems of lack of power are there nevertheless. ?
+> > > > 
+> > > > I am struggling to understand the reasons behind the potential bias in REML estimates when dealing with a small number of factor levels. To explore this issue, I modified Ben Bolker?s simulation as follows:
+> > > > 
+> > > > - set the sd1/sd2 ratio to 5/1 (to reduce the number of zero variance estimates and eliminate the possibility of causing bias)
+> > > > 
+> > > > - compared the REML estimates with ANOVA because 1) the ANOVA variance estimates are expected to be unbiased and 2) for these datasets the two estimates should be the same
+> > > > 
+> > > > - extended the simulation to sample sizes 3, 5, 10 and 20
+> > > > 
+> > > > My conclusions based on the extended simulation are:
+> > > > 
+> > > > - Consistency of REML and ANOVA estimates: the estimates are indeed the same
+> > > > 
+> > > > - Negative bias: Both methods give negatively biased estimates!?
+> > > > 
+> > > > - Impact of sample size: the magnitude of bias decreases as the sample size increases (11, 7, 4, and 1% for sample sizes 3, 5, 10 and 20, respectively) but sample sizes as large as 20 or 50 might be still negatively biased
+> > > > 
+> > > > I am particularly interested in addressing the treatment of factors conceptually viewed as random effects but having only a few factor levels. This scenario is common in the datasets I work with. I understand that there can be issue with the power and the SE can be large if the sample size is small. But why would both ANOVA and REML estimates be biased? And what could be done about the bias apart from treating the factor as fixed? (I prefer to treat them as fixed if they really have few levels e.g. 3-4 but not with 8-10 levels)
+> > > > 
+> > > > Regards,
+> > > > 
+> > > > Kalman
+> > > > 
+> > > > Please, find here the modified simulation:
+> > > > 
+> > > > nrep <- 5
+> > > > 
+> > > > simfun <- function(n1 = 20, n2 = nrep, sd1 = 1, sd2 = 0.2) {
+> > > > d <- expand.grid(f1 = factor(seq(n1)), f2 = factor(seq(n2)))
+> > > > u1 <- rnorm(n1, mean = 0, sd = sd1)
+> > > > d$y <- rnorm(n1 * n2, mean = u1, sd = sd2)
+> > > > d
+> > > > }
+> > > > require(lme4)
+> > > > fitfun <- function(d = simfun()) {
+> > > > lme <- sqrt(unlist(VarCorr(lmer(y ~ (1 | f1), data = d))))
+> > > > MSb <- summary(aov(y ~ f1, data = d))[[1]]['Mean Sq']['f1',]
+> > > > MSw <- summary(aov(y ~ f1, data = d))[[1]]['Mean Sq']['Residuals',]
+> > > > an <- sqrt((MSb-MSw)/nrep)
+> > > > list(lme = lme, anova = an)
+> > > > }
+> > > > 
+> > > > set.seed(101)
+> > > > nsim = 500
+> > > > sd_dist0 <- replicate(nsim, fitfun())
+> > > > sd_dist1 <- replicate(nsim, fitfun(simfun(n1 = 10)))
+> > > > sd_dist2 <- replicate(nsim, fitfun(simfun(n1 = 5)))
+> > > > sd_dist3 <- replicate(nsim, fitfun(simfun(n1 = 3)))
+> > > > sd_List <- list(lme.20 = unlist(sd_dist0[1,]), lme.10 = unlist(sd_dist1[1,]), lme.5 = unlist(sd_dist2[1,]), lme.3 = unlist(sd_dist3[1,]),
+> > > > anova.20 = unlist(sd_dist0[2,]), anova.10 = unlist(sd_dist1[2,]), anova.5 = unlist(sd_dist2[2,]), anova.3 = unlist(sd_dist3[2,]))
+> > > > 
+> > > > #sd_List <- list(n1.5 = sd_dist1, n1.3 = sd_dist2)
+> > > > 
+> > > > plotfun <- function(x, title) {
+> > > > par(las = 1, bty = "l")
+> > > > hist(x, breaks = 50, col = "gray", main = title, xlab = "est. sd", freq = FALSE)
+> > > > }
+> > > > 
+> > > > par(mfrow = c(2, 4))
+> > > > invisible(mapply(plotfun, sd_List, names(sd_List)))
+> > > > 
+> > > > sapply(sd_List, function(x) mean(x == 0 | is.na(x)))
+> > > > 
+> > > > sfun <- function(x) {
+> > > > r <- list(mean = mean(x, na.rm=T), mean2 = mean(x[which(x > 1e-5 )]), sem = sd(x, na.rm=T)/sqrt(length(x)))
+> > > > r <- with(r, c(r, list(lwr = mean - 2 * sem, upr = mean + 2 * sem)))
+> > > > unlist(r)
+> > > > }
+> > > > print(s_tab <- sapply(sd_List, sfun), digits = 3)
+> > > > 
+> > > > bias_pct <- round((s_tab["mean", ] - 1) * 100)
+> > > > bias_pct2 <- round((s_tab["mean2", ] - 1) * 100)
+> > > > bias_pct
+> > > > bias_pct2 # bias without zero SD estimates
+> > > > [[alternative HTML version deleted]]
+> > > > 
+> > > > _______________________________________________
+> > > > R-sig-mixed-models at r-project.org mailing list
+> > > > https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+
+
+From |v@|d@ @end|ng |rom he@|th@uc@d@edu  Sun Feb 18 20:34:58 2024
+From: |v@|d@ @end|ng |rom he@|th@uc@d@edu (Vaida, Florin)
+Date: Sun, 18 Feb 2024 19:34:58 +0000
+Subject: [R-sig-ME] lme varFix under ML fit does not match coefficients
+ standard error
+Message-ID: <AD94D047-2512-44A3-9E05-A8030891E13B@health.ucsd.edu>
+
+Hello all,
+
+This is probably known, but it?s news to me: the standard errors printed for the lme model fit run under method=?ML? are in fact those computed under method=?REML?.
+Is this the expected behavior?  And if so, are there any reasons for this choice?
+Reproducible example below.
+
+Thanks,
+Florin
+
+library(nlme)
+fit.reml =  lme(log(conc) ~ Time, random=~1|Subject, data=Glucose, na.action=na.omit, method="REML")
+(se.reml = summary(fit.reml)$tTable[,2])
+## (Intercept)        Time
+## 0.019457141 0.005829144
+(se.reml = sqrt(diag(summary(fit.reml)$varFix)))
+## (Intercept)        Time
+## 0.019457141 0.005829144
+fit.ml =  lme(log(conc) ~ Time, random=~1|Subject, data=Glucose, na.action=na.omit, method="ML")
+(se.ml = summary(fit.ml)$tTable[,2]) # they match the REML SE?s
+## (Intercept)        Time
+## 0.019457141 0.005829144
+(se.ml = sqrt(diag(summary(fit.ml)$varFix))) # they do not match the tTable SE?s
+## (Intercept)        Time
+## 0.019405324 0.005813621
+
+	[[alternative HTML version deleted]]
+
+
+From bbo|ker @end|ng |rom gm@||@com  Sun Feb 18 20:52:25 2024
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Sun, 18 Feb 2024 14:52:25 -0500
+Subject: [R-sig-ME] lme varFix under ML fit does not match coefficients
+ standard error
+In-Reply-To: <AD94D047-2512-44A3-9E05-A8030891E13B@health.ucsd.edu>
+References: <AD94D047-2512-44A3-9E05-A8030891E13B@health.ucsd.edu>
+Message-ID: <3a6d4a31-87e5-475e-80f0-d36292b2a05a@gmail.com>
+
+   From ?summary.lme:
+
+adjustSigma: an optional logical value.  If ?TRUE? and the estimation
+           method used to obtain ?object? was maximum likelihood, the
+           residual standard error is multiplied by sqrt(nobs/(nobs -
+           npar)), converting it to a REML-like estimate.  This argument
+           is only used when a single fitted object is passed to the
+           function.  Default is ?TRUE?.
+
+
+
+
+On 2024-02-18 2:34 p.m., Vaida, Florin via R-sig-mixed-models wrote:
+> Hello all,
+> 
+> This is probably known, but it?s news to me: the standard errors printed for the lme model fit run under method=?ML? are in fact those computed under method=?REML?.
+> Is this the expected behavior?  And if so, are there any reasons for this choice?
+> Reproducible example below.
+> 
+> Thanks,
+> Florin
+> 
+> library(nlme)
+> fit.reml =  lme(log(conc) ~ Time, random=~1|Subject, data=Glucose, na.action=na.omit, method="REML")
+> (se.reml = summary(fit.reml)$tTable[,2])
+> ## (Intercept)        Time
+> ## 0.019457141 0.005829144
+> (se.reml = sqrt(diag(summary(fit.reml)$varFix)))
+> ## (Intercept)        Time
+> ## 0.019457141 0.005829144
+> fit.ml =  lme(log(conc) ~ Time, random=~1|Subject, data=Glucose, na.action=na.omit, method="ML")
+> (se.ml = summary(fit.ml)$tTable[,2]) # they match the REML SE?s
+> ## (Intercept)        Time
+> ## 0.019457141 0.005829144
+> (se.ml = sqrt(diag(summary(fit.ml)$varFix))) # they do not match the tTable SE?s
+> ## (Intercept)        Time
+> ## 0.019405324 0.005813621
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> _______________________________________________
+> R-sig-mixed-models at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+
+
+From ro||turner @end|ng |rom po@teo@net  Sun Feb 18 22:15:32 2024
+From: ro||turner @end|ng |rom po@teo@net (Rolf Turner)
+Date: Sun, 18 Feb 2024 21:15:32 +0000
+Subject: [R-sig-ME] lme varFix under ML fit does not match coefficients
+ standard error
+In-Reply-To: <AD94D047-2512-44A3-9E05-A8030891E13B@health.ucsd.edu>
+References: <AD94D047-2512-44A3-9E05-A8030891E13B@health.ucsd.edu>
+Message-ID: <20240219101532.499e4a97@rolf-Latitude-E7470>
+
+
+On Sun, 18 Feb 2024 19:34:58 +0000
+"Vaida, Florin via R-sig-mixed-models"
+<r-sig-mixed-models at r-project.org> wrote:
+
+> Hello all,
+> 
+> This is probably known, but it?s news to me: the standard errors
+> printed for the lme model fit run under method=?ML? are in fact those
+> computed under method=?REML?. Is this the expected behavior?  And if
+> so, are there any reasons for this choice? Reproducible example below.
+
+<SNIP>
+
+I am probably displaying my ignorance and na?vet? here, but isn't this
+essentially the same thing as using \hat{sigma} = \sqrt(SSE/(n-p))
+(REML) rather than \hat{sigma} = \sqrt(SSE/n) (ML) in "ordinary"
+regression modelling?
+
+cheers,
+
+Rolf Turner
+
+-- 
+Honorary Research Fellow
+Department of Statistics
+University of Auckland
+Stats. Dep't. (secretaries) phone:
+         +64-9-373-7599 ext. 89622
+Home phone: +64-9-480-4619
+
+
+From bbo|ker @end|ng |rom gm@||@com  Mon Feb 19 02:35:41 2024
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Sun, 18 Feb 2024 20:35:41 -0500
+Subject: [R-sig-ME] lme varFix under ML fit does not match coefficients
+ standard error
+In-Reply-To: <20240219101532.499e4a97@rolf-Latitude-E7470>
+References: <AD94D047-2512-44A3-9E05-A8030891E13B@health.ucsd.edu>
+ <20240219101532.499e4a97@rolf-Latitude-E7470>
+Message-ID: <CABghstSwtWrOwhHqhSJddtJT8dPCQ9YdVTD+Pko6R=gygx9LbQ@mail.gmail.com>
+
+Yes, as far as I know
+
+On Sun, Feb 18, 2024, 4:15 PM Rolf Turner <rolfturner at posteo.net> wrote:
+
+>
+> On Sun, 18 Feb 2024 19:34:58 +0000
+> "Vaida, Florin via R-sig-mixed-models"
+> <r-sig-mixed-models at r-project.org> wrote:
+>
+> > Hello all,
+> >
+> > This is probably known, but it?s news to me: the standard errors
+> > printed for the lme model fit run under method=?ML? are in fact those
+> > computed under method=?REML?. Is this the expected behavior?  And if
+> > so, are there any reasons for this choice? Reproducible example below.
+>
+> <SNIP>
+>
+> I am probably displaying my ignorance and na?vet? here, but isn't this
+> essentially the same thing as using \hat{sigma} = \sqrt(SSE/(n-p))
+> (REML) rather than \hat{sigma} = \sqrt(SSE/n) (ML) in "ordinary"
+> regression modelling?
+>
+> cheers,
+>
+> Rolf Turner
+>
+> --
+> Honorary Research Fellow
+> Department of Statistics
+> University of Auckland
+> Stats. Dep't. (secretaries) phone:
+>          +64-9-373-7599 ext. 89622
+> Home phone: +64-9-480-4619
+>
+> _______________________________________________
+> R-sig-mixed-models at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+>
+
+	[[alternative HTML version deleted]]
+
+
+From @@nto@h@b@@r|n|v@@ @end|ng |rom out|ook@com  Mon Feb 19 17:41:01 2024
+From: @@nto@h@b@@r|n|v@@ @end|ng |rom out|ook@com (Santosh Srinivas)
+Date: Mon, 19 Feb 2024 16:41:01 +0000
+Subject: [R-sig-ME] Testing a hypothesis that there was a change after a
+ specific time point
+In-Reply-To: <SJ0PR05MB851993FB9D6F43C7EDB57A90C9512@SJ0PR05MB8519.namprd05.prod.outlook.com>
+References: <SJ0PR05MB851993FB9D6F43C7EDB57A90C9512@SJ0PR05MB8519.namprd05.prod.outlook.com>
+Message-ID: <SJ0PR05MB85191EF80DFE626E6900B81CC9512@SJ0PR05MB8519.namprd05.prod.outlook.com>
+
+
+Hello Members, I am writing to request your advice on how best to do hypothesis testing for our study.
+
+Our data looks as follows:
+
+> head(x)
+# A tibble: 6 ? 7
+  user_id  user_male  days log_days bool_program   dv1     dv2
+  <chr>        <int> <int>    <dbl>        <dbl> <dbl>   <dbl>
+1 IDX_195          1  1581     7.37            1 0.150 0.00590
+2 IDX_949          1  1338     7.20            1 0.130 0.0348
+3 IDX_2428         1   577     6.36            0 0.160 0.0438
+4 IDX_2312         1   424     6.05            0 0.179 0.0364
+5 IDX_277          1   790     6.67            0 0.419 0.0515
+6 IDX_1029         1  1489     7.31            1 0.155 0.0219
+>
+
+
+Besides the gender of the user, we have data of users on dv1 and dv2 over 6 years, with the days variable ranging from 0 to 2190 (and log_days being its log transformation).
+
+We would like to test the hypothesis that a program announcement made on the day 850 caused a significant (potentially, gradual) change in dv1 and/or dv2 scores (regardless of the direction of change) for male and/or female users. The bool_program is set to 0 for days < 1118 and 1 otherwise.
+
+We are wondering what is the best way to conduct this test, given the hierarchical/nested nature of data.
+
+We have thus far taken the approach of using lmer:
+
+> m = lmer(
++   dv1 ~ user_male + bool_program * log_days + (1|user_id),
++   data = x
++ )
+
+> summary(m)
+Linear mixed model fit by REML. t-tests use Satterthwaite's method ['lmerModLmerTest']
+Formula: dv1 ~ user_male + bool_program * log_days + (1 | user_id)
+   Data: x
+
+REML criterion at convergence: -103411.7
+
+Scaled residuals:
+    Min      1Q  Median      3Q     Max
+-4.0430 -0.3797 -0.0443  0.2992 19.5088
+
+Random effects:
+ Groups   Name        Variance  Std.Dev.
+ user_id  (Intercept) 0.0004456 0.02111
+ Residual             0.0034587 0.05881
+Number of obs: 37137, groups:  user_id, 1012
+
+Fixed effects:
+                        Estimate Std. Error         df t value Pr(>|t|)
+(Intercept)            1.878e-01  5.318e-03  9.979e+03  35.310  < 2e-16 ***
+user_male              2.018e-02  2.674e-03  7.157e+02   7.546 1.36e-13 ***
+bool_program           1.036e-01  1.588e-02  3.713e+04   6.524 6.93e-11 ***
+log_days              -6.641e-03  7.185e-04  3.713e+04  -9.243  < 2e-16 ***
+bool_program:log_days -1.522e-02  2.177e-03  3.713e+04  -6.991 2.78e-12 ***
+---
+Signif. codes:  0 ?***? 0.001 ?**? 0.01 ?*? 0.05 ?.? 0.1 ? ? 1
+
+Correlation of Fixed Effects:
+            (Intr) usr_ml bl_prg lg_dys
+user_male   -0.471
+bool_progrm -0.238 -0.017
+log_days    -0.872  0.012  0.289
+bl_prgrm:l_  0.268  0.018 -0.998 -0.329
+
+> interactions::sim_slopes(m, pred = log_days, modx = bool_program, digits = 3)
+JOHNSON-NEYMAN INTERVAL
+
+When bool_program is OUTSIDE the interval [-0.672, -0.294], the slope of log_days is p < .05.
+
+Note: The range of observed values of bool_program is [0.000, 1.000]
+
+SIMPLE SLOPES ANALYSIS
+Slope of log_days when bool_program = 0.000 (0):
+    Est.    S.E.   t val.       p
+-------- ------- -------- -------
+  -0.007   0.001   -9.243   0.000
+
+Slope of log_days when bool_program = 1.000 (1):
+    Est.    S.E.    t val.       p
+-------- ------- --------- -------
+  -0.022   0.002   -10.631   0.000
+
+We are not sure if the approach is right and whether we are specifying the days variable appropriately in lmer. We are also not sure if we should be using a more sophisticated change point approach. We came across some Rpackages such as changepoint, segmented, and strucchange. Are they more appropriate than lmer approach we have used?
+
+Request your advice.
+
+Thanks and kind regards
+Srinivas
+
+
+
+
+
+
+
+
+
+
+	[[alternative HTML version deleted]]
+
+
+From |v@|d@ @end|ng |rom he@|th@uc@d@edu  Tue Feb 20 21:24:32 2024
+From: |v@|d@ @end|ng |rom he@|th@uc@d@edu (Vaida, Florin)
+Date: Tue, 20 Feb 2024 20:24:32 +0000
+Subject: [R-sig-ME] lme varFix under ML fit does not match coefficients
+ standard error
+In-Reply-To: <3a6d4a31-87e5-475e-80f0-d36292b2a05a@gmail.com>
+References: <AD94D047-2512-44A3-9E05-A8030891E13B@health.ucsd.edu>
+ <3a6d4a31-87e5-475e-80f0-d36292b2a05a@gmail.com>
+Message-ID: <877BB4F7-232F-4B1F-A8A6-EB752E0AEDCE@health.ucsd.edu>
+
+Thanks Ben, interesting!
+Any particular reason for this default choice?
+It sounds like separating parameter estimation (ML) from SE of the parameters (REML), but presumably when someone chooses ML for estimation they assume this goes to how the SE's are computed too.
+
+Florin
+
+?On 2/18/24, 11:52?AM, "R-sig-mixed-models on behalf of Ben Bolker" <r-sig-mixed-models-bounces at r-project.org on behalf of bbolker at gmail.com> wrote:
+
+       From ?summary.lme:
+    
+    adjustSigma: an optional logical value.  If ?TRUE? and the estimation
+               method used to obtain ?object? was maximum likelihood, the
+               residual standard error is multiplied by sqrt(nobs/(nobs -
+               npar)), converting it to a REML-like estimate.  This argument
+               is only used when a single fitted object is passed to the
+               function.  Default is ?TRUE?.
+    
+    
+    
+    
+    On 2024-02-18 2:34 p.m., Vaida, Florin via R-sig-mixed-models wrote:
+    > Hello all,
+    > 
+    > This is probably known, but it?s news to me: the standard errors printed for the lme model fit run under method=?ML? are in fact those computed under method=?REML?.
+    > Is this the expected behavior?  And if so, are there any reasons for this choice?
+    > Reproducible example below.
+    > 
+    > Thanks,
+    > Florin
+    > 
+    > library(nlme)
+    > fit.reml =  lme(log(conc) ~ Time, random=~1|Subject, data=Glucose, na.action=na.omit, method="REML")
+    > (se.reml = summary(fit.reml)$tTable[,2])
+    > ## (Intercept)        Time
+    > ## 0.019457141 0.005829144
+    > (se.reml = sqrt(diag(summary(fit.reml)$varFix)))
+    > ## (Intercept)        Time
+    > ## 0.019457141 0.005829144
+    > fit.ml =  lme(log(conc) ~ Time, random=~1|Subject, data=Glucose, na.action=na.omit, method="ML")
+    > (se.ml = summary(fit.ml)$tTable[,2]) # they match the REML SE?s
+    > ## (Intercept)        Time
+    > ## 0.019457141 0.005829144
+    > (se.ml = sqrt(diag(summary(fit.ml)$varFix))) # they do not match the tTable SE?s
+    > ## (Intercept)        Time
+    > ## 0.019405324 0.005813621
+    > 
+    > 	[[alternative HTML version deleted]]
+    > 
+    > _______________________________________________
+    > R-sig-mixed-models at r-project.org mailing list
+    > https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models__;!!LLK065n_VXAQ!maZY0riqf0o-YADm5wrg-eNFM4LHerS92ofHlC_Pv5pnBNSjJYPepDr4S5Y16jYfN9zHl3B6SPmJz71d$ 
+    
+    _______________________________________________
+    R-sig-mixed-models at r-project.org mailing list
+    https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models__;!!LLK065n_VXAQ!maZY0riqf0o-YADm5wrg-eNFM4LHerS92ofHlC_Pv5pnBNSjJYPepDr4S5Y16jYfN9zHl3B6SPmJz71d$ 
+    
+
+
+From d@r|zopou|o@ @end|ng |rom er@@mu@mc@n|  Tue Feb 20 21:40:32 2024
+From: d@r|zopou|o@ @end|ng |rom er@@mu@mc@n| (Dimitris Rizopoulos)
+Date: Tue, 20 Feb 2024 20:40:32 +0000
+Subject: [R-sig-ME] lme varFix under ML fit does not match coefficients
+ standard error
+In-Reply-To: <877BB4F7-232F-4B1F-A8A6-EB752E0AEDCE@health.ucsd.edu>
+References: <AD94D047-2512-44A3-9E05-A8030891E13B@health.ucsd.edu>
+ <3a6d4a31-87e5-475e-80f0-d36292b2a05a@gmail.com>
+ <877BB4F7-232F-4B1F-A8A6-EB752E0AEDCE@health.ucsd.edu>
+Message-ID: <DU0PR04MB9371824915B91E3B0F3015FBE8502@DU0PR04MB9371.eurprd04.prod.outlook.com>
+
+In principle, the standard errors should be different with REML and ML. When I try different datasets, I see differences. For example,
+
+fm_reml <- lme(distance ~ age, data = Orthodont, random = ~ age | Subject)
+fm_ml <- lme(distance ~ age, data = Orthodont, random = ~ age | Subject,
+             method = "ML")
+
+coef(summary(fm_reml))
+coef(summary(fm_ml))
+
+Best,
+Dimitris
+
+
+-----Original Message-----
+From: R-sig-mixed-models <r-sig-mixed-models-bounces at r-project.org> On Behalf Of Vaida, Florin via R-sig-mixed-models
+Sent: Tuesday, February 20, 2024 9:25 PM
+To: Ben Bolker <bbolker at gmail.com>; r-sig-mixed-models at r-project.org
+Subject: Re: [R-sig-ME] lme varFix under ML fit does not match coefficients standard error
+
+
+
+Waarschuwing: Deze e-mail is afkomstig van buiten de organisatie. Klik niet op links en open geen bijlagen, tenzij u de afzender herkent en weet dat de inhoud veilig is.
+Caution: This email originated from outside of the organization. Do not click links or open attachments unless you recognize the sender and know the content is safe.
+
+
+
+Thanks Ben, interesting!
+Any particular reason for this default choice?
+It sounds like separating parameter estimation (ML) from SE of the parameters (REML), but presumably when someone chooses ML for estimation they assume this goes to how the SE's are computed too.
+
+Florin
+
+?On 2/18/24, 11:52?AM, "R-sig-mixed-models on behalf of Ben Bolker" <r-sig-mixed-models-bounces at r-project.org on behalf of bbolker at gmail.com> wrote:
+
+       From ?summary.lme:
+
+    adjustSigma: an optional logical value.  If ?TRUE? and the estimation
+               method used to obtain ?object? was maximum likelihood, the
+               residual standard error is multiplied by sqrt(nobs/(nobs -
+               npar)), converting it to a REML-like estimate.  This argument
+               is only used when a single fitted object is passed to the
+               function.  Default is ?TRUE?.
+
+
+
+
+    On 2024-02-18 2:34 p.m., Vaida, Florin via R-sig-mixed-models wrote:
+    > Hello all,
+    >
+    > This is probably known, but it?s news to me: the standard errors printed for the lme model fit run under method=?ML? are in fact those computed under method=?REML?.
+    > Is this the expected behavior?  And if so, are there any reasons for this choice?
+    > Reproducible example below.
+    >
+    > Thanks,
+    > Florin
+    >
+    > library(nlme)
+    > fit.reml =  lme(log(conc) ~ Time, random=~1|Subject, data=Glucose, na.action=na.omit, method="REML")
+    > (se.reml = summary(fit.reml)$tTable[,2])
+    > ## (Intercept)        Time
+    > ## 0.019457141 0.005829144
+    > (se.reml = sqrt(diag(summary(fit.reml)$varFix)))
+    > ## (Intercept)        Time
+    > ## 0.019457141 0.005829144
+    > fit.ml =  lme(log(conc) ~ Time, random=~1|Subject, data=Glucose, na.action=na.omit, method="ML")
+    > (se.ml = summary(fit.ml)$tTable[,2]) # they match the REML SE?s
+    > ## (Intercept)        Time
+    > ## 0.019457141 0.005829144
+    > (se.ml = sqrt(diag(summary(fit.ml)$varFix))) # they do not match the tTable SE?s
+    > ## (Intercept)        Time
+    > ## 0.019405324 0.005813621
+    >
+    >   [[alternative HTML version deleted]]
+    >
+    > _______________________________________________
+    > R-sig-mixed-models at r-project.org mailing list
+    > https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models__;!!LLK065n_VXAQ!maZY0riqf0o-YADm5wrg-eNFM4LHerS92ofHlC_Pv5pnBNSjJYPepDr4S5Y16jYfN9zHl3B6SPmJz71d$
+
+    _______________________________________________
+    R-sig-mixed-models at r-project.org mailing list
+    https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models__;!!LLK065n_VXAQ!maZY0riqf0o-YADm5wrg-eNFM4LHerS92ofHlC_Pv5pnBNSjJYPepDr4S5Y16jYfN9zHl3B6SPmJz71d$
+
+
+_______________________________________________
+R-sig-mixed-models at r-project.org mailing list
+https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+
+From |v@|d@ @end|ng |rom he@|th@uc@d@edu  Tue Feb 20 23:08:29 2024
+From: |v@|d@ @end|ng |rom he@|th@uc@d@edu (Vaida, Florin)
+Date: Tue, 20 Feb 2024 22:08:29 +0000
+Subject: [R-sig-ME] lme varFix under ML fit does not match coefficients
+ standard error
+In-Reply-To: <DU0PR04MB9371824915B91E3B0F3015FBE8502@DU0PR04MB9371.eurprd04.prod.outlook.com>
+References: <AD94D047-2512-44A3-9E05-A8030891E13B@health.ucsd.edu>
+ <3a6d4a31-87e5-475e-80f0-d36292b2a05a@gmail.com>
+ <877BB4F7-232F-4B1F-A8A6-EB752E0AEDCE@health.ucsd.edu>
+ <DU0PR04MB9371824915B91E3B0F3015FBE8502@DU0PR04MB9371.eurprd04.prod.outlook.com>
+Message-ID: <73CBB8E6-DB3C-4A26-AA91-3D8C9EFDBC8C@health.ucsd.edu>
+
+Hi Dimitris,
+
+The point is that the ML standard errors reported by summary() do not match those computed under varFix.
+The reason for this is that indicated by Ben, which is that by default the varFix SE's get multiplied by n/(n-p), to behave more like those from REML/unbiased variances.
+
+fm_ml <- lme(distance ~ age, data = Orthodont, random = ~ age | Subject,
+              method = "ML")
+coef(summary(fm_ml))
+sqrt(diag(summary(fm_ml)$varFix)) 			# ML SE's different than those reported by coef(summary(fm_ml)) above
+sqrt(diag(summary(fm_ml)$varFix))*sqrt(108/106) 	# same SE's as in coef(summary(fm_ml))
+coef(summary(fm_ml, adjustSigma=FALSE))		# same SE's as given by varFix
+
+
+Best,
+Florin
+
+
+?On 2/20/24, 12:40?PM, "Dimitris Rizopoulos" <d.rizopoulos at erasmusmc.nl> wrote:
+
+    In principle, the standard errors should be different with REML and ML. When I try different datasets, I see differences. For example,
+    
+    fm_reml <- lme(distance ~ age, data = Orthodont, random = ~ age | Subject)
+    fm_ml <- lme(distance ~ age, data = Orthodont, random = ~ age | Subject,
+                 method = "ML")
+    
+    coef(summary(fm_reml))
+    coef(summary(fm_ml))
+    
+    Best,
+    Dimitris
+    
+    
+    -----Original Message-----
+    From: R-sig-mixed-models <r-sig-mixed-models-bounces at r-project.org> On Behalf Of Vaida, Florin via R-sig-mixed-models
+    Sent: Tuesday, February 20, 2024 9:25 PM
+    To: Ben Bolker <bbolker at gmail.com>; r-sig-mixed-models at r-project.org
+    Subject: Re: [R-sig-ME] lme varFix under ML fit does not match coefficients standard error
+    
+    
+    
+    Waarschuwing: Deze e-mail is afkomstig van buiten de organisatie. Klik niet op links en open geen bijlagen, tenzij u de afzender herkent en weet dat de inhoud veilig is.
+    Caution: This email originated from outside of the organization. Do not click links or open attachments unless you recognize the sender and know the content is safe.
+    
+    
+    
+    Thanks Ben, interesting!
+    Any particular reason for this default choice?
+    It sounds like separating parameter estimation (ML) from SE of the parameters (REML), but presumably when someone chooses ML for estimation they assume this goes to how the SE's are computed too.
+    
+    Florin
+    
+    On 2/18/24, 11:52?AM, "R-sig-mixed-models on behalf of Ben Bolker" <r-sig-mixed-models-bounces at r-project.org on behalf of bbolker at gmail.com> wrote:
+    
+           From ?summary.lme:
+    
+        adjustSigma: an optional logical value.  If ?TRUE? and the estimation
+                   method used to obtain ?object? was maximum likelihood, the
+                   residual standard error is multiplied by sqrt(nobs/(nobs -
+                   npar)), converting it to a REML-like estimate.  This argument
+                   is only used when a single fitted object is passed to the
+                   function.  Default is ?TRUE?.
+    
+    
+    
+    
+        On 2024-02-18 2:34 p.m., Vaida, Florin via R-sig-mixed-models wrote:
+        > Hello all,
+        >
+        > This is probably known, but it?s news to me: the standard errors printed for the lme model fit run under method=?ML? are in fact those computed under method=?REML?.
+        > Is this the expected behavior?  And if so, are there any reasons for this choice?
+        > Reproducible example below.
+        >
+        > Thanks,
+        > Florin
+        >
+        > library(nlme)
+        > fit.reml =  lme(log(conc) ~ Time, random=~1|Subject, data=Glucose, na.action=na.omit, method="REML")
+        > (se.reml = summary(fit.reml)$tTable[,2])
+        > ## (Intercept)        Time
+        > ## 0.019457141 0.005829144
+        > (se.reml = sqrt(diag(summary(fit.reml)$varFix)))
+        > ## (Intercept)        Time
+        > ## 0.019457141 0.005829144
+        > fit.ml =  lme(log(conc) ~ Time, random=~1|Subject, data=Glucose, na.action=na.omit, method="ML")
+        > (se.ml = summary(fit.ml)$tTable[,2]) # they match the REML SE?s
+        > ## (Intercept)        Time
+        > ## 0.019457141 0.005829144
+        > (se.ml = sqrt(diag(summary(fit.ml)$varFix))) # they do not match the tTable SE?s
+        > ## (Intercept)        Time
+        > ## 0.019405324 0.005813621
+        >
+        >   [[alternative HTML version deleted]]
+        >
+        > _______________________________________________
+        > R-sig-mixed-models at r-project.org mailing list
+        > https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models__;!!LLK065n_VXAQ!maZY0riqf0o-YADm5wrg-eNFM4LHerS92ofHlC_Pv5pnBNSjJYPepDr4S5Y16jYfN9zHl3B6SPmJz71d$
+    
+        _______________________________________________
+        R-sig-mixed-models at r-project.org mailing list
+        https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models__;!!LLK065n_VXAQ!maZY0riqf0o-YADm5wrg-eNFM4LHerS92ofHlC_Pv5pnBNSjJYPepDr4S5Y16jYfN9zHl3B6SPmJz71d$
+    
+    
+    _______________________________________________
+    R-sig-mixed-models at r-project.org mailing list
+    https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models__;!!LLK065n_VXAQ!gR6OQQ6PtYOaMYJLAUkf5UjXFoNg68ARTl6TN_il5daK7QKo-cdFJqHS3Ax5SC3bsko0LV6QZTrCEqlsCAVJO4EGR74$ 
+    
+
+
+From bbo|ker @end|ng |rom gm@||@com  Wed Feb 21 02:33:35 2024
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Tue, 20 Feb 2024 20:33:35 -0500
+Subject: [R-sig-ME] lme varFix under ML fit does not match coefficients
+ standard error
+In-Reply-To: <DU0PR04MB9371824915B91E3B0F3015FBE8502@DU0PR04MB9371.eurprd04.prod.outlook.com>
+References: <AD94D047-2512-44A3-9E05-A8030891E13B@health.ucsd.edu>
+ <3a6d4a31-87e5-475e-80f0-d36292b2a05a@gmail.com>
+ <877BB4F7-232F-4B1F-A8A6-EB752E0AEDCE@health.ucsd.edu>
+ <DU0PR04MB9371824915B91E3B0F3015FBE8502@DU0PR04MB9371.eurprd04.prod.outlook.com>
+Message-ID: <9c68d77c-f3bf-430f-bbca-202a33ed5ebd@gmail.com>
+
+   Note that the initial example provided gave a singular or 
+close-to-singular fit, so we would expect very similar answers from REML 
+and ML.
+
+On 2024-02-20 3:40 p.m., Dimitris Rizopoulos wrote:
+> In principle, the standard errors should be different with REML and ML. When I try different datasets, I see differences. For example,
+> 
+> fm_reml <- lme(distance ~ age, data = Orthodont, random = ~ age | Subject)
+> fm_ml <- lme(distance ~ age, data = Orthodont, random = ~ age | Subject,
+>               method = "ML")
+> 
+> coef(summary(fm_reml))
+> coef(summary(fm_ml))
+> 
+> Best,
+> Dimitris
+> 
+> 
+> -----Original Message-----
+> From: R-sig-mixed-models <r-sig-mixed-models-bounces at r-project.org> On Behalf Of Vaida, Florin via R-sig-mixed-models
+> Sent: Tuesday, February 20, 2024 9:25 PM
+> To: Ben Bolker <bbolker at gmail.com>; r-sig-mixed-models at r-project.org
+> Subject: Re: [R-sig-ME] lme varFix under ML fit does not match coefficients standard error
+> 
+> 
+> 
+> Waarschuwing: Deze e-mail is afkomstig van buiten de organisatie. Klik niet op links en open geen bijlagen, tenzij u de afzender herkent en weet dat de inhoud veilig is.
+> Caution: This email originated from outside of the organization. Do not click links or open attachments unless you recognize the sender and know the content is safe.
+> 
+> 
+> 
+> Thanks Ben, interesting!
+> Any particular reason for this default choice?
+> It sounds like separating parameter estimation (ML) from SE of the parameters (REML), but presumably when someone chooses ML for estimation they assume this goes to how the SE's are computed too.
+> 
+> Florin
+> 
+> ?On 2/18/24, 11:52?AM, "R-sig-mixed-models on behalf of Ben Bolker" <r-sig-mixed-models-bounces at r-project.org on behalf of bbolker at gmail.com> wrote:
+> 
+>         From ?summary.lme:
+> 
+>      adjustSigma: an optional logical value.  If ?TRUE? and the estimation
+>                 method used to obtain ?object? was maximum likelihood, the
+>                 residual standard error is multiplied by sqrt(nobs/(nobs -
+>                 npar)), converting it to a REML-like estimate.  This argument
+>                 is only used when a single fitted object is passed to the
+>                 function.  Default is ?TRUE?.
+> 
+> 
+> 
+> 
+>      On 2024-02-18 2:34 p.m., Vaida, Florin via R-sig-mixed-models wrote:
+>      > Hello all,
+>      >
+>      > This is probably known, but it?s news to me: the standard errors printed for the lme model fit run under method=?ML? are in fact those computed under method=?REML?.
+>      > Is this the expected behavior?  And if so, are there any reasons for this choice?
+>      > Reproducible example below.
+>      >
+>      > Thanks,
+>      > Florin
+>      >
+>      > library(nlme)
+>      > fit.reml =  lme(log(conc) ~ Time, random=~1|Subject, data=Glucose, na.action=na.omit, method="REML")
+>      > (se.reml = summary(fit.reml)$tTable[,2])
+>      > ## (Intercept)        Time
+>      > ## 0.019457141 0.005829144
+>      > (se.reml = sqrt(diag(summary(fit.reml)$varFix)))
+>      > ## (Intercept)        Time
+>      > ## 0.019457141 0.005829144
+>      > fit.ml =  lme(log(conc) ~ Time, random=~1|Subject, data=Glucose, na.action=na.omit, method="ML")
+>      > (se.ml = summary(fit.ml)$tTable[,2]) # they match the REML SE?s
+>      > ## (Intercept)        Time
+>      > ## 0.019457141 0.005829144
+>      > (se.ml = sqrt(diag(summary(fit.ml)$varFix))) # they do not match the tTable SE?s
+>      > ## (Intercept)        Time
+>      > ## 0.019405324 0.005813621
+>      >
+>      >   [[alternative HTML version deleted]]
+>      >
+>      > _______________________________________________
+>      > R-sig-mixed-models at r-project.org mailing list
+>      > https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models__;!!LLK065n_VXAQ!maZY0riqf0o-YADm5wrg-eNFM4LHerS92ofHlC_Pv5pnBNSjJYPepDr4S5Y16jYfN9zHl3B6SPmJz71d$
+> 
+>      _______________________________________________
+>      R-sig-mixed-models at r-project.org mailing list
+>      https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models__;!!LLK065n_VXAQ!maZY0riqf0o-YADm5wrg-eNFM4LHerS92ofHlC_Pv5pnBNSjJYPepDr4S5Y16jYfN9zHl3B6SPmJz71d$
+> 
+> 
+> _______________________________________________
+> R-sig-mixed-models at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+
+
+From bobyboby @end|ng |rom gm@||@com  Thu Feb 22 15:13:58 2024
+From: bobyboby @end|ng |rom gm@||@com (Boby Mathew)
+Date: Thu, 22 Feb 2024 15:13:58 +0100
+Subject: [R-sig-ME] Comparing AIC of a model and its logit -transformed
+ version
+Message-ID: <CAP-GiWbyLLM-LPJrosNmfqxKFGaLSmh2dbzB85TH-6JVn-Mk9w@mail.gmail.com>
+
+Hello All,
+I would like to compare a model to its logit transformation using the AIC
+values.
+
+As a toy example
+library(car)
+
+seedrates <- data.frame(rate = c(50, 75, 100, 125, 150),
+                        grain = c(21.2, 19.9, 19.2, 18.4, 17.9))
+lm <- lm(grain~rate, data=seedrates)
+logit.lm <- lm(logit(grain)~rate,data=seedrates)
+
+AIC(lm, logit.lm )
+
+In order to compare these two models using AIC we need to take into account
+the JAcobian of the logit transformation.
+
+
+Here
+https://stats.stackexchange.com/questions/61332/comparing-aic-of-a-model-and-its-log-transformed-version
+
+Prof. Ben Bolker mentioned how we can adjust the AIC in the presence of log
+transformation by the multiplication of the likelihood by the corresponding
+Jacobian to the AIC ... for the case of log{y(n)+1}, it is ?2 ??log{y(n)+1}
+
+I was wondering in the case of logit transformation can I adjust the AIC by
+multiplying the likelihood by logit{y(n)+1}.
+
+Any help is greatly appreciated.
+
+Kind regards,
+
+Boby  Mathew
+
+-- 
+Dr. Boby Mathew
+INRES, University of Bonn
+Katzenburgweg 5
+Phone: 0228732031
+53115, Bonn,Germany.
+
+	[[alternative HTML version deleted]]
+
+
+From bbo|ker @end|ng |rom gm@||@com  Fri Feb 23 01:32:32 2024
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Thu, 22 Feb 2024 19:32:32 -0500
+Subject: [R-sig-ME] Comparing AIC of a model and its logit -transformed
+ version
+In-Reply-To: <CAP-GiWbyLLM-LPJrosNmfqxKFGaLSmh2dbzB85TH-6JVn-Mk9w@mail.gmail.com>
+References: <CAP-GiWbyLLM-LPJrosNmfqxKFGaLSmh2dbzB85TH-6JVn-Mk9w@mail.gmail.com>
+Message-ID: <c410f7c2-2b3a-4216-b06e-3b4f1460de93@gmail.com>
+
+   This is not actually a mixed-model question -- it would be better on 
+stats.stackexchange.com -- but here we go:
+
+  A clear description of the calculation is here:
+
+https://stats.stackexchange.com/a/100671/2126
+
+  We need -2 * sum(log( d( log(x/(1-x)), "x" )))
+
+Being super-lazy and using sympy
+
+from sympy import *
+x = Symbol("x")
+simplify(diff(log(x/(1-x)), x))
+## -1/(x*(x-1)) = 1/(x*(1-x))
+
+taking -2*log() of this we get
+
+2*sum(log(x*(1-x)))
+
+
+seedrates <- data.frame(rate = c(50, 75, 100, 125, 150),
+                            grain = c(21.2, 19.9, 19.2, 18.4, 17.9)) |>
+    transform(pgrain = grain/100, logit_grain = qlogis(grain/100))
+
+m0 <- lm(pgrain~1, data=seedrates)
+m1 <- lm(logit_grain ~ 1, data = seedrates)
+
+AIC(m0)
+with(seedrates, AIC(m1) + 2*sum(log(pgrain*(1-pgrain))))
+
+These are actually slightly different because of Jensen's inequality 
+(the predicted values mean(pgrain) and plogis(mean(logit_grain)) are not 
+quite the same), but close enough that I think the computation is done 
+correctly.
+
+On 2024-02-22 9:13 a.m., Boby Mathew wrote:
+> Hello All,
+> I would like to compare a model to its logit transformation using the AIC
+> values.
+> 
+> As a toy example
+> library(car)
+> 
+> seedrates <- data.frame(rate = c(50, 75, 100, 125, 150),
+>                          grain = c(21.2, 19.9, 19.2, 18.4, 17.9))
+> lm <- lm(grain~rate, data=seedrates)
+> logit.lm <- lm(logit(grain)~rate,data=seedrates)
+> 
+> AIC(lm, logit.lm )
+> 
+> In order to compare these two models using AIC we need to take into account
+> the JAcobian of the logit transformation.
+> 
+> 
+> Here
+> https://stats.stackexchange.com/questions/61332/comparing-aic-of-a-model-and-its-log-transformed-version
+> 
+> Prof. Ben Bolker mentioned how we can adjust the AIC in the presence of log
+> transformation by the multiplication of the likelihood by the corresponding
+> Jacobian to the AIC ... for the case of log{y(n)+1}, it is ?2 ??log{y(n)+1}
+> 
+> I was wondering in the case of logit transformation can I adjust the AIC by
+> multiplying the likelihood by logit{y(n)+1}.
+> 
+> Any help is greatly appreciated.
+> 
+> Kind regards,
+> 
+> Boby  Mathew
+>
+
+
+From |uk@@z@@t@@|e|ow|cz @end|ng |rom un|-o@n@brueck@de  Thu Mar  7 13:34:18 2024
+From: |uk@@z@@t@@|e|ow|cz @end|ng |rom un|-o@n@brueck@de (Lukasz Stasielowicz)
+Date: Thu, 7 Mar 2024 13:34:18 +0100
+Subject: [R-sig-ME] Testing a hypothesis that there was a change after a
+ specific, time point
+In-Reply-To: <mailman.20273.7.1708426802.42772.r-sig-mixed-models@r-project.org>
+References: <mailman.20273.7.1708426802.42772.r-sig-mixed-models@r-project.org>
+Message-ID: <a4f9a667-7de2-4d31-99cb-f36949136b60@uni-osnabrueck.de>
+
+Dear Santosh Srinivas,
+
+Since there are various ways to model transitions, I will link to an 
+article that describes several approaches. Perhaps you will find it helpful.
+Bliese, P. D., & Lang, J. W. B. (2016). Understanding relative and 
+absolute change in discontinuous growth models: Coding alternatives and 
+implications for hypothesis testing. Organizational Research Methods, 
+19(4), 562?592. https://doi.org/10.1177/1094428116633502
+
+Depending on your preferences and analytic choices, the interpretation 
+of the coefficients changes. Some choices pertain to the modeling of the 
+trajectory. For example, one could model the trajectory before the 
+program announcement, the trajectory after the program announcement, 
+non-linear trajectories, and the immediate effect of the program 
+announcement. One could also add random effects for the respective 
+change variables. Furthermore, one must decide whether the 
+post-announcement coefficients are interpreted in absolute or relative 
+terms (i.e., relative to the pre-announcement phase).
+
+
+Best wishes,
+-- 
+Lukasz Stasielowicz
+Osnabr?ck University
+Institute for Psychology
+Research methods, psychological assessment, and evaluation
+Lise-Meitner-Stra?e 3
+49076 Osnabr?ck (Germany)
+Twitter: https://twitter.com/l_stasielowicz
+Tel.: +49 541 969-7735
+
+
+
+On 20.02.2024 12:00, r-sig-mixed-models-request at r-project.org wrote:
+> Send R-sig-mixed-models mailing list submissions to
+> 	r-sig-mixed-models at r-project.org
+> 
+> To subscribe or unsubscribe via the World Wide Web, visit
+> 	https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+> or, via email, send a message with subject or body 'help' to
+> 	r-sig-mixed-models-request at r-project.org
+> 
+> You can reach the person managing the list at
+> 	r-sig-mixed-models-owner at r-project.org
+> 
+> When replying, please edit your Subject line so it is more specific
+> than "Re: Contents of R-sig-mixed-models digest..."
+> 
+> 
+> Today's Topics:
+> 
+>     1. Testing a hypothesis that there was a change after a specific
+>        time point (Santosh Srinivas)
+> 
+> ----------------------------------------------------------------------
+> 
+> Message: 1
+> Date: Mon, 19 Feb 2024 16:41:01 +0000
+> From: Santosh Srinivas <santosh.b.srinivas at outlook.com>
+> To: "r-sig-mixed-models at r-project.org"
+> 	<r-sig-mixed-models at r-project.org>
+> Subject: [R-sig-ME] Testing a hypothesis that there was a change after
+> 	a specific time point
+> Message-ID:
+> 	<SJ0PR05MB85191EF80DFE626E6900B81CC9512 at SJ0PR05MB8519.namprd05.prod.outlook.com>
+> 	
+> Content-Type: text/plain; charset="utf-8"
+> 
+> 
+> Hello Members, I am writing to request your advice on how best to do hypothesis testing for our study.
+> 
+> Our data looks as follows:
+> 
+>> head(x)
+> # A tibble: 6 ? 7
+>    user_id  user_male  days log_days bool_program   dv1     dv2
+>    <chr>        <int> <int>    <dbl>        <dbl> <dbl>   <dbl>
+> 1 IDX_195          1  1581     7.37            1 0.150 0.00590
+> 2 IDX_949          1  1338     7.20            1 0.130 0.0348
+> 3 IDX_2428         1   577     6.36            0 0.160 0.0438
+> 4 IDX_2312         1   424     6.05            0 0.179 0.0364
+> 5 IDX_277          1   790     6.67            0 0.419 0.0515
+> 6 IDX_1029         1  1489     7.31            1 0.155 0.0219
+>>
+> 
+> 
+> Besides the gender of the user, we have data of users on dv1 and dv2 over 6 years, with the days variable ranging from 0 to 2190 (and log_days being its log transformation).
+> 
+> We would like to test the hypothesis that a program announcement made on the day 850 caused a significant (potentially, gradual) change in dv1 and/or dv2 scores (regardless of the direction of change) for male and/or female users. The bool_program is set to 0 for days < 1118 and 1 otherwise.
+> 
+> We are wondering what is the best way to conduct this test, given the hierarchical/nested nature of data.
+> 
+> We have thus far taken the approach of using lmer:
+> 
+>> m = lmer(
+> +   dv1 ~ user_male + bool_program * log_days + (1|user_id),
+> +   data = x
+> + )
+> 
+>> summary(m)
+> Linear mixed model fit by REML. t-tests use Satterthwaite's method ['lmerModLmerTest']
+> Formula: dv1 ~ user_male + bool_program * log_days + (1 | user_id)
+>     Data: x
+> 
+> REML criterion at convergence: -103411.7
+> 
+> Scaled residuals:
+>      Min      1Q  Median      3Q     Max
+> -4.0430 -0.3797 -0.0443  0.2992 19.5088
+> 
+> Random effects:
+>   Groups   Name        Variance  Std.Dev.
+>   user_id  (Intercept) 0.0004456 0.02111
+>   Residual             0.0034587 0.05881
+> Number of obs: 37137, groups:  user_id, 1012
+> 
+> Fixed effects:
+>                          Estimate Std. Error         df t value Pr(>|t|)
+> (Intercept)            1.878e-01  5.318e-03  9.979e+03  35.310  < 2e-16 ***
+> user_male              2.018e-02  2.674e-03  7.157e+02   7.546 1.36e-13 ***
+> bool_program           1.036e-01  1.588e-02  3.713e+04   6.524 6.93e-11 ***
+> log_days              -6.641e-03  7.185e-04  3.713e+04  -9.243  < 2e-16 ***
+> bool_program:log_days -1.522e-02  2.177e-03  3.713e+04  -6.991 2.78e-12 ***
+> ---
+> Signif. codes:  0 ?***? 0.001 ?**? 0.01 ?*? 0.05 ?.? 0.1 ? ? 1
+> 
+> Correlation of Fixed Effects:
+>              (Intr) usr_ml bl_prg lg_dys
+> user_male   -0.471
+> bool_progrm -0.238 -0.017
+> log_days    -0.872  0.012  0.289
+> bl_prgrm:l_  0.268  0.018 -0.998 -0.329
+> 
+>> interactions::sim_slopes(m, pred = log_days, modx = bool_program, digits = 3)
+> JOHNSON-NEYMAN INTERVAL
+> 
+> When bool_program is OUTSIDE the interval [-0.672, -0.294], the slope of log_days is p < .05.
+> 
+> Note: The range of observed values of bool_program is [0.000, 1.000]
+> 
+> SIMPLE SLOPES ANALYSIS
+> Slope of log_days when bool_program = 0.000 (0):
+>      Est.    S.E.   t val.       p
+> -------- ------- -------- -------
+>    -0.007   0.001   -9.243   0.000
+> 
+> Slope of log_days when bool_program = 1.000 (1):
+>      Est.    S.E.    t val.       p
+> -------- ------- --------- -------
+>    -0.022   0.002   -10.631   0.000
+> 
+> We are not sure if the approach is right and whether we are specifying the days variable appropriately in lmer. We are also not sure if we should be using a more sophisticated change point approach. We came across some Rpackages such as changepoint, segmented, and strucchange. Are they more appropriate than lmer approach we have used?
+> 
+> Request your advice.
+> 
+> Thanks and kind regards
+> Srinivas
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> 
+> 
+> 
+> ------------------------------
+> 
+> Subject: Digest Footer
+> 
+> _______________________________________________
+> R-sig-mixed-models mailing list
+> R-sig-mixed-models at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+> 
+> 
+> ------------------------------
+> 
+> End of R-sig-mixed-models Digest, Vol 206, Issue 8
+> **************************************************
+
+
+From @n@hmd|r @end|ng |rom gm@||@com  Mon Mar 11 20:56:28 2024
+From: @n@hmd|r @end|ng |rom gm@||@com (Ana Hernandez)
+Date: Mon, 11 Mar 2024 15:56:28 -0400
+Subject: [R-sig-ME] GLMM with only one predictor variable
+Message-ID: <CAE-NYYsjUOtUGFY+-DR3FWxn=jF13JyKofr-TQbZX4M=LYeSyw@mail.gmail.com>
+
+Dear all,
+
+Is it possible to run a GLMM with a random effects variable as the only
+predictor variable? Would it make sense to do this to assess the impact of
+a single variable on the response variable?
+
+Thank you,
+Ana
+
+	[[alternative HTML version deleted]]
+
+
+From dmb@te@ @end|ng |rom gm@||@com  Mon Mar 11 21:30:18 2024
+From: dmb@te@ @end|ng |rom gm@||@com (Douglas Bates)
+Date: Mon, 11 Mar 2024 15:30:18 -0500
+Subject: [R-sig-ME] GLMM with only one predictor variable
+In-Reply-To: <CAE-NYYsjUOtUGFY+-DR3FWxn=jF13JyKofr-TQbZX4M=LYeSyw@mail.gmail.com>
+References: <CAE-NYYsjUOtUGFY+-DR3FWxn=jF13JyKofr-TQbZX4M=LYeSyw@mail.gmail.com>
+Message-ID: <CAO7JsnQEUqeR+3cfaC5PLFU_vbTOFffSsz3=BmGgToxVpr+eWg@mail.gmail.com>
+
+It is certainly possible to fit such a model.  The formula would be like
+
+y ~ 1 + (1 | grp)
+
+We define the distribution of the random effects to have a mean of zero so
+the (Intercept) term generated by the first 1 is needed to allow for a
+nonzero mean.
+
+You may use such a model for screening but the advantage of being able to
+examine the effect of one variable in the presence of multiple influences
+on the response.
+
+On Mon, Mar 11, 2024, 14:57 Ana Hernandez <anahmdlr at gmail.com> wrote:
+
+> Dear all,
+>
+> Is it possible to run a GLMM with a random effects variable as the only
+> predictor variable? Would it make sense to do this to assess the impact of
+> a single variable on the response variable?
+>
+> Thank you,
+> Ana
+>
+>         [[alternative HTML version deleted]]
+>
+> _______________________________________________
+> R-sig-mixed-models at r-project.org mailing list
+>
+> https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models__;!!Mak6IKo!KjBNHCSaUPpyxJ6fFDOkfhxSdA8IIeb1-VrEORYKrOyq7Ic9YVjX_YYNtSaC5plih7cChjrEca8vHAyy6A$
+>
+
+	[[alternative HTML version deleted]]
+
+
+From dmb@te@ @end|ng |rom gm@||@com  Mon Mar 11 21:33:26 2024
+From: dmb@te@ @end|ng |rom gm@||@com (Douglas Bates)
+Date: Mon, 11 Mar 2024 15:33:26 -0500
+Subject: [R-sig-ME] GLMM with only one predictor variable
+In-Reply-To: <CAO7JsnQEUqeR+3cfaC5PLFU_vbTOFffSsz3=BmGgToxVpr+eWg@mail.gmail.com>
+References: <CAE-NYYsjUOtUGFY+-DR3FWxn=jF13JyKofr-TQbZX4M=LYeSyw@mail.gmail.com>
+ <CAO7JsnQEUqeR+3cfaC5PLFU_vbTOFffSsz3=BmGgToxVpr+eWg@mail.gmail.com>
+Message-ID: <CAO7JsnQN7=8QkNxkGpfB9_ZOTVzHVGDCxTxruJwUxZYCgOH1nw@mail.gmail.com>
+
+Grr. I shouldn't try typing on a tablet.  The last sentence was supposed to
+say something about allowing for multiple terms in the formula can provide
+information about the effect of a condition for accounting for other
+conditions.
+
+On Mon, Mar 11, 2024, 15:30 Douglas Bates <dmbates at gmail.com> wrote:
+
+> It is certainly possible to fit such a model.  The formula would be like
+>
+> y ~ 1 + (1 | grp)
+>
+> We define the distribution of the random effects to have a mean of zero so
+> the (Intercept) term generated by the first 1 is needed to allow for a
+> nonzero mean.
+>
+> You may use such a model for screening but the advantage of being able to
+> examine the effect of one variable in the presence of multiple influences
+> on the response.
+>
+> On Mon, Mar 11, 2024, 14:57 Ana Hernandez <anahmdlr at gmail.com> wrote:
+>
+>> Dear all,
+>>
+>> Is it possible to run a GLMM with a random effects variable as the only
+>> predictor variable? Would it make sense to do this to assess the impact of
+>> a single variable on the response variable?
+>>
+>> Thank you,
+>> Ana
+>>
+>>         [[alternative HTML version deleted]]
+>>
+>> _______________________________________________
+>> R-sig-mixed-models at r-project.org mailing list
+>>
+>> https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models__;!!Mak6IKo!KjBNHCSaUPpyxJ6fFDOkfhxSdA8IIeb1-VrEORYKrOyq7Ic9YVjX_YYNtSaC5plih7cChjrEca8vHAyy6A$
+>>
+>
+
+	[[alternative HTML version deleted]]
+
+
+From y@@hree19 @end|ng |rom gm@||@com  Fri Mar 22 14:59:51 2024
+From: y@@hree19 @end|ng |rom gm@||@com (Yashree Mehta)
+Date: Fri, 22 Mar 2024 14:59:51 +0100
+Subject: [R-sig-ME] Short panels
+Message-ID: <CAOE=hqKs9p-BoR8zMqPcRoxpfvRDxBMJV62z8TtuNeoVLgt=pg@mail.gmail.com>
+
+Hi,
+
+Is it that linear mixed models (random intercept models, specifically) are
+suitable for short panels as compared to panel data models such as
+the traditional fixed/random effects models?
+
+This is in the context of the consistency of the estimated random effect.
+It would help to get insight on this.
+
+Thank you,
+
+Regards,
+Yashree
+
+	[[alternative HTML version deleted]]
+
+

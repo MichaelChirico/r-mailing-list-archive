@@ -1,0 +1,4668 @@
+From @@nto@h@b@@r|n|v@@ @end|ng |rom out|ook@com  Thu Jan  2 15:08:01 2025
+From: @@nto@h@b@@r|n|v@@ @end|ng |rom out|ook@com (Santosh Srinivas)
+Date: Thu, 2 Jan 2025 14:08:01 +0000
+Subject: [R-sig-ME] lme() - Error in recalc.corAR1
+In-Reply-To: <MN2PR18MB36887F79DC1F386795023BF8823B2@MN2PR18MB3688.namprd18.prod.outlook.com>
+References: <MN2PR18MB36887F79DC1F386795023BF8823B2@MN2PR18MB3688.namprd18.prod.outlook.com>
+Message-ID: <CH2PR20MB3189713A2E312D3BAF7E5049C9142@CH2PR20MB3189.namprd20.prod.outlook.com>
+
+Dear List Recipients, Hope this email finds you well.
+
+I am writing to request your help the below issue:
+Error in recalc.corAR1(object[[i]], conLin): NA/NaN/Inf in foreign function call (arg 1)
+
+This occurs when I run the following regression model:
+
+m =
+  lme(
+    y ~ x,
+    random = ~x|user_id,
+    correlation = corAR1(form = ~1|user_id),
+    weights = varExp(form = ~x),
+    method = 'REML',
+    na.action = na.omit,
+    data = df)
+
+I have uploaded the data here for reproducibility:
+https://drive.google.com/file/d/1kA5-T4zZ-f33gJgAsJ9AWMlK-YXAm65m/view?usp=sharing
+
+Request your help with how to understand and fix this ussue.
+
+Thanks & regards
+Santosh
+
+
+
+
+
+
+	[[alternative HTML version deleted]]
+
+
+From bbo|ker @end|ng |rom gm@||@com  Thu Jan  2 17:23:17 2025
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Thu, 2 Jan 2025 11:23:17 -0500
+Subject: [R-sig-ME] lme() - Error in recalc.corAR1
+In-Reply-To: <CH2PR20MB3189713A2E312D3BAF7E5049C9142@CH2PR20MB3189.namprd20.prod.outlook.com>
+References: <MN2PR18MB36887F79DC1F386795023BF8823B2@MN2PR18MB3688.namprd18.prod.outlook.com>
+ <CH2PR20MB3189713A2E312D3BAF7E5049C9142@CH2PR20MB3189.namprd20.prod.outlook.com>
+Message-ID: <a09f3878-b90e-46f6-96c8-933fc5102c74@gmail.com>
+
+   Incomplete solution: scaling x and y seems to help (this is a 
+surprisingly common solution for numerical problems, which lme is 
+particularly prone to for large  data sets.
+
+   However, I didn't try to fit the full model (500K observations); I 
+used a random subsample of 10,000 points. You should try gradually 
+increasing the size of the subsample to see how the problem scales 
+(i.e., will you have to wait 3 minutes or 3 days for the full answer?) 
+and to see if you run into any other problems
+
+library(dplyr) ## data manipulation -- could also be done in base R
+library(nlme)
+library(glmmTMB)
+library(ggplot2); theme_set(theme_bw())
+
+set.seed(101)
+
+dd <- read.csv("r-sig-mixed-02jan.csv")
+
+## add per-user time step indicator, and dummy group (for glmmTMB);
+##  scale x and y
+dd2 <- (dd
+     |> group_by(user_id)
+     |> mutate(step = factor(seq(n())))
+     |> ungroup()
+     |> mutate(xs = drop(scale(x)), ys = drop(scale(y)),
+               dummy = factor(1))
+)
+
+## subsample
+dds <- dd2[sample(nrow(dd2), size = 1e4),]
+
+
+ggplot(dd, aes(x, y, group = user_id)) + geom_line(alpha = 0.2)
+
+
+system.time(m <- lme(
+     ys ~ xs,
+     random = ~xs|user_id,
+     correlation = corAR1(form = ~1|user_id),
+     weights = varExp(form = ~xs),
+     method = 'REML',
+     na.action = na.omit,
+     data = dds,
+     control = lmeControl(
+         maxIter = 1000, msMaxIter = 1000,
+         msVerbose = TRUE,
+         returnObject = TRUE  ## return result even w/ optimizer warning
+      )
+     )
+     )
+## 3 seconds
+
+The "singular convergence" warning from nlminb is inscrutable but 
+possibly ignorable. 
+https://stackoverflow.com/questions/79110546/glmmtmb-convergence-messages
+
+
+Looking at the output, it seems that you will probably have to simplify 
+your model in any case -- there is a correlation of 0.999 between the 
+random intercepts and slopes. The estimated AR1 coefficient is also very 
+small
+
+
+## Try full data set. If the problem scales *linearly* (optimistic!)
+## then we should expect this to take ~ 150 seconds ...
+
+system.time(m2 <- update(m, data = dd2))
+
+
+   glmmTMB works too, and gets similar answers, but is much slower in 
+this case (6 minutes vs 3 seconds); turning on some parallelization 
+*might* speed it up.
+
+system.time(m3 <- glmmTMB(ys ~ xs + (xs|user_id) + ar1(0 + step |user_id),
+         dispformula = ~0 + xs,  ## don't want a nugget in corAR1
+         REML = TRUE,
+         data = dds,
+         verbose = TRUE)
+         )
+
+fixef(m)
+fixef(m3)$cond
+
+VarCorr(m)
+VarCorr(m3)
+
+
+On 2025-01-02 9:08 a.m., Santosh Srinivas wrote:
+> Dear List Recipients, Hope this email finds you well.
+> 
+> I am writing to request your help the below issue:
+> Error in recalc.corAR1(object[[i]], conLin): NA/NaN/Inf in foreign function call (arg 1)
+> 
+> This occurs when I run the following regression model:
+> 
+> m =
+>    lme(
+>      y ~ x,
+>      random = ~x|user_id,
+>      correlation = corAR1(form = ~1|user_id),
+>      weights = varExp(form = ~x),
+>      method = 'REML',
+>      na.action = na.omit,
+>      data = df)
+> 
+> I have uploaded the data here for reproducibility:
+> https://drive.google.com/file/d/1kA5-T4zZ-f33gJgAsJ9AWMlK-YXAm65m/view?usp=sharing
+> 
+> Request your help with how to understand and fix this ussue.
+> 
+> Thanks & regards
+> Santosh
+> 
+> 
+> 
+> 
+> 
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> _______________________________________________
+> R-sig-mixed-models at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+
+-- 
+Dr. Benjamin Bolker
+Professor, Mathematics & Statistics and Biology, McMaster University
+Director, School of Computational Science and Engineering
+ > E-mail is sent at my convenience; I don't expect replies outside of 
+working hours.
+
+
+From @@nto@h@b@@r|n|v@@ @end|ng |rom out|ook@com  Thu Jan  2 17:41:18 2025
+From: @@nto@h@b@@r|n|v@@ @end|ng |rom out|ook@com (Santosh Srinivas)
+Date: Thu, 2 Jan 2025 16:41:18 +0000
+Subject: [R-sig-ME] lme() - Error in recalc.corAR1
+In-Reply-To: <7678B7A8-196D-4FA9-B809-FB7416EDBF25.1@smtp-inbound1.duck.com>
+References: <MN2PR18MB36887F79DC1F386795023BF8823B2@MN2PR18MB3688.namprd18.prod.outlook.com>
+ <CH2PR20MB3189713A2E312D3BAF7E5049C9142@CH2PR20MB3189.namprd20.prod.outlook.com>
+ <a09f3878-b90e-46f6-96c8-933fc5102c74@gmail.com>
+ <7678B7A8-196D-4FA9-B809-FB7416EDBF25.1@smtp-inbound1.duck.com>
+Message-ID: <CH2PR20MB31899F891F81516CBBF87C1BC9142@CH2PR20MB3189.namprd20.prod.outlook.com>
+
+Thank you very much, Dr. Bolker for such a detailed and quick response. Very much appreciate the troubleshooting steps
+
+I can confirm that in our earlier iteration when x and y were grand-mean entered (just as you have suggested below), the  lme model converged without any issues.
+
+However, we tried to fit the same model with this data where x and y are now centered within user_id. This change was done following the recommendations in the below paper:
+Enders, Craig K., and Davood Tofighi. 2007. ?Centering Predictor Variables in Cross-Sectional Multilevel Models: A New Look at an Old Issue.? Psychological Methods 12(2): 121?38. Doi:10.1037/1082-989X.12.2.121. https://osf.io/mt5z3/download
+
+Not sure why a lme model with centering at grand mean (CGM) works, but the one with centering within cluster (CWC) fails.
+
+We are currently trying glmmTMB. It has been running for last 2-3 hours with CWC data. Hopefully the model converges.
+
+Many thanks, again!
+
+Regards
+Santosh
+________________________________
+From: R-sig-mixed-models <r-sig-mixed-models-bounces_at_r-project.org_santoshbsrinivas at duck.com> on behalf of Ben Bolker <bbolker_at_gmail.com_santoshbsrinivas at duck.com>
+Sent: Thursday, January 2, 2025 5:23 PM
+To: r-sig-mixed-models at r-project.org <r-sig-mixed-models_at_r-project.org_santoshbsrinivas at duck.com>
+Subject: Re: [R-sig-ME] lme() - Error in recalc.corAR1
+
+DuckDuckGo was unable to verify sender identity
+
+   Incomplete solution: scaling x and y seems to help (this is a
+surprisingly common solution for numerical problems, which lme is
+particularly prone to for large  data sets.
+
+   However, I didn't try to fit the full model (500K observations); I
+used a random subsample of 10,000 points. You should try gradually
+increasing the size of the subsample to see how the problem scales
+(i.e., will you have to wait 3 minutes or 3 days for the full answer?)
+and to see if you run into any other problems
+
+library(dplyr) ## data manipulation -- could also be done in base R
+library(nlme)
+library(glmmTMB)
+library(ggplot2); theme_set(theme_bw())
+
+set.seed(101)
+
+dd <- read.csv("r-sig-mixed-02jan.csv")
+
+## add per-user time step indicator, and dummy group (for glmmTMB);
+##  scale x and y
+dd2 <- (dd
+     |> group_by(user_id)
+     |> mutate(step = factor(seq(n())))
+     |> ungroup()
+     |> mutate(xs = drop(scale(x)), ys = drop(scale(y)),
+               dummy = factor(1))
+)
+
+## subsample
+dds <- dd2[sample(nrow(dd2), size = 1e4),]
+
+
+ggplot(dd, aes(x, y, group = user_id)) + geom_line(alpha = 0.2)
+
+
+system.time(m <- lme(
+     ys ~ xs,
+     random = ~xs|user_id,
+     correlation = corAR1(form = ~1|user_id),
+     weights = varExp(form = ~xs),
+     method = 'REML',
+     na.action = na.omit,
+     data = dds,
+     control = lmeControl(
+         maxIter = 1000, msMaxIter = 1000,
+         msVerbose = TRUE,
+         returnObject = TRUE  ## return result even w/ optimizer warning
+      )
+     )
+     )
+## 3 seconds
+
+The "singular convergence" warning from nlminb is inscrutable but
+possibly ignorable.
+https://stackoverflow.com/questions/79110546/glmmtmb-convergence-messages
+
+
+Looking at the output, it seems that you will probably have to simplify
+your model in any case -- there is a correlation of 0.999 between the
+random intercepts and slopes. The estimated AR1 coefficient is also very
+small
+
+
+## Try full data set. If the problem scales *linearly* (optimistic!)
+## then we should expect this to take ~ 150 seconds ...
+
+system.time(m2 <- update(m, data = dd2))
+
+
+   glmmTMB works too, and gets similar answers, but is much slower in
+this case (6 minutes vs 3 seconds); turning on some parallelization
+*might* speed it up.
+
+system.time(m3 <- glmmTMB(ys ~ xs + (xs|user_id) + ar1(0 + step |user_id),
+         dispformula = ~0 + xs,  ## don't want a nugget in corAR1
+         REML = TRUE,
+         data = dds,
+         verbose = TRUE)
+         )
+
+fixef(m)
+fixef(m3)$cond
+
+VarCorr(m)
+VarCorr(m3)
+
+
+On 2025-01-02 9:08 a.m., Santosh Srinivas wrote:
+> Dear List Recipients, Hope this email finds you well.
+>
+> I am writing to request your help the below issue:
+> Error in recalc.corAR1(object[[i]], conLin): NA/NaN/Inf in foreign function call (arg 1)
+>
+> This occurs when I run the following regression model:
+>
+> m =
+>    lme(
+>      y ~ x,
+>      random = ~x|user_id,
+>      correlation = corAR1(form = ~1|user_id),
+>      weights = varExp(form = ~x),
+>      method = 'REML',
+>      na.action = na.omit,
+>      data = df)
+>
+> I have uploaded the data here for reproducibility:
+> https://drive.google.com/file/d/1kA5-T4zZ-f33gJgAsJ9AWMlK-YXAm65m/view?usp=sharing
+>
+> Request your help with how to understand and fix this ussue.
+>
+> Thanks & regards
+> Santosh
+>
+>
+>
+>
+>
+>
+>        [[alternative HTML version deleted]]
+>
+> _______________________________________________
+> R-sig-mixed-models at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+
+--
+Dr. Benjamin Bolker
+Professor, Mathematics & Statistics and Biology, McMaster University
+Director, School of Computational Science and Engineering
+ > E-mail is sent at my convenience; I don't expect replies outside of
+working hours.
+
+_______________________________________________
+R-sig-mixed-models at r-project.org mailing list
+https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+
+	[[alternative HTML version deleted]]
+
+
+From bbo|ker @end|ng |rom gm@||@com  Fri Jan  3 03:49:01 2025
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Thu, 2 Jan 2025 21:49:01 -0500
+Subject: [R-sig-ME] lme() - Error in recalc.corAR1
+In-Reply-To: <CH2PR20MB31899F891F81516CBBF87C1BC9142@CH2PR20MB3189.namprd20.prod.outlook.com>
+References: <MN2PR18MB36887F79DC1F386795023BF8823B2@MN2PR18MB3688.namprd18.prod.outlook.com>
+ <CH2PR20MB3189713A2E312D3BAF7E5049C9142@CH2PR20MB3189.namprd20.prod.outlook.com>
+ <a09f3878-b90e-46f6-96c8-933fc5102c74@gmail.com>
+ <7678B7A8-196D-4FA9-B809-FB7416EDBF25.1@smtp-inbound1.duck.com>
+ <CH2PR20MB31899F891F81516CBBF87C1BC9142@CH2PR20MB3189.namprd20.prod.outlook.com>
+Message-ID: <8bed6df4-4bf5-4f55-a01f-53a2881176da@gmail.com>
+
+   OK. (It would have been helpful to have that context ...)
+
+   A couple of quick thoughts --
+
+* I would definitely suggest some benchmarking on smaller subsets, if 
+you have the time.
+
+* I can see why you don't have flexibility in centering, but *scaling* 
+(which only changes the scale of the parameters, not anything about the 
+conclusions) might also be numerically helpful. (It's unfortunate that 
+R's scale() function conflates scaling and centering in its default 
+options ...)
+
+* The model fit I got on the smaller data set definitely suggested some 
+model simplification would be reasonable ...
+
+   cheers
+    Ben Bolker
+
+
+
+On 2025-01-02 11:41 a.m., Santosh Srinivas wrote:
+> Thank you very much, Dr. Bolker for such a detailed and quick response. Very much appreciate the troubleshooting steps
+> 
+> I can confirm that in our earlier iteration when x and y were grand-mean entered (just as you have suggested below), the  lme model converged without any issues.
+> 
+> However, we tried to fit the same model with this data where x and y are now centered within user_id. This change was done following the recommendations in the below paper:
+> Enders, Craig K., and Davood Tofighi. 2007. ?Centering Predictor Variables in Cross-Sectional Multilevel Models: A New Look at an Old Issue.? Psychological Methods 12(2): 121?38. Doi:10.1037/1082-989X.12.2.121. https://osf.io/mt5z3/download
+> 
+> Not sure why a lme model with centering at grand mean (CGM) works, but the one with centering within cluster (CWC) fails.
+> 
+> We are currently trying glmmTMB. It has been running for last 2-3 hours with CWC data. Hopefully the model converges.
+> 
+> Many thanks, again!
+> 
+> Regards
+> Santosh
+> ________________________________
+> From: R-sig-mixed-models <r-sig-mixed-models-bounces_at_r-project.org_santoshbsrinivas at duck.com> on behalf of Ben Bolker <bbolker_at_gmail.com_santoshbsrinivas at duck.com>
+> Sent: Thursday, January 2, 2025 5:23 PM
+> To: r-sig-mixed-models at r-project.org <r-sig-mixed-models_at_r-project.org_santoshbsrinivas at duck.com>
+> Subject: Re: [R-sig-ME] lme() - Error in recalc.corAR1
+> 
+> DuckDuckGo was unable to verify sender identity
+> 
+>     Incomplete solution: scaling x and y seems to help (this is a
+> surprisingly common solution for numerical problems, which lme is
+> particularly prone to for large  data sets.
+> 
+>     However, I didn't try to fit the full model (500K observations); I
+> used a random subsample of 10,000 points. You should try gradually
+> increasing the size of the subsample to see how the problem scales
+> (i.e., will you have to wait 3 minutes or 3 days for the full answer?)
+> and to see if you run into any other problems
+> 
+> library(dplyr) ## data manipulation -- could also be done in base R
+> library(nlme)
+> library(glmmTMB)
+> library(ggplot2); theme_set(theme_bw())
+> 
+> set.seed(101)
+> 
+> dd <- read.csv("r-sig-mixed-02jan.csv")
+> 
+> ## add per-user time step indicator, and dummy group (for glmmTMB);
+> ##  scale x and y
+> dd2 <- (dd
+>       |> group_by(user_id)
+>       |> mutate(step = factor(seq(n())))
+>       |> ungroup()
+>       |> mutate(xs = drop(scale(x)), ys = drop(scale(y)),
+>                 dummy = factor(1))
+> )
+> 
+> ## subsample
+> dds <- dd2[sample(nrow(dd2), size = 1e4),]
+> 
+> 
+> ggplot(dd, aes(x, y, group = user_id)) + geom_line(alpha = 0.2)
+> 
+> 
+> system.time(m <- lme(
+>       ys ~ xs,
+>       random = ~xs|user_id,
+>       correlation = corAR1(form = ~1|user_id),
+>       weights = varExp(form = ~xs),
+>       method = 'REML',
+>       na.action = na.omit,
+>       data = dds,
+>       control = lmeControl(
+>           maxIter = 1000, msMaxIter = 1000,
+>           msVerbose = TRUE,
+>           returnObject = TRUE  ## return result even w/ optimizer warning
+>        )
+>       )
+>       )
+> ## 3 seconds
+> 
+> The "singular convergence" warning from nlminb is inscrutable but
+> possibly ignorable.
+> https://stackoverflow.com/questions/79110546/glmmtmb-convergence-messages
+> 
+> 
+> Looking at the output, it seems that you will probably have to simplify
+> your model in any case -- there is a correlation of 0.999 between the
+> random intercepts and slopes. The estimated AR1 coefficient is also very
+> small
+> 
+> 
+> ## Try full data set. If the problem scales *linearly* (optimistic!)
+> ## then we should expect this to take ~ 150 seconds ...
+> 
+> system.time(m2 <- update(m, data = dd2))
+> 
+> 
+>     glmmTMB works too, and gets similar answers, but is much slower in
+> this case (6 minutes vs 3 seconds); turning on some parallelization
+> *might* speed it up.
+> 
+> system.time(m3 <- glmmTMB(ys ~ xs + (xs|user_id) + ar1(0 + step |user_id),
+>           dispformula = ~0 + xs,  ## don't want a nugget in corAR1
+>           REML = TRUE,
+>           data = dds,
+>           verbose = TRUE)
+>           )
+> 
+> fixef(m)
+> fixef(m3)$cond
+> 
+> VarCorr(m)
+> VarCorr(m3)
+> 
+> 
+> On 2025-01-02 9:08 a.m., Santosh Srinivas wrote:
+>> Dear List Recipients, Hope this email finds you well.
+>>
+>> I am writing to request your help the below issue:
+>> Error in recalc.corAR1(object[[i]], conLin): NA/NaN/Inf in foreign function call (arg 1)
+>>
+>> This occurs when I run the following regression model:
+>>
+>> m =
+>>     lme(
+>>       y ~ x,
+>>       random = ~x|user_id,
+>>       correlation = corAR1(form = ~1|user_id),
+>>       weights = varExp(form = ~x),
+>>       method = 'REML',
+>>       na.action = na.omit,
+>>       data = df)
+>>
+>> I have uploaded the data here for reproducibility:
+>> https://drive.google.com/file/d/1kA5-T4zZ-f33gJgAsJ9AWMlK-YXAm65m/view?usp=sharing
+>>
+>> Request your help with how to understand and fix this ussue.
+>>
+>> Thanks & regards
+>> Santosh
+>>
+>>
+>>
+>>
+>>
+>>
+>>         [[alternative HTML version deleted]]
+>>
+>> _______________________________________________
+>> R-sig-mixed-models at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+> 
+> --
+> Dr. Benjamin Bolker
+> Professor, Mathematics & Statistics and Biology, McMaster University
+> Director, School of Computational Science and Engineering
+>   > E-mail is sent at my convenience; I don't expect replies outside of
+> working hours.
+> 
+> _______________________________________________
+> R-sig-mixed-models at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> 
+> _______________________________________________
+> R-sig-mixed-models at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+
+-- 
+Dr. Benjamin Bolker
+Professor, Mathematics & Statistics and Biology, McMaster University
+Director, School of Computational Science and Engineering
+ > E-mail is sent at my convenience; I don't expect replies outside of 
+working hours.
+
+
+From A037119 @end|ng |rom um@|@@pt  Mon Jan 13 13:39:56 2025
+From: A037119 @end|ng |rom um@|@@pt (Ricardo Jorge Soares Martins)
+Date: Mon, 13 Jan 2025 12:39:56 +0000
+Subject: [R-sig-ME] Help in selecting the correct mixed model for a
+ randomized crossover study
+Message-ID: <VI0PR02MB108295E53AB5C4E8DE4CC02CBCD1F2@VI0PR02MB10829.eurprd02.prod.outlook.com>
+
+Dear everyone, hope you all have a great year first of all
+
+I am fairly new to R, but I'm going to have to use it for my first study, as my supervisor suggested me to use a mixed models analysis on my study.
+
+I am going to conduct a randomized crossover study where participants( about 24) are divided into 2 groups due to logistical constraints. The study involves participants performing 4 different exercise modalities( 4 conditions) in a randomized order, there is a total of 8 sessions, 2 for each exercise modality.
+
+The aim of my study is to examine the differences in the demands of the 4 modalities, analyzing and comparing 3 repeated measures( heart rate ,lactate and rate of perceived exertion) between the 4 exercise modalities. Also to note, there is the age range of the participants which is quite wide so there is some variability expected between participants.
+
+Given this setup, I am unsure about the best way to structure and use mixed models in R in this context, specifically what is the correct mixed-effects model to use in this case and also any further insights or considerations you believe I should need I'll be more then happy to listen!
+
+Thank you in advance for the help, best regards to all
+Ricardo
+
+
+
+
+
+	[[alternative HTML version deleted]]
+
+
+From d@v|de@ne@po|| @end|ng |rom un|||@|t  Tue Jan 14 13:14:05 2025
+From: d@v|de@ne@po|| @end|ng |rom un|||@|t (Davide Nespoli)
+Date: Tue, 14 Jan 2025 13:14:05 +0100
+Subject: [R-sig-ME] varIdent in glmmTMB?
+Message-ID: <CACO6HRJNB4Q76fEqHLn11pf_DLaCpWGe8Cz4Yq1JzxdgwKEQYg@mail.gmail.com>
+
+Dear development team,
+
+this is Davide Nespoli, researcher at the University of Florence (Italy).
+After building a zero-inflated negative binomial GLMM of the form:
+
+m<-glmmTMB(Time~Temperature*Sex+Position+(1|Individual),family=nbinom1(),
+ziformula=~1, data=Perm)
+
+I have a good model, but with a bit of heteroschedasticity due to the
+different levels of Temperature (which is a 3-level factor).
+I am wondering if it is possible to integrate a varIdent covariance
+structure in the model.
+I have already tried
+"+(1|Temperature), dispformula=~0,"
+but it doesn't work (neither for ZINB nor for ordered beta on proportional
+data).
+Is there a way to integrate it in such a model in glmmTMB?
+
+Thank you very much.
+Best regards,
+
+
+
+--
+Davide Nespoli, PhD
+Department of Biology
+University of Florence
+via Madonna del Piano 6, I-50019
+Sesto Fiorentino (FI), Italy
+email: davide.nespoli at unifi.it
+Tel. +390554574722
+
+	[[alternative HTML version deleted]]
+
+
+From bbo|ker @end|ng |rom gm@||@com  Tue Jan 14 15:18:36 2025
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Tue, 14 Jan 2025 09:18:36 -0500
+Subject: [R-sig-ME] varIdent in glmmTMB?
+In-Reply-To: <CACO6HRJNB4Q76fEqHLn11pf_DLaCpWGe8Cz4Yq1JzxdgwKEQYg@mail.gmail.com>
+References: <CACO6HRJNB4Q76fEqHLn11pf_DLaCpWGe8Cz4Yq1JzxdgwKEQYg@mail.gmail.com>
+Message-ID: <1a86c9c0-29dc-46d4-ab2f-5f7a90768f79@gmail.com>
+
+   The glmmTMB analogue of varIdent(form = ~ Temperature) would be
+
+dispformula = ~ Temperature
+
+   or (if you want the variance model to be parameterized as a 
+log-dispersion for each temperature rather than a log-dispersion for the 
+first temperature level plus differences in log-dispersion)
+
+   dispformula = ~ 0 + Temperature
+
+   cheers
+    Ben Bolker
+
+On 2025-01-14 7:14 a.m., Davide Nespoli wrote:
+> Dear development team,
+> 
+> this is Davide Nespoli, researcher at the University of Florence (Italy).
+> After building a zero-inflated negative binomial GLMM of the form:
+> 
+> m<-glmmTMB(Time~Temperature*Sex+Position+(1|Individual),family=nbinom1(),
+> ziformula=~1, data=Perm)
+> 
+> I have a good model, but with a bit of heteroschedasticity due to the
+> different levels of Temperature (which is a 3-level factor).
+> I am wondering if it is possible to integrate a varIdent covariance
+> structure in the model.
+> I have already tried
+> "+(1|Temperature), dispformula=~0,"
+> but it doesn't work (neither for ZINB nor for ordered beta on proportional
+> data).
+> Is there a way to integrate it in such a model in glmmTMB?
+> 
+> Thank you very much.
+> Best regards,
+> 
+> 
+> 
+> --
+> Davide Nespoli, PhD
+> Department of Biology
+> University of Florence
+> via Madonna del Piano 6, I-50019
+> Sesto Fiorentino (FI), Italy
+> email: davide.nespoli at unifi.it
+> Tel. +390554574722
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> _______________________________________________
+> R-sig-mixed-models at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+
+
+From o||verhooker @end|ng |rom pr@t@t|@t|c@@com  Wed Jan 15 14:06:25 2025
+From: o||verhooker @end|ng |rom pr@t@t|@t|c@@com (Oliver Hooker)
+Date: Wed, 15 Jan 2025 13:06:25 +0000
+Subject: [R-sig-ME] =?utf-8?q?ONLINE_COURSE_=E2=80=93_Introduction_To_Mix?=
+	=?utf-8?q?ed_Models_Using_R_And_Rstudio_=28IMMR09=29?=
+Message-ID: <CAEsSYzxnjy_nQ+jUtCFJqq8V447bBcQz9FX+UU5BCRXoFUpJ+Q@mail.gmail.com>
+
+ONLINE COURSE ? Introduction To Mixed Models Using R And Rstudio (IMMR09)
+
+https://www.prstats.org/course/introduction-to-mixed-models-using-r-and-rstudio-immr09/
+
+Use discount code 'JAN25' to make the most of our Jan sale worth 20% off
+all courses
+
+11th - 13th march 2025
+
+Instructor - Dr. Rafael De Andrade Moral
+
+COURSE OVERVIEW: This course provides a comprehensive practical and
+theoretical introduction to multilevel models, also known as hierarchical
+or mixed effects models. We will focus primarily on multilevel linear
+models, but also cover multilevel generalized linear models. Likewise, we
+will also describe Bayesian approaches to multilevel modelling. We will
+begin by focusing on *random effects* multilevel models. These models make
+it clear how multilevel models are in fact models of models. In addition,
+random effects models serve as a solid basis for understanding mixed
+effects, i.e. fixed and random effects, models. In this coverage of random
+effects, we will also cover the important concepts of statistical shrinkage
+in the estimation of effects, as well as intraclass correlation. We then
+proceed to cover linear mixed effects models, particularly focusing on
+varying intercept and/or varying slopes regression models. We will then
+cover further aspects of linear mixed effects models, including multilevel
+models for nested and crossed data data, and group level predictor
+variables. Towards the end of the course we also cover generalized linear
+mixed models (GLMMs), how to accommodate overdispersion through
+individual-level random effects, as well as Bayesian approaches to
+multilevel levels using the brms R package.
+
+Please email oliverhooker at prstatistics.com with any questions.
+
+
+January
+*ONLINE COURSE ? Using Google Earth Engine in Ecological Studies (GEEE01)
+This course will be delivered live*
+<https://www.prstats.org/course/using-google-earth-engine-in-ecological-studies-geee01/>
+*ONLINE COURSE ? Time Series Analysis and Forecasting using R and Rstudio
+(TSAF01) This course will be delivered live*
+<https://www.prstats.org/course/time-series-analysis-and-forecasting-using-r-and-rstudio-tsaf01/>
+February
+*ONLINE COURSE ? Machine Vision using Python (MVUP01) This course will be
+delivered live*
+<https://www.prstats.org/course/machine-vision-using-python-mvup01/>
+*ONLINE COURSE ? Machine Learning using Python (MLUP01) This course will be
+delivered live*
+<https://www.prstats.org/course/machine-learning-using-python-mlup01/>
+ONLINE COURSE ? Species Distribution Modelling With Bayesian Statistics
+Using R (SDMB06) This course will be delivered live
+<https://www.prstats.org/course/online-course-species-distribution-modelling-with-bayesian-statistics-using-r-sdmb06/>
+*ONLINE COURSE ? Remote sensing data analysis and coding in R for ecology
+(RSDA01) This course will be delivered live*
+<https://www.prstats.org/course/remote-sensing-data-analysis-and-coding-in-r-for-ecology-rsda01/>
+ONLINE COURSE ? Introduction to generalised linear models using R and
+Rstudio (IGLM08) This course will be delivered live
+<https://www.prstats.org/course/introduction-to-generalised-linear-models-using-r-and-rstudio-iglm08/>
+*ONLINE COURSE ? Community Analytics in Ecology and Evolutionary Biology
+for Beginners (CAFB01) This course will be delivered live*
+<https://www.prstats.org/course/community-analytics-in-ecology-and-evolutionary-biology-for-beginners-cafb01/>
+March
+ONLINE COURSE ? Introduction To Mixed Models Using R And Rstudio (IMMR09)
+This course will be delivered live
+<https://www.prstats.org/course/introduction-to-mixed-models-using-r-and-rstudio-immr09/>
+ONLINE COURSE ? Stable Isotope Mixing Models using SIBER, SIAR, MixSIAR
+(SIMM11) This course will be delivered live
+<https://www.prstats.org/course/online-course-stable-isotope-mixing-models-using-siber-siar-mixsiar-simm11/>
+ONLINE COURSE ? Multivariate Analysis Of Ecological Communities Using R
+With The VEGAN package (VGNR07) This course will be delivered live
+<https://www.prstats.org/course/multivariate-analysis-of-ecological-communities-using-r-with-the-vegan-package-vgnr07/>
+May
+ONLINE COURSE ? Movement Ecology Using R(MOVE07) This course will be
+delivered live
+<https://www.prstats.org/course/movement-ecology-using-rmove07/>
+June
+*ONLINE COURSE ? Tidyverse for Ecologists and Evolutionary Biologists
+(TIDY01) This course will be delivered live*
+<https://www.prstats.org/course/online-course-tidyverse-for-ecologists-and-evolutionary-biologists-tidy01-this-course-will-be-delivered-live/>
+
+-- 
+Oliver Hooker PhD.
+PR stats
+
+	[[alternative HTML version deleted]]
+
+
+From tempe|m@ @end|ng |rom m@u@edu  Tue Jan 21 20:33:32 2025
+From: tempe|m@ @end|ng |rom m@u@edu (Tempelman, Robert)
+Date: Tue, 21 Jan 2025 19:33:32 +0000
+Subject: [R-sig-ME] Fixing variance components in glmmTMB
+Message-ID: <CH0PR12MB5298D613FB7E49FC0B80BF1BC2E62@CH0PR12MB5298.namprd12.prod.outlook.com>
+
+Has the latest version of glmmTMB remove the ability to fix variance components in a mixed model?  i.e. https://stackoverflow.com/questions/77585084/fix-variance-components-in-a-mixed-model-in-r-glmmtmb-or-sommer
+
+
+	[[alternative HTML version deleted]]
+
+
+From bbo|ker @end|ng |rom gm@||@com  Wed Jan 22 16:09:43 2025
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Wed, 22 Jan 2025 10:09:43 -0500
+Subject: [R-sig-ME] Fixing variance components in glmmTMB
+In-Reply-To: <CH0PR12MB5298D613FB7E49FC0B80BF1BC2E62@CH0PR12MB5298.namprd12.prod.outlook.com>
+References: <CH0PR12MB5298D613FB7E49FC0B80BF1BC2E62@CH0PR12MB5298.namprd12.prod.outlook.com>
+Message-ID: <9a132698-8a9f-4e05-a422-afd0e90b5a24@gmail.com>
+
+   Not intentionally/not that I know of.  Is this approach not working 
+for you?  Can you provide a reproducible example of what you want to do 
+and why it's not working, either here or on Stack Overflow or in the 
+glmmTMB issues list?
+
+   cheers
+    Ben Bolker
+
+On 2025-01-21 2:33 p.m., Tempelman, Robert wrote:
+> Has the latest version of glmmTMB remove the ability to fix variance components in a mixed model?  i.e. https://stackoverflow.com/questions/77585084/fix-variance-components-in-a-mixed-model-in-r-glmmtmb-or-sommer
+> 
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> _______________________________________________
+> R-sig-mixed-models at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+
+
+From tempe|m@ @end|ng |rom m@u@edu  Wed Jan 22 16:14:31 2025
+From: tempe|m@ @end|ng |rom m@u@edu (Tempelman, Robert)
+Date: Wed, 22 Jan 2025 15:14:31 +0000
+Subject: [R-sig-ME] Fixing variance components in glmmTMB
+In-Reply-To: <9a132698-8a9f-4e05-a422-afd0e90b5a24@gmail.com>
+References: <CH0PR12MB5298D613FB7E49FC0B80BF1BC2E62@CH0PR12MB5298.namprd12.prod.outlook.com>
+ <9a132698-8a9f-4e05-a422-afd0e90b5a24@gmail.com>
+Message-ID: <CH0PR12MB5298B9AAFA50522B050BD875C2E12@CH0PR12MB5298.namprd12.prod.outlook.com>
+
+Got it working now...somebody passed onto me this nugget last night:
+
+As of version 1.1.9<https://urldefense.com/v3/__https://cloud.r-project.org/web/packages/glmmTMB/news.html__;!!HXCxUKc!3__nPeuzixezIKH5upUs1PNx5jNLFsdcOqcwQWHN51gD4oFrwbgDeYztNRxll4gyEb7taAg9_BAvDR22KK2sHOPh$>, the argument corresponding to the residual variance (?betad?) is parameterized on the log-SD scale instead of the log-variance scale.   In version 1.1.10, this argument changed from ?betad? to ?betadisp?.
+
+I had "betad" in all of my older code.
+
+________________________________
+From: R-sig-mixed-models <r-sig-mixed-models-bounces at r-project.org> on behalf of Ben Bolker <bbolker at gmail.com>
+Sent: Wednesday, January 22, 2025 10:09 AM
+To: r-sig-mixed-models at r-project.org <r-sig-mixed-models at r-project.org>
+Subject: Re: [R-sig-ME] Fixing variance components in glmmTMB
+
+   Not intentionally/not that I know of.  Is this approach not working
+for you?  Can you provide a reproducible example of what you want to do
+and why it's not working, either here or on Stack Overflow or in the
+glmmTMB issues list?
+
+   cheers
+    Ben Bolker
+
+On 2025-01-21 2:33 p.m., Tempelman, Robert wrote:
+> Has the latest version of glmmTMB remove the ability to fix variance components in a mixed model?  i.e. https://urldefense.com/v3/__https://stackoverflow.com/questions/77585084/fix-variance-components-in-a-mixed-model-in-r-glmmtmb-or-sommer__;!!HXCxUKc!0JqqzBv9yhXtOwmzXwSK3-59lOHI4g6zhLf-6JJ68JqDL9s1FxMJj8YE8o-UAvt5UX4EQ3yV-1PGenM$
+>
+>
+>        [[alternative HTML version deleted]]
+>
+> _______________________________________________
+> R-sig-mixed-models at r-project.org mailing list
+> https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models__;!!HXCxUKc!0JqqzBv9yhXtOwmzXwSK3-59lOHI4g6zhLf-6JJ68JqDL9s1FxMJj8YE8o-UAvt5UX4EQ3yVpoWilJo$
+
+_______________________________________________
+R-sig-mixed-models at r-project.org mailing list
+https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models__;!!HXCxUKc!0JqqzBv9yhXtOwmzXwSK3-59lOHI4g6zhLf-6JJ68JqDL9s1FxMJj8YE8o-UAvt5UX4EQ3yVpoWilJo$
+
+	[[alternative HTML version deleted]]
+
+
+From bbo|ker @end|ng |rom gm@||@com  Wed Jan 22 16:44:54 2025
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Wed, 22 Jan 2025 10:44:54 -0500
+Subject: [R-sig-ME] Fixing variance components in glmmTMB
+In-Reply-To: <CH0PR12MB5298B9AAFA50522B050BD875C2E12@CH0PR12MB5298.namprd12.prod.outlook.com>
+References: <CH0PR12MB5298D613FB7E49FC0B80BF1BC2E62@CH0PR12MB5298.namprd12.prod.outlook.com>
+ <9a132698-8a9f-4e05-a422-afd0e90b5a24@gmail.com>
+ <CH0PR12MB5298B9AAFA50522B050BD875C2E12@CH0PR12MB5298.namprd12.prod.outlook.com>
+Message-ID: <cc498cd3-5edf-4446-b51c-9d623b408e4a@gmail.com>
+
+   OK.
+
+   As you point out, both of these are in the NEWS: the change in 
+variance scale is admittedly something you just have to know/read about. 
+The change from 'betad' to 'betadisp' is something that it might be 
+possible to flag with an informative error message ...
+
+On 2025-01-22 10:14 a.m., Tempelman, Robert wrote:
+> Got it working now...somebody passed onto me this nugget last night:
+> 
+> As of version 1.1.9 <https://urldefense.com/v3/__https://cloud.r- 
+> project.org/web/packages/glmmTMB/news.html__;!!HXCxUKc! 
+> 3__nPeuzixezIKH5upUs1PNx5jNLFsdcOqcwQWHN51gD4oFrwbgDeYztNRxll4gyEb7taAg9_BAvDR22KK2sHOPh$>, the argument corresponding to the residual variance (?betad?) is parameterized on the log-SD scale instead of the log-variance scale. ??In version 1.1.10, this argument changed from ?betad? to ?betadisp?.
+> 
+> I had "betad" in all of my older code.
+> 
+> ------------------------------------------------------------------------
+> *From:* R-sig-mixed-models <r-sig-mixed-models-bounces at r-project.org> on 
+> behalf of Ben Bolker <bbolker at gmail.com>
+> *Sent:* Wednesday, January 22, 2025 10:09 AM
+> *To:* r-sig-mixed-models at r-project.org <r-sig-mixed-models at r-project.org>
+> *Subject:* Re: [R-sig-ME] Fixing variance components in glmmTMB
+>  ?? Not intentionally/not that I know of.? Is this approach not working
+> for you?? Can you provide a reproducible example of what you want to do
+> and why it's not working, either here or on Stack Overflow or in the
+> glmmTMB issues list?
+> 
+>  ?? cheers
+>  ??? Ben Bolker
+> 
+> On 2025-01-21 2:33 p.m., Tempelman, Robert wrote:
+>> Has the latest version of glmmTMB remove the ability to fix variance components in a mixed model?? i.e. https://urldefense.com/v3/__https://stackoverflow.com/ 
+> questions/77585084/fix-variance-components-in-a-mixed-model-in-r- 
+> glmmtmb-or-sommer__;!!HXCxUKc! 
+> 0JqqzBv9yhXtOwmzXwSK3-59lOHI4g6zhLf-6JJ68JqDL9s1FxMJj8YE8o- 
+> UAvt5UX4EQ3yV-1PGenM$ <https://urldefense.com/v3/__https:// 
+> stackoverflow.com/questions/77585084/fix-variance-components-in-a-mixed- 
+> model-in-r-glmmtmb-or-sommer__;!!HXCxUKc! 
+> 0JqqzBv9yhXtOwmzXwSK3-59lOHI4g6zhLf-6JJ68JqDL9s1FxMJj8YE8o- 
+> UAvt5UX4EQ3yV-1PGenM$>
+>> 
+>> 
+>>??????? [[alternative HTML version deleted]]
+>> 
+>> _______________________________________________
+>> R-sig-mixed-models at r-project.org mailing list
+>> https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-sig- 
+> mixed-models__;!!HXCxUKc! 
+> 0JqqzBv9yhXtOwmzXwSK3-59lOHI4g6zhLf-6JJ68JqDL9s1FxMJj8YE8o- 
+> UAvt5UX4EQ3yVpoWilJo$ <https://urldefense.com/v3/__https://stat.ethz.ch/ 
+> mailman/listinfo/r-sig-mixed-models__;!!HXCxUKc! 
+> 0JqqzBv9yhXtOwmzXwSK3-59lOHI4g6zhLf-6JJ68JqDL9s1FxMJj8YE8o- 
+> UAvt5UX4EQ3yVpoWilJo$>
+> 
+> _______________________________________________
+> R-sig-mixed-models at r-project.org mailing list
+> https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-sig- 
+> mixed-models__;!!HXCxUKc! 
+> 0JqqzBv9yhXtOwmzXwSK3-59lOHI4g6zhLf-6JJ68JqDL9s1FxMJj8YE8o- 
+> UAvt5UX4EQ3yVpoWilJo$ <https://urldefense.com/v3/__https://stat.ethz.ch/ 
+> mailman/listinfo/r-sig-mixed-models__;!!HXCxUKc! 
+> 0JqqzBv9yhXtOwmzXwSK3-59lOHI4g6zhLf-6JJ68JqDL9s1FxMJj8YE8o- 
+> UAvt5UX4EQ3yVpoWilJo$>
+
+-- 
+Dr. Benjamin Bolker
+Professor, Mathematics & Statistics and Biology, McMaster University
+Director, School of Computational Science and Engineering
+ > E-mail is sent at my convenience; I don't expect replies outside of 
+working hours.
+
+
+From @@gh@eey@n @end|ng |rom brocku@c@  Thu Jan 23 01:10:23 2025
+From: @@gh@eey@n @end|ng |rom brocku@c@ (Azadeh Aghaeeyan)
+Date: Thu, 23 Jan 2025 00:10:23 +0000
+Subject: [R-sig-ME] Seeking guidance on nonlinear mixed-effects modeling
+Message-ID: <YQXPR01MB52183DBA9FC2477C39340647CCE12@YQXPR01MB5218.CANPRD01.PROD.OUTLOOK.COM>
+
+Hello everyone,
+I am currently working on a project where I aim to use a mixed-effects modeling approach to estimate the parameters of a model. I am new to both R and mixed-effects modeling and would greatly appreciate any advice on which specific approaches or packages would be suitable for my work.
+Here is my model
+Yij ~ NB(mu_{ij}, overdispersion)
+where
+ mu_{ij} = a_i (exp(-k_i(j-1)) - exp(-k_i(j))) + (Wi - a_i)(exp(-p_iXi(j-1)-q_iZi(j-1)) - exp(-p_iXij-q_iZij))
+Yij is the outcome variable  for group i, i=1,2,..,I, at time index j=1,2,..,J; Xij and Zij are two time-varying covariates for group i at time index j; Wi is a fixed covariate for group i,
+a_i ~ ab_1, k_i ~ kb_2, p_i ~pb_3, q_i ~ qb_4, where a,k,p, and q are positive fixed-effects parameters, and b_l, l=1,2,3,4, are log-normal distributed.
+
+I do not have any prior assumptions on the overdispersion parameter.
+
+Thank you in advance for your time
+Best Regards,
+Nil
+
+	[[alternative HTML version deleted]]
+
+
+From d@v|d@@|r|@uk @end|ng |rom gm@||@com  Fri Jan 31 17:29:02 2025
+From: d@v|d@@|r|@uk @end|ng |rom gm@||@com (David Sirl)
+Date: Fri, 31 Jan 2025 16:29:02 +0000
+Subject: [R-sig-ME] Nonlinear mixed models with nlme::nlme() and
+ lme4::nlmer()
+In-Reply-To: <aafcb4fc-653e-4d0d-8851-1841ebd36b5b@gmail.com>
+References: <AS4PR06MB85657C047306A352F7B4EB26C3222@AS4PR06MB8565.eurprd06.prod.outlook.com>
+ <aafcb4fc-653e-4d0d-8851-1841ebd36b5b@gmail.com>
+Message-ID: <e23bd348-3b13-4840-9cbd-8dbea50b1f83@gmail.com>
+
+Hi all,
+
+Following up my email below about getting different results when fitting 
+the same model to the same data using nlme::nlme() and lme4::nlmer() 
+[they agree fairly well on reported deviance, quartiles of residuals, 
+estimated random effect variances and estimated fixed effects; but 
+differ wildly on the standard errors and correlations associated with 
+fixed effects]; I wonder if anyone has any suggestion/s for where or how 
+I might be able to tempt someone to speculate what's going on please?
+
+(I am very willing to follow instructions / try things out to help 
+figure out what's happening; though due to other commitments I may be a 
+few days between opportunities to do so.)
+
+Best wishes,
+Dave
+
+
+On 21/11/2024 21:12, David Sirl wrote:
+>
+> Hi R-sig-mixed-models-ers,
+>
+> I'm fairly new to working with mixed models (and only have a couple of 
+> years of working with R behind me) and have reason to want to fit some 
+> nonlinear mixed models, so I'm working through the analysis of the 
+> Soybean data that's in Sec 6.3 of Pinheiro & Bates' book 
+> "Mixed-Effects Models in S and S-plus" (2000, Springer series on 
+> Statistics & Computing).
+>
+> To help learn about these models I've been reproducing this analysis 
+> using both nlme::nlme() (as P&B use, though in S rather than R) and 
+> lme4::nlmer() (which I understand to have broadly similar 
+> functionality but with better numerics in some places) and the results 
+> from the two different packages agreed fairly well for the first 
+> analyses I did. But now I have tried to fit a particular model (to the 
+> same data) using these two methods and I get results that (i) suggest 
+> I really am fitting the same model to the same data, (ii) in some 
+> respects agree closely, but (iii) in other respects differ wildly.
+>
+> A couple of colleagues have checked my code and don't see any issues, 
+> so I wonder if anyone here might be able to suggest what's going wrong 
+> with either one of these functions (which I presume is not very 
+> likely) or my use of these functions (presumably much more likely!) 
+> please?
+>
+> I've set out what I've done below; and I'd be very grateful for any 
+> suggestions that anyone can offer re what has gone wrong and where.
+>
+> Best wishes,
+> Dave
+>
+>
+> *A first sanity check*
+>
+> First I'll just write out the key parts of the calls I make to these 
+> functions, in case I've been really daft and not noticed that my calls 
+> should not be expected to fit the same model:
+>
+> nlme::nlme(weight ~ SSlogis(Time, Asym, xmid, scal),
+> ?????????? data = ...,
+> ?????????? fixed = Asym+xmid+scal~1,
+> ?????????? random = Asym~1,
+> ?????????? groups = ~Plot,
+> ?????????? start = ...)
+>
+> lme4::nlmer(weight ~ SSlogis(Time, Asym, xmid, scal) ~ (Asym + xmid + 
+> scal) + (Asym|Plot),
+> ??????????? data = ...,
+> ??????????? start = ...)
+>
+>
+> *Some more detail*
+>
+> Assuming/hoping that the code above suggests that I am fitting the 
+> same model with both methods, here's a bit more detail of the context, 
+> what I'm trying to do and what's happening that suggests to me 
+> something is going wrong.
+>
+> The dataset is Soybean (has "weight" recorded at 8-10 values of "Time" 
+> for each of 48 values of the grouping factor "Plot") and the model I'm 
+> trying to fit is of logistic growth using SSlogis(Time, Asym, xmid, 
+> scal) with a random effect for Asym only (and fixed effects for all 
+> three parameters).
+>
+> The starting parameter values I use are the (marginal) medians of the 
+> parameter estimates for group-wise OLS fits of a logistic function to 
+> the data for each Plot (fitted using nlme::olsList()) - I've omitted 
+> this and entered the values explicitly here:
+>
+> startParams = c(Asym=19.813031, xmid=56.243394, scal=8.718537)
+>
+> fm3Soy.nlme =
+> nlme::nlme(weight ~ SSlogis(Time, Asym, xmid, scal),
+> ???????????? data = nlme::Soybean
+> ???????????? fixed = Asym+xmid+scal~1,
+> ???????????? random = Asym~1,
+> ???????????? groups = ~Plot,
+> ???????????? start = startParams)
+>
+>
+> fm3Soy.nlmer =
+> lme4::nlmer(weight ~ SSlogis(Time, Asym, xmid, scal) ~ (Asym + xmid + 
+> scal) + (Asym|Plot),
+> ????????????? data = nlme::Soybean
+> ????????????? start = startParams)
+>
+> From the summary() of each fit I get what appear to be exactly the 
+> same parameters being estimated / reported on, and they're very much 
+> in agreement regarding likelihood/AIC/BIC values, variances of random 
+> effects, point estimates of fixed effects. But they are qualitatively 
+> very different in terms of standard errors and correlations for fixed 
+> effects. The standard errors differ by a factor of ~100 and the 
+> correlations are in the range 0.3 - 0.7 vs -0.3 - 0.0 and, based on 
+> what I know of the data (and the output in P&B's book!)? I'm fairly 
+> confident that the results from lme4::nlmer() which are incorrect.
+>
+> A further suggestion of things going wrong arises if I try to find CIs 
+> for model parameters [using intervals(fm3Soy.nlme) and 
+> confint(fm3Soy.nlmer)]. The latter gives an error message "Error in 
+> eval(expr, envir, enclos): step factor reduced below 0.001 without 
+> reducing pwrss" which I don't understand and for which my Google-ing 
+> doesn't yield any help - I only see help for when this error arises in 
+> fitting the model.
+>
+> Another possibly relevant point is that this is not a model that's 
+> actually fitted in P&B (the first thing they do is deal with the 
+> non-constant error variance). But even if some of the model 
+> assumptions are violated I am still fitting the same model to the same 
+> data, so I feel quite un-nerved by the big discrepancy in the results 
+> from the two methods.
+>
+> The fits both seem reasonably good in the sense that the augmented 
+> predictions [e.g. with nlme::augPred(fm3Soy.nlme, level=0:1) |> 
+> plot()] for both methods agree with each other and, visually, agree 
+> fairly well to the data. (It's only standard errors and correlations 
+> of fixed effects that differ.)
+>
+> (I have also fitted the model in a Bayesian way using brms::brm() and 
+> get results that are in keeping with those from nlme::nlme() above.)
+>
+> Thanks very much if you've read this far. I hope I've included all 
+> relevant information to help track down what might be happening, but 
+> if someone is interested in helping and would like some more 
+> information then please do let me know.
+>
+	[[alternative HTML version deleted]]
+
+
+From bbo|ker @end|ng |rom gm@||@com  Sat Feb  1 00:55:59 2025
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Fri, 31 Jan 2025 18:55:59 -0500
+Subject: [R-sig-ME] Nonlinear mixed models with nlme::nlme() and
+ lme4::nlmer()
+In-Reply-To: <e23bd348-3b13-4840-9cbd-8dbea50b1f83@gmail.com>
+References: <AS4PR06MB85657C047306A352F7B4EB26C3222@AS4PR06MB8565.eurprd06.prod.outlook.com>
+ <aafcb4fc-653e-4d0d-8851-1841ebd36b5b@gmail.com>
+ <e23bd348-3b13-4840-9cbd-8dbea50b1f83@gmail.com>
+Message-ID: <d3e0838b-8066-4842-8780-8d9565af3717@gmail.com>
+
+    Unfortunately nlmer needs help, and has needed it for a long time 
+now.  It does sound like nlmer is doing something weird; my best guess 
+without spending any more time on it is that it's analogous to this 
+problem: https://github.com/lme4/lme4/issues/47
+
+    Are you willing to open an issue on the lme4 github site, which is a 
+slightly better venue for this kind of bug-hunting?
+
+On 2025-01-31 11:29 a.m., David Sirl wrote:
+> Hi all,
+> 
+> Following up my email below about getting different results when fitting
+> the same model to the same data using nlme::nlme() and lme4::nlmer()
+> [they agree fairly well on reported deviance, quartiles of residuals,
+> estimated random effect variances and estimated fixed effects; but
+> differ wildly on the standard errors and correlations associated with
+> fixed effects]; I wonder if anyone has any suggestion/s for where or how
+> I might be able to tempt someone to speculate what's going on please?
+> 
+> (I am very willing to follow instructions / try things out to help
+> figure out what's happening; though due to other commitments I may be a
+> few days between opportunities to do so.)
+> 
+> Best wishes,
+> Dave
+> 
+> 
+> On 21/11/2024 21:12, David Sirl wrote:
+>>
+>> Hi R-sig-mixed-models-ers,
+>>
+>> I'm fairly new to working with mixed models (and only have a couple of
+>> years of working with R behind me) and have reason to want to fit some
+>> nonlinear mixed models, so I'm working through the analysis of the
+>> Soybean data that's in Sec 6.3 of Pinheiro & Bates' book
+>> "Mixed-Effects Models in S and S-plus" (2000, Springer series on
+>> Statistics & Computing).
+>>
+>> To help learn about these models I've been reproducing this analysis
+>> using both nlme::nlme() (as P&B use, though in S rather than R) and
+>> lme4::nlmer() (which I understand to have broadly similar
+>> functionality but with better numerics in some places) and the results
+>> from the two different packages agreed fairly well for the first
+>> analyses I did. But now I have tried to fit a particular model (to the
+>> same data) using these two methods and I get results that (i) suggest
+>> I really am fitting the same model to the same data, (ii) in some
+>> respects agree closely, but (iii) in other respects differ wildly.
+>>
+>> A couple of colleagues have checked my code and don't see any issues,
+>> so I wonder if anyone here might be able to suggest what's going wrong
+>> with either one of these functions (which I presume is not very
+>> likely) or my use of these functions (presumably much more likely!)
+>> please?
+>>
+>> I've set out what I've done below; and I'd be very grateful for any
+>> suggestions that anyone can offer re what has gone wrong and where.
+>>
+>> Best wishes,
+>> Dave
+>>
+>>
+>> *A first sanity check*
+>>
+>> First I'll just write out the key parts of the calls I make to these
+>> functions, in case I've been really daft and not noticed that my calls
+>> should not be expected to fit the same model:
+>>
+>> nlme::nlme(weight ~ SSlogis(Time, Asym, xmid, scal),
+>>  ?????????? data = ...,
+>>  ?????????? fixed = Asym+xmid+scal~1,
+>>  ?????????? random = Asym~1,
+>>  ?????????? groups = ~Plot,
+>>  ?????????? start = ...)
+>>
+>> lme4::nlmer(weight ~ SSlogis(Time, Asym, xmid, scal) ~ (Asym + xmid +
+>> scal) + (Asym|Plot),
+>>  ??????????? data = ...,
+>>  ??????????? start = ...)
+>>
+>>
+>> *Some more detail*
+>>
+>> Assuming/hoping that the code above suggests that I am fitting the
+>> same model with both methods, here's a bit more detail of the context,
+>> what I'm trying to do and what's happening that suggests to me
+>> something is going wrong.
+>>
+>> The dataset is Soybean (has "weight" recorded at 8-10 values of "Time"
+>> for each of 48 values of the grouping factor "Plot") and the model I'm
+>> trying to fit is of logistic growth using SSlogis(Time, Asym, xmid,
+>> scal) with a random effect for Asym only (and fixed effects for all
+>> three parameters).
+>>
+>> The starting parameter values I use are the (marginal) medians of the
+>> parameter estimates for group-wise OLS fits of a logistic function to
+>> the data for each Plot (fitted using nlme::olsList()) - I've omitted
+>> this and entered the values explicitly here:
+>>
+>> startParams = c(Asym=19.813031, xmid=56.243394, scal=8.718537)
+>>
+>> fm3Soy.nlme =
+>> nlme::nlme(weight ~ SSlogis(Time, Asym, xmid, scal),
+>>  ???????????? data = nlme::Soybean
+>>  ???????????? fixed = Asym+xmid+scal~1,
+>>  ???????????? random = Asym~1,
+>>  ???????????? groups = ~Plot,
+>>  ???????????? start = startParams)
+>>
+>>
+>> fm3Soy.nlmer =
+>> lme4::nlmer(weight ~ SSlogis(Time, Asym, xmid, scal) ~ (Asym + xmid +
+>> scal) + (Asym|Plot),
+>>  ????????????? data = nlme::Soybean
+>>  ????????????? start = startParams)
+>>
+>>  From the summary() of each fit I get what appear to be exactly the
+>> same parameters being estimated / reported on, and they're very much
+>> in agreement regarding likelihood/AIC/BIC values, variances of random
+>> effects, point estimates of fixed effects. But they are qualitatively
+>> very different in terms of standard errors and correlations for fixed
+>> effects. The standard errors differ by a factor of ~100 and the
+>> correlations are in the range 0.3 - 0.7 vs -0.3 - 0.0 and, based on
+>> what I know of the data (and the output in P&B's book!)? I'm fairly
+>> confident that the results from lme4::nlmer() which are incorrect.
+>>
+>> A further suggestion of things going wrong arises if I try to find CIs
+>> for model parameters [using intervals(fm3Soy.nlme) and
+>> confint(fm3Soy.nlmer)]. The latter gives an error message "Error in
+>> eval(expr, envir, enclos): step factor reduced below 0.001 without
+>> reducing pwrss" which I don't understand and for which my Google-ing
+>> doesn't yield any help - I only see help for when this error arises in
+>> fitting the model.
+>>
+>> Another possibly relevant point is that this is not a model that's
+>> actually fitted in P&B (the first thing they do is deal with the
+>> non-constant error variance). But even if some of the model
+>> assumptions are violated I am still fitting the same model to the same
+>> data, so I feel quite un-nerved by the big discrepancy in the results
+>> from the two methods.
+>>
+>> The fits both seem reasonably good in the sense that the augmented
+>> predictions [e.g. with nlme::augPred(fm3Soy.nlme, level=0:1) |>
+>> plot()] for both methods agree with each other and, visually, agree
+>> fairly well to the data. (It's only standard errors and correlations
+>> of fixed effects that differ.)
+>>
+>> (I have also fitted the model in a Bayesian way using brms::brm() and
+>> get results that are in keeping with those from nlme::nlme() above.)
+>>
+>> Thanks very much if you've read this far. I hope I've included all
+>> relevant information to help track down what might be happening, but
+>> if someone is interested in helping and would like some more
+>> information then please do let me know.
+>>
+> 	[[alternative HTML version deleted]]
+> 
+> _______________________________________________
+> R-sig-mixed-models at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+
+-- 
+Dr. Benjamin Bolker
+Professor, Mathematics & Statistics and Biology, McMaster University
+Director, School of Computational Science and Engineering
+ > E-mail is sent at my convenience; I don't expect replies outside of 
+working hours.
+
+
+From tm@nue|ch @end|ng |rom gm@||@com  Fri Feb  7 02:50:15 2025
+From: tm@nue|ch @end|ng |rom gm@||@com (=?Windows-1252?Q?Tom=E1s_Manuel_Chialina?=)
+Date: Fri, 7 Feb 2025 01:50:15 +0000
+Subject: [R-sig-ME] Questions on Penalization and Prior Variance in bglmer
+ for data with Complete Separation
+Message-ID: <CP4P284MB1556A3D9E228FDFBC3CE7E89F8F12@CP4P284MB1556.BRAP284.PROD.OUTLOOK.COM>
+
+Hi everyone,
+I'm writing because I have a couple of questions about analyzing data with complete separation when fitting a Binomial GLMM. I've been following the suggestions made by Ben Bolker in this StackOverflow post<https://stats.stackexchange.com/questions/132677/binomial-glmm-with-a-categorical-variable-with-full-successes/132678#132678> and in the glmmTMB FAQ<https://bbolker.github.io/mixedmodels-misc/ecostats_chap.html>.
+(You can generate data with the lines below)
+set.seed(123)
+# Number of observations per Trial
+n_29 <- 50
+n_30 <- 50
+Data <- data.frame(
+  Ind = 1:(n_29 + n_30),
+  Trial = rep(c(29, 30), times = c(n_29, n_30)),
+  Response = c(rep(1, n_29 * 0.76), rep(0, n_29 * 0.24),
+                   rep(1, n_30 * 1), rep(0, n_30 * 0))
+)
+I've been using the bglmer alternative (blme package) mentioned there, which involves including a prior on the fixed effects to penalize the parameter estimates. The model looks like this:
+m1 <- bglmer(Response ~ as.factor(Trial) + (1|Ind),
+family = binomial,
+fixef.prior = normal(cov = diag(8,2)),
+data = Data)
+(where 8 is the variance parameter and 2 the number of levels of the factor Trial).
+I have two main questions:
+Penalization Method in bglmer:
+I couldn?t determine which method blme uses for penalization in bglmer. Is it based on maximum likelihood, or does it use Markov-Chain Monte Carlo (MCMC) methods? I?m relatively new to Bayesian methods and have been interpreting the bglmer results similarly to how I interpret GLMMs in a frequentist framework (e.g., calculating p-values). However, I?m still uncertain about the specific method applied by bglmer. The package documentation doesn?t provide much detail on this aspect. Additionally, is it acceptable to analyze the results of this model using a frequentist approach?
+Choosing the Prior Variance:
+Regarding the specification of the prior in bglmer function (e.g., fixef.prior = normal(cov = diag(variance, n_fixed_effects)) ), what information should I consider to choose an appropriate variance value? Would it be reasonable to use as a reference the standard error of a parameter estimate not affected by complete separation in the non-penalized GLMM (e.g., using glmmTMB function)? For example, given the summary of the following non-penalized model:
+m1NonPenalized <- glmmTMB(Response ~ as.factor(Trial) +(1|Ind),
+                family = binomial,
+                data = DataM1E2)
+
+summary(m1NonPenalized)
+Conditional model:
+                    Estimate Std. Error z value Pr(>|z|)
+(Intercept)        1.153e+00  4.958e-01   2.325   0.0201 *
+as.factor(Trial)30 3.338e+01  4.458e+06   0.000   1.0000
+Here, we observe that Trial 30 is affected by separation as its standard error is extremely large, whereas the intercept (Trial 29) is not. Would the standard error of Trial 29  serve as a reference for choosing an appropriate variance value (i.e., as the std.error is 0.49, a variance value of 1 or higher would be reasonable)?
+Additionally, I encountered an issue with the estimation of probabilities in the model fitted with bglmer (m1). You can generate an histogram to inspect the observed frequencies of data in order to follow the discussion below:
+hist <- Data %>%  ggplot(aes(x = as.factor(Response))) +
+geom_bar(aes(y = after_stat(prop) * 100,group = Trial, fill = Trial), colour = "black") +
+  scale_y_continuous(limits = c(0,100), n.breaks = 10) +
+  ylab("% of responses") +
+  xlab("Response") +
+  facet_grid(. ~ Trial)
+While the observed probabilities of response were around 0.76  for Trial 29 and 1 for Trial 30, the model estimated probabilities of approximately 0.999 for both, with incredibly small standard errors (much smaller than expected given the data variability):
+
+Trial    prob         SE  df asymp.LCL asymp.UCL
+
+ 29    0.99985 2.1918e-04 Inf   0.99747   0.99999
+
+ 30    0.99998 3.3708e-05 Inf   0.99921   1.00000
+
+I noticed that reducing the variance value from 8 to 1 inside fixef.prior produced estimates closer to the observed values, as you can see below:
+
+Trial  prob     SE  df asymp.LCL asymp.UCL
+
+ 29    0.828 0.0769 Inf     0.626     0.933
+
+ 30    0.973 0.0195 Inf     0.893     0.994
+
+What might be the cause of this issue?
+Thank you very much in advance for your time and help!
+Cheers,
+Tom?s
+
+
+	[[alternative HTML version deleted]]
+
+
+From vdor|e @end|ng |rom gm@||@com  Fri Feb  7 16:56:49 2025
+From: vdor|e @end|ng |rom gm@||@com (Vincent Dorie)
+Date: Fri, 7 Feb 2025 10:56:49 -0500
+Subject: [R-sig-ME] 
+ Questions on Penalization and Prior Variance in bglmer
+ for data with Complete Separation
+In-Reply-To: <CP4P284MB1556A3D9E228FDFBC3CE7E89F8F12@CP4P284MB1556.BRAP284.PROD.OUTLOOK.COM>
+References: <CP4P284MB1556A3D9E228FDFBC3CE7E89F8F12@CP4P284MB1556.BRAP284.PROD.OUTLOOK.COM>
+Message-ID: <CA+++UwRwcYffBK-DYSyLpfTzms7fxK45f3=7spRiHgbxRcCw6g@mail.gmail.com>
+
+> I couldn?t determine which method blme uses for penalization in bglmer.
+Is it based on maximum likelihood, or does it use Markov-Chain Monte Carlo
+(MCMC) methods?
+
+>From the package description: "Maximum a posteriori estimation for linear
+and generalized linear mixed-effects models in a Bayesian setting,
+implementing the methods of Chung, et al. (2013)
+<doi:10.1007/s11336-013-9328-2>".
+
+So it applies the priors you specify and then maximizes the posterior.
+
+> Additionally, is it acceptable to analyze the results of this model using
+a frequentist approach?
+
+Sort of? If your sample size is large then then the contributions of the
+priors vanish and the algorithm will converge to the same place as maximum
+likelihood (unless that fails to converge because the parameters are truly
+at the boundary of the space). However, if you already have a well-defined
+problem where the maximum likelihood estimate exists and is stable, you're
+probably not going to be using blme. In that case, there really isn't a
+coherent interpretation to the standard errors blme returns beyond a
+measure of the curvature at the posterior mode, which corresponds to a
+normal approximation. That generally isn't considered to be very
+meaningful, because the posterior can be far from normal. For models where
+lmer fails to converge, blme is intended to allow the researcher to rapidly
+prototype solutions before fitting in an MCMC Bayesian setting where
+posterior credible intervals can be obtained.
+
+> what information should I consider to choose an appropriate variance
+value?
+
+I suppose that depends on your goal. If you're just trying to
+penalize/regularize a model, then using a weakly informative prior based on
+the built-in scale of the logistic function is sufficient (the default). If
+you actually have substantive information you want to incorporate, then
+treat your posterior uncertainty from that as your prior uncertainty in a
+new model. However, in my mind that would largely apply if there is a
+meta-analysis you can leverage or if the data you are analyzing are part of
+a larger dataset that has been partially analyzed.
+
+> What might be the cause of this issue?
+
+Ind contains no repeated values, so the random effects can cause perfect
+prediction. e.g.
+
+random_intercepts <- ranef(m1)$Ind
+cor(
+  random_intercepts[match(Data$Ind,
+as.integer(row.names(random_intercepts))),],
+  Data$Response
+)
+[1] 0.9999599
+
+You probably want to fit a glm instead for this example, which I believe
+gives you the results you are expecting to see.
+
+Cheers,
+Vince
+
+On Thu, Feb 6, 2025 at 8:50?PM Tom?s Manuel Chialina <tmanuelch at gmail.com>
+wrote:
+
+> Hi everyone,
+> I'm writing because I have a couple of questions about analyzing data with
+> complete separation when fitting a Binomial GLMM. I've been following the
+> suggestions made by Ben Bolker in this StackOverflow post<
+> https://stats.stackexchange.com/questions/132677/binomial-glmm-with-a-categorical-variable-with-full-successes/132678#132678>
+> and in the glmmTMB FAQ<
+> https://bbolker.github.io/mixedmodels-misc/ecostats_chap.html>.
+> (You can generate data with the lines below)
+> set.seed(123)
+> # Number of observations per Trial
+> n_29 <- 50
+> n_30 <- 50
+> Data <- data.frame(
+>   Ind = 1:(n_29 + n_30),
+>   Trial = rep(c(29, 30), times = c(n_29, n_30)),
+>   Response = c(rep(1, n_29 * 0.76), rep(0, n_29 * 0.24),
+>                    rep(1, n_30 * 1), rep(0, n_30 * 0))
+> )
+> I've been using the bglmer alternative (blme package) mentioned there,
+> which involves including a prior on the fixed effects to penalize the
+> parameter estimates. The model looks like this:
+> m1 <- bglmer(Response ~ as.factor(Trial) + (1|Ind),
+> family = binomial,
+> fixef.prior = normal(cov = diag(8,2)),
+> data = Data)
+> (where 8 is the variance parameter and 2 the number of levels of the
+> factor Trial).
+> I have two main questions:
+> Penalization Method in bglmer:
+> I couldn?t determine which method blme uses for penalization in bglmer. Is
+> it based on maximum likelihood, or does it use Markov-Chain Monte Carlo
+> (MCMC) methods? I?m relatively new to Bayesian methods and have been
+> interpreting the bglmer results similarly to how I interpret GLMMs in a
+> frequentist framework (e.g., calculating p-values). However, I?m still
+> uncertain about the specific method applied by bglmer. The package
+> documentation doesn?t provide much detail on this aspect. Additionally, is
+> it acceptable to analyze the results of this model using a frequentist
+> approach?
+> Choosing the Prior Variance:
+> Regarding the specification of the prior in bglmer function (e.g.,
+> fixef.prior = normal(cov = diag(variance, n_fixed_effects)) ), what
+> information should I consider to choose an appropriate variance value?
+> Would it be reasonable to use as a reference the standard error of a
+> parameter estimate not affected by complete separation in the non-penalized
+> GLMM (e.g., using glmmTMB function)? For example, given the summary of the
+> following non-penalized model:
+> m1NonPenalized <- glmmTMB(Response ~ as.factor(Trial) +(1|Ind),
+>                 family = binomial,
+>                 data = DataM1E2)
+>
+> summary(m1NonPenalized)
+> Conditional model:
+>                     Estimate Std. Error z value Pr(>|z|)
+> (Intercept)        1.153e+00  4.958e-01   2.325   0.0201 *
+> as.factor(Trial)30 3.338e+01  4.458e+06   0.000   1.0000
+> Here, we observe that Trial 30 is affected by separation as its standard
+> error is extremely large, whereas the intercept (Trial 29) is not. Would
+> the standard error of Trial 29  serve as a reference for choosing an
+> appropriate variance value (i.e., as the std.error is 0.49, a variance
+> value of 1 or higher would be reasonable)?
+> Additionally, I encountered an issue with the estimation of probabilities
+> in the model fitted with bglmer (m1). You can generate an histogram to
+> inspect the observed frequencies of data in order to follow the discussion
+> below:
+> hist <- Data %>%  ggplot(aes(x = as.factor(Response))) +
+> geom_bar(aes(y = after_stat(prop) * 100,group = Trial, fill = Trial),
+> colour = "black") +
+>   scale_y_continuous(limits = c(0,100), n.breaks = 10) +
+>   ylab("% of responses") +
+>   xlab("Response") +
+>   facet_grid(. ~ Trial)
+> While the observed probabilities of response were around 0.76  for Trial
+> 29 and 1 for Trial 30, the model estimated probabilities of approximately
+> 0.999 for both, with incredibly small standard errors (much smaller than
+> expected given the data variability):
+>
+> Trial    prob         SE  df asymp.LCL asymp.UCL
+>
+>  29    0.99985 2.1918e-04 Inf   0.99747   0.99999
+>
+>  30    0.99998 3.3708e-05 Inf   0.99921   1.00000
+>
+> I noticed that reducing the variance value from 8 to 1 inside fixef.prior
+> produced estimates closer to the observed values, as you can see below:
+>
+> Trial  prob     SE  df asymp.LCL asymp.UCL
+>
+>  29    0.828 0.0769 Inf     0.626     0.933
+>
+>  30    0.973 0.0195 Inf     0.893     0.994
+>
+> What might be the cause of this issue?
+> Thank you very much in advance for your time and help!
+> Cheers,
+> Tom?s
+>
+>
+>         [[alternative HTML version deleted]]
+>
+> _______________________________________________
+> R-sig-mixed-models at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+>
+
+	[[alternative HTML version deleted]]
+
+
+From jorgemmtte|xe|r@ @end|ng |rom gm@||@com  Wed Feb 12 15:59:58 2025
+From: jorgemmtte|xe|r@ @end|ng |rom gm@||@com (Jorge Teixeira)
+Date: Wed, 12 Feb 2025 14:59:58 +0000
+Subject: [R-sig-ME] Advice for modelling a crossover RCT
+Message-ID: <CAOYO_yD+yP1m4rVxUhpoq-MDNzrb2nDtT27OK3PPsG8zuWEYUA@mail.gmail.com>
+
+Dear everyone,
+
+I am going to conduct a randomized crossover study where participants
+(about 20) are divided into 2 groups due to logistics constraints. The
+study involves participants performing 4 different exercise modalities
+(i.e., 4 conditions) in a randomized order, in two SEQUENCEs. So, there are
+a total of 8 sessions (2 for each exercise modality), per participant.
+
+
+
+Given this setup, I am unsure about what is the correct mixed-effects model
+to use in this case, and also any further insights or considerations you
+believe I should need... I'll be more than happy to listen!
+
+
+
+Some suggestions:
+
+M1 -> Y ~ GROUP + CONDITION + (1 | ID)
+
+M2 -> Y ~ GROUP + CONDITION + SEQUENCE + PERIOD +  (1 | ID / SEQUENCE /
+PERIOD)
+
+ M3 -> Y ~ GROUP + CONDITION + (1 | ID / SEQUENCE / PERIOD)
+
+
+
+Thank you in advance for the help
+
+	[[alternative HTML version deleted]]
+
+
+From chr|@ @end|ng |rom tr|cky@o|ut|on@@com@@u  Wed Feb 12 23:26:15 2025
+From: chr|@ @end|ng |rom tr|cky@o|ut|on@@com@@u (Chris Howden)
+Date: Wed, 12 Feb 2025 22:26:15 +0000
+Subject: [R-sig-ME] Advice for modelling a crossover RCT
+In-Reply-To: <CAOYO_yD+yP1m4rVxUhpoq-MDNzrb2nDtT27OK3PPsG8zuWEYUA@mail.gmail.com>
+References: <CAOYO_yD+yP1m4rVxUhpoq-MDNzrb2nDtT27OK3PPsG8zuWEYUA@mail.gmail.com>
+Message-ID: <SYBPR01MB719322BD646BB1254348748098FC2@SYBPR01MB7193.ausprd01.prod.outlook.com>
+
+Hi Jorge,
+
+I'm not sure you are going to have enough sample to fit complex mixed models, so I would build them up from a simple one and see how they go. The more complex ones may have a hard time converging.
+
+Looks to me like M1 -> Y ~ GROUP + CONDITION + (1 | ID/Sequence) might fit and make sense. I would interpret yr notation to mean that each person is getting their own random intercept, and then each person's sequence is also getting their own random intercept (after accounting for the persons random intercept), is that what you are aiming for? If the exercises aren't particularly onerous or difficult than I would suspect Sequence will come back explaining very little variance and could be dropped - but if onerous you might find they do the 2nd one worse, and if difficult the 2nd one better as they have time to learn. 
+
+But what is PERIOD? (I may be missing something, but I can't see where you explain that?)
+
+
+Chris Howden B.Sc. (Hons)
+Founding Partner
+Data Analysis, Modelling and Training
+Evidence Based Strategy/Policy Development, IP Commercialisation and Innovation
+(mobile) +61 (0) 410 689 945 | (skype) chris at trickysolutions.com.au
+
+-----Original Message-----
+From: R-sig-mixed-models <r-sig-mixed-models-bounces at r-project.org> On Behalf Of Jorge Teixeira
+Sent: Thursday, 13 February 2025 2:00 AM
+To: R-mixed models mailing list <r-sig-mixed-models at r-project.org>
+Subject: [R-sig-ME] Advice for modelling a crossover RCT
+
+Dear everyone,
+
+I am going to conduct a randomized crossover study where participants (about 20) are divided into 2 groups due to logistics constraints. The study involves participants performing 4 different exercise modalities (i.e., 4 conditions) in a randomized order, in two SEQUENCEs. So, there are a total of 8 sessions (2 for each exercise modality), per participant.
+
+
+
+Given this setup, I am unsure about what is the correct mixed-effects model to use in this case, and also any further insights or considerations you believe I should need... I'll be more than happy to listen!
+
+
+
+Some suggestions:
+
+M1 -> Y ~ GROUP + CONDITION + (1 | ID)
+
+M2 -> Y ~ GROUP + CONDITION + SEQUENCE + PERIOD +  (1 | ID / SEQUENCE /
+PERIOD)
+
+ M3 -> Y ~ GROUP + CONDITION + (1 | ID / SEQUENCE / PERIOD)
+
+
+
+Thank you in advance for the help
+
+	[[alternative HTML version deleted]]
+
+_______________________________________________
+R-sig-mixed-models at r-project.org mailing list https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+
+
+From h|gh@t@t @end|ng |rom h|gh@t@t@com  Thu Feb 13 12:39:03 2025
+From: h|gh@t@t @end|ng |rom h|gh@t@t@com (Alain Zuur)
+Date: Thu, 13 Feb 2025 11:39:03 +0000
+Subject: [R-sig-ME] New book: The World of Zero-Inflated Models: Using
+ GLLVM. Zuur and Ieno (2025)
+Message-ID: <15683d5d-afe4-450a-8121-7c725f12843b@highstat.com>
+
+We are pleased to announce our new book: /The World of Zero-Inflated 
+Models: Using GLLVM/. Zuur and Ieno (2025)
+
+This book explores modern statistical methods for analyzing complex 
+datasets, focusing on multivariate models, mixed-effects models, and 
+latent variable models. GLLVMs integrate GLMs and GLMMs with 
+multivariate analysis techniques, allowing multiple response variables 
+to be modeled within a single framework.
+
+Key topics include count data models with excess zeros and distributions 
+such as Poisson, negative binomial, zero-inflated Poisson, zero-inflated 
+negative binomial, and Tweedie. The book also provides practical 
+guidance on implementing these models in R using the *gllvm* package.
+
+Designed for researchers, statisticians, and analysts working with 
+multivariate ecological, environmental, or social science data, this 
+book is also a practical resource for R users looking to apply complex 
+statistical models effectively. Each chapter includes detailed R code 
+and case studies, demonstrating how to fit and interpret complex models, 
+diagnose potential issues, and refine model performance. Emphasizing 
+practical solutions, the book helps readers apply these methods to 
+real-world datasets.
+
+For more info: highstat.com
+
+
+Kind regards,
+Alain Zuur
+
+	[[alternative HTML version deleted]]
+
+
+From jorgemmtte|xe|r@ @end|ng |rom gm@||@com  Thu Feb 13 12:57:48 2025
+From: jorgemmtte|xe|r@ @end|ng |rom gm@||@com (Jorge Teixeira)
+Date: Thu, 13 Feb 2025 11:57:48 +0000
+Subject: [R-sig-ME] Advice for modelling a crossover RCT
+In-Reply-To: <SYBPR01MB719322BD646BB1254348748098FC2@SYBPR01MB7193.ausprd01.prod.outlook.com>
+References: <CAOYO_yD+yP1m4rVxUhpoq-MDNzrb2nDtT27OK3PPsG8zuWEYUA@mail.gmail.com>
+ <SYBPR01MB719322BD646BB1254348748098FC2@SYBPR01MB7193.ausprd01.prod.outlook.com>
+Message-ID: <CAOYO_yCH6sUiGRs_PpgH7gXLEEN_3hjN_R+10aBuVbArGLh_yg@mail.gmail.com>
+
+Thank you, Chris.
+
+By period I mean the order of the exercise condition within each sequence
+(aka cycle).
+
+Maybe cycle/ period resonates better for you. See fig 1 of Individual
+responses to topical ibuprofen gel or capsaicin cream for painful knee
+osteoarthritis: a series of n-of-1 trials - PubMed
+<https://pubmed.ncbi.nlm.nih.gov/33197270/>
+https://pubmed.ncbi.nlm.nih.gov/33197270/  .
+
+Carryover effects are irrelevant for the study, imo
+
+A quarta, 12/02/2025, 22:26, Chris Howden <chris at trickysolutions.com.au>
+escreveu:
+
+> Hi Jorge,
+>
+> I'm not sure you are going to have enough sample to fit complex mixed
+> models, so I would build them up from a simple one and see how they go. The
+> more complex ones may have a hard time converging.
+>
+> Looks to me like M1 -> Y ~ GROUP + CONDITION + (1 | ID/Sequence) might fit
+> and make sense. I would interpret yr notation to mean that each person is
+> getting their own random intercept, and then each person's sequence is also
+> getting their own random intercept (after accounting for the persons random
+> intercept), is that what you are aiming for? If the exercises aren't
+> particularly onerous or difficult than I would suspect Sequence will come
+> back explaining very little variance and could be dropped - but if onerous
+> you might find they do the 2nd one worse, and if difficult the 2nd one
+> better as they have time to learn.
+>
+> But what is PERIOD? (I may be missing something, but I can't see where you
+> explain that?)
+>
+>
+> Chris Howden B.Sc. (Hons)
+> Founding Partner
+> Data Analysis, Modelling and Training
+> Evidence Based Strategy/Policy Development, IP Commercialisation and
+> Innovation
+> (mobile) +61 (0) 410 689 945 | (skype) chris at trickysolutions.com.au
+>
+> -----Original Message-----
+> From: R-sig-mixed-models <r-sig-mixed-models-bounces at r-project.org> On
+> Behalf Of Jorge Teixeira
+> Sent: Thursday, 13 February 2025 2:00 AM
+> To: R-mixed models mailing list <r-sig-mixed-models at r-project.org>
+> Subject: [R-sig-ME] Advice for modelling a crossover RCT
+>
+> Dear everyone,
+>
+> I am going to conduct a randomized crossover study where participants
+> (about 20) are divided into 2 groups due to logistics constraints. The
+> study involves participants performing 4 different exercise modalities
+> (i.e., 4 conditions) in a randomized order, in two SEQUENCEs. So, there are
+> a total of 8 sessions (2 for each exercise modality), per participant.
+>
+>
+>
+> Given this setup, I am unsure about what is the correct mixed-effects
+> model to use in this case, and also any further insights or considerations
+> you believe I should need... I'll be more than happy to listen!
+>
+>
+>
+> Some suggestions:
+>
+> M1 -> Y ~ GROUP + CONDITION + (1 | ID)
+>
+> M2 -> Y ~ GROUP + CONDITION + SEQUENCE + PERIOD +  (1 | ID / SEQUENCE /
+> PERIOD)
+>
+>  M3 -> Y ~ GROUP + CONDITION + (1 | ID / SEQUENCE / PERIOD)
+>
+>
+>
+> Thank you in advance for the help
+>
+>         [[alternative HTML version deleted]]
+>
+> _______________________________________________
+> R-sig-mixed-models at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+>
+
+	[[alternative HTML version deleted]]
+
+
+From chr|@ @end|ng |rom tr|cky@o|ut|on@@com@@u  Mon Feb 17 05:35:38 2025
+From: chr|@ @end|ng |rom tr|cky@o|ut|on@@com@@u (Chris Howden)
+Date: Mon, 17 Feb 2025 04:35:38 +0000
+Subject: [R-sig-ME] Advice for modelling a crossover RCT
+In-Reply-To: <CAOYO_yCH6sUiGRs_PpgH7gXLEEN_3hjN_R+10aBuVbArGLh_yg@mail.gmail.com>
+References: <CAOYO_yD+yP1m4rVxUhpoq-MDNzrb2nDtT27OK3PPsG8zuWEYUA@mail.gmail.com>
+ <SYBPR01MB719322BD646BB1254348748098FC2@SYBPR01MB7193.ausprd01.prod.outlook.com>
+ <CAOYO_yCH6sUiGRs_PpgH7gXLEEN_3hjN_R+10aBuVbArGLh_yg@mail.gmail.com>
+Message-ID: <SYBPR01MB7193785E3258A4FB2E7FB3E598FB2@SYBPR01MB7193.ausprd01.prod.outlook.com>
+
+Thanks Jorge,
+
+Generally I believe one doesn?t include a factor as both fixed and random, as my understanding of that is that it effectively means you?re trying to estimate its effect 2 different ways so its effect has to be split somehow between the fixed effect parameter and the random effects BLUP. But there is no objective way to do this, and it doesn?t really make sense to do that either. So you need to pick a way i.e. is the effect of each person being captured as a fixed effect parameter or in their random effects BLUP. So I don?t think this ones appropriate M2 -> Y ~ GROUP + CONDITION + SEQUENCE + PERIOD +  (1 | ID / SEQUENCE /
+PERIOD)
+
+
+As for this one  M2 -> Y ~ GROUP + CONDITION + SEQUENCE +  (1 | ID / SEQUENCE /
+PERIOD)
+
+I?m not sure you have enough data to fit all those random effects!! I?m also not entirely clear if period makes sense in that context ? although it might. I?d suggest you start simple and get complex if you think it does. So maybe fit the model with (1 | ID) then (1 | ID / SEQUENCE)  then (1 | ID / SEQUENCE / PERIOD) to see how they go.
+
+Chris Howden B.Sc. (Hons)
+Founding Partner
+Data Analysis, Modelling and Training
+Evidence Based Strategy/Policy Development, IP Commercialisation and Innovation
+(mobile) +61 (0) 410 689 945 | (skype) chris at trickysolutions.com.au<mailto:chris at trickysolutions.com.au>
+
+From: Jorge Teixeira <jorgemmtteixeira at gmail.com>
+Sent: Thursday, 13 February 2025 10:58 PM
+To: Chris Howden <chris at trickysolutions.com.au>
+Cc: R-mixed models mailing list <r-sig-mixed-models at r-project.org>
+Subject: Re: [R-sig-ME] Advice for modelling a crossover RCT
+
+Thank you, Chris.
+
+By period I mean the order of the exercise condition within each sequence (aka cycle).
+
+Maybe cycle/ period resonates better for you. See fig 1 of Individual responses to topical ibuprofen gel or capsaicin cream for painful knee osteoarthritis: a series of n-of-1 trials - PubMed<https://pubmed.ncbi.nlm.nih.gov/33197270/>  https://pubmed.ncbi.nlm.nih.gov/33197270/  .
+
+Carryover effects are irrelevant for the study, imo
+
+A quarta, 12/02/2025, 22:26, Chris Howden <chris at trickysolutions.com.au<mailto:chris at trickysolutions.com.au>> escreveu:
+Hi Jorge,
+
+I'm not sure you are going to have enough sample to fit complex mixed models, so I would build them up from a simple one and see how they go. The more complex ones may have a hard time converging.
+
+Looks to me like M1 -> Y ~ GROUP + CONDITION + (1 | ID/Sequence) might fit and make sense. I would interpret yr notation to mean that each person is getting their own random intercept, and then each person's sequence is also getting their own random intercept (after accounting for the persons random intercept), is that what you are aiming for? If the exercises aren't particularly onerous or difficult than I would suspect Sequence will come back explaining very little variance and could be dropped - but if onerous you might find they do the 2nd one worse, and if difficult the 2nd one better as they have time to learn.
+
+But what is PERIOD? (I may be missing something, but I can't see where you explain that?)
+
+
+Chris Howden B.Sc. (Hons)
+Founding Partner
+Data Analysis, Modelling and Training
+Evidence Based Strategy/Policy Development, IP Commercialisation and Innovation
+(mobile) +61 (0) 410 689 945 | (skype) chris at trickysolutions.com.au<mailto:chris at trickysolutions.com.au>
+
+-----Original Message-----
+From: R-sig-mixed-models <r-sig-mixed-models-bounces at r-project.org<mailto:r-sig-mixed-models-bounces at r-project.org>> On Behalf Of Jorge Teixeira
+Sent: Thursday, 13 February 2025 2:00 AM
+To: R-mixed models mailing list <r-sig-mixed-models at r-project.org<mailto:r-sig-mixed-models at r-project.org>>
+Subject: [R-sig-ME] Advice for modelling a crossover RCT
+
+Dear everyone,
+
+I am going to conduct a randomized crossover study where participants (about 20) are divided into 2 groups due to logistics constraints. The study involves participants performing 4 different exercise modalities (i.e., 4 conditions) in a randomized order, in two SEQUENCEs. So, there are a total of 8 sessions (2 for each exercise modality), per participant.
+
+
+
+Given this setup, I am unsure about what is the correct mixed-effects model to use in this case, and also any further insights or considerations you believe I should need... I'll be more than happy to listen!
+
+
+
+Some suggestions:
+
+M1 -> Y ~ GROUP + CONDITION + (1 | ID)
+
+M2 -> Y ~ GROUP + CONDITION + SEQUENCE + PERIOD +  (1 | ID / SEQUENCE /
+PERIOD)
+
+ M3 -> Y ~ GROUP + CONDITION + (1 | ID / SEQUENCE / PERIOD)
+
+
+
+Thank you in advance for the help
+
+        [[alternative HTML version deleted]]
+
+_______________________________________________
+R-sig-mixed-models at r-project.org<mailto:R-sig-mixed-models at r-project.org> mailing list https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+
+	[[alternative HTML version deleted]]
+
+
+From k|m@pe@rce @end|ng |rom newc@@t|e@@c@uk  Thu Feb 20 13:14:26 2025
+From: k|m@pe@rce @end|ng |rom newc@@t|e@@c@uk (Kim Pearce)
+Date: Thu, 20 Feb 2025 12:14:26 +0000
+Subject: [R-sig-ME] Singularity and the 3 Level Hierarchy
+Message-ID: <LO0P302MB02119206D53C0F30F0A11028D7C42@LO0P302MB0211.GBRP302.PROD.OUTLOOK.COM>
+
+Hello everyone,
+
+
+
+If I may, I would like to ask about the appropriateness of a particular model when the original design takes on a 3 level hierarchical structure.
+
+
+
+Say we have N subjects and each of these subjects has several cells.  Within each cell there are mitochondria and a continuous measurement (Y) is recorded for each mitochondrion.  In this design, mitochondria (level 1) are nested within cells (level 2) and cells are nested within subjects (level 3).
+
+
+
+For ease, say we are interested in establishing if patient disease group is related to Y.  There are 3 patient disease groups recorded in the factor variable "Groupf".  In addition, variable "Subject" identifies each of the N subjects and variable "Cell" identifies the cells (within the subjects).
+
+
+
+Consider the syntax:
+
+
+
+Model1<-lmer(Y~Groupf+(1|Subject/Cell),REML=FALSE,data=file1)
+
+
+
+The above would give us a fixed effect for Groupf as well as intercepts for the N subjects and intercepts for the Subject x Cell combinations.
+
+
+
+Hypothetically, say we found evidence of singularity (i.e. the estimated random intercept variance was near zero at the Subject and Subject x Cell levels), however, singularity was not flagged for a 2 level hierarchy (where mitochondria are nested within cells).  Would it be valid to report such a 2 level model (i.e. where the "top level" was Cell) ?
+
+
+
+Model1<-lmer(Y~Groupf+(1|Cell),REML=FALSE,data=file1)
+
+
+
+or would it be more preferable to always consider Subject as the "top level" if singularity was not flagged in such a model i.e.
+
+
+
+Model1<-lmer(Y~Groupf+(1|Subject),REML=FALSE,data=file1)
+
+
+
+Many thanks for your appreciated views on this issue in advance.
+
+Kind regards,
+
+Kim
+
+
+
+Dr Kim Pearce PhD, CStat, Fellow HEA
+Senior Statistician
+Faculty of Medical Sciences Graduate School
+Room 3.14
+3rd Floor Ridley Building 1
+Newcastle University
+Queen Victoria Road
+Newcastle Upon Tyne
+NE1 7RU
+
+Tel: (0044) (0)191 208 8142
+
+
+
+
+
+
+
+
+	[[alternative HTML version deleted]]
+
+
+From k@|m@n@toth @end|ng |rom protonm@||@com  Sat Feb 22 10:19:03 2025
+From: k@|m@n@toth @end|ng |rom protonm@||@com (kalman.toth)
+Date: Sat, 22 Feb 2025 09:19:03 +0000
+Subject: [R-sig-ME] Singularity and the 3 Level Hierarchy
+In-Reply-To: <LO0P302MB02119206D53C0F30F0A11028D7C42@LO0P302MB0211.GBRP302.PROD.OUTLOOK.COM>
+References: <LO0P302MB02119206D53C0F30F0A11028D7C42@LO0P302MB0211.GBRP302.PROD.OUTLOOK.COM>
+Message-ID: <Xb3Xb1g7blSnwBJvnS0y06S46JTOxnMwzKrDBJFcjGDaKDMcUD7FJ5kjgl7L4eFRKP8KIqv-PHZ83VREcEg1eRQcTFPhNux4BOQh6GS9n24=@protonmail.com>
+
+
+Hi Kim,
+
+I am just a scientist who often works with repeated measures data and not a statistician but I would like to add a few comments and others might amend those or add more.
+
+1) I don?t see any reason to use REML = FALSE in your case. Given what you described, I?d definitely stick with REML = TRUE?it?s the better choice when you want to properly account for the random effect structure.
+2) A work example would help.
+3) What model you use should be primarily based on your experimental design and your scientific knowledge of the field.
+4) That singular fit warning probably means that one of your parameters is estimated at (or very close to) zero. In most cases, it?s fine to just drop that parameter?unless you have a strong scientific reason to keep it. Also, if your experimental design is fully nested, you might want to try adding the interaction term ('Subject:Cell') instead of just 'Cell'.
+5) anova() or AIC() can be used to compare models with different random effect structures. 
+
+Best Regards,
+Kalman Toth  
+
+
+On Thursday, February 20th, 2025 at 1:14 PM, Kim Pearce via R-sig-mixed-models <r-sig-mixed-models at r-project.org> wrote:
+
+> Hello everyone,
+> 
+> 
+> 
+> If I may, I would like to ask about the appropriateness of a particular model when the original design takes on a 3 level hierarchical structure.
+> 
+> 
+> 
+> Say we have N subjects and each of these subjects has several cells. Within each cell there are mitochondria and a continuous measurement (Y) is recorded for each mitochondrion. In this design, mitochondria (level 1) are nested within cells (level 2) and cells are nested within subjects (level 3).
+> 
+> 
+> 
+> For ease, say we are interested in establishing if patient disease group is related to Y. There are 3 patient disease groups recorded in the factor variable "Groupf". In addition, variable "Subject" identifies each of the N subjects and variable "Cell" identifies the cells (within the subjects).
+> 
+> 
+> 
+> Consider the syntax:
+> 
+> 
+> 
+> Model1<-lmer(Y~Groupf+(1|Subject/Cell),REML=FALSE,data=file1)
+> 
+> 
+> 
+> The above would give us a fixed effect for Groupf as well as intercepts for the N subjects and intercepts for the Subject x Cell combinations.
+> 
+> 
+> 
+> Hypothetically, say we found evidence of singularity (i.e. the estimated random intercept variance was near zero at the Subject and Subject x Cell levels), however, singularity was not flagged for a 2 level hierarchy (where mitochondria are nested within cells). Would it be valid to report such a 2 level model (i.e. where the "top level" was Cell) ?
+> 
+> 
+> 
+> Model1<-lmer(Y~Groupf+(1|Cell),REML=FALSE,data=file1)
+> 
+> 
+> 
+> or would it be more preferable to always consider Subject as the "top level" if singularity was not flagged in such a model i.e.
+> 
+> 
+> 
+> Model1<-lmer(Y~Groupf+(1|Subject),REML=FALSE,data=file1)
+> 
+> 
+> 
+> Many thanks for your appreciated views on this issue in advance.
+> 
+> Kind regards,
+> 
+> Kim
+> 
+> 
+> 
+> Dr Kim Pearce PhD, CStat, Fellow HEA
+> Senior Statistician
+> Faculty of Medical Sciences Graduate School
+> Room 3.14
+> 3rd Floor Ridley Building 1
+> Newcastle University
+> Queen Victoria Road
+> Newcastle Upon Tyne
+> NE1 7RU
+> 
+> Tel: (0044) (0)191 208 8142
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> 
+> [[alternative HTML version deleted]]
+> 
+> _______________________________________________
+> R-sig-mixed-models at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+
+
+From k|m@pe@rce @end|ng |rom newc@@t|e@@c@uk  Mon Feb 24 19:15:19 2025
+From: k|m@pe@rce @end|ng |rom newc@@t|e@@c@uk (Kim Pearce)
+Date: Mon, 24 Feb 2025 18:15:19 +0000
+Subject: [R-sig-ME] Singularity and the 3 Level Hierarchy
+In-Reply-To: <Xb3Xb1g7blSnwBJvnS0y06S46JTOxnMwzKrDBJFcjGDaKDMcUD7FJ5kjgl7L4eFRKP8KIqv-PHZ83VREcEg1eRQcTFPhNux4BOQh6GS9n24=@protonmail.com>
+References: <LO0P302MB02119206D53C0F30F0A11028D7C42@LO0P302MB0211.GBRP302.PROD.OUTLOOK.COM>
+ <Xb3Xb1g7blSnwBJvnS0y06S46JTOxnMwzKrDBJFcjGDaKDMcUD7FJ5kjgl7L4eFRKP8KIqv-PHZ83VREcEg1eRQcTFPhNux4BOQh6GS9n24=@protonmail.com>
+Message-ID: <LO0P302MB0211D73BFD1752C3BBB1A99ED7C02@LO0P302MB0211.GBRP302.PROD.OUTLOOK.COM>
+
+Dear Kalman,
+
+Thank you so much for your reply to the question I sent to the list last week.
+
+Just a follow up to some of your points?
+
+
+~I don?t see any reason to use REML = FALSE in your case. Given what you described, I?d definitely stick with REML = TRUE?it?s the better choice when you want to properly account for the random effect structure.
+~anova() or AIC() can be used to compare models with different random effect structures.
+
+
+
+I have read that REML is said to provide more accurate estimates of random variances whereas ML is said to produce more accurate estimates of fixed regression parameters.
+
+
+
+Additionally, I have seen the following stipulated:
+
+
+
+1.       REML to compare models with nested random effects and the same fixed effect structure
+
+2.       ML to compare models with nested fixed effects and the same random effect structure
+
+3.       ML to compare models with and without random effects
+
+For each of 1,2 and 3 above I assume that ?model comparison? can be done via the comparison of, for example, AIC values where ?smaller is better?. However, Andy Field in his text ?Discovering Statistics Using IBM SPSS Statistics? (2013, Edition 4: page 826 & page 835) only uses ML when comparing two linear mixed models via the likelihood ratio test (he states that the likelihood ratio test ?works only if full maximum likelihood estimation is used (and not REML)?.
+
+In fact, in the past, when I have used the anova() function in R to compare linear mixed models which have been fitted using REML=TRUE, R stipulates in the output that the models are ?refitted with ML (instead of REML)? before comparison takes place.
+
+
+
+Additionally, Field stipulates that the likelihood ratio test requires that the ?new model must contain  all of the effects of the older model? i.e. that the models are nested.
+
+
+
+~A worked example would help.
+
+~That singular fit warning probably means that one of your parameters is estimated at (or very close to) zero. In most cases, it?s fine to just drop that parameter?unless you have a strong scientific reason to keep it.
+
+
+
+My example was hypothetical but , say, we had j subjects and k cells in total for these j subjects and we ran the model:
+
+
+
+Model1<-lmer(Y~Groupf+(1|Subject/Cell),REML=FALSE,data=file1)
+
+
+
+which gave the following:
+
+
+
+Random effects
+
+
+
+Groups         Name                    Variance
+
+Cell:Subject  (Intercept)              2.049e-01
+
+Subject       (Intercept)              2.978e-09
+
+
+
+We can definitely see singularity here (i.e. the estimated random intercept variance is virtually zero  for the j intercepts at the Subject level and approaching zero for the k intercepts at the Subject x Cell level).
+
+
+
+In the above, it looks as if we could try dropping the random intercepts at the Subject level in order to get a non singular fit i.e. fit:
+
+
+Model2<-lmer(Y~Groupf+(1|Cell),REML=FALSE,data=file1)
+
+I was just concerned that this 2 level model implies that the ?top level? of the structure is Cell when, in truth, the ?top level? is Subject (as cells are nested within subjects in my hypothetical study).  Your message implies that Model2 above would, in fact, still be valid.
+
+I would be interested to hear if you (or anyone else) have any further views.
+
+Kindest regards,
+Kim
+
+
+
+
+
+
+
+-----Original Message-----
+From: kalman.toth <kalman.toth at protonmail.com>
+Sent: 22 February 2025 09:19
+To: Kim Pearce <kim.pearce at newcastle.ac.uk>
+Cc: r-sig-mixed-models at r-project.org
+Subject: Re: [R-sig-ME] Singularity and the 3 Level Hierarchy
+
+
+
+? External sender. Take care when opening links or attachments. Do not provide your login details.
+
+
+
+Hi Kim,
+
+
+
+I am just a scientist who often works with repeated measures data and not a statistician but I would like to add a few comments and others might amend those or add more.
+
+
+
+1) I don?t see any reason to use REML = FALSE in your case. Given what you described, I?d definitely stick with REML = TRUE?it?s the better choice when you want to properly account for the random effect structure.
+
+2) A work example would help.
+
+3) What model you use should be primarily based on your experimental design and your scientific knowledge of the field.
+
+4) That singular fit warning probably means that one of your parameters is estimated at (or very close to) zero. In most cases, it?s fine to just drop that parameter?unless you have a strong scientific reason to keep it. Also, if your experimental design is fully nested, you might want to try adding the interaction term ('Subject:Cell') instead of just 'Cell'.
+
+5) anova() or AIC() can be used to compare models with different random effect structures.
+
+
+
+Best Regards,
+
+Kalman Toth
+
+
+
+
+
+On Thursday, February 20th, 2025 at 1:14 PM, Kim Pearce via R-sig-mixed-models <r-sig-mixed-models at r-project.org<mailto:r-sig-mixed-models at r-project.org>> wrote:
+
+
+
+> Hello everyone,
+
+>
+
+>
+
+>
+
+> If I may, I would like to ask about the appropriateness of a particular model when the original design takes on a 3 level hierarchical structure.
+
+>
+
+>
+
+>
+
+> Say we have N subjects and each of these subjects has several cells. Within each cell there are mitochondria and a continuous measurement (Y) is recorded for each mitochondrion. In this design, mitochondria (level 1) are nested within cells (level 2) and cells are nested within subjects (level 3).
+
+>
+
+>
+
+>
+
+> For ease, say we are interested in establishing if patient disease group is related to Y. There are 3 patient disease groups recorded in the factor variable "Groupf". In addition, variable "Subject" identifies each of the N subjects and variable "Cell" identifies the cells (within the subjects).
+
+>
+
+>
+
+>
+
+> Consider the syntax:
+
+>
+
+>
+
+>
+
+> Model1<-lmer(Y~Groupf+(1|Subject/Cell),REML=FALSE,data=file1)
+
+>
+
+>
+
+>
+
+> The above would give us a fixed effect for Groupf as well as intercepts for the N subjects and intercepts for the Subject x Cell combinations.
+
+>
+
+>
+
+>
+
+> Hypothetically, say we found evidence of singularity (i.e. the estimated random intercept variance was near zero at the Subject and Subject x Cell levels), however, singularity was not flagged for a 2 level hierarchy (where mitochondria are nested within cells). Would it be valid to report such a 2 level model (i.e. where the "top level" was Cell) ?
+
+>
+
+>
+
+>
+
+> Model1<-lmer(Y~Groupf+(1|Cell),REML=FALSE,data=file1)
+
+>
+
+>
+
+>
+
+> or would it be more preferable to always consider Subject as the "top level" if singularity was not flagged in such a model i.e.
+
+>
+
+>
+
+>
+
+> Model1<-lmer(Y~Groupf+(1|Subject),REML=FALSE,data=file1)
+
+>
+
+>
+
+>
+
+> Many thanks for your appreciated views on this issue in advance.
+
+>
+
+> Kind regards,
+
+>
+
+> Kim
+
+>
+
+>
+
+>
+
+> Dr Kim Pearce PhD, CStat, Fellow HEA
+
+> Senior Statistician
+
+> Faculty of Medical Sciences Graduate School Room 3.14 3rd Floor Ridley
+
+> Building 1 Newcastle University Queen Victoria Road Newcastle Upon
+
+> Tyne
+
+> NE1 7RU
+
+>
+
+> Tel: (0044) (0)191 208 8142
+
+>
+
+>
+
+>
+
+>
+
+>
+
+>
+
+>
+
+>
+
+> [[alternative HTML version deleted]]
+
+>
+
+> _______________________________________________
+
+> R-sig-mixed-models at r-project.org<mailto:R-sig-mixed-models at r-project.org> mailing list
+
+> https://eur03.safelinks.protection.outlook.com/?url=https%3A%2F%2Fstat
+
+> .ethz.ch%2Fmailman%2Flistinfo%2Fr-sig-mixed-models&data=05%7C02%7Ckim.
+
+> pearce%40newcastle.ac.uk%7Cb1d7b9423e284768ff1408dd5321f615%7C9c5012c9
+
+> b61644c2a91766814fbe3e87%7C1%7C0%7C638758127525031103%7CUnknown%7CTWFp
+
+> bGZsb3d8eyJFbXB0eU1hcGkiOnRydWUsIlYiOiIwLjAuMDAwMCIsIlAiOiJXaW4zMiIsIk
+
+> FOIjoiTWFpbCIsIldUIjoyfQ%3D%3D%7C0%7C%7C%7C&sdata=duLSYpH3sZlu6GNE%2BR
+
+> KtDtvOpTB01VSz6s7wfY0ZYRg%3D&reserved=0
+
+	[[alternative HTML version deleted]]
+
+
+From chr|@topher@howden @end|ng |rom @ydney@edu@@u  Mon Feb 24 23:42:38 2025
+From: chr|@topher@howden @end|ng |rom @ydney@edu@@u (Chris Howden)
+Date: Mon, 24 Feb 2025 22:42:38 +0000
+Subject: [R-sig-ME] Singularity and the 3 Level Hierarchy
+In-Reply-To: <LO0P302MB0211D73BFD1752C3BBB1A99ED7C02@LO0P302MB0211.GBRP302.PROD.OUTLOOK.COM>
+References: <LO0P302MB02119206D53C0F30F0A11028D7C42@LO0P302MB0211.GBRP302.PROD.OUTLOOK.COM>
+ <Xb3Xb1g7blSnwBJvnS0y06S46JTOxnMwzKrDBJFcjGDaKDMcUD7FJ5kjgl7L4eFRKP8KIqv-PHZ83VREcEg1eRQcTFPhNux4BOQh6GS9n24=@protonmail.com>
+ <LO0P302MB0211D73BFD1752C3BBB1A99ED7C02@LO0P302MB0211.GBRP302.PROD.OUTLOOK.COM>
+Message-ID: <SY4PR01MB65069D05E190008FE8B267F3C0C02@SY4PR01MB6506.ausprd01.prod.outlook.com>
+
+Hi Kim,
+
+Re the 2 different models random effects - Model1) Cell:Subject vs model 2) 1|Cell
+
+Seems to me that what this is telling us is that there is no evidence of differences between subjects, but there is evidence of differences between cells. So to include that info in the model there are at least 2 ways one might go about it - based on how the cell info is coded up in the data:
+1) If the data is coded up so each cell has a different indicator value e.g. subject 1 has cell 1, cell 2 and cell 3, while subject 2 has cell 4 and cell 5, etc. Then you can assign a different random intercept to each cell by including "1|Cell" in the model call.
+2) However, if the data is coded up as the cell # for each subject e.g. subject 1 has cell 1, cell 2 and cell 3, while subject 2 has cell 1 and cell 2, etc. Then you need to include this in the model as Cell:Subject to get a different random intercept for each cell. Because if you included the base "Cell" variable it would fit a single random intercept that represents everyone's cell 1, and then a single random intercept that covers everyone's cell 2, etc
+
+So....If I have got that right.....?? I think both of the above methods give the same model i.e. different random intercept for each cell? (which is valid) But how you specify it depends on how cell is coded up in the data. 
+
+As to whether yr Model2<-lmer(Y~Groupf+(1|Cell),REML=FALSE,data=file12) is valid. Well that depends on how the cell variable is coded up. I suspect it is likely coded up as Point 2) above - meaning it isn't.
+
+Chris Howden | Statistical Lead
+Statistical Consulting Unit | Sydney Informatics Hub | Core Research Facilities
++61 410 689 945 | christopher.howden at sydney.edu.au
+Statistical Resources and Workflows/Workshops
+
+Acknowledgement of SIH workflows and statistical consulting ensures the continuation of these free services. Please consider the suggested wording on our Acknowledgements page to acknowledge our contributions in any arising publications.
+
+CRICOS 00026A
+This email plus any attachments to it are confidential. Any unauthorised use is strictly prohibited. If you receive this email in error, please delete it and any attachments Please think of our environment and only print this email if necessary
+
+-----Original Message-----
+From: R-sig-mixed-models <r-sig-mixed-models-bounces at r-project.org> On Behalf Of Kim Pearce via R-sig-mixed-models
+Sent: Tuesday, 25 February 2025 5:15 AM
+To: kalman.toth <kalman.toth at protonmail.com>
+Cc: r-sig-mixed-models at r-project.org
+Subject: Re: [R-sig-ME] Singularity and the 3 Level Hierarchy
+
+Dear Kalman,
+
+Thank you so much for your reply to the question I sent to the list last week.
+
+Just a follow up to some of your points?
+
+
+~I don?t see any reason to use REML = FALSE in your case. Given what you described, I?d definitely stick with REML = TRUE?it?s the better choice when you want to properly account for the random effect structure.
+~anova() or AIC() can be used to compare models with different random effect structures.
+
+
+
+I have read that REML is said to provide more accurate estimates of random variances whereas ML is said to produce more accurate estimates of fixed regression parameters.
+
+
+
+Additionally, I have seen the following stipulated:
+
+
+
+1.       REML to compare models with nested random effects and the same fixed effect structure
+
+2.       ML to compare models with nested fixed effects and the same random effect structure
+
+3.       ML to compare models with and without random effects
+
+For each of 1,2 and 3 above I assume that ?model comparison? can be done via the comparison of, for example, AIC values where ?smaller is better?. However, Andy Field in his text ?Discovering Statistics Using IBM SPSS Statistics? (2013, Edition 4: page 826 & page 835) only uses ML when comparing two linear mixed models via the likelihood ratio test (he states that the likelihood ratio test ?works only if full maximum likelihood estimation is used (and not REML)?.
+
+In fact, in the past, when I have used the anova() function in R to compare linear mixed models which have been fitted using REML=TRUE, R stipulates in the output that the models are ?refitted with ML (instead of REML)? before comparison takes place.
+
+
+
+Additionally, Field stipulates that the likelihood ratio test requires that the ?new model must contain  all of the effects of the older model? i.e. that the models are nested.
+
+
+
+~A worked example would help.
+
+~That singular fit warning probably means that one of your parameters is estimated at (or very close to) zero. In most cases, it?s fine to just drop that parameter?unless you have a strong scientific reason to keep it.
+
+
+
+My example was hypothetical but , say, we had j subjects and k cells in total for these j subjects and we ran the model:
+
+
+
+Model1<-lmer(Y~Groupf+(1|Subject/Cell),REML=FALSE,data=file1)
+
+
+
+which gave the following:
+
+
+
+Random effects
+
+
+
+Groups         Name                    Variance
+
+Cell:Subject  (Intercept)              2.049e-01
+
+Subject       (Intercept)              2.978e-09
+
+
+
+We can definitely see singularity here (i.e. the estimated random intercept variance is virtually zero  for the j intercepts at the Subject level and approaching zero for the k intercepts at the Subject x Cell level).
+
+
+
+In the above, it looks as if we could try dropping the random intercepts at the Subject level in order to get a non singular fit i.e. fit:
+
+
+Model2<-lmer(Y~Groupf+(1|Cell),REML=FALSE,data=file1)
+
+I was just concerned that this 2 level model implies that the ?top level? of the structure is Cell when, in truth, the ?top level? is Subject (as cells are nested within subjects in my hypothetical study).  Your message implies that Model2 above would, in fact, still be valid.
+
+I would be interested to hear if you (or anyone else) have any further views.
+
+Kindest regards,
+Kim
+
+
+
+
+
+
+
+-----Original Message-----
+From: kalman.toth <kalman.toth at protonmail.com>
+Sent: 22 February 2025 09:19
+To: Kim Pearce <kim.pearce at newcastle.ac.uk>
+Cc: r-sig-mixed-models at r-project.org
+Subject: Re: [R-sig-ME] Singularity and the 3 Level Hierarchy
+
+
+
+? External sender. Take care when opening links or attachments. Do not provide your login details.
+
+
+
+Hi Kim,
+
+
+
+I am just a scientist who often works with repeated measures data and not a statistician but I would like to add a few comments and others might amend those or add more.
+
+
+
+1) I don?t see any reason to use REML = FALSE in your case. Given what you described, I?d definitely stick with REML = TRUE?it?s the better choice when you want to properly account for the random effect structure.
+
+2) A work example would help.
+
+3) What model you use should be primarily based on your experimental design and your scientific knowledge of the field.
+
+4) That singular fit warning probably means that one of your parameters is estimated at (or very close to) zero. In most cases, it?s fine to just drop that parameter?unless you have a strong scientific reason to keep it. Also, if your experimental design is fully nested, you might want to try adding the interaction term ('Subject:Cell') instead of just 'Cell'.
+
+5) anova() or AIC() can be used to compare models with different random effect structures.
+
+
+
+Best Regards,
+
+Kalman Toth
+
+
+
+
+
+On Thursday, February 20th, 2025 at 1:14 PM, Kim Pearce via R-sig-mixed-models <r-sig-mixed-models at r-project.org<mailto:r-sig-mixed-models at r-project.org>> wrote:
+
+
+
+> Hello everyone,
+
+>
+
+>
+
+>
+
+> If I may, I would like to ask about the appropriateness of a particular model when the original design takes on a 3 level hierarchical structure.
+
+>
+
+>
+
+>
+
+> Say we have N subjects and each of these subjects has several cells. Within each cell there are mitochondria and a continuous measurement (Y) is recorded for each mitochondrion. In this design, mitochondria (level 1) are nested within cells (level 2) and cells are nested within subjects (level 3).
+
+>
+
+>
+
+>
+
+> For ease, say we are interested in establishing if patient disease group is related to Y. There are 3 patient disease groups recorded in the factor variable "Groupf". In addition, variable "Subject" identifies each of the N subjects and variable "Cell" identifies the cells (within the subjects).
+
+>
+
+>
+
+>
+
+> Consider the syntax:
+
+>
+
+>
+
+>
+
+> Model1<-lmer(Y~Groupf+(1|Subject/Cell),REML=FALSE,data=file1)
+
+>
+
+>
+
+>
+
+> The above would give us a fixed effect for Groupf as well as intercepts for the N subjects and intercepts for the Subject x Cell combinations.
+
+>
+
+>
+
+>
+
+> Hypothetically, say we found evidence of singularity (i.e. the estimated random intercept variance was near zero at the Subject and Subject x Cell levels), however, singularity was not flagged for a 2 level hierarchy (where mitochondria are nested within cells). Would it be valid to report such a 2 level model (i.e. where the "top level" was Cell) ?
+
+>
+
+>
+
+>
+
+> Model1<-lmer(Y~Groupf+(1|Cell),REML=FALSE,data=file1)
+
+>
+
+>
+
+>
+
+> or would it be more preferable to always consider Subject as the "top level" if singularity was not flagged in such a model i.e.
+
+>
+
+>
+
+>
+
+> Model1<-lmer(Y~Groupf+(1|Subject),REML=FALSE,data=file1)
+
+>
+
+>
+
+>
+
+> Many thanks for your appreciated views on this issue in advance.
+
+>
+
+> Kind regards,
+
+>
+
+> Kim
+
+>
+
+>
+
+>
+
+> Dr Kim Pearce PhD, CStat, Fellow HEA
+
+> Senior Statistician
+
+> Faculty of Medical Sciences Graduate School Room 3.14 3rd Floor Ridley
+
+> Building 1 Newcastle University Queen Victoria Road Newcastle Upon
+
+> Tyne
+
+> NE1 7RU
+
+>
+
+> Tel: (0044) (0)191 208 8142
+
+>
+
+>
+
+>
+
+>
+
+>
+
+>
+
+>
+
+>
+
+> [[alternative HTML version deleted]]
+
+>
+
+> _______________________________________________
+
+> R-sig-mixed-models at r-project.org<mailto:R-sig-mixed-models at r-project.o
+> rg> mailing list
+
+> https://eur03.safelinks.protection.outlook.com/?url=https%3A%2F%2Fstat
+
+> .ethz.ch%2Fmailman%2Flistinfo%2Fr-sig-mixed-models&data=05%7C02%7Ckim.
+
+> pearce%40newcastle.ac.uk%7Cb1d7b9423e284768ff1408dd5321f615%7C9c5012c9
+
+> b61644c2a91766814fbe3e87%7C1%7C0%7C638758127525031103%7CUnknown%7CTWFp
+
+> bGZsb3d8eyJFbXB0eU1hcGkiOnRydWUsIlYiOiIwLjAuMDAwMCIsIlAiOiJXaW4zMiIsIk
+
+> FOIjoiTWFpbCIsIldUIjoyfQ%3D%3D%7C0%7C%7C%7C&sdata=duLSYpH3sZlu6GNE%2BR
+
+> KtDtvOpTB01VSz6s7wfY0ZYRg%3D&reserved=0
+
+	[[alternative HTML version deleted]]
+
+_______________________________________________
+R-sig-mixed-models at r-project.org mailing list https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+
+From chr|@ @end|ng |rom tr|cky@o|ut|on@@com@@u  Mon Feb 24 23:56:46 2025
+From: chr|@ @end|ng |rom tr|cky@o|ut|on@@com@@u (Chris Howden)
+Date: Mon, 24 Feb 2025 22:56:46 +0000
+Subject: [R-sig-ME] Singularity and the 3 Level Hierarchy
+In-Reply-To: <SY4PR01MB65069D05E190008FE8B267F3C0C02@SY4PR01MB6506.ausprd01.prod.outlook.com>
+References: <LO0P302MB02119206D53C0F30F0A11028D7C42@LO0P302MB0211.GBRP302.PROD.OUTLOOK.COM>
+ <Xb3Xb1g7blSnwBJvnS0y06S46JTOxnMwzKrDBJFcjGDaKDMcUD7FJ5kjgl7L4eFRKP8KIqv-PHZ83VREcEg1eRQcTFPhNux4BOQh6GS9n24=@protonmail.com>
+ <LO0P302MB0211D73BFD1752C3BBB1A99ED7C02@LO0P302MB0211.GBRP302.PROD.OUTLOOK.COM>
+ <SY4PR01MB65069D05E190008FE8B267F3C0C02@SY4PR01MB6506.ausprd01.prod.outlook.com>
+Message-ID: <SYBPR01MB7193F50514DE96A6BC7E8E2698C02@SYBPR01MB7193.ausprd01.prod.outlook.com>
+
+Hi Kim,
+
+Re the 2 different models random effects - Model1) Cell:Subject vs model 2) 1|Cell
+
+Seems to me that what this is telling us is that there is no evidence of differences between subjects, but there is evidence of differences between cells. So to include that info in the model there are at least 2 ways one might go about it - based on how the cell info is coded up in the data:
+1) If the data is coded up so each cell has a different indicator value e.g. subject 1 has cell 1, cell 2 and cell 3, while subject 2 has cell 4 and cell 5, etc. Then you can assign a different random intercept to each cell by including "1|Cell" in the model call.
+2) However, if the data is coded up as the cell # for each subject e.g. subject 1 has cell 1, cell 2 and cell 3, while subject 2 has cell 1 and cell 2, etc. Then you need to include this in the model as Cell:Subject to get a different random intercept for each cell. Because if you included the base "Cell" variable it would fit a single random intercept that represents everyone's cell 1, and then a single random intercept that covers everyone's cell 2, etc
+
+So....If I have got that right.....?? I think both of the above methods give the same model i.e. different random intercept for each cell? (which is valid) But how you specify it depends on how cell is coded up in the data. 
+
+As to whether yr Model2<-lmer(Y~Groupf+(1|Cell),REML=FALSE,data=file12) is valid. Well that depends on how the cell variable is coded up. I suspect it is likely coded up as Point 2) above - meaning it isn't.
+
+Chris Howden | Statistical Lead
+Statistical Consulting Unit | Sydney Informatics Hub | Core Research Facilities
++61 410 689 945 | christopher.howden at sydney.edu.au
+Statistical Resources and Workflows/Workshops
+
+Acknowledgement of SIH workflows and statistical consulting ensures the continuation of these free services. Please consider the suggested wording on our Acknowledgements page to acknowledge our contributions in any arising publications.
+
+CRICOS 00026A
+This email plus any attachments to it are confidential. Any unauthorised use is strictly prohibited. If you receive this email in error, please delete it and any attachments Please think of our environment and only print this email if necessary
+
+-----Original Message-----
+From: R-sig-mixed-models <r-sig-mixed-models-bounces at r-project.org> On Behalf Of Kim Pearce via R-sig-mixed-models
+Sent: Tuesday, 25 February 2025 5:15 AM
+To: kalman.toth <kalman.toth at protonmail.com>
+Cc: r-sig-mixed-models at r-project.org
+Subject: Re: [R-sig-ME] Singularity and the 3 Level Hierarchy
+
+Dear Kalman,
+
+Thank you so much for your reply to the question I sent to the list last week.
+
+Just a follow up to some of your points?
+
+
+~I don?t see any reason to use REML = FALSE in your case. Given what you described, I?d definitely stick with REML = TRUE?it?s the better choice when you want to properly account for the random effect structure.
+~anova() or AIC() can be used to compare models with different random effect structures.
+
+
+
+I have read that REML is said to provide more accurate estimates of random variances whereas ML is said to produce more accurate estimates of fixed regression parameters.
+
+
+
+Additionally, I have seen the following stipulated:
+
+
+
+1.       REML to compare models with nested random effects and the same fixed effect structure
+
+2.       ML to compare models with nested fixed effects and the same random effect structure
+
+3.       ML to compare models with and without random effects
+
+For each of 1,2 and 3 above I assume that ?model comparison? can be done via the comparison of, for example, AIC values where ?smaller is better?. However, Andy Field in his text ?Discovering Statistics Using IBM SPSS Statistics? (2013, Edition 4: page 826 & page 835) only uses ML when comparing two linear mixed models via the likelihood ratio test (he states that the likelihood ratio test ?works only if full maximum likelihood estimation is used (and not REML)?.
+
+In fact, in the past, when I have used the anova() function in R to compare linear mixed models which have been fitted using REML=TRUE, R stipulates in the output that the models are ?refitted with ML (instead of REML)? before comparison takes place.
+
+
+
+Additionally, Field stipulates that the likelihood ratio test requires that the ?new model must contain  all of the effects of the older model? i.e. that the models are nested.
+
+
+
+~A worked example would help.
+
+~That singular fit warning probably means that one of your parameters is estimated at (or very close to) zero. In most cases, it?s fine to just drop that parameter?unless you have a strong scientific reason to keep it.
+
+
+
+My example was hypothetical but , say, we had j subjects and k cells in total for these j subjects and we ran the model:
+
+
+
+Model1<-lmer(Y~Groupf+(1|Subject/Cell),REML=FALSE,data=file1)
+
+
+
+which gave the following:
+
+
+
+Random effects
+
+
+
+Groups         Name                    Variance
+
+Cell:Subject  (Intercept)              2.049e-01
+
+Subject       (Intercept)              2.978e-09
+
+
+
+We can definitely see singularity here (i.e. the estimated random intercept variance is virtually zero  for the j intercepts at the Subject level and approaching zero for the k intercepts at the Subject x Cell level).
+
+
+
+In the above, it looks as if we could try dropping the random intercepts at the Subject level in order to get a non singular fit i.e. fit:
+
+
+Model2<-lmer(Y~Groupf+(1|Cell),REML=FALSE,data=file1)
+
+I was just concerned that this 2 level model implies that the ?top level? of the structure is Cell when, in truth, the ?top level? is Subject (as cells are nested within subjects in my hypothetical study).  Your message implies that Model2 above would, in fact, still be valid.
+
+I would be interested to hear if you (or anyone else) have any further views.
+
+Kindest regards,
+Kim
+
+
+
+
+
+
+
+-----Original Message-----
+From: kalman.toth <kalman.toth at protonmail.com>
+Sent: 22 February 2025 09:19
+To: Kim Pearce <kim.pearce at newcastle.ac.uk>
+Cc: r-sig-mixed-models at r-project.org
+Subject: Re: [R-sig-ME] Singularity and the 3 Level Hierarchy
+
+
+
+? External sender. Take care when opening links or attachments. Do not provide your login details.
+
+
+
+Hi Kim,
+
+
+
+I am just a scientist who often works with repeated measures data and not a statistician but I would like to add a few comments and others might amend those or add more.
+
+
+
+1) I don?t see any reason to use REML = FALSE in your case. Given what you described, I?d definitely stick with REML = TRUE?it?s the better choice when you want to properly account for the random effect structure.
+
+2) A work example would help.
+
+3) What model you use should be primarily based on your experimental design and your scientific knowledge of the field.
+
+4) That singular fit warning probably means that one of your parameters is estimated at (or very close to) zero. In most cases, it?s fine to just drop that parameter?unless you have a strong scientific reason to keep it. Also, if your experimental design is fully nested, you might want to try adding the interaction term ('Subject:Cell') instead of just 'Cell'.
+
+5) anova() or AIC() can be used to compare models with different random effect structures.
+
+
+
+Best Regards,
+
+Kalman Toth
+
+
+
+
+
+On Thursday, February 20th, 2025 at 1:14 PM, Kim Pearce via R-sig-mixed-models <r-sig-mixed-models at r-project.org<mailto:r-sig-mixed-models at r-project.org>> wrote:
+
+
+
+> Hello everyone,
+
+>
+
+>
+
+>
+
+> If I may, I would like to ask about the appropriateness of a particular model when the original design takes on a 3 level hierarchical structure.
+
+>
+
+>
+
+>
+
+> Say we have N subjects and each of these subjects has several cells. Within each cell there are mitochondria and a continuous measurement (Y) is recorded for each mitochondrion. In this design, mitochondria (level 1) are nested within cells (level 2) and cells are nested within subjects (level 3).
+
+>
+
+>
+
+>
+
+> For ease, say we are interested in establishing if patient disease group is related to Y. There are 3 patient disease groups recorded in the factor variable "Groupf". In addition, variable "Subject" identifies each of the N subjects and variable "Cell" identifies the cells (within the subjects).
+
+>
+
+>
+
+>
+
+> Consider the syntax:
+
+>
+
+>
+
+>
+
+> Model1<-lmer(Y~Groupf+(1|Subject/Cell),REML=FALSE,data=file1)
+
+>
+
+>
+
+>
+
+> The above would give us a fixed effect for Groupf as well as intercepts for the N subjects and intercepts for the Subject x Cell combinations.
+
+>
+
+>
+
+>
+
+> Hypothetically, say we found evidence of singularity (i.e. the estimated random intercept variance was near zero at the Subject and Subject x Cell levels), however, singularity was not flagged for a 2 level hierarchy (where mitochondria are nested within cells). Would it be valid to report such a 2 level model (i.e. where the "top level" was Cell) ?
+
+>
+
+>
+
+>
+
+> Model1<-lmer(Y~Groupf+(1|Cell),REML=FALSE,data=file1)
+
+>
+
+>
+
+>
+
+> or would it be more preferable to always consider Subject as the "top level" if singularity was not flagged in such a model i.e.
+
+>
+
+>
+
+>
+
+> Model1<-lmer(Y~Groupf+(1|Subject),REML=FALSE,data=file1)
+
+>
+
+>
+
+>
+
+> Many thanks for your appreciated views on this issue in advance.
+
+>
+
+> Kind regards,
+
+>
+
+> Kim
+
+>
+
+>
+
+>
+
+> Dr Kim Pearce PhD, CStat, Fellow HEA
+
+> Senior Statistician
+
+> Faculty of Medical Sciences Graduate School Room 3.14 3rd Floor Ridley
+
+> Building 1 Newcastle University Queen Victoria Road Newcastle Upon
+
+> Tyne
+
+> NE1 7RU
+
+>
+
+> Tel: (0044) (0)191 208 8142
+
+>
+
+>
+
+>
+
+>
+
+>
+
+>
+
+>
+
+>
+
+> [[alternative HTML version deleted]]
+
+>
+
+> _______________________________________________
+
+> R-sig-mixed-models at r-project.org<mailto:R-sig-mixed-models at r-project.o
+> rg> mailing list
+
+> https://eur03.safelinks.protection.outlook.com/?url=https%3A%2F%2Fstat
+
+> .ethz.ch%2Fmailman%2Flistinfo%2Fr-sig-mixed-models&data=05%7C02%7Ckim.
+
+> pearce%40newcastle.ac.uk%7Cb1d7b9423e284768ff1408dd5321f615%7C9c5012c9
+
+> b61644c2a91766814fbe3e87%7C1%7C0%7C638758127525031103%7CUnknown%7CTWFp
+
+> bGZsb3d8eyJFbXB0eU1hcGkiOnRydWUsIlYiOiIwLjAuMDAwMCIsIlAiOiJXaW4zMiIsIk
+
+> FOIjoiTWFpbCIsIldUIjoyfQ%3D%3D%7C0%7C%7C%7C&sdata=duLSYpH3sZlu6GNE%2BR
+
+> KtDtvOpTB01VSz6s7wfY0ZYRg%3D&reserved=0
+
+	[[alternative HTML version deleted]]
+
+_______________________________________________
+R-sig-mixed-models at r-project.org mailing list https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+
+From k|m@pe@rce @end|ng |rom newc@@t|e@@c@uk  Tue Feb 25 16:59:31 2025
+From: k|m@pe@rce @end|ng |rom newc@@t|e@@c@uk (Kim Pearce)
+Date: Tue, 25 Feb 2025 15:59:31 +0000
+Subject: [R-sig-ME] Singularity and the 3 Level Hierarchy
+In-Reply-To: <SYBPR01MB7193F50514DE96A6BC7E8E2698C02@SYBPR01MB7193.ausprd01.prod.outlook.com>
+References: <LO0P302MB02119206D53C0F30F0A11028D7C42@LO0P302MB0211.GBRP302.PROD.OUTLOOK.COM>
+ <Xb3Xb1g7blSnwBJvnS0y06S46JTOxnMwzKrDBJFcjGDaKDMcUD7FJ5kjgl7L4eFRKP8KIqv-PHZ83VREcEg1eRQcTFPhNux4BOQh6GS9n24=@protonmail.com>
+ <LO0P302MB0211D73BFD1752C3BBB1A99ED7C02@LO0P302MB0211.GBRP302.PROD.OUTLOOK.COM>
+ <SY4PR01MB65069D05E190008FE8B267F3C0C02@SY4PR01MB6506.ausprd01.prod.outlook.com>
+ <SYBPR01MB7193F50514DE96A6BC7E8E2698C02@SYBPR01MB7193.ausprd01.prod.outlook.com>
+Message-ID: <LO0P302MB02113C396063A7D94373416BD7C32@LO0P302MB0211.GBRP302.PROD.OUTLOOK.COM>
+
+Hi there Chris,
+
+
+
+Many thanks for your message.
+
+
+
+I'm just making some final comments:
+
+
+
+Re the 2 different models random effects - Model1) Cell:Subject vs Model 2) 1|Cell
+
+
+
+Seems to me that what this is telling us is that there is no evidence of differences between subjects, but there is evidence of differences between cells.
+
+
+
+Yes, that's correct and, as I mentioned in my email yesterday, there are j subjects and k cells in total.
+
+
+
+So to include that info in the model there are at least 2 ways one might go about it - based on how the cell info is coded up in the data:
+
+
+
+1)      If the data is coded up so each cell has a different indicator value e.g. subject 1 has cell 1, cell 2 and cell 3, while subject 2 has cell 4 and cell 5, etc. Then you can assign a different random intercept to each cell by including "1|Cell" in the model call.
+
+
+
+Yes, that?s exactly how I was envisaging the data coding.  Hence if there were k=100 cells in total (coded 1?..100), then there would be 100 random intercepts (one for each cell).  Subject 1 could have 3 cells coded 1,2 and 3??and the last subject (j) could have 4 cells coded 97,98,99,100.
+
+
+
+2)      However, if the data is coded up as the cell # for each subject e.g. subject 1 has cell 1, cell 2 and cell 3, while subject 2 has cell 1 and cell 2, etc. Then you need to include this in the model as Cell:Subject to get a different random intercept for each cell. Because if you included the base "Cell" variable it would fit a single random intercept that represents everyone's cell 1, and then a single random intercept that covers everyone's cell 2, etc.
+
+
+
+Yes, I understand that if subject 1?s cells were coded 1,2 etc.  and subject 2?s cells were coded 1,2 etc. then, by including "1|Cell" in the model call, we would (for example) get a single random intercept for ?cell 1? where cell 1 would represent every subject?s cell which had been coded 1 (which isn?t what we want).  Similarly, we would (for example) get a single random intercept for ?cell 2? where cell 2 would represent every subject?s cell which had been coded 2?..etc.
+
+
+
+So....If I have got that right.....?? I think both of the above methods give the same model i.e. different random intercept for each cell? (which is valid)
+
+
+
+That?s good to know.  I was just worried that, as the original design was a 3 level hierarchy (with mitochondria [level 1] nested within cells [level 2] and cells nested within subjects [level 3]) then the model called via
+
+
+
+Model2<-lmer(Y~Groupf+(1|Cell),REML=FALSE,data=file1)
+
+
+
+would not be acceptable as this model is essentially viewing ?Cell? as the top level rather than ?Subject?.
+
+
+
+But how you specify it depends on how cell is coded up in the data.   As to whether your Model2<-lmer(Y~Groupf+(1|Cell),REML=FALSE,data=file1) is valid. Well that depends on how the cell variable is coded up. I suspect it is likely coded up as Point 2) above - meaning it isn't.
+
+
+
+No, I was thinking about the coding as in Point 1) above?so, it looks as if this model would indeed be valid.
+
+
+
+Many thanks again for your, much valued, views Chris.  I appreciate it.
+
+
+
+Kindest regards,
+
+Kim
+
+
+
+
+
+-----Original Message-----
+From: Chris Howden <chris at trickysolutions.com.au>
+Sent: 24 February 2025 22:57
+To: Kim Pearce <kim.pearce at newcastle.ac.uk>; kalman.toth <kalman.toth at protonmail.com>
+Cc: r-sig-mixed-models at r-project.org
+Subject: RE: [R-sig-ME] Singularity and the 3 Level Hierarchy
+
+
+
+Hi Kim,
+
+
+
+Re the 2 different models random effects - Model1) Cell:Subject vs model 2) 1|Cell
+
+
+
+Seems to me that what this is telling us is that there is no evidence of differences between subjects, but there is evidence of differences between cells. So to include that info in the model there are at least 2 ways one might go about it - based on how the cell info is coded up in the data:
+
+1) If the data is coded up so each cell has a different indicator value e.g. subject 1 has cell 1, cell 2 and cell 3, while subject 2 has cell 4 and cell 5, etc. Then you can assign a different random intercept to each cell by including "1|Cell" in the model call.
+
+2) However, if the data is coded up as the cell # for each subject e.g. subject 1 has cell 1, cell 2 and cell 3, while subject 2 has cell 1 and cell 2, etc. Then you need to include this in the model as Cell:Subject to get a different random intercept for each cell. Because if you included the base "Cell" variable it would fit a single random intercept that represents everyone's cell 1, and then a single random intercept that covers everyone's cell 2, etc
+
+
+
+So....If I have got that right.....?? I think both of the above methods give the same model i.e. different random intercept for each cell? (which is valid) But how you specify it depends on how cell is coded up in the data.
+
+
+
+As to whether yr Model2<-lmer(Y~Groupf+(1|Cell),REML=FALSE,data=file12) is valid. Well that depends on how the cell variable is coded up. I suspect it is likely coded up as Point 2) above - meaning it isn't.
+
+
+
+Chris Howden | Statistical Lead
+
+Statistical Consulting Unit | Sydney Informatics Hub | Core Research Facilities
+
++61 410 689 945 | christopher.howden at sydney.edu.au<mailto:christopher.howden at sydney.edu.au>
+
+Statistical Resources and Workflows/Workshops
+
+
+
+Acknowledgement of SIH workflows and statistical consulting ensures the continuation of these free services. Please consider the suggested wording on our Acknowledgements page to acknowledge our contributions in any arising publications.
+
+
+
+CRICOS 00026A
+
+This email plus any attachments to it are confidential. Any unauthorised use is strictly prohibited. If you receive this email in error, please delete it and any attachments Please think of our environment and only print this email if necessary
+
+
+
+-----Original Message-----
+
+From: R-sig-mixed-models <r-sig-mixed-models-bounces at r-project.org<mailto:r-sig-mixed-models-bounces at r-project.org>> On Behalf Of Kim Pearce via R-sig-mixed-models
+
+Sent: Tuesday, 25 February 2025 5:15 AM
+
+To: kalman.toth <kalman.toth at protonmail.com<mailto:kalman.toth at protonmail.com>>
+
+Cc: r-sig-mixed-models at r-project.org<mailto:r-sig-mixed-models at r-project.org>
+
+Subject: Re: [R-sig-ME] Singularity and the 3 Level Hierarchy
+
+
+
+Dear Kalman,
+
+
+
+Thank you so much for your reply to the question I sent to the list last week.
+
+
+
+Just a follow up to some of your points?
+
+
+
+
+
+~I don?t see any reason to use REML = FALSE in your case. Given what you described, I?d definitely stick with REML = TRUE?it?s the better choice when you want to properly account for the random effect structure.
+
+~anova() or AIC() can be used to compare models with different random effect structures.
+
+
+
+
+
+
+
+I have read that REML is said to provide more accurate estimates of random variances whereas ML is said to produce more accurate estimates of fixed regression parameters.
+
+
+
+
+
+
+
+Additionally, I have seen the following stipulated:
+
+
+
+
+
+
+
+1.       REML to compare models with nested random effects and the same fixed effect structure
+
+
+
+2.       ML to compare models with nested fixed effects and the same random effect structure
+
+
+
+3.       ML to compare models with and without random effects
+
+
+
+For each of 1,2 and 3 above I assume that ?model comparison? can be done via the comparison of, for example, AIC values where ?smaller is better?. However, Andy Field in his text ?Discovering Statistics Using IBM SPSS Statistics? (2013, Edition 4: page 826 & page 835) only uses ML when comparing two linear mixed models via the likelihood ratio test (he states that the likelihood ratio test ?works only if full maximum likelihood estimation is used (and not REML)?.
+
+
+
+In fact, in the past, when I have used the anova() function in R to compare linear mixed models which have been fitted using REML=TRUE, R stipulates in the output that the models are ?refitted with ML (instead of REML)? before comparison takes place.
+
+
+
+
+
+
+
+Additionally, Field stipulates that the likelihood ratio test requires that the ?new model must contain  all of the effects of the older model? i.e. that the models are nested.
+
+
+
+
+
+
+
+~A worked example would help.
+
+
+
+~That singular fit warning probably means that one of your parameters is estimated at (or very close to) zero. In most cases, it?s fine to just drop that parameter?unless you have a strong scientific reason to keep it.
+
+
+
+
+
+
+
+My example was hypothetical but , say, we had j subjects and k cells in total for these j subjects and we ran the model:
+
+
+
+
+
+
+
+Model1<-lmer(Y~Groupf+(1|Subject/Cell),REML=FALSE,data=file1)
+
+
+
+
+
+
+
+which gave the following:
+
+
+
+
+
+
+
+Random effects
+
+
+
+
+
+
+
+Groups         Name                    Variance
+
+
+
+Cell:Subject  (Intercept)              2.049e-01
+
+
+
+Subject       (Intercept)              2.978e-09
+
+
+
+
+
+
+
+We can definitely see singularity here (i.e. the estimated random intercept variance is virtually zero  for the j intercepts at the Subject level and approaching zero for the k intercepts at the Subject x Cell level).
+
+
+
+
+
+
+
+In the above, it looks as if we could try dropping the random intercepts at the Subject level in order to get a non singular fit i.e. fit:
+
+
+
+
+
+Model2<-lmer(Y~Groupf+(1|Cell),REML=FALSE,data=file1)
+
+
+
+I was just concerned that this 2 level model implies that the ?top level? of the structure is Cell when, in truth, the ?top level? is Subject (as cells are nested within subjects in my hypothetical study).  Your message implies that Model2 above would, in fact, still be valid.
+
+
+
+I would be interested to hear if you (or anyone else) have any further views.
+
+
+
+Kindest regards,
+
+Kim
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-----Original Message-----
+
+From: kalman.toth <kalman.toth at protonmail.com<mailto:kalman.toth at protonmail.com>>
+
+Sent: 22 February 2025 09:19
+
+To: Kim Pearce <kim.pearce at newcastle.ac.uk<mailto:kim.pearce at newcastle.ac.uk>>
+
+Cc: r-sig-mixed-models at r-project.org<mailto:r-sig-mixed-models at r-project.org>
+
+Subject: Re: [R-sig-ME] Singularity and the 3 Level Hierarchy
+
+
+
+
+
+
+
+? External sender. Take care when opening links or attachments. Do not provide your login details.
+
+
+
+
+
+
+
+Hi Kim,
+
+
+
+
+
+
+
+I am just a scientist who often works with repeated measures data and not a statistician but I would like to add a few comments and others might amend those or add more.
+
+
+
+
+
+
+
+1) I don?t see any reason to use REML = FALSE in your case. Given what you described, I?d definitely stick with REML = TRUE?it?s the better choice when you want to properly account for the random effect structure.
+
+
+
+2) A work example would help.
+
+
+
+3) What model you use should be primarily based on your experimental design and your scientific knowledge of the field.
+
+
+
+4) That singular fit warning probably means that one of your parameters is estimated at (or very close to) zero. In most cases, it?s fine to just drop that parameter?unless you have a strong scientific reason to keep it. Also, if your experimental design is fully nested, you might want to try adding the interaction term ('Subject:Cell') instead of just 'Cell'.
+
+
+
+5) anova() or AIC() can be used to compare models with different random effect structures.
+
+
+
+
+
+
+
+Best Regards,
+
+
+
+Kalman Toth
+
+
+
+
+
+
+
+
+
+
+
+On Thursday, February 20th, 2025 at 1:14 PM, Kim Pearce via R-sig-mixed-models <r-sig-mixed-models at r-project.org<mailto:r-sig-mixed-models at r-project.org<mailto:r-sig-mixed-models at r-project.org%3cmailto:r-sig-mixed-models at r-project.org>>> wrote:
+
+
+
+
+
+
+
+> Hello everyone,
+
+
+
+>
+
+
+
+>
+
+
+
+>
+
+
+
+> If I may, I would like to ask about the appropriateness of a particular model when the original design takes on a 3 level hierarchical structure.
+
+
+
+>
+
+
+
+>
+
+
+
+>
+
+
+
+> Say we have N subjects and each of these subjects has several cells. Within each cell there are mitochondria and a continuous measurement (Y) is recorded for each mitochondrion. In this design, mitochondria (level 1) are nested within cells (level 2) and cells are nested within subjects (level 3).
+
+
+
+>
+
+
+
+>
+
+
+
+>
+
+
+
+> For ease, say we are interested in establishing if patient disease group is related to Y. There are 3 patient disease groups recorded in the factor variable "Groupf". In addition, variable "Subject" identifies each of the N subjects and variable "Cell" identifies the cells (within the subjects).
+
+
+
+>
+
+
+
+>
+
+
+
+>
+
+
+
+> Consider the syntax:
+
+
+
+>
+
+
+
+>
+
+
+
+>
+
+
+
+> Model1<-lmer(Y~Groupf+(1|Subject/Cell),REML=FALSE,data=file1)
+
+
+
+>
+
+
+
+>
+
+
+
+>
+
+
+
+> The above would give us a fixed effect for Groupf as well as intercepts for the N subjects and intercepts for the Subject x Cell combinations.
+
+
+
+>
+
+
+
+>
+
+
+
+>
+
+
+
+> Hypothetically, say we found evidence of singularity (i.e. the estimated random intercept variance was near zero at the Subject and Subject x Cell levels), however, singularity was not flagged for a 2 level hierarchy (where mitochondria are nested within cells). Would it be valid to report such a 2 level model (i.e. where the "top level" was Cell) ?
+
+
+
+>
+
+
+
+>
+
+
+
+>
+
+
+
+> Model1<-lmer(Y~Groupf+(1|Cell),REML=FALSE,data=file1)
+
+
+
+>
+
+
+
+>
+
+
+
+>
+
+
+
+> or would it be more preferable to always consider Subject as the "top level" if singularity was not flagged in such a model i.e.
+
+
+
+>
+
+
+
+>
+
+
+
+>
+
+
+
+> Model1<-lmer(Y~Groupf+(1|Subject),REML=FALSE,data=file1)
+
+
+
+>
+
+
+
+>
+
+
+
+>
+
+
+
+> Many thanks for your appreciated views on this issue in advance.
+
+
+
+>
+
+
+
+> Kind regards,
+
+
+
+>
+
+
+
+> Kim
+
+
+
+>
+
+
+
+>
+
+
+
+>
+
+
+
+> Dr Kim Pearce PhD, CStat, Fellow HEA
+
+
+
+> Senior Statistician
+
+
+
+> Faculty of Medical Sciences Graduate School Room 3.14 3rd Floor Ridley
+
+
+
+> Building 1 Newcastle University Queen Victoria Road Newcastle Upon
+
+
+
+> Tyne
+
+
+
+> NE1 7RU
+
+
+
+>
+
+
+
+> Tel: (0044) (0)191 208 8142
+
+
+
+>
+
+
+
+>
+
+
+
+>
+
+
+
+>
+
+
+
+>
+
+
+
+>
+
+
+
+>
+
+
+
+>
+
+
+
+> [[alternative HTML version deleted]]
+
+
+
+>
+
+
+
+> _______________________________________________
+
+
+
+> R-sig-mixed-models at r-project.org<mailto:R-sig-mixed-models at r-project.o<mailto:R-sig-mixed-models at r-project.org%3cmailto:R-sig-mixed-models at r-project.o>
+
+> rg> mailing list
+
+
+
+> https://eur03.safelinks.protection.outlook.com/?url=https%3A%2F%2Fstat%2F&data=05%7C02%7Ckim.pearce%40newcastle.ac.uk%7C7ce5139f4fbd43badb6508dd55269855%7C9c5012c9b61644c2a91766814fbe3e87%7C1%7C0%7C638760346449689019%7CUnknown%7CTWFpbGZsb3d8eyJFbXB0eU1hcGkiOnRydWUsIlYiOiIwLjAuMDAwMCIsIlAiOiJXaW4zMiIsIkFOIjoiTWFpbCIsIldUIjoyfQ%3D%3D%7C0%7C%7C%7C&sdata=FJbnL3Wp2Tamhv05bpHsFTvvMGT2%2FHjDwKPnRDAK518%3D&reserved=0<https://stat/>
+
+
+
+> .ethz.ch%2Fmailman%2Flistinfo%2Fr-sig-mixed-models&data=05%7C02%7Ckim.
+
+
+
+> pearce%40newcastle.ac.uk%7Cb1d7b9423e284768ff1408dd5321f615%7C9c5012c9
+
+
+
+> b61644c2a91766814fbe3e87%7C1%7C0%7C638758127525031103%7CUnknown%7CTWFp
+
+
+
+> bGZsb3d8eyJFbXB0eU1hcGkiOnRydWUsIlYiOiIwLjAuMDAwMCIsIlAiOiJXaW4zMiIsIk
+
+
+
+> FOIjoiTWFpbCIsIldUIjoyfQ%3D%3D%7C0%7C%7C%7C&sdata=duLSYpH3sZlu6GNE%2BR
+
+
+
+> KtDtvOpTB01VSz6s7wfY0ZYRg%3D&reserved=0
+
+
+
+              [[alternative HTML version deleted]]
+
+
+
+_______________________________________________
+
+R-sig-mixed-models at r-project.org<mailto:R-sig-mixed-models at r-project.org> mailing list https://eur03.safelinks.protection.outlook.com/?url=https%3A%2F%2Fstat.ethz.ch%2Fmailman%2Flistinfo%2Fr-sig-mixed-models&data=05%7C02%7Ckim.pearce%40newcastle.ac.uk%7C7ce5139f4fbd43badb6508dd55269855%7C9c5012c9b61644c2a91766814fbe3e87%7C1%7C0%7C638760346449702760%7CUnknown%7CTWFpbGZsb3d8eyJFbXB0eU1hcGkiOnRydWUsIlYiOiIwLjAuMDAwMCIsIlAiOiJXaW4zMiIsIkFOIjoiTWFpbCIsIldUIjoyfQ%3D%3D%7C0%7C%7C%7C&sdata=%2B0YZfRAb6qHY2yZ9VV3vRxOV6DPKZGyI47q2SyzcyNQ%3D&reserved=0<https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models>
+
+	[[alternative HTML version deleted]]
+
+
+From p@u|@john@on @end|ng |rom g|@@gow@@c@uk  Sun Mar  2 23:24:06 2025
+From: p@u|@john@on @end|ng |rom g|@@gow@@c@uk (Paul Johnson)
+Date: Sun, 2 Mar 2025 22:24:06 +0000
+Subject: [R-sig-ME] looking for the AnimalINLA R package
+Message-ID: <LO6P302MB0026B00BFFBC0990BD3C42FED7CE2@LO6P302MB0026.GBRP302.PROD.OUTLOOK.COM>
+
+I?m trying to get hold of a copy of the R package AnimalINLA (Mac/Linux version), which looks very promising for a large scale pedigree-based GLMM I?m trying to run, but the links to the package on the r-inla site are broken:
+
+https://www.r-inla.org/related-projects/animalinla
+
+I?ve tried the author, and am waiting for a reply, but in case that doesn?t work, does anyone have a copy of the package .tar.gz file they could share with me?
+
+Thanks in advance,
+Paul
+
+
+	[[alternative HTML version deleted]]
+
+
+From bbo|ker @end|ng |rom gm@||@com  Sun Mar  2 23:39:52 2025
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Sun, 2 Mar 2025 17:39:52 -0500
+Subject: [R-sig-ME] looking for the AnimalINLA R package
+In-Reply-To: <LO6P302MB0026B00BFFBC0990BD3C42FED7CE2@LO6P302MB0026.GBRP302.PROD.OUTLOOK.COM>
+References: <LO6P302MB0026B00BFFBC0990BD3C42FED7CE2@LO6P302MB0026.GBRP302.PROD.OUTLOOK.COM>
+Message-ID: <b70b93bb-9b75-4788-828d-506d53b5e0b3@gmail.com>
+
+   I found an outdated fork here: 
+https://github.com/famuvie/myAnimalINLAfixes , couldn't find it anywhere 
+else at all (Wayback machine, URL-hacking, Bioconductor archives).  Good 
+luck ...
+
+On 2025-03-02 5:24 p.m., Paul Johnson wrote:
+> I?m trying to get hold of a copy of the R package AnimalINLA (Mac/Linux version), which looks very promising for a large scale pedigree-based GLMM I?m trying to run, but the links to the package on the r-inla site are broken:
+> 
+> https://www.r-inla.org/related-projects/animalinla
+> 
+> I?ve tried the author, and am waiting for a reply, but in case that doesn?t work, does anyone have a copy of the package .tar.gz file they could share with me?
+> 
+> Thanks in advance,
+> Paul
+> 
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> 
+> _______________________________________________
+> R-sig-mixed-models at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+
+
+From p@u|@john@on @end|ng |rom g|@@gow@@c@uk  Sun Mar  2 23:49:32 2025
+From: p@u|@john@on @end|ng |rom g|@@gow@@c@uk (Paul Johnson)
+Date: Sun, 2 Mar 2025 22:49:32 +0000
+Subject: [R-sig-ME] looking for the AnimalINLA R package
+In-Reply-To: <b70b93bb-9b75-4788-828d-506d53b5e0b3@gmail.com>
+References: <LO6P302MB0026B00BFFBC0990BD3C42FED7CE2@LO6P302MB0026.GBRP302.PROD.OUTLOOK.COM>
+ <b70b93bb-9b75-4788-828d-506d53b5e0b3@gmail.com>
+Message-ID: <D1BD727E-8718-48AF-9F77-E20537BC911F@glasgow.ac.uk>
+
+Thanks very much Ben!
+
+?On 02/03/2025, 22:40, "Ben Bolker" <bbolker at gmail.com <mailto:bbolker at gmail.com>> wrote:
+
+
+I found an outdated fork here:
+https://github.com/famuvie/myAnimalINLAfixes <https://github.com/famuvie/myAnimalINLAfixes> , couldn't find it anywhere
+else at all (Wayback machine, URL-hacking, Bioconductor archives). Good
+luck ...
+
+
+On 2025-03-02 5:24 p.m., Paul Johnson wrote:
+> I?m trying to get hold of a copy of the R package AnimalINLA (Mac/Linux version), which looks very promising for a large scale pedigree-based GLMM I?m trying to run, but the links to the package on the r-inla site are broken:
+>
+> https://www.r-inla.org/related-projects/animalinla <https://www.r-inla.org/related-projects/animalinla>
+>
+> I?ve tried the author, and am waiting for a reply, but in case that doesn?t work, does anyone have a copy of the package .tar.gz file they could share with me?
+>
+> Thanks in advance,
+> Paul
+>
+>
+> [[alternative HTML version deleted]]
+>
+>
+> _______________________________________________
+> R-sig-mixed-models at r-project.org <mailto:R-sig-mixed-models at r-project.org> mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models <https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models>
+
+
+_______________________________________________
+R-sig-mixed-models at r-project.org <mailto:R-sig-mixed-models at r-project.org> mailing list
+https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models <https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models>
+
+
+
+
+From p@u|@john@on @end|ng |rom g|@@gow@@c@uk  Wed Mar 12 19:31:31 2025
+From: p@u|@john@on @end|ng |rom g|@@gow@@c@uk (Paul Johnson)
+Date: Wed, 12 Mar 2025 18:31:31 +0000
+Subject: [R-sig-ME] looking for the AnimalINLA R package
+In-Reply-To: <b70b93bb-9b75-4788-828d-506d53b5e0b3@gmail.com>
+References: <LO6P302MB0026B00BFFBC0990BD3C42FED7CE2@LO6P302MB0026.GBRP302.PROD.OUTLOOK.COM>
+ <b70b93bb-9b75-4788-828d-506d53b5e0b3@gmail.com>
+Message-ID: <95B607FB-B3B6-465A-AF16-09A97083EF90@glasgow.ac.uk>
+
+Hi all,
+
+To follow up on my search for AnimalINLA 1.4...
+
+A colleague found an older version (v1.2 from 2013) here:
+https://ingelins.folk.ntnu.no/AnimalINLA/AnimalINLA_1.2/
+
+...which doesn't work with the latest version of INLA by itself, but does work with the fixes package that Ben found:
+https://github.com/famuvie/myAnimalINLAfixes
+
+I'm still testing it with simulated data but it at least runs without problems.
+
+Thanks for your help Ben, and thanks to those who emailed me off-list, I'll reply shortly.
+
+Paul
+
+
+?On 02/03/2025, 22:40, "Ben Bolker" <bbolker at gmail.com <mailto:bbolker at gmail.com>> wrote:
+
+
+I found an outdated fork here: https://github.com/famuvie/myAnimalINLAfixes, couldn't find it anywhere
+else at all (Wayback machine, URL-hacking, Bioconductor archives). Good
+luck ...
+
+
+On 2025-03-02 5:24 p.m., Paul Johnson wrote:
+> I?m trying to get hold of a copy of the R package AnimalINLA (Mac/Linux version), which looks very promising for a large scale pedigree-based GLMM I?m trying to run, but the links to the package on the r-inla site are broken:
+>
+> https://www.r-inla.org/related-projects/animalinla <https://www.r-inla.org/related-projects/animalinla>
+>
+> I?ve tried the author, and am waiting for a reply, but in case that doesn?t work, does anyone have a copy of the package .tar.gz file they could share with me?
+>
+> Thanks in advance,
+> Paul
+>
+>
+> [[alternative HTML version deleted]]
+>
+>
+> _______________________________________________
+> R-sig-mixed-models at r-project.org <mailto:R-sig-mixed-models at r-project.org> mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models <https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models>
+
+
+_______________________________________________
+R-sig-mixed-models at r-project.org <mailto:R-sig-mixed-models at r-project.org> mailing list
+https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models <https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models>
+
+
+
+
+From p@b|o@|nch@u@t|@| @end|ng |rom gm@||@com  Thu Mar 13 17:10:02 2025
+From: p@b|o@|nch@u@t|@| @end|ng |rom gm@||@com (Pablo Inchausti)
+Date: Thu, 13 Mar 2025 13:10:02 -0300
+Subject: [R-sig-ME] problem running mixed model including a phylogeny
+ suggested in vignette "Covariance structure"
+Message-ID: <CAGdDvs3fQ+1LsXZ6chxQxq4xWm1QDBn9dSWB_doYtU6TGgYGtQ@mail.gmail.com>
+
+Hi,
+I have been trying to run the mixed model incorporating a phylogeny that is
+suggested in
+https://cran.r-project.org/web/packages/glmmTMB/vignettes/covstruct.html
+(section Proptional). I have encountered errors that I cannot resolve and
+hence this post.
+
+This is what I did:
+require(ade4); require(ape); require(glmmTMB)
+
+data(carni70) # loads the data
+
+carnidat <- data.frame(species = rownames(carni70$tab), carni70$tab)
+
+phylo <- read.tree(text=carni70$tre) # reads the phylogeny
+
+A <- vcv(phylo) # uses package ape to calculate the var-covar matrix from
+the phylogeny
+
+# verifies whether the species names of  rows and columns of var-covar
+phylogenetic matrix are the same as those in the dataframe
+
+setdiff(carnidat$species, rownames(A)) # No!. I then correct them.
+
+carnidat$species=gsub("_", ".", carnidat$species) # corrects all species
+names
+
+setdiff(colnames(A), rownames(A)) # final check. All is fine.
+
+setdiff(carnidat$species, rownames(A)) # another final check. All is fine.
+
+carnidat$dummy <- factor(1) # a dummy grouping variable must be added to
+the dataset
+
+Then I ran the model:
+
+fit_phylo=glmmTMB(log(range)~log(size)+propto(0+species|dummy, A),
+data= carnidat)
+
+And I obtain the following error message:
+
+Error: column or row names of the matrix do not match the terms.
+Expecting names:
+?speciesAtelocynus.microtis??speciesBassariscus.alleni??
+speciesBassariscus.astutus??
+speciesBassariscus.beddardi??speciesBassariscus.gabbii??speciesBassariscus.lasius??speciesBassariscus.pauli??
+speciesBassariscus.sumichrasti??speciesCanis.latrans??speciesCanis.lupus??speciesCerdocyon.
+
+(This is much longer, but one can get the idea)
+
+Just in case, the same model does run using the package brms.
+
+I would appreciate very much any suggestion that you might have.
+Thanks in advance.
+Cheers
+Pablo
+
+> sessionInfo()R version 4.4.3 (2025-02-28)
+Platform: x86_64-pc-linux-gnu
+Running under: Ubuntu 22.04.5 LTS
+
+
+Attached base packages:
+
+[1] stats     graphics  grDevices utils     datasets  methods   base
+
+other attached packages:
+[1] glmmTMB_1.1.10 ape_5.8
+
+loaded via a namespace (and not attached):
+ [1] nlme_3.1-166        TH.data_1.1-2       estimability_1.5.1
+reformulas_0.3.0    xtable_1.8-4
+ [6] minqa_1.2.8         zoo_1.8-12          TMB_1.9.15
+lme4_1.1-35.5       grid_4.4.3
+[11] MASS_7.3-61         mvtnorm_1.3-1       numDeriv_2016.8-1.1
+compiler_4.4.3      multcomp_1.4-26
+[16] codetools_0.2-20    sandwich_3.1-1      emmeans_1.10.5
+coda_0.19-4.1       Rcpp_1.0.13
+[21] mgcv_1.9-1          rstudioapi_0.16.0   lattice_0.22-6
+digest_0.6.37       nloptr_2.1.1
+[26] Rdpack_2.6.1        parallel_4.4.3      splines_4.4.3
+rbibutils_2.3       Matrix_1.7-0
+[31] tools_4.4.3         boot_1.3-31         survival_3.7-0
+
+
+>
+
+-- 
+*Pablo Inchausti*
+Profesor de Ecolog?a
+Centro Universitario Regional del Este
+Universidad de la Rep?blica,
+Avenida Cachimba del Rey
+Maldonado, Departamento de Maldonado CP 20100
+Uruguay
+*Phone*: +598.42.25.53.26 interno 602
+
+*Website*: https://sites.google.com/view/pablo-inchausti/iniciostart
+<https://sites.google.com/view/pablo-inchausti//iniciostart>
+
+*Book/Libro Statistical Modeling with R websites: *
+
+*https://sites.google.com/view/statistical-modeling-with-r/home
+<https://sites.google.com/view/statistical-modeling-with-r/home>*
+*https://global.oup.com/booksites/content/9780192859013/
+<https://global.oup.com/booksites/content/9780192859013/>*
+
+*Canal YouTube* Pablo Inchausti Estadistica: @PabloIEstadistica
+https://www.youtube.com/channel/UCKCknL2o8rzr7uumT-GDi7Q/a
+
+	[[alternative HTML version deleted]]
+
+
+From o||verhooker @end|ng |rom pr@t@t|@t|c@@com  Sat Mar 15 00:21:51 2025
+From: o||verhooker @end|ng |rom pr@t@t|@t|c@@com (Oliver Hooker)
+Date: Fri, 14 Mar 2025 23:21:51 +0000
+Subject: [R-sig-ME] In person course on mixed models - Quebec Canada
+Message-ID: <CAEsSYzzk3EE6QXCCNRipqJxQJ8gDMA+66eh+SpOOFmn-xhsRTQ@mail.gmail.com>
+
+Here's an invitation to the *Summer School in Advanced Statistics in Life
+Sciences 2025: Hierarchical Models*. The course aims to introduce
+hierarchical models from both a theoretical and practical point of view.
+Everything will be done using R with an introduction to Stan. Bring your
+dataset!
+
+This intensive course on hierarchical statistical models is presented by
+Pr. Guillaume Blanchet
+<https://www.usherbrooke.ca/biologie/nous-joindre/personnel/corps-professoral/ecologie-terrestre/guillaume-blanchet>,
+professor at UdeS and academic member of BIOS2, and Dr. Andrew MacDonald,
+research professional for BIOS2 <https://bios2.usherbrooke.ca/>, CREUS
+<http://creus-recherche.weebly.com/>, and QCSB <https://qcbs.ca/>. The
+course will be given in English and can be credited (3 credits) through the
+Universit? de Sherbrooke.
+
+Information and registration:
+https://www.usherbrooke.ca/ecoles-de-pointe/en/biology/2025-hierarchical-models-life-sciences
+Dates: May 5 to 9, 2025
+Location: Jouvence (Orford, Qc)
+Registration deadline: March 30, 2025
+
+
+-- 
+Oliver Hooker PhD.
+PR stats
+
+	[[alternative HTML version deleted]]
+
+
+From bbo|ker @end|ng |rom gm@||@com  Mon Mar 17 15:47:44 2025
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Mon, 17 Mar 2025 10:47:44 -0400
+Subject: [R-sig-ME] problem running mixed model including a phylogeny
+ suggested in vignette "Covariance structure"
+In-Reply-To: <CAGdDvs3fQ+1LsXZ6chxQxq4xWm1QDBn9dSWB_doYtU6TGgYGtQ@mail.gmail.com>
+References: <CAGdDvs3fQ+1LsXZ6chxQxq4xWm1QDBn9dSWB_doYtU6TGgYGtQ@mail.gmail.com>
+Message-ID: <CABghstRA-c3tEX4BWGt3BeJTjnBCwLkC-217h3Nz_vM5FvKsjA@mail.gmail.com>
+
+  The short answer is that the *values* of the names are OK, but the
+*order* is wrong (setdiff() only checks that the values are
+equivalent, not the order).  I will try to add some better
+tests/diagnostics to the code.
+
+On Thu, Mar 13, 2025 at 12:10?PM Pablo Inchausti
+<pablo.inchausti.f at gmail.com> wrote:
+>
+> Hi,
+> I have been trying to run the mixed model incorporating a phylogeny that is
+> suggested in
+> https://cran.r-project.org/web/packages/glmmTMB/vignettes/covstruct.html
+> (section Proptional). I have encountered errors that I cannot resolve and
+> hence this post.
+>
+> This is what I did:
+> require(ade4); require(ape); require(glmmTMB)
+>
+> data(carni70) # loads the data
+>
+> carnidat <- data.frame(species = rownames(carni70$tab), carni70$tab)
+>
+> phylo <- read.tree(text=carni70$tre) # reads the phylogeny
+>
+> A <- vcv(phylo) # uses package ape to calculate the var-covar matrix from
+> the phylogeny
+>
+> # verifies whether the species names of  rows and columns of var-covar
+> phylogenetic matrix are the same as those in the dataframe
+>
+> setdiff(carnidat$species, rownames(A)) # No!. I then correct them.
+>
+> carnidat$species=gsub("_", ".", carnidat$species) # corrects all species
+> names
+>
+> setdiff(colnames(A), rownames(A)) # final check. All is fine.
+>
+> setdiff(carnidat$species, rownames(A)) # another final check. All is fine.
+>
+> carnidat$dummy <- factor(1) # a dummy grouping variable must be added to
+> the dataset
+>
+> Then I ran the model:
+>
+> fit_phylo=glmmTMB(log(range)~log(size)+propto(0+species|dummy, A),
+> data= carnidat)
+>
+> And I obtain the following error message:
+>
+> Error: column or row names of the matrix do not match the terms.
+> Expecting names:
+> ?speciesAtelocynus.microtis??speciesBassariscus.alleni??
+> speciesBassariscus.astutus??
+> speciesBassariscus.beddardi??speciesBassariscus.gabbii??speciesBassariscus.lasius??speciesBassariscus.pauli??
+> speciesBassariscus.sumichrasti??speciesCanis.latrans??speciesCanis.lupus??speciesCerdocyon.
+>
+> (This is much longer, but one can get the idea)
+>
+> Just in case, the same model does run using the package brms.
+>
+> I would appreciate very much any suggestion that you might have.
+> Thanks in advance.
+> Cheers
+> Pablo
+>
+> > sessionInfo()R version 4.4.3 (2025-02-28)
+> Platform: x86_64-pc-linux-gnu
+> Running under: Ubuntu 22.04.5 LTS
+>
+>
+> Attached base packages:
+>
+> [1] stats     graphics  grDevices utils     datasets  methods   base
+>
+> other attached packages:
+> [1] glmmTMB_1.1.10 ape_5.8
+>
+> loaded via a namespace (and not attached):
+>  [1] nlme_3.1-166        TH.data_1.1-2       estimability_1.5.1
+> reformulas_0.3.0    xtable_1.8-4
+>  [6] minqa_1.2.8         zoo_1.8-12          TMB_1.9.15
+> lme4_1.1-35.5       grid_4.4.3
+> [11] MASS_7.3-61         mvtnorm_1.3-1       numDeriv_2016.8-1.1
+> compiler_4.4.3      multcomp_1.4-26
+> [16] codetools_0.2-20    sandwich_3.1-1      emmeans_1.10.5
+> coda_0.19-4.1       Rcpp_1.0.13
+> [21] mgcv_1.9-1          rstudioapi_0.16.0   lattice_0.22-6
+> digest_0.6.37       nloptr_2.1.1
+> [26] Rdpack_2.6.1        parallel_4.4.3      splines_4.4.3
+> rbibutils_2.3       Matrix_1.7-0
+> [31] tools_4.4.3         boot_1.3-31         survival_3.7-0
+>
+>
+> >
+>
+> --
+> *Pablo Inchausti*
+> Profesor de Ecolog?a
+> Centro Universitario Regional del Este
+> Universidad de la Rep?blica,
+> Avenida Cachimba del Rey
+> Maldonado, Departamento de Maldonado CP 20100
+> Uruguay
+> *Phone*: +598.42.25.53.26 interno 602
+>
+> *Website*: https://sites.google.com/view/pablo-inchausti/iniciostart
+> <https://sites.google.com/view/pablo-inchausti//iniciostart>
+>
+> *Book/Libro Statistical Modeling with R websites: *
+>
+> *https://sites.google.com/view/statistical-modeling-with-r/home
+> <https://sites.google.com/view/statistical-modeling-with-r/home>*
+> *https://global.oup.com/booksites/content/9780192859013/
+> <https://global.oup.com/booksites/content/9780192859013/>*
+>
+> *Canal YouTube* Pablo Inchausti Estadistica: @PabloIEstadistica
+> https://www.youtube.com/channel/UCKCknL2o8rzr7uumT-GDi7Q/a
+>
+>         [[alternative HTML version deleted]]
+>
+> _______________________________________________
+> R-sig-mixed-models at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+
+
+From p@b|o@|nch@u@t|@| @end|ng |rom gm@||@com  Thu Mar 20 13:45:16 2025
+From: p@b|o@|nch@u@t|@| @end|ng |rom gm@||@com (Pablo Inchausti)
+Date: Thu, 20 Mar 2025 09:45:16 -0300
+Subject: [R-sig-ME] problem running mixed model including a phylogeny
+ suggested in vignette "Covariance structure"
+In-Reply-To: <CABghstRA-c3tEX4BWGt3BeJTjnBCwLkC-217h3Nz_vM5FvKsjA@mail.gmail.com>
+References: <CAGdDvs3fQ+1LsXZ6chxQxq4xWm1QDBn9dSWB_doYtU6TGgYGtQ@mail.gmail.com>
+ <CABghstRA-c3tEX4BWGt3BeJTjnBCwLkC-217h3Nz_vM5FvKsjA@mail.gmail.com>
+Message-ID: <CAGdDvs1nip9xoq6_dvVYiddeBc_DKCgQnM0Kre76CYX8489rpA@mail.gmail.com>
+
+Hi,
+First, thanks again for your quick response.
+I have sorted the dataframe carnidat to match the order of  rows and
+columns of species names of the var-covar matrix obtained from the
+phylogeny. Nevertheless, there is still a problem that I cannot solve.
+--------------------------------
+For completeness, I recopy the entire set of commands that I have used.
+
+data(carni70)  #loads the data
+carnidat <- data.frame(species = rownames(carni70$tab), carni70$tab) #
+generate the data frame
+phylo <- read.tree(text=carni70$tre)  # the phylogeny
+A <- vcv(phylo) # var-covar matrix from the phylogeny
+
+# verifies if names of species are the same in rows of var-covar
+phylogenetic matrix and in the data frame
+setdiff(carnidat$species, rownames(A))
+carnidat$species=gsub("_", ".", carnidat$species) # corrects all species
+names
+setdiff(colnames(A), rownames(A)) # final check
+setdiff(carnidat$species, rownames(A))  # another final check
+row.names(carnidat)=NULL # deletes the row names from the data frame
+
+# checks that the order of levels in carnidat$Species is the same as in
+rows and columns of  var-covar matrix from phylogeny
+carnidat=carnidat[match(carnidat$species, rownames(A)),] # sorts the
+dataframe in the order given by species from the var-covar matrix
+
+> row.names(A)==carnidat$species [1] TRUE TRUE TRUE TRUE TRUE TRUE TRUE TRUE TRUE TRUE TRUE TRUE TRUE TRUE TRUE TRUE TRUE TRUE TRUE TRUE TRUE
+[22] TRUE TRUE TRUE TRUE TRUE TRUE TRUE TRUE TRUE TRUE TRUE TRUE TRUE
+TRUE TRUE TRUE TRUE TRUE TRUE TRUE TRUE
+[43] TRUE TRUE TRUE TRUE TRUE TRUE TRUE TRUE TRUE TRUE TRUE TRUE TRUE
+TRUE TRUE TRUE TRUE TRUE TRUE TRUE TRUE
+[64] TRUE TRUE TRUE TRUE TRUE TRUE TRUE
+
+carnidat$dummy <- factor(1) # a dummy grouping variable must be added to
+the dataset
+
+I show just a few species names in the data frame and in the var-covar
+matrix A:
+
+> rownames(A) [1] "Puma.concolor"            "Herpailurus.yaguaroundi"  "Leopardus.wiedii"
+ [4] "Leopardus.pardalis"       "Oreailurus.jacobita"
+"Oncifelis.colocolo"
+ [7] "Oncifelis.guigna"         "Oncifelis.geoffroyi"
+"Leopardus.tigrinus"
+[10] "Lynx.rufus"               "Lynx.canadensis"          "Panthera.onca"
+
+
+> carnidat$species [1] "Puma.concolor"            "Herpailurus.yaguaroundi"  "Leopardus.wiedii"
+ [4] "Leopardus.pardalis"       "Oreailurus.jacobita"
+"Oncifelis.colocolo"
+ [7] "Oncifelis.guigna"         "Oncifelis.geoffroyi"
+"Leopardus.tigrinus"
+[10] "Lynx.rufus"               "Lynx.canadensis"
+"Panthera.onca"
+
+
+When fitting the model, I obtained the same error message as before:
+
+> fit_phylo <- glmmTMB(log(range) ~ log(size) + propto(0 + species | dummy, A),data = carnidat)Error: column or row names of the matrix do not match the terms. Expecting names:?speciesAtelocynus.microtis??speciesBassariscus.alleni??speciesBassariscus.astutus??speciesBassariscus.beddardi??speciesBassariscus.gabbii??speciesB
+
+(the error message is longer but you can get the idea)
+------------------
+
+Again, any suggestion would be appreciated.
+Cheers
+
+Pablo
+
+
+On Mon, 17 Mar 2025 at 11:47, Ben Bolker <bbolker at gmail.com> wrote:
+
+>   The short answer is that the *values* of the names are OK, but the
+> *order* is wrong (setdiff() only checks that the values are
+> equivalent, not the order).  I will try to add some better
+> tests/diagnostics to the code.
+>
+> On Thu, Mar 13, 2025 at 12:10?PM Pablo Inchausti
+> <pablo.inchausti.f at gmail.com> wrote:
+> >
+> > Hi,
+> > I have been trying to run the mixed model incorporating a phylogeny that
+> is
+> > suggested in
+> > https://cran.r-project.org/web/packages/glmmTMB/vignettes/covstruct.html
+> > (section Proptional). I have encountered errors that I cannot resolve and
+> > hence this post.
+> >
+> > This is what I did:
+> > require(ade4); require(ape); require(glmmTMB)
+> >
+> > data(carni70) # loads the data
+> >
+> > carnidat <- data.frame(species = rownames(carni70$tab), carni70$tab)
+> >
+> > phylo <- read.tree(text=carni70$tre) # reads the phylogeny
+> >
+> > A <- vcv(phylo) # uses package ape to calculate the var-covar matrix from
+> > the phylogeny
+> >
+> > # verifies whether the species names of  rows and columns of var-covar
+> > phylogenetic matrix are the same as those in the dataframe
+> >
+> > setdiff(carnidat$species, rownames(A)) # No!. I then correct them.
+> >
+> > carnidat$species=gsub("_", ".", carnidat$species) # corrects all species
+> > names
+> >
+> > setdiff(colnames(A), rownames(A)) # final check. All is fine.
+> >
+> > setdiff(carnidat$species, rownames(A)) # another final check. All is
+> fine.
+> >
+> > carnidat$dummy <- factor(1) # a dummy grouping variable must be added to
+> > the dataset
+> >
+> > Then I ran the model:
+> >
+> > fit_phylo=glmmTMB(log(range)~log(size)+propto(0+species|dummy, A),
+> > data= carnidat)
+> >
+> > And I obtain the following error message:
+> >
+> > Error: column or row names of the matrix do not match the terms.
+> > Expecting names:
+> > ?speciesAtelocynus.microtis??speciesBassariscus.alleni??
+> > speciesBassariscus.astutus??
+> >
+> speciesBassariscus.beddardi??speciesBassariscus.gabbii??speciesBassariscus.lasius??speciesBassariscus.pauli??
+> >
+> speciesBassariscus.sumichrasti??speciesCanis.latrans??speciesCanis.lupus??speciesCerdocyon.
+> >
+> > (This is much longer, but one can get the idea)
+> >
+> > Just in case, the same model does run using the package brms.
+> >
+> > I would appreciate very much any suggestion that you might have.
+> > Thanks in advance.
+> > Cheers
+> > Pablo
+> >
+> > > sessionInfo()R version 4.4.3 (2025-02-28)
+> > Platform: x86_64-pc-linux-gnu
+> > Running under: Ubuntu 22.04.5 LTS
+> >
+> >
+> > Attached base packages:
+> >
+> > [1] stats     graphics  grDevices utils     datasets  methods   base
+> >
+> > other attached packages:
+> > [1] glmmTMB_1.1.10 ape_5.8
+> >
+> > loaded via a namespace (and not attached):
+> >  [1] nlme_3.1-166        TH.data_1.1-2       estimability_1.5.1
+> > reformulas_0.3.0    xtable_1.8-4
+> >  [6] minqa_1.2.8         zoo_1.8-12          TMB_1.9.15
+> > lme4_1.1-35.5       grid_4.4.3
+> > [11] MASS_7.3-61         mvtnorm_1.3-1       numDeriv_2016.8-1.1
+> > compiler_4.4.3      multcomp_1.4-26
+> > [16] codetools_0.2-20    sandwich_3.1-1      emmeans_1.10.5
+> > coda_0.19-4.1       Rcpp_1.0.13
+> > [21] mgcv_1.9-1          rstudioapi_0.16.0   lattice_0.22-6
+> > digest_0.6.37       nloptr_2.1.1
+> > [26] Rdpack_2.6.1        parallel_4.4.3      splines_4.4.3
+> > rbibutils_2.3       Matrix_1.7-0
+> > [31] tools_4.4.3         boot_1.3-31         survival_3.7-0
+> >
+> >
+> > >
+> >
+> > --
+> > *Pablo Inchausti*
+> > Profesor de Ecolog?a
+> > Centro Universitario Regional del Este
+> > Universidad de la Rep?blica,
+> > Avenida Cachimba del Rey
+> > Maldonado, Departamento de Maldonado CP 20100
+> > Uruguay
+> > *Phone*: +598.42.25.53.26 interno 602
+> >
+> > *Website*: https://sites.google.com/view/pablo-inchausti/iniciostart
+> > <https://sites.google.com/view/pablo-inchausti//iniciostart>
+> >
+> > *Book/Libro Statistical Modeling with R websites: *
+> >
+> > *https://sites.google.com/view/statistical-modeling-with-r/home
+> > <https://sites.google.com/view/statistical-modeling-with-r/home>*
+> > *https://global.oup.com/booksites/content/9780192859013/
+> > <https://global.oup.com/booksites/content/9780192859013/>*
+> >
+> > *Canal YouTube* Pablo Inchausti Estadistica: @PabloIEstadistica
+> > https://www.youtube.com/channel/UCKCknL2o8rzr7uumT-GDi7Q/a
+> >
+> >         [[alternative HTML version deleted]]
+> >
+> > _______________________________________________
+> > R-sig-mixed-models at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+>
+
+
+-- 
+*Pablo Inchausti*
+Profesor de Ecolog?a
+Centro Universitario Regional del Este
+Universidad de la Rep?blica,
+Avenida Cachimba del Rey
+Maldonado, Departamento de Maldonado CP 20100
+Uruguay
+*Phone*: +598.42.25.53.26 interno 602
+
+*Website*: https://sites.google.com/view/pablo-inchausti/iniciostart
+<https://sites.google.com/view/pablo-inchausti//iniciostart>
+
+*Book/Libro Statistical Modeling with R websites: *
+
+*https://sites.google.com/view/statistical-modeling-with-r/home
+<https://sites.google.com/view/statistical-modeling-with-r/home>*
+*https://global.oup.com/booksites/content/9780192859013/
+<https://global.oup.com/booksites/content/9780192859013/>*
+
+*Canal YouTube* Pablo Inchausti Estadistica: @PabloIEstadistica
+https://www.youtube.com/channel/UCKCknL2o8rzr7uumT-GDi7Q/a
+
+	[[alternative HTML version deleted]]
+
+
+From bbo|ker @end|ng |rom gm@||@com  Thu Mar 20 22:34:31 2025
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Thu, 20 Mar 2025 17:34:31 -0400
+Subject: [R-sig-ME] problem running mixed model including a phylogeny
+ suggested in vignette "Covariance structure"
+In-Reply-To: <CAGdDvs3fQ+1LsXZ6chxQxq4xWm1QDBn9dSWB_doYtU6TGgYGtQ@mail.gmail.com>
+References: <CAGdDvs3fQ+1LsXZ6chxQxq4xWm1QDBn9dSWB_doYtU6TGgYGtQ@mail.gmail.com>
+Message-ID: <CABghstTuZNRBi6iZbPywXdqRyb0rqNrrta6BChdU+FuTUhjLFA@mail.gmail.com>
+
+  It is the *levels* of the species factor that need to be ordered properly.
+
+Adding
+
+carnidat$species <- factor(carnidat$species, levels = rownames(A))
+
+before fitting the model should work.
+
+ I've added some more details to the vignette (since this is obviously
+not clear enough yet!).
+  I think  we should also consider automatically re-ordering in this case ...
+
+On Thu, Mar 13, 2025 at 12:10?PM Pablo Inchausti
+<pablo.inchausti.f at gmail.com> wrote:
+>
+> Hi,
+> I have been trying to run the mixed model incorporating a phylogeny that is
+> suggested in
+> https://cran.r-project.org/web/packages/glmmTMB/vignettes/covstruct.html
+> (section Proptional). I have encountered errors that I cannot resolve and
+> hence this post.
+>
+> This is what I did:
+> require(ade4); require(ape); require(glmmTMB)
+>
+> data(carni70) # loads the data
+>
+> carnidat <- data.frame(species = rownames(carni70$tab), carni70$tab)
+>
+> phylo <- read.tree(text=carni70$tre) # reads the phylogeny
+>
+> A <- vcv(phylo) # uses package ape to calculate the var-covar matrix from
+> the phylogeny
+>
+> # verifies whether the species names of  rows and columns of var-covar
+> phylogenetic matrix are the same as those in the dataframe
+>
+> setdiff(carnidat$species, rownames(A)) # No!. I then correct them.
+>
+> carnidat$species=gsub("_", ".", carnidat$species) # corrects all species
+> names
+>
+> setdiff(colnames(A), rownames(A)) # final check. All is fine.
+>
+> setdiff(carnidat$species, rownames(A)) # another final check. All is fine.
+>
+> carnidat$dummy <- factor(1) # a dummy grouping variable must be added to
+> the dataset
+>
+> Then I ran the model:
+>
+> fit_phylo=glmmTMB(log(range)~log(size)+propto(0+species|dummy, A),
+> data= carnidat)
+>
+> And I obtain the following error message:
+>
+> Error: column or row names of the matrix do not match the terms.
+> Expecting names:
+> ?speciesAtelocynus.microtis??speciesBassariscus.alleni??
+> speciesBassariscus.astutus??
+> speciesBassariscus.beddardi??speciesBassariscus.gabbii??speciesBassariscus.lasius??speciesBassariscus.pauli??
+> speciesBassariscus.sumichrasti??speciesCanis.latrans??speciesCanis.lupus??speciesCerdocyon.
+>
+> (This is much longer, but one can get the idea)
+>
+> Just in case, the same model does run using the package brms.
+>
+> I would appreciate very much any suggestion that you might have.
+> Thanks in advance.
+> Cheers
+> Pablo
+>
+> > sessionInfo()R version 4.4.3 (2025-02-28)
+> Platform: x86_64-pc-linux-gnu
+> Running under: Ubuntu 22.04.5 LTS
+>
+>
+> Attached base packages:
+>
+> [1] stats     graphics  grDevices utils     datasets  methods   base
+>
+> other attached packages:
+> [1] glmmTMB_1.1.10 ape_5.8
+>
+> loaded via a namespace (and not attached):
+>  [1] nlme_3.1-166        TH.data_1.1-2       estimability_1.5.1
+> reformulas_0.3.0    xtable_1.8-4
+>  [6] minqa_1.2.8         zoo_1.8-12          TMB_1.9.15
+> lme4_1.1-35.5       grid_4.4.3
+> [11] MASS_7.3-61         mvtnorm_1.3-1       numDeriv_2016.8-1.1
+> compiler_4.4.3      multcomp_1.4-26
+> [16] codetools_0.2-20    sandwich_3.1-1      emmeans_1.10.5
+> coda_0.19-4.1       Rcpp_1.0.13
+> [21] mgcv_1.9-1          rstudioapi_0.16.0   lattice_0.22-6
+> digest_0.6.37       nloptr_2.1.1
+> [26] Rdpack_2.6.1        parallel_4.4.3      splines_4.4.3
+> rbibutils_2.3       Matrix_1.7-0
+> [31] tools_4.4.3         boot_1.3-31         survival_3.7-0
+>
+>
+> >
+>
+> --
+> *Pablo Inchausti*
+> Profesor de Ecolog?a
+> Centro Universitario Regional del Este
+> Universidad de la Rep?blica,
+> Avenida Cachimba del Rey
+> Maldonado, Departamento de Maldonado CP 20100
+> Uruguay
+> *Phone*: +598.42.25.53.26 interno 602
+>
+> *Website*: https://sites.google.com/view/pablo-inchausti/iniciostart
+> <https://sites.google.com/view/pablo-inchausti//iniciostart>
+>
+> *Book/Libro Statistical Modeling with R websites: *
+>
+> *https://sites.google.com/view/statistical-modeling-with-r/home
+> <https://sites.google.com/view/statistical-modeling-with-r/home>*
+> *https://global.oup.com/booksites/content/9780192859013/
+> <https://global.oup.com/booksites/content/9780192859013/>*
+>
+> *Canal YouTube* Pablo Inchausti Estadistica: @PabloIEstadistica
+> https://www.youtube.com/channel/UCKCknL2o8rzr7uumT-GDi7Q/a
+>
+>         [[alternative HTML version deleted]]
+>
+> _______________________________________________
+> R-sig-mixed-models at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+
+
+From L|eke@Moeree|@ @end|ng |rom UGent@be  Wed Mar 26 15:10:59 2025
+From: L|eke@Moeree|@ @end|ng |rom UGent@be (Lieke Moereels)
+Date: Wed, 26 Mar 2025 14:10:59 +0000
+Subject: [R-sig-ME] Which variance term to use for bias
+ adjustment/correction when back-transforming?
+Message-ID: <AS8PR09MB49501A2143C36241C79FA148F4A62@AS8PR09MB4950.eurprd09.prod.outlook.com>
+
+Hi all
+
+I hope you are doing well!
+
+A small question:
+To report and visualise model outputs from GLMMs, I back-transform estimates with a bias adjustment.
+For back-transforming estimated means from the log scale for simple GLMMs with a single random effect term (e.g. richness ~ pH + (1|location)), I always did this (based on what Russ Lenth does in the emmeans package) as follows:
+
+# derive variance attributable to random effects (if I am not mistaken, the below is based on a suggestion from you, Ben?)
+extra_disp <- insight::get_variance(fitted_model)[["var.intercept"]] # in my simple models, the random-intercept variance equals the random effects variance
+
+# back-transform estimates from log to response scale, with bias adjustment
+ estimate_resp <- exp(estimate) + 0.5*exp(estimate)*extra_disp^2
+
+Now I saw that in the ggeffects package, for the predict_response function, the default is to use the residual variance rather than the random effects variance for bias adjustment/correction.
+"To apply bias-correction, a valid value of sigma is required, which is extracted by default using insight::get_variance_residual()<https://easystats.github.io/insight/reference/get_variance.html>. Optionally, to provide own estimates of uncertainty, use the sigma argument."
+
+In this discussion:https://github.com/easystats/insight/issues/1008, I saw both options (the one using the random intercept variance and the one using the residual variance) being used.
+
+I am a bit confused about this use of different variance terms for the bias adjustment. Could someone explain to me why there are different approaches here and on what the choice for a certain approach depends? E.g. should I use the residual variance or the random effect variance in the case of a simple model like "richness ~ pH + (1|location)" with a Poisson or Gamma distribution?
+
+Apologies if this should be obvious!
+
+Many thanks and have a nice day!
+Lieke
+
+	[[alternative HTML version deleted]]
+
+
