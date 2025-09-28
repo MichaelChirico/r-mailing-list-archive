@@ -24,15 +24,15 @@ We track the following archives (file an issue to get a new list added):
 
 > This list is to get help about package development in R. The goal of the list is to provide a forum for learning about the package development process. We hope to build a community of R package developers who can help each other solve problems, and reduce some of the burden on the CRAN maintainers. If you are having problems developing a package or passing R CMD check, this is the place to ask!
 
-## `r-sig-mac`: Special interest group (SIC) on Mac + R
+## `r-sig-mac`: Special interest group (SIG) on Mac + R
 
 > This list might be used also for bug reports or feature requests on the R application for OS X.
 
-## `r-sig-geo`: Special interest group (SIC) on using geographical data and mapping
+## `r-sig-geo`: Special interest group (SIG) on using geographical data and mapping
 
 > A mailing list for discussing the development and use of R functions and packages for handling and analysis of spatial, and particularly geographical, data. The list also covers mapping and cartographic issues, and interfaces between R and geographical information systems.
 
-## `r-sig-finance`: Special interest group (SIC) on R in finance
+## `r-sig-finance`: Special interest group (SIG) on R in finance
 
 > A mailing list for discussing the use of R in finance.
 
