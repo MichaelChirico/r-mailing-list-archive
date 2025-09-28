@@ -4,19 +4,18 @@ library(xml2)
 URL_BASE ='https://stat.ethz.ch/pipermail'
 # POSIXlt facilitates formatting as quarter
 today = as.POSIXlt(Sys.time())
+
 mailing_lists = list(
-  c(name = 'r-devel', current = format(today, '%Y-%B.txt')),
-  c(name = 'r-package-devel',
-    current = with(today, sprintf('%dq%d.txt', year + 1900L, mon %/% 3L + 1L))),
-  c(name = 'r-sig-mac', current = format(today, '%Y-%B.txt')),
-  c(name = 'r-help', current = format(today, '%Y-%B.txt')),
-  c(name = 'r-announce', current = format(today, '%Y')),
-  c(name = 'r-sig-geo', current = format(today, '%Y-%B.txt')),
-  c(name = 'r-sig-finance',
-    current = with(today, sprintf('%dq%d.txt', year + 1900L, mon %/% 3L + 1L))),
-  c(name = 'r-sig-mixed-models',
-    current = with(today, sprintf('%dq%d.txt', year + 1900L, mon %/% 3L + 1L)))
+  c(name = 'r-devel', frequency = 'month'),
+  c(name = 'r-package-devel', frequency = 'quarter'),
+  c(name = 'r-sig-mac', frequency = 'month'),
+  c(name = 'r-help', frequency = 'month'),
+  c(name = 'r-announce', frequency = 'annual'),
+  c(name = 'r-sig-geo', frequency = 'month'),
+  c(name = 'r-sig-finance', frequency = 'quarter'),
+  c(name = 'r-sig-mixed-models', frequency = 'quarter')
 )
+
 for (ii in seq_along(mailing_lists)) {
   this_list = mailing_lists[[ii]]
   outdir = this_list[['name']]
@@ -25,9 +24,14 @@ for (ii in seq_along(mailing_lists)) {
   dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
 
   # Always re-write current period
+  current_period <- switch(this_list[['frequency']],
+    annual = format(today, '%Y'),
+    quarter = with(today, sprintf('%dq%d.txt', year + 1900L, mon %/% 3L + 1L)),
+    month = format(today, '%Y-%B')
+  )
   extant_gz = outdir |>
     list.files() |>
-    setdiff(this_list[['current']]) |>
+    setdiff(current_period) |>
     paste0('.gz')
 
   zips = URL |>
