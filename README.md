@@ -35,3 +35,9 @@ We track the following archives (file an issue to get a new list added):
 ## `r-sig-finance`: Special interest group (SIC) on R in finance
 
 > A mailing list for discussing the use of R in finance.
+
+
+## `r-sig-mixed-models`: Special interest group (SIG) on R in finance
+
+> A mailing list for useRs and programmeRs interested in use and development of mixed effect (hierarchical/multilevel) models in R. While focused on the lme4 package, many other packages are also discussed here.
+
