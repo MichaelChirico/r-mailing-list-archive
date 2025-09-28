@@ -5,26 +5,26 @@ URL_BASE ='https://stat.ethz.ch/pipermail'
 # POSIXlt facilitates formatting as quarter
 today = as.POSIXlt(Sys.time())
 
-mailing_lists = list(
-  c(name = 'r-devel', frequency = 'month'),
-  c(name = 'r-package-devel', frequency = 'quarter'),
-  c(name = 'r-sig-mac', frequency = 'month'),
-  c(name = 'r-help', frequency = 'month'),
-  c(name = 'r-announce', frequency = 'annual'),
-  c(name = 'r-sig-geo', frequency = 'month'),
-  c(name = 'r-sig-finance', frequency = 'quarter'),
-  c(name = 'r-sig-mixed-models', frequency = 'quarter')
-)
+mailing_lists = read.table(header = TRUE, text = "
+name               frequency
+r-devel            month
+r-package-devel    quarter
+r-sig-mac          month
+r-help             month
+r-annouce          annual
+r-sig-geo          month
+r-sig-finance      quarter
+r-sig-mixed-models quarter
+")
 
-for (ii in seq_along(mailing_lists)) {
-  this_list = mailing_lists[[ii]]
-  outdir = this_list[['name']]
+for (ii in seq_len(nrow(mailing_lists))) {
+  outdir = mailing_lists$name[ii]
 
   URL = file.path(URL_BASE, outdir)
   dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
 
   # Always re-write current period
-  current_period <- switch(this_list[['frequency']],
+  current_period <- switch(mailing_lists$frequency[ii],
     annual = format(today, '%Y'),
     quarter = with(today, sprintf('%dq%d.txt', year + 1900L, mon %/% 3L + 1L)),
     month = format(today, '%Y-%B')
