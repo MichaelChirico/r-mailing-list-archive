@@ -14,7 +14,7 @@ r-sig-mac          month
 r-package-devel    quarter
 r-sig-finance      quarter
 r-sig-mixed-models quarter
-r-announe          annual
+r-announce         annual
 ")
 
 for (ii in seq_len(nrow(mailing_lists))) {
