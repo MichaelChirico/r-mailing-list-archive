@@ -11,7 +11,6 @@ r-devel            month
 r-package-devel    quarter
 r-sig-mac          month
 r-help             month
-r-annouce          annual
 r-sig-geo          month
 r-sig-finance      quarter
 r-sig-mixed-models quarter
