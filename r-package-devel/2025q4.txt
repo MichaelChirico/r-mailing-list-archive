@@ -1,0 +1,3545 @@
+From edd @end|ng |rom deb|@n@org  Wed Oct  1 15:00:05 2025
+From: edd @end|ng |rom deb|@n@org (Dirk Eddelbuettel)
+Date: Wed, 1 Oct 2025 08:00:05 -0500
+Subject: [R-pkg-devel] Problematicness of Makefile Extensions for CRAN
+ Packages
+In-Reply-To: <9301dfd0-1ab1-40a5-89be-265422de25dd@uni-duesseldorf.de>
+References: <9301dfd0-1ab1-40a5-89be-265422de25dd@uni-duesseldorf.de>
+Message-ID: <26845.9685.708762.292043@paul.eddelbuettel.com>
+
+
+On 28 September 2025 at 11:00, Nils L?schow wrote:
+| when performing "R CMD check" on my package that contains the sourcecode 
+| of a third party C++ library, I get a warning telling me to avoid the 
+| usage of makefile extensions. Before going ahead and trying to temper 
+| with the library's build-process, I just wanted to ask how severe of a 
+| problem makefile extensions are. Is there a "gradient" i.e. makefile 
+| extensions can be tolerated to a certain degree and some are worse than 
+| others, or are they such a problem with regards to portability that you 
+| shouldn't use them at all?
+
+See Section 1.6 "Writing Portable Packages" of _Writing R Extensions_ under
+the bullet point for `make`:
+
+   ? If your package has a ?Makevars? or ?Makefile? file, make sure that
+     you use only portable make features.  Such files should be
+     LF-terminated(2) (including the final line of the file) and not
+     make use of GNU extensions.  (The POSIX specification is available
+     at
+     <https://pubs.opengroup.org/onlinepubs/9699919799/utilities/make.html>;
+     anything not documented there should be regarded as an extension to
+     be avoided.  Further advice can be found at
+     <https://www.gnu.org/software/autoconf/manual/autoconf.html#Portable-Make>.
+     )  Commonly misused GNU extensions are conditional inclusions
+     (?ifeq? and the like), ?${shell ...}?, ?${wildcard ...}? and
+     similar, and the use of ?+=?(3) and ?:=?.  Also, the use of ?$<?
+     other than in implicit rules is a GNU extension, as is the ?$^?
+     macro.  As is the use of ?.PHONY? (some other makes ignore it).
+     Unfortunately makefiles which use GNU extensions often run on other
+     platforms but do not have the intended results.
+
+     Note that the ?-C? flag for ?make? is not included in the POSIX
+     specification and is not implemented by some of the ?make?s which
+     have been used with R. However, it is more commonly implemented
+     (e.g. by FreeBSD ?make?) than the GNU-specific ?--directory=?.
+
+     You should not rely on built-in/default ?make? rules, even when
+     specified by POSIX, as some ?make?s do not have the POSIX ones and
+     others have altered them.
+
+     The use of ?${shell ...}? can be avoided by using backticks, e.g.
+
+          PKG_CPPFLAGS = `gsl-config --cflags`
+
+     which works in all versions of ?make? known(4) to be used with R.
+
+     If you really must require GNU make, declare it in the
+     ?DESCRIPTION? file by
+
+          SystemRequirements: GNU make
+
+     and ensure that you use the value of environment variable ?MAKE?
+     (and not just ?make?) in your scripts.  (On some platforms GNU make
+     is available under a name such as ?gmake?, and there
+     ?SystemRequirements? is used to set ?MAKE?.)  Your ?configure?
+     script (or similar) does need to check that the executable pointed
+     to by ?MAKE? is indeed GNU make.
+
+     If you only need GNU make for parts of the package which are rarely
+     needed (for example to create bibliography files under
+     ?vignettes?), use a file called ?GNUmakefile? rather than
+     ?Makefile? as GNU make (only) will use the former.
+
+     macOS has used GNU make for many years (it previously used BSD
+     make), but the version has been frozen at 3.81 (from 2006).
+
+     Since the only viable make for Windows is GNU make, it is
+     permissible to use GNU extensions in files ?Makevars.win?,
+     ?Makevars.ucrt?, ?Makefile.win? or ?Makefile.ucrt?.
+
+You either comply, or you declare 'SystemRequirements: GNU make' as many
+packages do. There is no gradient here.
+
+Hope this helps, Dirk
+
+-- 
+dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From edd @end|ng |rom deb|@n@org  Wed Oct  1 15:07:47 2025
+From: edd @end|ng |rom deb|@n@org (Dirk Eddelbuettel)
+Date: Wed, 1 Oct 2025 08:07:47 -0500
+Subject: [R-pkg-devel] Segfault error in CRAN submission (Linux)
+In-Reply-To: <fa780c92-0ad3-49c0-9fb1-d9f97e9f77e3@gmx.de>
+References: <fa780c92-0ad3-49c0-9fb1-d9f97e9f77e3@gmx.de>
+Message-ID: <26845.10147.792843.855833@paul.eddelbuettel.com>
+
+
+On 29 September 2025 at 19:14, quirin stier wrote:
+| I submitted a locally functioning package to CRAN (see 
+| https://github.com/Quirinms/GeneralizedUmatrixGPU), however in the case 
+| of the Linux test, I get following error:
+| 
+|   *** caught segfault ***
+| address 0x10, cause 'memory not mapped'
+
+I would recommend investing some time in a (possibly Docker-based) setup that
+closely matches the system where this failed so see if you can replicate it
+so that you can try to find ways to avoid it.
+
+For what it is worth, I did a quick-ish test in a r2u-based container (based
+on Ubuntu 24.04), installed your dependencies (as binaries apart from
+GeneralizedUmatrix) as well as this package. It passes its regression tests
+and did not segfault.
+
+That does not prove correctness. The next step is then often to try tools
+like valgrind or ASAN/SAN, also in containers, to get other hints.  I have
+been this for a number years (decades actually) and often thought "well CRAN
+must be wrong here". They never were. The tests are there for a reason, even
+if it pains us.
+
+(I would also think about changing the language on your webpage. Referring to
+two packages as CRAN packages when they are not does not help casual users.)
+
+Cheers, Dirk
+
+-- 
+dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From tom@@@k@||ber@ @end|ng |rom gm@||@com  Wed Oct  1 17:56:17 2025
+From: tom@@@k@||ber@ @end|ng |rom gm@||@com (Tomas Kalibera)
+Date: Wed, 1 Oct 2025 17:56:17 +0200
+Subject: [R-pkg-devel] Segfault error in CRAN submission (Linux)
+In-Reply-To: <fa780c92-0ad3-49c0-9fb1-d9f97e9f77e3@gmx.de>
+References: <fa780c92-0ad3-49c0-9fb1-d9f97e9f77e3@gmx.de>
+Message-ID: <e400f69f-14a7-4683-8fce-5d1d5504c446@gmail.com>
+
+
+On 9/29/25 19:14, quirin stier wrote:
+> I submitted a locally functioning package to CRAN (see
+> https://github.com/Quirinms/GeneralizedUmatrixGPU), however in the case
+> of the Linux test, I get following error:
+>
+>    *** caught segfault ***
+> address 0x10, cause 'memory not mapped'
+
+Just from these two lines, one can't tell what was the problem. It would 
+be slightly better to see complete outputs of the failed checks, that 
+could give a hint where it failed.
+
+To provoke the crash on a system where it normally doesn't happen, one 
+might try using gc torture (see ?gctorture). Also one might try running 
+with address sanitizer/valgrind to see if those tools could find a 
+memory error. Possibly one could run only a smaller part of the check, 
+based on the output - e.g. if it crashes while running a specific 
+example, one might try just running that example in isolation (with 
+gctorture, valgrind, etc).
+
+Certainly that it crashes on some platforms means there is an error (in 
+the package, or depenendent packages, or possibly used libraries or R).
+
+Best
+Tomas
+
+> A web search suggests that the executing machine must have a "mismatch
+> between currently?installed shared libraries and the libraries that were
+> built to install R or packages".
+>
+> https://stackoverflow.com/questions/49190251/caught-segfault-memory-not-mapped-error-in-r
+>
+>
+> 	[[alternative HTML version deleted]]
+>
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+
+From vw@|ter1 @end|ng |rom penn@t@tehe@|th@p@u@edu  Wed Oct  1 22:08:08 2025
+From: vw@|ter1 @end|ng |rom penn@t@tehe@|th@p@u@edu (Walter, Vonn)
+Date: Wed, 1 Oct 2025 20:08:08 +0000
+Subject: [R-pkg-devel] Package cannot connect to Ensembl
+Message-ID: <SA1PR22MB49018A34BFA071E5F3F814F7D8E6A@SA1PR22MB4901.namprd22.prod.outlook.com>
+
+Hi Everyone,
+
+One of the functions in my DiNAMIC.Duo package on CRAN uses the biomaRt package to download gene position information from the Ensembl website.  Currently I use one of the Ensembl archives (ensemblHost=http://aug2020.archive.ensembl.org in the code below).  The archive is unavailable periodically, so the function includes the following code in an effort to ??fail gracefully,?? as is required by CRAN:
+
+statusCode = curl::curl_fetch_memory(ensemblHost)$status_code
+if (statusCode != 200)
+{
+stop(paste(ensemblHost, "currently not available"))
+}
+
+I recently received a notice from CRAN stating that that an error was received when checking examples with ?Vrun-donttest.  Specifically, the following:
+
+Error in `req_perform()`:
+! Failed to perform HTTP request.
+Caused by error in `curl::curl_fetch_memory()`:
+! SSL connect error [aug2020.archive.ensembl.org]:
+OpenSSL/3.2.4: error:0A0000C6:SSL routines::packet length too long
+Backtrace:
+    ?g
+1. ?|?wDiNAMIC.Duo::dataPrep(X = luadSubset, Y = NULL)
+2.   ?|?wbiomaRt::useMart(...)
+3.     ?|?wbiomaRt:::.useMart(...)
+4.       ?|?wbiomaRt:::.listMarts(...)
+5.         ?|?wbiomaRt:::bmRequest(...)
+6.           ?|?whttr2::req_perform(request)
+7.             ?|?whttr2:::handle_resp(req, resp, error_call = error_call)
+8.               ?|?wrlang::cnd_signal(resp)
+Execution halted
+
+Any suggestions on how to revise the existing code would be greatly appreciated.  Thanks in advance for your reply.
+
+Best,
+
+Vonn
+
+Vonn Walter, PhD
+Associate Professor
+Department of Public Health Sciences
+Department of Molecular and Precision Medicine
+Co-Director
+Biostatistics and Bioinformatics Shared Resource
+Penn State Cancer Institute
+Penn State College of Medicine
+Pronouns:  he/him/his
+
+
+	[[alternative HTML version deleted]]
+
+
+From tony_@_w||ke@ @end|ng |rom out|ook@com  Fri Oct  3 10:57:03 2025
+From: tony_@_w||ke@ @end|ng |rom out|ook@com (Tony Wilkes)
+Date: Fri, 3 Oct 2025 08:57:03 +0000
+Subject: [R-pkg-devel] new package version fails on r-devel fedora clang
+Message-ID: <AS4P195MB1430635DA878FF6296A8206EBEE4A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+
+Hi everyone,
+
+I submitted an update for my broadcast R-package yesterday on CRAN.
+Prior to submission I checked the package with R CMD check, devtools::check_win_devel(), with devtools::check_mac_release(), and with various operating systems via GitHub actions.
+No problems were found.
+
+But I see on the CRAN page that the new version of broadcast fails to install on r-devel fedora clang.
+The install log can be found here: https://www.r-project.org/nosvn/R.check/r-devel-linux-x86_64-fedora-clang/broadcast-00install.html
+
+It's unclear to me why exactly installation fails. The only concrete statement I can find in the install log is "CPU time limit exceeded". Does this mean the installation simply took too long? If it is something else, what then happened exactly? And how can I fix it?
+
+Thanks in advance!
+
+Kind regards,
+
+Tony
+
+
+	[[alternative HTML version deleted]]
+
+
+From i@bi@@@ber@h@rd m@iii@g oii u@ibe@ch  Wed Oct  1 18:58:16 2025
+From: i@bi@@@ber@h@rd m@iii@g oii u@ibe@ch (i@bi@@@ber@h@rd m@iii@g oii u@ibe@ch)
+Date: Wed, 1 Oct 2025 16:58:16 +0000
+Subject: [R-pkg-devel] Installation took CPU time XXX times elapsed time
+Message-ID: <188A464A-2FCF-4FF5-B7D0-D39A9D7B64EE@unibe.ch>
+
+Dear list members,
+
+We are trying to get our package rsofun updated on CRAN. The source code is hosted in the master branch at: https://github.com/geco-bern/rsofun
+
+The CRAN pretest fails on Debian with the NOTE: ?Installation took CPU time 2.8 times elapsed time?. For full output see: https://win-builder.r-project.org/incoming_pretest/rsofun_5.1.0_20251001_152239/
+
+From what I gathered, the discrepancy between walltime and elapsed time hints at use of more than two cores. Note that contrary to issues I found online, here it appears to be linked to installation of the package and not the test suite, examples, or vignettes. Test suite, examples, and vignettes report equal walltime and elapsed time.
+
+The cookbook (https://contributor.r-project.org/cran-cookbook/code_issues.html) suggests use of the j-flag for compilation (which I am unsure how to implement). Whereas LLMs suggest to ensure all dependencies are stated in ?src/Makevars? (which I tried to ensure). However still no success with the current version of the code.
+
+I would appreciate any suggestions how to resolve this.
+Best regards!
+
+	[[alternative HTML version deleted]]
+
+
+From edd @end|ng |rom deb|@n@org  Fri Oct  3 14:24:22 2025
+From: edd @end|ng |rom deb|@n@org (Dirk Eddelbuettel)
+Date: Fri, 3 Oct 2025 07:24:22 -0500
+Subject: [R-pkg-devel] Installation took CPU time XXX times elapsed time
+In-Reply-To: <188A464A-2FCF-4FF5-B7D0-D39A9D7B64EE@unibe.ch>
+References: <188A464A-2FCF-4FF5-B7D0-D39A9D7B64EE@unibe.ch>
+Message-ID: <26847.49270.926960.929587@paul.eddelbuettel.com>
+
+
+On 1 October 2025 at 16:58, fabian.bernhard at unibe.ch wrote:
+| Dear list members,
+| 
+| We are trying to get our package rsofun updated on CRAN. The source code is hosted in the master branch at: https://github.com/geco-bern/rsofun
+| 
+| The CRAN pretest fails on Debian with the NOTE: ?Installation took CPU time 2.8 times elapsed time?. For full output see: https://win-builder.r-project.org/incoming_pretest/rsofun_5.1.0_20251001_152239/
+| 
+| From what I gathered, the discrepancy between walltime and elapsed time hints at use of more than two cores. Note that contrary to issues I found online, here it appears to be linked to installation of the package and not the test suite, examples, or vignettes. Test suite, examples, and vignettes report equal walltime and elapsed time.
+| 
+| The cookbook (https://contributor.r-project.org/cran-cookbook/code_issues.html) suggests use of the j-flag for compilation (which I am unsure how to implement). Whereas LLMs suggest to ensure all dependencies are stated in ?src/Makevars? (which I tried to ensure). However still no success with the current version of the code.
+| 
+| I would appreciate any suggestions how to resolve this.
+
+I cannot replicate this in a container running r2u (to get all your nunerous
+dependencies quickly as binaries) running Ubuntu 24.04:
+
+  [...]
+  * checking whether package ?rsofun? can be installed ... OK
+  * used C compiler: ?gcc (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0?
+  * used Fortran compiler: ?GNU Fortran (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0?
+  * checking installed package size ... OK  
+  [...]
+
+so you could try to ask this if this may have to do with their use of clang
+and flang-new. That said, I somehow doubt that is the case as it would hit
+every package with Fortran sources.
+
+>From a first glance your src/Makevars is correct (and elaborate). You do not
+ask for any parallel compilation (which is what this check is about -- as
+CRAN runs many builds and checks in parallel in their server they have to
+ensure no one build 'runs away' with resources).
+
+Yet if you look at the 00install.out in that URL reference you see that your
+compilations _happens twice_ once before and and once after the linking of
+rsofun.so. I cannot say if that causes it, but I would try to rework that:
+there should be no need to compile the Fortran files and wrappersc.c twice.
+
+Dirk
+
+-- 
+dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From edd @end|ng |rom deb|@n@org  Fri Oct  3 15:07:01 2025
+From: edd @end|ng |rom deb|@n@org (Dirk Eddelbuettel)
+Date: Fri, 3 Oct 2025 08:07:01 -0500
+Subject: [R-pkg-devel] new package version fails on r-devel fedora clang
+In-Reply-To: <AS4P195MB1430635DA878FF6296A8206EBEE4A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+References: <AS4P195MB1430635DA878FF6296A8206EBEE4A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+Message-ID: <26847.51829.976200.825288@paul.eddelbuettel.com>
+
+
+On 3 October 2025 at 08:57, Tony Wilkes wrote:
+| Hi everyone,
+| 
+| I submitted an update for my broadcast R-package yesterday on CRAN.
+| Prior to submission I checked the package with R CMD check, devtools::check_win_devel(), with devtools::check_mac_release(), and with various operating systems via GitHub actions.
+| No problems were found.
+| 
+| But I see on the CRAN page that the new version of broadcast fails to install on r-devel fedora clang.
+| The install log can be found here: https://www.r-project.org/nosvn/R.check/r-devel-linux-x86_64-fedora-clang/broadcast-00install.html
+| 
+| It's unclear to me why exactly installation fails. The only concrete statement I can find in the install log is "CPU time limit exceeded". Does this mean the installation simply took too long? If it is something else, what then happened exactly? And how can I fix it?
+
+This may be a compiler error in that (new-ish) version of clang.
+
+A good first step would be to see if another build of clang-21 succeeds,
+ideally on a similar Fedora system, else on whatever other system you can
+deploy clang-21. There have been prior discussions of this here, as I recall
+clang you can nightlies from clang for Debian; I do not know if they offer
+that for Fedora. See https://apt.llvm.org/
+
+[ Some time later ]
+
+Ok, I just installed your package onto a rocker/r-base container (running
+Debian testing/unstable) with both clang-21 and clang-22 in turn. [1] So you
+could try to email CRAN suggestion their particular build of clang-21 may
+have an issue. You may want to replicate what I did here with the exact
+compiler flags they used to be sure. It would also help to get clang-21 on
+Fedora but I am not sure it is pre-made somewhere and building it from source
+is of course more work.
+
+Hope this helps,  Dirk
+
+[1 ] I had to muck a little longer than I should have to get the apt repo
+setup -- the website lists the old 'list' format of apt files, we now need / prefer
+the newer 'sources' format with a key. I will try to write that up as I am
+sure I will need it again.
+
+-- 
+dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From |kry|ov @end|ng |rom d|@root@org  Fri Oct  3 16:34:46 2025
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Fri, 3 Oct 2025 17:34:46 +0300
+Subject: [R-pkg-devel] Installation took CPU time XXX times elapsed time
+In-Reply-To: <188A464A-2FCF-4FF5-B7D0-D39A9D7B64EE@unibe.ch>
+References: <188A464A-2FCF-4FF5-B7D0-D39A9D7B64EE@unibe.ch>
+Message-ID: <20251003173446.07b022f8@arachnoid>
+
+? Wed, 1 Oct 2025 16:58:16 +0000
+<fabian.bernhard at unibe.ch> ?????:
+
+> The cookbook
+> (https://contributor.r-project.org/cran-cookbook/code_issues.html)
+> suggests use of the j-flag for compilation (which I am unsure how to
+> implement).
+
+Thank you for consulting the cookbook! If all you have is Makevars,
+there should be no need for setting the -j flag anywhere; that advice
+is there for the CMake+Ninja and Rust build systems, which default to
+using all available cores.
+
+> Whereas LLMs suggest to ensure all dependencies are stated in
+> ?src/Makevars? (which I tried to ensure). However still no success
+> with the current version of the code.
+
+This is good advice (you need the dependencies in case someone does run
+MAKEFLAGS=-j$(nproc) R CMD INSTALL rsofun_*.tar.gz), but it won't help
+you with unintended installation-time parallelism. Your current
+Makevars, as noted by Dirk, has mistakes in the stated dependencies:
+
+>> all: $(SHLIB) clean
+
+This is wrong because it implies that 'make clean' could be started at
+the same time while $(SHLIB) is being built, removing the object files
+that $(SHLIB) actually depends upon.
+
+Removing the 'all: clean' dependency (but keeping 'all: $(SHLIB)' as the
+first target), removing the additional dependencies of $(SHLIB), and
+using the output of the following Perl program for all dependency
+information helps your package survive installation with MAKEFLAGS=-j2:
+
+perl -lne '
+	my $o = $ARGV =~ s/[.]f90$/.o/r;
+	$modules{$1} = $o
+		if /^\s*module\s+(\w+)/;
+	push @{$uses{$o}}, $1
+		if /^\s*use\s*(\w+)/;
+}{
+	while (my ($k, $v) = each %modules) {
+		print "$k.mod: $v";
+	}
+	while (my ($k, $v) = each %uses) {
+		print "$k: ", join " ", map "$_.mod", @$v;
+	}
+' *.f90
+
+While the build system trying to be too helpful is a common case of
+this NOTE (in which case the solution is easy), it is not the only
+possible explanation. We've also seen GCC internally spawn too many
+child processes for link-time optimisation (system setup problem, not a
+package problem, since fixed) and a package accidentally spawning too
+many OpenMP threads in .onLoad for a short while, affecting some of its
+reverse dependencies (also fixed).
+
+Let's try to see which parts of R CMD INSTALL create child threads.
+It's not the only way extra CPU time could be spent (and not the only
+way threads could be created), but you have to start somewhere.
+
+wget https://cran.r-project.org/incoming/archive/rsofun_5.1.0.tar.gz
+ltrace -w 10 -f -e pthread_create -- \
+ sh -c 'R CMD INSTALL -l rsofun.Rcheck rsofun_5.1.0.tar.gz'
+
+Does the package or its dependencies do something strange while
+preparing the namespace? No, 'cli' only starts a single thread and
+that's it. Does the compiler start extra threads? Why yes, it does:
+
+flang-new-19  -fpic  -g  -c  main_pmodel.mod.f90 -o main_pmodel.mod.o
+[pid 13542] --- Called exec() ---
+[pid 13542] --- Called exec() ---
+[pid 13543] --- Called exec() ---
+[pid 13543] libLLVM.so.19.1->pthread_create(140029587084992,
+0x7ffe99915e20, 0x7f5b30e65ef0, 0x55ef27e69b60) = 0
+/usr/lib/x86_64-linux-gnu/libLLVM.so.19.1(_ZN4llvm27llvm_execute_on_thread_implEPFPvS0_ES0_St8optionalIjE+0x60)
+[0x7f5b30ec6be0]
+/usr/lib/x86_64-linux-gnu/libLLVM.so.19.1(_ZN4llvm13StdThreadPool4growEi+0x17b)
+[0x7f5b30e6477b]
+<...>
+/usr/bin/sh(_ZN7Fortran8frontend13CodeGenAction21beginSourceFileActionEv+0x102b)
+[0x55eeebefb0bb]
+
+On my 16-thread machine this varies per file (up to 16 threads in the
+pool for the largest file) and results in an average load of 18s user /
+15s real = 1.2. It's not implausible that the older 2x Xeon E5-2690
+running the incoming pretests at CRAN (with 32 threads in total) end up
+at 280% average CPU load due to flang-new-19's multi-threading.
+
+Unfortunately, I couldn't find any way to disable LLVM multi-threading
+at runtime, short of recompiling LLVM.
+
+-- 
+Best regards,
+Ivan
+
+[1]
+https://cran.r-project.org/web/checks/check_flavors.html#r-devel-linux-x86_64-debian-clang
+
+
+From edd @end|ng |rom deb|@n@org  Fri Oct  3 17:08:23 2025
+From: edd @end|ng |rom deb|@n@org (Dirk Eddelbuettel)
+Date: Fri, 3 Oct 2025 10:08:23 -0500
+Subject: [R-pkg-devel] new package version fails on r-devel fedora clang
+In-Reply-To: <26847.51829.976200.825288@paul.eddelbuettel.com>
+References: <AS4P195MB1430635DA878FF6296A8206EBEE4A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+ <26847.51829.976200.825288@paul.eddelbuettel.com>
+Message-ID: <26847.59111.455987.635269@paul.eddelbuettel.com>
+
+
+Tony,
+
+The script below should set you up for clang-22 on the rocker/r-base
+container running Debian testing/unstable, and ensure R uses clang-22.
+
+The fact that clang-22 passes the build whereas as the clang-21 version at
+CRAN encounters an error may be indicative on an issue in that clang-21, but
+it is hard to tell for sure.
+
+For another test I ensured I also used -O3 and -D_FORTIFY_SOURCE=3 (switching
+from the Debian defaults of 2). There are a number of other flags that
+differ, and they may matter.  It still appears to build (if slowly, seems
+like there is a fair bit of complex C++ in there). [ Minutes later ] It seems
+to hang at compilation of rcpp_bc_b.cpp.  So the higher optimization level on
+the Fedora machine at CRAN may have something to do with this -- using -O2
+and -D_FORTIFY_SOURCE=2 worked here.  You could ask for re-check given that
+clang 21 and 22 apparently build your package in the Debian container I used,
+at least with the lower default values used by the Debian setup.
+
+Dirk
+
+-----------------------------------------------------------------------------
+#!/bin/sh
+
+## Update does not hurt but is not strictly needed
+#apt update --quiet --quiet
+#apt upgrade --yes
+
+## wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
+## or as we are root in container
+wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key > /etc/apt/trusted.gpg.d/apt.llvm.org.asc
+
+cat <<EOF >/etc/apt/sources.list.d/llvm-dev.sources
+Types: deb
+URIs: http://apt.llvm.org/unstable/
+# for clang-21 
+#   Suites: llvm-toolchain-21
+# for current clang
+Suites: llvm-toolchain
+Components: main
+Signed-By: /etc/apt/trusted.gpg.d/apt.llvm.org.asc
+EOF
+
+test -d ~/.R || mkdir ~/.R
+cat <<EOF >~/.R/Makevars
+CLANGVER=-22
+# CLANGLIB=-stdlib=libc++
+CXX=clang++\$(CLANGVER) \$(CLANGLIB)
+CXX11=clang++\$(CLANGVER) \$(CLANGLIB)
+CXX14=clang++\$(CLANGVER) \$(CLANGLIB)
+CXX17=clang++\$(CLANGVER) \$(CLANGLIB)
+CXX20=clang++\$(CLANGVER) \$(CLANGLIB)
+CC=clang\$(CLANGVER)
+SHLIB_CXXLD=clang++\$(CLANGVER) \$(CLANGLIB)
+EOF
+
+apt update
+apt install --yes clang-22
+
+-----------------------------------------------------------------------------
+
+-- 
+dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From tony_@_w||ke@ @end|ng |rom out|ook@com  Sat Oct  4 11:25:35 2025
+From: tony_@_w||ke@ @end|ng |rom out|ook@com (Tony Wilkes)
+Date: Sat, 4 Oct 2025 09:25:35 +0000
+Subject: [R-pkg-devel] new package version fails on r-devel fedora clang
+In-Reply-To: <AS4P195MB1430635DA878FF6296A8206EBEE4A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+References: <AS4P195MB1430635DA878FF6296A8206EBEE4A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+Message-ID: <AS4P195MB1430157A5A0785F99CBF308ABEE5A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+
+Hi everyone,
+
+Sorry, false alarm.
+There's probably no problem on the side of CRAN.
+The problem was probably on my side.
+
+My code is not wrong per-s?, but I created an additional if()else() statement in rcpp_bc_b, but left the MACRO - which itself has many if-else statements - the same. And each of those "if" leads to a whole set of for-loops, thus causing the compiled code to become much larger than necessary. And the compiler for fedora clang took too long to compile that script as a consequence, creating an installation fail.
+
+I've already send a fixed version, broadcast 0.1.5.1, to CRAN, that should fix this issue.
+
+Kind regards,
+
+Tony
+
+
+________________________________
+Van: Tony Wilkes
+Verzonden: vrijdag 3 oktober 2025 10:57
+Aan: List r-package-devel <r-package-devel at r-project.org>
+Onderwerp: new package version fails on r-devel fedora clang
+
+Hi everyone,
+
+I submitted an update for my broadcast R-package yesterday on CRAN.
+Prior to submission I checked the package with R CMD check, devtools::check_win_devel(), with devtools::check_mac_release(), and with various operating systems via GitHub actions.
+No problems were found.
+
+But I see on the CRAN page that the new version of broadcast fails to install on r-devel fedora clang.
+The install log can be found here: https://www.r-project.org/nosvn/R.check/r-devel-linux-x86_64-fedora-clang/broadcast-00install.html
+
+It's unclear to me why exactly installation fails. The only concrete statement I can find in the install log is "CPU time limit exceeded". Does this mean the installation simply took too long? If it is something else, what then happened exactly? And how can I fix it?
+
+Thanks in advance!
+
+Kind regards,
+
+Tony
+
+
+	[[alternative HTML version deleted]]
+
+
+From @rne@henn|ng@en @end|ng |rom gm@||@com  Sun Oct  5 08:31:43 2025
+From: @rne@henn|ng@en @end|ng |rom gm@||@com (Arne Henningsen)
+Date: Sun, 5 Oct 2025 08:31:43 +0200
+Subject: [R-pkg-devel] winbuilder status?
+In-Reply-To: <BL0PR07MB549135750314FF6C4BD394758000A@BL0PR07MB5491.namprd07.prod.outlook.com>
+References: <3c4db99e-5401-4a49-9a42-34dca4b5521e@effectivedefense.org>
+ <1381ca53-b828-4eb1-a31a-c7c5bc6f01d4@gmail.com>
+ <c595128a-4fe7-45a4-8c48-f689cb4ca573@effectivedefense.org>
+ <BL0PR07MB549135750314FF6C4BD394758000A@BL0PR07MB5491.namprd07.prod.outlook.com>
+Message-ID: <CAMTWbJjXZ87CVMyPLjxnOO5DJ9Hg1P9dZQKL1W0UXd4z+mg3VA@mail.gmail.com>
+
+Dear all
+
+In recent days, I also experienced that I did not receive an email with a
+link to the check results from winbuilder after uploading an improved
+version of my micEcon package. On Friday morning (CEST), I uploaded the
+package twice to both R-release and R-devel but I didn't receive any email.
+Yesterday (Saturday) afternoon/evening I tried again and received an email
+with the results of the check with R-release but not with R-devel. As there
+was a warning, I uploaded a further improved package to both R-release and
+R-devel last night. Although I did this twice, I didn't receive any email.
+I checked my GMail spam folder but the emails aren't there either.  In
+total, 5 times uploaded to R-release but only 1 email with results and 5
+times uploaded to R-devel but no response at all. I have regularly used
+winbuilder for many years but never experienced this problem before. Please
+check this. Thanks a lot!
+
+Best wishes,
+Arne
+
+Arne Henningsen
+http://www.arne-henningsen.name
+
+On Fri, 5 Sep 2025, 02:12 Kenny, Christopher, <
+christopherkenny at fas.harvard.edu> wrote:
+
+> To the extent it's generally helpful, I have seen this for 3 packages
+> during checking on winbuilder this week. Each with submissions during the
+> late afternoon EST. Something may be stalling and resetting.
+>
+> With Ben's tip to look at the list with foghorn, there does seem to be a
+> small queue that gets stuck, so it's likely not package specific.
+>
+> And, as with Spencer's experience, resubmitting later gives the normal
+> response.
+>
+> It's clearly intermittent, so resubmitting a few hours later seems to be a
+> reliable response for now.
+>
+> Best,
+> Chris
+> ________________________________
+> From: R-package-devel <r-package-devel-bounces at r-project.org> on behalf
+> of Spencer Graves <spencer.graves at effectivedefense.org>
+> Sent: Wednesday, September 3, 2025 3:26 PM
+> To: Ben Bolker <bbolker at gmail.com>; r-package-devel at r-project.org <
+> r-package-devel at r-project.org>
+> Subject: Re: [R-pkg-devel] winbuilder status?
+>
+> Hi, Ben:
+>
+>
+> Thanks for this. I've added "foghorn::winbuilder_queue()" to my routine
+> script ;-)
+>
+>
+> AND I restarted the ones I couldn't find, and they all completed as
+> expected.
+>
+>
+> Spencer
+>
+>
+> On 9/3/25 12:26, Ben Bolker wrote:
+> >
+> > I don't see it in the queue:
+> >
+> >  > foghorn::winbuilder_queue() |> subset(package=="Ecdat")
+> >
+> > # A tibble: 0 ? 5
+> <https://www.google.com/maps/search/le:+0+%C3%97+5?entry=gmail&source=g>
+> > # ? 5 variables: package <chr>, version <pckg_vrs>, folder <chr>, time
+> > <dttm>,
+> > #   size <int>
+> >
+> > but IIRC this only shows packages that are actually in the queue, not
+> > those being processed ...
+> >
+> >    cheers
+> >      Ben
+> >
+> > On 9/3/25 13:15, Spencer Graves wrote:
+> >> Hello, All:
+> >>
+> >>
+> >> How can I find the status of Win-builder requests?
+> >>
+> >>
+> >> Yesterday at around 22:00 UTC (17:00 UTC-5, Kansas City, USA) I
+> >> submitted three requests to check the results of a change to Ecdat,
+> >> and I have not seen the results now roughly 17 hours later. I used:
+> >>
+> >>
+> >> devtools::check_win_devel()
+> >> devtools::check_win_release()
+> >> devtools::check_win_oldrelease()
+> >>
+> >>
+> >> I got results from previous checks a few minutes before submitting
+> >> these requests.
+> >>
+> >>
+> >> *** THANKS TO Ivan Krylov <ikrylov at disroot.org>, who suggested
+> >> replacing "https://www.cde.ca.gov/" with "http://web.archive.org/
+> >> web/20250823081216/https://www.cde.ca.gov/". I tested this locally
+> >> with "R CMD check --as-cran Ecdat_0.4.6.tar.gz", and it seemed to
+> >> work. I'd like to see the winbuilder results before resubmitting the
+> >> package to CRAN.
+> >>
+> >>
+> >> Thanks, Spencer Graves
+> >>
+> >> ______________________________________________
+> >> R-package-devel at r-project.org mailing list
+> >> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+> >
+>
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+>         [[alternative HTML version deleted]]
+>
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+
+	[[alternative HTML version deleted]]
+
+
+From berryboe@@enkoo| @end|ng |rom hotm@||@com  Sun Oct  5 19:07:59 2025
+From: berryboe@@enkoo| @end|ng |rom hotm@||@com (Berry Boessenkool)
+Date: Sun, 5 Oct 2025 17:07:59 +0000
+Subject: [R-pkg-devel] Package cannot connect to Ensembl
+In-Reply-To: <SA1PR22MB49018A34BFA071E5F3F814F7D8E6A@SA1PR22MB4901.namprd22.prod.outlook.com>
+References: <SA1PR22MB49018A34BFA071E5F3F814F7D8E6A@SA1PR22MB4901.namprd22.prod.outlook.com>
+Message-ID: <DB9PR03MB11028EBF6A8519B308EBE06E0D5E2A@DB9PR03MB11028.eurprd03.prod.outlook.com>
+
+Hi Vonn,
+
+You could wrap the offending example in try et.al. and handle failed situations in a way that gives a warning but not an error.
+
+Best,
+Berry
+
+
+
+-------------------------------------
+
+________________________________
+From: R-package-devel <r-package-devel-bounces at r-project.org> on behalf of Walter, Vonn via R-package-devel <r-package-devel at r-project.org>
+Sent: Wednesday, October 1, 2025 22:08
+To: r-package-devel at r-project.org <r-package-devel at r-project.org>
+Subject: [R-pkg-devel] Package cannot connect to Ensembl
+
+Hi Everyone,
+
+One of the functions in my DiNAMIC.Duo package on CRAN uses the biomaRt package to download gene position information from the Ensembl website.  Currently I use one of the Ensembl archives (ensemblHost=http://aug2020.archive.ensembl.org in the code below).  The archive is unavailable periodically, so the function includes the following code in an effort to ??fail gracefully,?? as is required by CRAN:
+
+statusCode = curl::curl_fetch_memory(ensemblHost)$status_code
+if (statusCode != 200)
+{
+stop(paste(ensemblHost, "currently not available"))
+}
+
+I recently received a notice from CRAN stating that that an error was received when checking examples with ?Vrun-donttest.  Specifically, the following:
+
+Error in `req_perform()`:
+! Failed to perform HTTP request.
+Caused by error in `curl::curl_fetch_memory()`:
+! SSL connect error [aug2020.archive.ensembl.org]:
+OpenSSL/3.2.4: error:0A0000C6:SSL routines::packet length too long
+Backtrace:
+    ?g
+1. ?|?wDiNAMIC.Duo::dataPrep(X = luadSubset, Y = NULL)
+2.   ?|?wbiomaRt::useMart(...)
+3.     ?|?wbiomaRt:::.useMart(...)
+4.       ?|?wbiomaRt:::.listMarts(...)
+5.         ?|?wbiomaRt:::bmRequest(...)
+6.           ?|?whttr2::req_perform(request)
+7.             ?|?whttr2:::handle_resp(req, resp, error_call = error_call)
+8.               ?|?wrlang::cnd_signal(resp)
+Execution halted
+
+Any suggestions on how to revise the existing code would be greatly appreciated.  Thanks in advance for your reply.
+
+Best,
+
+Vonn
+
+Vonn Walter, PhD
+Associate Professor
+Department of Public Health Sciences
+Department of Molecular and Precision Medicine
+Co-Director
+Biostatistics and Bioinformatics Shared Resource
+Penn State Cancer Institute
+Penn State College of Medicine
+Pronouns:  he/him/his
+
+
+        [[alternative HTML version deleted]]
+
+
+	[[alternative HTML version deleted]]
+
+
+From tony_@_w||ke@ @end|ng |rom out|ook@com  Sun Oct  5 19:35:06 2025
+From: tony_@_w||ke@ @end|ng |rom out|ook@com (Tony Wilkes)
+Date: Sun, 5 Oct 2025 17:35:06 +0000
+Subject: [R-pkg-devel] new package version fails on r-devel fedora clang
+In-Reply-To: <AS4P195MB1430285D6BB7EF0B59723C66BEE4A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+References: <AS4P195MB1430635DA878FF6296A8206EBEE4A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+ <26847.51829.976200.825288@paul.eddelbuettel.com>
+ <26847.59111.455987.635269@paul.eddelbuettel.com>
+ <26847.61646.890668.776467@paul.eddelbuettel.com>
+ <AS4P195MB1430285D6BB7EF0B59723C66BEE4A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+Message-ID: <AS4P195MB143058AE91FE01C7DAA29229BEE2A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+
+Hello everyone,
+
+I have fixed the 'broadcast' package (updated to version 0.1.5.1), but there is still an installation error on r-devel-linux-x86_64-fedora-clang: https://www.r-project.org/nosvn/R.check/r-devel-linux-x86_64-fedora-clang/broadcast-00check.html.
+Either there is still an issue with broadcast, or there is actually an issue with the compiler CRAN uses for fedora.
+If there is still an issue with broadcast: What exactly is the issue? The install.log is not clear to me.
+If there is an issue on the side of CRAN: May I respectfully request CRAN to double-check their clang compiler and re-run the checks for broadcast 0.1.5.1?
+
+Thanks in advance!
+
+Kind regards,
+
+Tony
+________________________________
+Van: Tony Wilkes <tony_a_wilkes at outlook.com>
+Verzonden: vrijdag 3 oktober 2025 18:39
+Aan: Dirk Eddelbuettel <edd at debian.org>; CRAN <cran-submissions at r-project.org>
+Onderwerp: Re: [R-pkg-devel] new package version fails on r-devel fedora clang
+
+Hi Dirk and CRAN,
+
+
+@Dirk: thanks so much for the trouble!
+
+I actually think I know what went wrong. My code is not wrong per-s?.
+I created an addition if()else() statement in rcpp_bc_b, but left the MACRO - which itself has many if-else statements - the same. And each of those "if" leads to a whole set of for-loops, thus causing the compiled code to become much larger than necessary.
+
+It's very easy to fix.
+But it does feel like a rookie mistake; sorry for the trouble!
+
+@CRAN: Sorry! I was wrong, and your system is probably correct. If it's OK with you, I'll send an updated version of 'broadcast' tonight. That should fix the error in the Fedora clang checks.
+
+Kind regards,
+
+Tony
+
+
+
+
+________________________________
+Van: Dirk Eddelbuettel <edd at debian.org>
+Verzonden: vrijdag 3 oktober 2025 17:50
+Aan: Dirk Eddelbuettel <edd at debian.org>
+CC: Tony Wilkes <tony_a_wilkes at outlook.com>
+Onderwerp: Re: [R-pkg-devel] new package version fails on r-devel fedora clang
+
+
+(off list now)
+
+On 3 October 2025 at 10:08, Dirk Eddelbuettel wrote:
+| For another test I ensured I also used -O3 and -D_FORTIFY_SOURCE=3 (switching
+| from the Debian defaults of 2). There are a number of other flags that
+| differ, and they may matter.  It still appears to build (if slowly, seems
+| like there is a fair bit of complex C++ in there). [ Minutes later ] It seems
+| to hang at compilation of rcpp_bc_b.cpp.
+
+It eventually made it, without error, but it took a long time.
+
+Hth, Dirk
+
+--
+dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+	[[alternative HTML version deleted]]
+
+
+From ||gge@ @end|ng |rom @t@t|@t|k@tu-dortmund@de  Sun Oct  5 23:59:09 2025
+From: ||gge@ @end|ng |rom @t@t|@t|k@tu-dortmund@de (Uwe Ligges)
+Date: Sun, 5 Oct 2025 23:59:09 +0200
+Subject: [R-pkg-devel] winbuilder status?
+In-Reply-To: <CAMTWbJjXZ87CVMyPLjxnOO5DJ9Hg1P9dZQKL1W0UXd4z+mg3VA@mail.gmail.com>
+References: <3c4db99e-5401-4a49-9a42-34dca4b5521e@effectivedefense.org>
+ <1381ca53-b828-4eb1-a31a-c7c5bc6f01d4@gmail.com>
+ <c595128a-4fe7-45a4-8c48-f689cb4ca573@effectivedefense.org>
+ <BL0PR07MB549135750314FF6C4BD394758000A@BL0PR07MB5491.namprd07.prod.outlook.com>
+ <CAMTWbJjXZ87CVMyPLjxnOO5DJ9Hg1P9dZQKL1W0UXd4z+mg3VA@mail.gmail.com>
+Message-ID: <781d3ebb-7321-4f52-b9b2-d07655c2333f@statistik.tu-dortmund.de>
+
+We had mail server issues from Fri to Sun /toda).
+Mails should be delievered again.
+
+Best,
+Uwe Ligges
+
+
+On 05.10.2025 08:31, Arne Henningsen wrote:
+> Dear all
+> 
+> In recent days, I also experienced that I did not receive an email with a
+> link to the check results from winbuilder after uploading an improved
+> version of my micEcon package. On Friday morning (CEST), I uploaded the
+> package twice to both R-release and R-devel but I didn't receive any email.
+> Yesterday (Saturday) afternoon/evening I tried again and received an email
+> with the results of the check with R-release but not with R-devel. As there
+> was a warning, I uploaded a further improved package to both R-release and
+> R-devel last night. Although I did this twice, I didn't receive any email.
+> I checked my GMail spam folder but the emails aren't there either.  In
+> total, 5 times uploaded to R-release but only 1 email with results and 5
+> times uploaded to R-devel but no response at all. I have regularly used
+> winbuilder for many years but never experienced this problem before. Please
+> check this. Thanks a lot!
+> 
+> Best wishes,
+> Arne
+> 
+> Arne Henningsen
+> http://www.arne-henningsen.name
+> 
+> On Fri, 5 Sep 2025, 02:12 Kenny, Christopher, <
+> christopherkenny at fas.harvard.edu> wrote:
+> 
+>> To the extent it's generally helpful, I have seen this for 3 packages
+>> during checking on winbuilder this week. Each with submissions during the
+>> late afternoon EST. Something may be stalling and resetting.
+>>
+>> With Ben's tip to look at the list with foghorn, there does seem to be a
+>> small queue that gets stuck, so it's likely not package specific.
+>>
+>> And, as with Spencer's experience, resubmitting later gives the normal
+>> response.
+>>
+>> It's clearly intermittent, so resubmitting a few hours later seems to be a
+>> reliable response for now.
+>>
+>> Best,
+>> Chris
+>> ________________________________
+>> From: R-package-devel <r-package-devel-bounces at r-project.org> on behalf
+>> of Spencer Graves <spencer.graves at effectivedefense.org>
+>> Sent: Wednesday, September 3, 2025 3:26 PM
+>> To: Ben Bolker <bbolker at gmail.com>; r-package-devel at r-project.org <
+>> r-package-devel at r-project.org>
+>> Subject: Re: [R-pkg-devel] winbuilder status?
+>>
+>> Hi, Ben:
+>>
+>>
+>> Thanks for this. I've added "foghorn::winbuilder_queue()" to my routine
+>> script ;-)
+>>
+>>
+>> AND I restarted the ones I couldn't find, and they all completed as
+>> expected.
+>>
+>>
+>> Spencer
+>>
+>>
+>> On 9/3/25 12:26, Ben Bolker wrote:
+>>>
+>>> I don't see it in the queue:
+>>>
+>>>   > foghorn::winbuilder_queue() |> subset(package=="Ecdat")
+>>>
+>>> # A tibble: 0 ? 5
+>> <https://www.google.com/maps/search/le:+0+%C3%97+5?entry=gmail&source=g>
+>>> # ? 5 variables: package <chr>, version <pckg_vrs>, folder <chr>, time
+>>> <dttm>,
+>>> #   size <int>
+>>>
+>>> but IIRC this only shows packages that are actually in the queue, not
+>>> those being processed ...
+>>>
+>>>     cheers
+>>>       Ben
+>>>
+>>> On 9/3/25 13:15, Spencer Graves wrote:
+>>>> Hello, All:
+>>>>
+>>>>
+>>>> How can I find the status of Win-builder requests?
+>>>>
+>>>>
+>>>> Yesterday at around 22:00 UTC (17:00 UTC-5, Kansas City, USA) I
+>>>> submitted three requests to check the results of a change to Ecdat,
+>>>> and I have not seen the results now roughly 17 hours later. I used:
+>>>>
+>>>>
+>>>> devtools::check_win_devel()
+>>>> devtools::check_win_release()
+>>>> devtools::check_win_oldrelease()
+>>>>
+>>>>
+>>>> I got results from previous checks a few minutes before submitting
+>>>> these requests.
+>>>>
+>>>>
+>>>> *** THANKS TO Ivan Krylov <ikrylov at disroot.org>, who suggested
+>>>> replacing "https://www.cde.ca.gov/" with "http://web.archive.org/
+>>>> web/20250823081216/https://www.cde.ca.gov/". I tested this locally
+>>>> with "R CMD check --as-cran Ecdat_0.4.6.tar.gz", and it seemed to
+>>>> work. I'd like to see the winbuilder results before resubmitting the
+>>>> package to CRAN.
+>>>>
+>>>>
+>>>> Thanks, Spencer Graves
+>>>>
+>>>> ______________________________________________
+>>>> R-package-devel at r-project.org mailing list
+>>>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>>>
+>>
+>> ______________________________________________
+>> R-package-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>>
+>>          [[alternative HTML version deleted]]
+>>
+>> ______________________________________________
+>> R-package-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>>
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+
+From @rne@henn|ng@en @end|ng |rom gm@||@com  Mon Oct  6 09:18:01 2025
+From: @rne@henn|ng@en @end|ng |rom gm@||@com (Arne Henningsen)
+Date: Mon, 6 Oct 2025 09:18:01 +0200
+Subject: [R-pkg-devel] winbuilder status?
+In-Reply-To: <781d3ebb-7321-4f52-b9b2-d07655c2333f@statistik.tu-dortmund.de>
+References: <3c4db99e-5401-4a49-9a42-34dca4b5521e@effectivedefense.org>
+ <1381ca53-b828-4eb1-a31a-c7c5bc6f01d4@gmail.com>
+ <c595128a-4fe7-45a4-8c48-f689cb4ca573@effectivedefense.org>
+ <BL0PR07MB549135750314FF6C4BD394758000A@BL0PR07MB5491.namprd07.prod.outlook.com>
+ <CAMTWbJjXZ87CVMyPLjxnOO5DJ9Hg1P9dZQKL1W0UXd4z+mg3VA@mail.gmail.com>
+ <781d3ebb-7321-4f52-b9b2-d07655c2333f@statistik.tu-dortmund.de>
+Message-ID: <CAMTWbJhUB5JhY8EusK2E9KodGJsvHJgJtVVuQJvTOH5nV+bW7w@mail.gmail.com>
+
+Yes, it works again :-) Thanks a lot, Uwe, for fixing this! ...and
+thanks a lot to you and the entire CRAN team for your fantastic work!
+
+/Arne
+
+On Sun, 5 Oct 2025 at 23:59, Uwe Ligges <ligges at statistik.tu-dortmund.de> wrote:
+>
+> We had mail server issues from Fri to Sun /toda).
+> Mails should be delievered again.
+>
+> Best,
+> Uwe Ligges
+>
+>
+> On 05.10.2025 08:31, Arne Henningsen wrote:
+> > Dear all
+> >
+> > In recent days, I also experienced that I did not receive an email with a
+> > link to the check results from winbuilder after uploading an improved
+> > version of my micEcon package. On Friday morning (CEST), I uploaded the
+> > package twice to both R-release and R-devel but I didn't receive any email.
+> > Yesterday (Saturday) afternoon/evening I tried again and received an email
+> > with the results of the check with R-release but not with R-devel. As there
+> > was a warning, I uploaded a further improved package to both R-release and
+> > R-devel last night. Although I did this twice, I didn't receive any email.
+> > I checked my GMail spam folder but the emails aren't there either.  In
+> > total, 5 times uploaded to R-release but only 1 email with results and 5
+> > times uploaded to R-devel but no response at all. I have regularly used
+> > winbuilder for many years but never experienced this problem before. Please
+> > check this. Thanks a lot!
+> >
+> > Best wishes,
+> > Arne
+> >
+> > Arne Henningsen
+> > http://www.arne-henningsen.name
+> >
+> > On Fri, 5 Sep 2025, 02:12 Kenny, Christopher, <
+> > christopherkenny at fas.harvard.edu> wrote:
+> >
+> >> To the extent it's generally helpful, I have seen this for 3 packages
+> >> during checking on winbuilder this week. Each with submissions during the
+> >> late afternoon EST. Something may be stalling and resetting.
+> >>
+> >> With Ben's tip to look at the list with foghorn, there does seem to be a
+> >> small queue that gets stuck, so it's likely not package specific.
+> >>
+> >> And, as with Spencer's experience, resubmitting later gives the normal
+> >> response.
+> >>
+> >> It's clearly intermittent, so resubmitting a few hours later seems to be a
+> >> reliable response for now.
+> >>
+> >> Best,
+> >> Chris
+> >> ________________________________
+> >> From: R-package-devel <r-package-devel-bounces at r-project.org> on behalf
+> >> of Spencer Graves <spencer.graves at effectivedefense.org>
+> >> Sent: Wednesday, September 3, 2025 3:26 PM
+> >> To: Ben Bolker <bbolker at gmail.com>; r-package-devel at r-project.org <
+> >> r-package-devel at r-project.org>
+> >> Subject: Re: [R-pkg-devel] winbuilder status?
+> >>
+> >> Hi, Ben:
+> >>
+> >>
+> >> Thanks for this. I've added "foghorn::winbuilder_queue()" to my routine
+> >> script ;-)
+> >>
+> >>
+> >> AND I restarted the ones I couldn't find, and they all completed as
+> >> expected.
+> >>
+> >>
+> >> Spencer
+> >>
+> >>
+> >> On 9/3/25 12:26, Ben Bolker wrote:
+> >>>
+> >>> I don't see it in the queue:
+> >>>
+> >>>   > foghorn::winbuilder_queue() |> subset(package=="Ecdat")
+> >>>
+> >>> # A tibble: 0 ? 5
+> >> <https://www.google.com/maps/search/le:+0+%C3%97+5?entry=gmail&source=g>
+> >>> # ? 5 variables: package <chr>, version <pckg_vrs>, folder <chr>, time
+> >>> <dttm>,
+> >>> #   size <int>
+> >>>
+> >>> but IIRC this only shows packages that are actually in the queue, not
+> >>> those being processed ...
+> >>>
+> >>>     cheers
+> >>>       Ben
+> >>>
+> >>> On 9/3/25 13:15, Spencer Graves wrote:
+> >>>> Hello, All:
+> >>>>
+> >>>>
+> >>>> How can I find the status of Win-builder requests?
+> >>>>
+> >>>>
+> >>>> Yesterday at around 22:00 UTC (17:00 UTC-5, Kansas City, USA) I
+> >>>> submitted three requests to check the results of a change to Ecdat,
+> >>>> and I have not seen the results now roughly 17 hours later. I used:
+> >>>>
+> >>>>
+> >>>> devtools::check_win_devel()
+> >>>> devtools::check_win_release()
+> >>>> devtools::check_win_oldrelease()
+> >>>>
+> >>>>
+> >>>> I got results from previous checks a few minutes before submitting
+> >>>> these requests.
+> >>>>
+> >>>>
+> >>>> *** THANKS TO Ivan Krylov <ikrylov at disroot.org>, who suggested
+> >>>> replacing "https://www.cde.ca.gov/" with "http://web.archive.org/
+> >>>> web/20250823081216/https://www.cde.ca.gov/". I tested this locally
+> >>>> with "R CMD check --as-cran Ecdat_0.4.6.tar.gz", and it seemed to
+> >>>> work. I'd like to see the winbuilder results before resubmitting the
+> >>>> package to CRAN.
+> >>>>
+> >>>>
+> >>>> Thanks, Spencer Graves
+> >>>>
+> >>>> ______________________________________________
+> >>>> R-package-devel at r-project.org mailing list
+> >>>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+> >>>
+> >>
+> >> ______________________________________________
+> >> R-package-devel at r-project.org mailing list
+> >> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+> >>
+> >>          [[alternative HTML version deleted]]
+> >>
+> >> ______________________________________________
+> >> R-package-devel at r-project.org mailing list
+> >> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+> >>
+> >
+> >       [[alternative HTML version deleted]]
+> >
+> > ______________________________________________
+> > R-package-devel at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+
+
+-- 
+Arne Henningsen
+http://www.arne-henningsen.name
+
+
+From ||gge@ @end|ng |rom @t@t|@t|k@tu-dortmund@de  Mon Oct  6 09:27:42 2025
+From: ||gge@ @end|ng |rom @t@t|@t|k@tu-dortmund@de (Uwe Ligges)
+Date: Mon, 6 Oct 2025 09:27:42 +0200
+Subject: [R-pkg-devel] winbuilder status?
+In-Reply-To: <CAMTWbJhUB5JhY8EusK2E9KodGJsvHJgJtVVuQJvTOH5nV+bW7w@mail.gmail.com>
+References: <3c4db99e-5401-4a49-9a42-34dca4b5521e@effectivedefense.org>
+ <1381ca53-b828-4eb1-a31a-c7c5bc6f01d4@gmail.com>
+ <c595128a-4fe7-45a4-8c48-f689cb4ca573@effectivedefense.org>
+ <BL0PR07MB549135750314FF6C4BD394758000A@BL0PR07MB5491.namprd07.prod.outlook.com>
+ <CAMTWbJjXZ87CVMyPLjxnOO5DJ9Hg1P9dZQKL1W0UXd4z+mg3VA@mail.gmail.com>
+ <781d3ebb-7321-4f52-b9b2-d07655c2333f@statistik.tu-dortmund.de>
+ <CAMTWbJhUB5JhY8EusK2E9KodGJsvHJgJtVVuQJvTOH5nV+bW7w@mail.gmail.com>
+Message-ID: <7f266440-d27a-48ec-b43b-b20b70b71a6d@statistik.tu-dortmund.de>
+
+You are most welcome,
+Uwe
+
+
+On 06.10.2025 09:18, Arne Henningsen wrote:
+> Yes, it works again :-) Thanks a lot, Uwe, for fixing this! ...and
+> thanks a lot to you and the entire CRAN team for your fantastic work!
+> 
+> /Arne
+> 
+> On Sun, 5 Oct 2025 at 23:59, Uwe Ligges <ligges at statistik.tu-dortmund.de> wrote:
+>>
+>> We had mail server issues from Fri to Sun /toda).
+>> Mails should be delievered again.
+>>
+>> Best,
+>> Uwe Ligges
+>>
+>>
+>> On 05.10.2025 08:31, Arne Henningsen wrote:
+>>> Dear all
+>>>
+>>> In recent days, I also experienced that I did not receive an email with a
+>>> link to the check results from winbuilder after uploading an improved
+>>> version of my micEcon package. On Friday morning (CEST), I uploaded the
+>>> package twice to both R-release and R-devel but I didn't receive any email.
+>>> Yesterday (Saturday) afternoon/evening I tried again and received an email
+>>> with the results of the check with R-release but not with R-devel. As there
+>>> was a warning, I uploaded a further improved package to both R-release and
+>>> R-devel last night. Although I did this twice, I didn't receive any email.
+>>> I checked my GMail spam folder but the emails aren't there either.  In
+>>> total, 5 times uploaded to R-release but only 1 email with results and 5
+>>> times uploaded to R-devel but no response at all. I have regularly used
+>>> winbuilder for many years but never experienced this problem before. Please
+>>> check this. Thanks a lot!
+>>>
+>>> Best wishes,
+>>> Arne
+>>>
+>>> Arne Henningsen
+>>> http://www.arne-henningsen.name
+>>>
+>>> On Fri, 5 Sep 2025, 02:12 Kenny, Christopher, <
+>>> christopherkenny at fas.harvard.edu> wrote:
+>>>
+>>>> To the extent it's generally helpful, I have seen this for 3 packages
+>>>> during checking on winbuilder this week. Each with submissions during the
+>>>> late afternoon EST. Something may be stalling and resetting.
+>>>>
+>>>> With Ben's tip to look at the list with foghorn, there does seem to be a
+>>>> small queue that gets stuck, so it's likely not package specific.
+>>>>
+>>>> And, as with Spencer's experience, resubmitting later gives the normal
+>>>> response.
+>>>>
+>>>> It's clearly intermittent, so resubmitting a few hours later seems to be a
+>>>> reliable response for now.
+>>>>
+>>>> Best,
+>>>> Chris
+>>>> ________________________________
+>>>> From: R-package-devel <r-package-devel-bounces at r-project.org> on behalf
+>>>> of Spencer Graves <spencer.graves at effectivedefense.org>
+>>>> Sent: Wednesday, September 3, 2025 3:26 PM
+>>>> To: Ben Bolker <bbolker at gmail.com>; r-package-devel at r-project.org <
+>>>> r-package-devel at r-project.org>
+>>>> Subject: Re: [R-pkg-devel] winbuilder status?
+>>>>
+>>>> Hi, Ben:
+>>>>
+>>>>
+>>>> Thanks for this. I've added "foghorn::winbuilder_queue()" to my routine
+>>>> script ;-)
+>>>>
+>>>>
+>>>> AND I restarted the ones I couldn't find, and they all completed as
+>>>> expected.
+>>>>
+>>>>
+>>>> Spencer
+>>>>
+>>>>
+>>>> On 9/3/25 12:26, Ben Bolker wrote:
+>>>>>
+>>>>> I don't see it in the queue:
+>>>>>
+>>>>>    > foghorn::winbuilder_queue() |> subset(package=="Ecdat")
+>>>>>
+>>>>> # A tibble: 0 ? 5
+>>>> <https://www.google.com/maps/search/le:+0+%C3%97+5?entry=gmail&source=g>
+>>>>> # ? 5 variables: package <chr>, version <pckg_vrs>, folder <chr>, time
+>>>>> <dttm>,
+>>>>> #   size <int>
+>>>>>
+>>>>> but IIRC this only shows packages that are actually in the queue, not
+>>>>> those being processed ...
+>>>>>
+>>>>>      cheers
+>>>>>        Ben
+>>>>>
+>>>>> On 9/3/25 13:15, Spencer Graves wrote:
+>>>>>> Hello, All:
+>>>>>>
+>>>>>>
+>>>>>> How can I find the status of Win-builder requests?
+>>>>>>
+>>>>>>
+>>>>>> Yesterday at around 22:00 UTC (17:00 UTC-5, Kansas City, USA) I
+>>>>>> submitted three requests to check the results of a change to Ecdat,
+>>>>>> and I have not seen the results now roughly 17 hours later. I used:
+>>>>>>
+>>>>>>
+>>>>>> devtools::check_win_devel()
+>>>>>> devtools::check_win_release()
+>>>>>> devtools::check_win_oldrelease()
+>>>>>>
+>>>>>>
+>>>>>> I got results from previous checks a few minutes before submitting
+>>>>>> these requests.
+>>>>>>
+>>>>>>
+>>>>>> *** THANKS TO Ivan Krylov <ikrylov at disroot.org>, who suggested
+>>>>>> replacing "https://www.cde.ca.gov/" with "http://web.archive.org/
+>>>>>> web/20250823081216/https://www.cde.ca.gov/". I tested this locally
+>>>>>> with "R CMD check --as-cran Ecdat_0.4.6.tar.gz", and it seemed to
+>>>>>> work. I'd like to see the winbuilder results before resubmitting the
+>>>>>> package to CRAN.
+>>>>>>
+>>>>>>
+>>>>>> Thanks, Spencer Graves
+>>>>>>
+>>>>>> ______________________________________________
+>>>>>> R-package-devel at r-project.org mailing list
+>>>>>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>>>>>
+>>>>
+>>>> ______________________________________________
+>>>> R-package-devel at r-project.org mailing list
+>>>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>>>>
+>>>>           [[alternative HTML version deleted]]
+>>>>
+>>>> ______________________________________________
+>>>> R-package-devel at r-project.org mailing list
+>>>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>>>>
+>>>
+>>>        [[alternative HTML version deleted]]
+>>>
+>>> ______________________________________________
+>>> R-package-devel at r-project.org mailing list
+>>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>>
+> 
+> 
+
+
+From kev|nu@hey @end|ng |rom gm@||@com  Mon Oct  6 22:25:39 2025
+From: kev|nu@hey @end|ng |rom gm@||@com (Kevin Ushey)
+Date: Mon, 6 Oct 2025 13:25:39 -0700
+Subject: [R-pkg-devel] new package version fails on r-devel fedora clang
+In-Reply-To: <AS4P195MB143058AE91FE01C7DAA29229BEE2A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+References: <AS4P195MB1430635DA878FF6296A8206EBEE4A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+ <26847.51829.976200.825288@paul.eddelbuettel.com>
+ <26847.59111.455987.635269@paul.eddelbuettel.com>
+ <26847.61646.890668.776467@paul.eddelbuettel.com>
+ <AS4P195MB1430285D6BB7EF0B59723C66BEE4A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+ <AS4P195MB143058AE91FE01C7DAA29229BEE2A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+Message-ID: <CAJXgQP2NNRcoYJqqTxMcW=OeGHnjxpXturCCTod=3mE-2HXRFw@mail.gmail.com>
+
+The error log at
+https://www.r-project.org/nosvn/R.check/r-devel-linux-x86_64-fedora-clang/broadcast-00install.html
+makes it pretty clear that there's a bug in the compiler being used on
+that CRAN machine, but that might still not absolve you of the
+responsibility of working around the issue.
+
+At least, this line:
+
+5. Running pass "jump-threading" on function
+"_Z16rcpp_bcRel_dec_dP7SEXPRECS0_S0_S0_S0_S0_S0_lid"
+
+indicates that the bug is happening while compiling the
+'cpp_bcRel_dec_d' function.
+
+Is there another way of expressing the computation you're doing in
+that function that might avoid hitting this issue? From a brief scan
+of the code, it's hard to give concrete advice because of the heavy
+use of macros within that code.
+
+Best,
+Kevin
+
+On Sun, Oct 5, 2025 at 10:35?AM Tony Wilkes <tony_a_wilkes at outlook.com> wrote:
+>
+> Hello everyone,
+>
+> I have fixed the 'broadcast' package (updated to version 0.1.5.1), but there is still an installation error on r-devel-linux-x86_64-fedora-clang: https://www.r-project.org/nosvn/R.check/r-devel-linux-x86_64-fedora-clang/broadcast-00check.html.
+> Either there is still an issue with broadcast, or there is actually an issue with the compiler CRAN uses for fedora.
+> If there is still an issue with broadcast: What exactly is the issue? The install.log is not clear to me.
+> If there is an issue on the side of CRAN: May I respectfully request CRAN to double-check their clang compiler and re-run the checks for broadcast 0.1.5.1?
+>
+> Thanks in advance!
+>
+> Kind regards,
+>
+> Tony
+> ________________________________
+> Van: Tony Wilkes <tony_a_wilkes at outlook.com>
+> Verzonden: vrijdag 3 oktober 2025 18:39
+> Aan: Dirk Eddelbuettel <edd at debian.org>; CRAN <cran-submissions at r-project.org>
+> Onderwerp: Re: [R-pkg-devel] new package version fails on r-devel fedora clang
+>
+> Hi Dirk and CRAN,
+>
+>
+> @Dirk: thanks so much for the trouble!
+>
+> I actually think I know what went wrong. My code is not wrong per-s?.
+> I created an addition if()else() statement in rcpp_bc_b, but left the MACRO - which itself has many if-else statements - the same. And each of those "if" leads to a whole set of for-loops, thus causing the compiled code to become much larger than necessary.
+>
+> It's very easy to fix.
+> But it does feel like a rookie mistake; sorry for the trouble!
+>
+> @CRAN: Sorry! I was wrong, and your system is probably correct. If it's OK with you, I'll send an updated version of 'broadcast' tonight. That should fix the error in the Fedora clang checks.
+>
+> Kind regards,
+>
+> Tony
+>
+>
+>
+>
+> ________________________________
+> Van: Dirk Eddelbuettel <edd at debian.org>
+> Verzonden: vrijdag 3 oktober 2025 17:50
+> Aan: Dirk Eddelbuettel <edd at debian.org>
+> CC: Tony Wilkes <tony_a_wilkes at outlook.com>
+> Onderwerp: Re: [R-pkg-devel] new package version fails on r-devel fedora clang
+>
+>
+> (off list now)
+>
+> On 3 October 2025 at 10:08, Dirk Eddelbuettel wrote:
+> | For another test I ensured I also used -O3 and -D_FORTIFY_SOURCE=3 (switching
+> | from the Debian defaults of 2). There are a number of other flags that
+> | differ, and they may matter.  It still appears to build (if slowly, seems
+> | like there is a fair bit of complex C++ in there). [ Minutes later ] It seems
+> | to hang at compilation of rcpp_bc_b.cpp.
+>
+> It eventually made it, without error, but it took a long time.
+>
+> Hth, Dirk
+>
+> --
+> dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+>
+>         [[alternative HTML version deleted]]
+>
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+
+From tony_@_w||ke@ @end|ng |rom out|ook@com  Tue Oct  7 08:34:11 2025
+From: tony_@_w||ke@ @end|ng |rom out|ook@com (Tony Wilkes)
+Date: Tue, 7 Oct 2025 06:34:11 +0000
+Subject: [R-pkg-devel] new package version fails on r-devel fedora clang
+In-Reply-To: <CAJXgQP2NNRcoYJqqTxMcW=OeGHnjxpXturCCTod=3mE-2HXRFw@mail.gmail.com>
+References: <AS4P195MB1430635DA878FF6296A8206EBEE4A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+ <26847.51829.976200.825288@paul.eddelbuettel.com>
+ <26847.59111.455987.635269@paul.eddelbuettel.com>
+ <26847.61646.890668.776467@paul.eddelbuettel.com>
+ <AS4P195MB1430285D6BB7EF0B59723C66BEE4A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+ <AS4P195MB143058AE91FE01C7DAA29229BEE2A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+ <CAJXgQP2NNRcoYJqqTxMcW=OeGHnjxpXturCCTod=3mE-2HXRFw@mail.gmail.com>
+Message-ID: <AS4P195MB143013DD4F30F9889365995FBEE0A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+
+Hi Kevin, CRAN, and the rest,
+
+Thank you for your answer, Kevin, I appreciate it!
+
+If there is an issue in the compiler CRAN uses, it seems reasonable that CRAN fixes that.
+I also don't know how to work around a bug in a compiler. How would you even do that?
+
+Literally the only concrete thing Brian Ripley said to me was "Taking 5h CPU time to (fail to) install is unreasonable -- resubmitting without addressing the problem more so." Ignoring the fact that I did indeed try to address the problem, the only think I can do (and have been doing), is trying to reduce the compiled size of the C/C++ code, to reduce installation time.
+
+But if there is a bug in CRAN's compiler, re-submitting will probably just end up getting another fail, regardless of how small the package becomes. That would be a waste of CRAN's time and resources. I appreciate CRAN, and so I don't like wasting their time and resources.
+
+@BrianRipley/@CRAN: I'm very willing to submit a package with a significantly smaller compiled size (and thus hopefully faster installation). But I ask again: please be so kind to at least check your clang compiler. Asking me to fix a problem caused by CRAN's own compiler seems unreasonable. If you say the compiler is good or has been fixed, I'll re-submit my package with the reduced size & installation time. Does that sound fair?
+
+Thanks in advance for your response!
+
+Kind regards,
+
+Tony
+
+________________________________
+Van: Kevin Ushey <kevinushey at gmail.com>
+Verzonden: maandag 6 oktober 2025 22:25
+Aan: Tony Wilkes <tony_a_wilkes at outlook.com>
+CC: List r-package-devel <r-package-devel at r-project.org>
+Onderwerp: Re: [R-pkg-devel] new package version fails on r-devel fedora clang
+
+The error log at
+https://www.r-project.org/nosvn/R.check/r-devel-linux-x86_64-fedora-clang/broadcast-00install.html<https://www.r-project.org/nosvn/R.check/r-devel-linux-x86_64-fedora-clang/broadcast-00install.html>
+makes it pretty clear that there's a bug in the compiler being used on
+that CRAN machine, but that might still not absolve you of the
+responsibility of working around the issue.
+
+At least, this line:
+
+5. Running pass "jump-threading" on function
+"_Z16rcpp_bcRel_dec_dP7SEXPRECS0_S0_S0_S0_S0_S0_lid"
+
+indicates that the bug is happening while compiling the
+'cpp_bcRel_dec_d' function.
+
+Is there another way of expressing the computation you're doing in
+that function that might avoid hitting this issue? From a brief scan
+of the code, it's hard to give concrete advice because of the heavy
+use of macros within that code.
+
+Best,
+Kevin
+
+On Sun, Oct 5, 2025 at 10:35?AM Tony Wilkes <tony_a_wilkes at outlook.com> wrote:
+>
+> Hello everyone,
+>
+> I have fixed the 'broadcast' package (updated to version 0.1.5.1), but there is still an installation error on r-devel-linux-x86_64-fedora-clang: https://www.r-project.org/nosvn/R.check/r-devel-linux-x86_64-fedora-clang/broadcast-00check.html<https://www.r-project.org/nosvn/R.check/r-devel-linux-x86_64-fedora-clang/broadcast-00check.html>.
+> Either there is still an issue with broadcast, or there is actually an issue with the compiler CRAN uses for fedora.
+> If there is still an issue with broadcast: What exactly is the issue? The install.log is not clear to me.
+> If there is an issue on the side of CRAN: May I respectfully request CRAN to double-check their clang compiler and re-run the checks for broadcast 0.1.5.1?
+>
+> Thanks in advance!
+>
+> Kind regards,
+>
+> Tony
+> ________________________________
+> Van: Tony Wilkes <tony_a_wilkes at outlook.com>
+> Verzonden: vrijdag 3 oktober 2025 18:39
+> Aan: Dirk Eddelbuettel <edd at debian.org>; CRAN <cran-submissions at r-project.org>
+> Onderwerp: Re: [R-pkg-devel] new package version fails on r-devel fedora clang
+>
+> Hi Dirk and CRAN,
+>
+>
+> @Dirk: thanks so much for the trouble!
+>
+> I actually think I know what went wrong. My code is not wrong per-s?.
+> I created an addition if()else() statement in rcpp_bc_b, but left the MACRO - which itself has many if-else statements - the same. And each of those "if" leads to a whole set of for-loops, thus causing the compiled code to become much larger than necessary.
+>
+> It's very easy to fix.
+> But it does feel like a rookie mistake; sorry for the trouble!
+>
+> @CRAN: Sorry! I was wrong, and your system is probably correct. If it's OK with you, I'll send an updated version of 'broadcast' tonight. That should fix the error in the Fedora clang checks.
+>
+> Kind regards,
+>
+> Tony
+>
+>
+>
+>
+> ________________________________
+> Van: Dirk Eddelbuettel <edd at debian.org>
+> Verzonden: vrijdag 3 oktober 2025 17:50
+> Aan: Dirk Eddelbuettel <edd at debian.org>
+> CC: Tony Wilkes <tony_a_wilkes at outlook.com>
+> Onderwerp: Re: [R-pkg-devel] new package version fails on r-devel fedora clang
+>
+>
+> (off list now)
+>
+> On 3 October 2025 at 10:08, Dirk Eddelbuettel wrote:
+> | For another test I ensured I also used -O3 and -D_FORTIFY_SOURCE=3 (switching
+> | from the Debian defaults of 2). There are a number of other flags that
+> | differ, and they may matter.  It still appears to build (if slowly, seems
+> | like there is a fair bit of complex C++ in there). [ Minutes later ] It seems
+> | to hang at compilation of rcpp_bc_b.cpp.
+>
+> It eventually made it, without error, but it took a long time.
+>
+> Hth, Dirk
+>
+> --
+> dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+>
+>         [[alternative HTML version deleted]]
+>
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel<https://stat.ethz.ch/mailman/listinfo/r-package-devel>
+
+	[[alternative HTML version deleted]]
+
+
+From edd @end|ng |rom deb|@n@org  Tue Oct  7 14:08:37 2025
+From: edd @end|ng |rom deb|@n@org (Dirk Eddelbuettel)
+Date: Tue, 7 Oct 2025 07:08:37 -0500
+Subject: [R-pkg-devel] new package version fails on r-devel fedora clang
+In-Reply-To: <AS4P195MB143013DD4F30F9889365995FBEE0A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+References: <AS4P195MB1430635DA878FF6296A8206EBEE4A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+ <26847.51829.976200.825288@paul.eddelbuettel.com>
+ <26847.59111.455987.635269@paul.eddelbuettel.com>
+ <26847.61646.890668.776467@paul.eddelbuettel.com>
+ <AS4P195MB1430285D6BB7EF0B59723C66BEE4A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+ <AS4P195MB143058AE91FE01C7DAA29229BEE2A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+ <CAJXgQP2NNRcoYJqqTxMcW=OeGHnjxpXturCCTod=3mE-2HXRFw@mail.gmail.com>
+ <AS4P195MB143013DD4F30F9889365995FBEE0A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+Message-ID: <26853.709.589399.362060@paul.eddelbuettel.com>
+
+
+On 7 October 2025 at 06:34, Tony Wilkes wrote:
+| If there is an issue in the compiler CRAN uses, it seems reasonable that CRAN fixes that.
+
+In an ideal world, sure. But please keep in mind that CRAN's resources are
+somewhat limited. There are over a thousand of us package maintainers, and
+only about four (core) CRAN maintainers looking after the key machines, and a
+few CRAN helpers aiding with various tasks.
+
+| I also don't know how to work around a bug in a compiler. How would you even do that?
+
+Maybe rearrange / rewrite your code?  As I mentioned to you (following up
+off-list to initial on-list email) when both option values are increased from
+level two (which I see used by default on Debian for both -O2 and for
+-D_FORTIFY_SOURCE=2; Ubuntu seems to use -D_FORTIFY_SOURCE=3 with -O2) to
+level three the compilation of file rcpp_bc_b.cpp takes a really long time
+but passes. On Fedora at CRAN it fails, and we do not know if that is an
+genuine error or a resource limit.
+
+My first instinct would be to make this file smaller but replacing it with
+two, three, ... smaller files that tax the compiler less.
+ 
+| Literally the only concrete thing Brian Ripley said to me was "Taking 5h CPU time to (fail to) install is unreasonable -- resubmitting without addressing the problem more so." Ignoring the fact that I did indeed try to address the problem, the only think I can do (and have been doing), is trying to reduce the compiled size of the C/C++ code, to reduce installation time.
+| 
+| But if there is a bug in CRAN's compiler, re-submitting will probably just end up getting another fail, regardless of how small the package becomes. That would be a waste of CRAN's time and resources. I appreciate CRAN, and so I don't like wasting their time and resources.
+
+It is still an 'if'. We suggested to you that you need to reproduce it.
+
+I read the (private, I assume) reply by Brian Ripley as indicating that a
+resource watcher on his machine killed the compilation. The compilation could
+also have been killed. I do not know. I know that I built your package with
+the same clang version (as mentioned in my emails) on a different distro (so
+under slightly different values).
+
+| @BrianRipley/@CRAN: I'm very willing to submit a package with a significantly smaller compiled size (and thus hopefully faster installation). But I ask again: please be so kind to at least check your clang compiler. Asking me to fix a problem caused by CRAN's own compiler seems unreasonable. If you say the compiler is good or has been fixed, I'll re-submit my package with the reduced size & installation time. Does that sound fair?
+
+If possible, please try to reproduce and then address the issue in a similar
+setting. I recommend Docker with a Fedora image, with luck the newest Fedora
+Core may have clang21 you can use. Else use Debian as I showed you. Recognize
+compilation limits in time and memory and aim to reduce them.  CRAN runs many
+builds in parallel, when I noted to you that it took a long time locally I
+was doing this on a recent-ish and reasonably able machine with lots of
+memory free for that build.
+
+Hope this helps, and that you get your package adjusted.
+
+Cheers, Dirk
+
+
+| Thanks in advance for your response!
+| 
+| Kind regards,
+| 
+| Tony
+| 
+| ________________________________
+| Van: Kevin Ushey <kevinushey at gmail.com>
+| Verzonden: maandag 6 oktober 2025 22:25
+| Aan: Tony Wilkes <tony_a_wilkes at outlook.com>
+| CC: List r-package-devel <r-package-devel at r-project.org>
+| Onderwerp: Re: [R-pkg-devel] new package version fails on r-devel fedora clang
+| 
+| The error log at
+| https://www.r-project.org/nosvn/R.check/r-devel-linux-x86_64-fedora-clang/broadcast-00install.html<https://www.r-project.org/nosvn/R.check/r-devel-linux-x86_64-fedora-clang/broadcast-00install.html>
+| makes it pretty clear that there's a bug in the compiler being used on
+| that CRAN machine, but that might still not absolve you of the
+| responsibility of working around the issue.
+| 
+| At least, this line:
+| 
+| 5. Running pass "jump-threading" on function
+| "_Z16rcpp_bcRel_dec_dP7SEXPRECS0_S0_S0_S0_S0_S0_lid"
+| 
+| indicates that the bug is happening while compiling the
+| 'cpp_bcRel_dec_d' function.
+| 
+| Is there another way of expressing the computation you're doing in
+| that function that might avoid hitting this issue? From a brief scan
+| of the code, it's hard to give concrete advice because of the heavy
+| use of macros within that code.
+| 
+| Best,
+| Kevin
+| 
+| On Sun, Oct 5, 2025 at 10:35?AM Tony Wilkes <tony_a_wilkes at outlook.com> wrote:
+| >
+| > Hello everyone,
+| >
+| > I have fixed the 'broadcast' package (updated to version 0.1.5.1), but there is still an installation error on r-devel-linux-x86_64-fedora-clang: https://www.r-project.org/nosvn/R.check/r-devel-linux-x86_64-fedora-clang/broadcast-00check.html<https://www.r-project.org/nosvn/R.check/r-devel-linux-x86_64-fedora-clang/broadcast-00check.html>.
+| > Either there is still an issue with broadcast, or there is actually an issue with the compiler CRAN uses for fedora.
+| > If there is still an issue with broadcast: What exactly is the issue? The install.log is not clear to me.
+| > If there is an issue on the side of CRAN: May I respectfully request CRAN to double-check their clang compiler and re-run the checks for broadcast 0.1.5.1?
+| >
+| > Thanks in advance!
+| >
+| > Kind regards,
+| >
+| > Tony
+| > ________________________________
+| > Van: Tony Wilkes <tony_a_wilkes at outlook.com>
+| > Verzonden: vrijdag 3 oktober 2025 18:39
+| > Aan: Dirk Eddelbuettel <edd at debian.org>; CRAN <cran-submissions at r-project.org>
+| > Onderwerp: Re: [R-pkg-devel] new package version fails on r-devel fedora clang
+| >
+| > Hi Dirk and CRAN,
+| >
+| >
+| > @Dirk: thanks so much for the trouble!
+| >
+| > I actually think I know what went wrong. My code is not wrong per-s?.
+| > I created an addition if()else() statement in rcpp_bc_b, but left the MACRO - which itself has many if-else statements - the same. And each of those "if" leads to a whole set of for-loops, thus causing the compiled code to become much larger than necessary.
+| >
+| > It's very easy to fix.
+| > But it does feel like a rookie mistake; sorry for the trouble!
+| >
+| > @CRAN: Sorry! I was wrong, and your system is probably correct. If it's OK with you, I'll send an updated version of 'broadcast' tonight. That should fix the error in the Fedora clang checks.
+| >
+| > Kind regards,
+| >
+| > Tony
+| >
+| >
+| >
+| >
+| > ________________________________
+| > Van: Dirk Eddelbuettel <edd at debian.org>
+| > Verzonden: vrijdag 3 oktober 2025 17:50
+| > Aan: Dirk Eddelbuettel <edd at debian.org>
+| > CC: Tony Wilkes <tony_a_wilkes at outlook.com>
+| > Onderwerp: Re: [R-pkg-devel] new package version fails on r-devel fedora clang
+| >
+| >
+| > (off list now)
+| >
+| > On 3 October 2025 at 10:08, Dirk Eddelbuettel wrote:
+| > | For another test I ensured I also used -O3 and -D_FORTIFY_SOURCE=3 (switching
+| > | from the Debian defaults of 2). There are a number of other flags that
+| > | differ, and they may matter.  It still appears to build (if slowly, seems
+| > | like there is a fair bit of complex C++ in there). [ Minutes later ] It seems
+| > | to hang at compilation of rcpp_bc_b.cpp.
+| >
+| > It eventually made it, without error, but it took a long time.
+| >
+| > Hth, Dirk
+| >
+| > --
+| > dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+| >
+| >         [[alternative HTML version deleted]]
+| >
+| > ______________________________________________
+| > R-package-devel at r-project.org mailing list
+| > https://stat.ethz.ch/mailman/listinfo/r-package-devel<https://stat.ethz.ch/mailman/listinfo/r-package-devel>
+| 
+| 	[[alternative HTML version deleted]]
+| 
+| ______________________________________________
+| R-package-devel at r-project.org mailing list
+| https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+-- 
+dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From |kry|ov @end|ng |rom d|@root@org  Tue Oct  7 19:07:59 2025
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Tue, 7 Oct 2025 20:07:59 +0300
+Subject: [R-pkg-devel] new package version fails on r-devel fedora clang
+In-Reply-To: <AS4P195MB143013DD4F30F9889365995FBEE0A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+References: <AS4P195MB1430635DA878FF6296A8206EBEE4A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+ <26847.51829.976200.825288@paul.eddelbuettel.com>
+ <26847.59111.455987.635269@paul.eddelbuettel.com>
+ <26847.61646.890668.776467@paul.eddelbuettel.com>
+ <AS4P195MB1430285D6BB7EF0B59723C66BEE4A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+ <AS4P195MB143058AE91FE01C7DAA29229BEE2A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+ <CAJXgQP2NNRcoYJqqTxMcW=OeGHnjxpXturCCTod=3mE-2HXRFw@mail.gmail.com>
+ <AS4P195MB143013DD4F30F9889365995FBEE0A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+Message-ID: <20251007200759.17ea648c@arachnoid>
+
+? Tue, 7 Oct 2025 06:34:11 +0000
+Tony Wilkes <tony_a_wilkes at outlook.com> ?????:
+
+> I also don't know how to work around a bug in a compiler. How would
+> you even do that?
+
+For example, the SQLite developers have to do that every now and then:
+https://sqlite.org/forum/forumpost/f0f921bb80b50959d50f5f560d42fef940ba9a78aa254703bb04cd680b261f11
+https://sqlite.org/forum/forumpost/9626decbfa789f7c91ebdb66815f2e786b0195d6115dc145bfab5fcd5528ecf4
+
+If the bug is reported to the compiler developers, sometimes it's
+fixed, but that may take months (or years...), and the already released
+versions of the compiler that still have the bug stay in use for much
+longer: https://github.com/llvm/llvm-project/issues/70828
+
+> If there is an issue in the compiler CRAN uses, it seems reasonable
+> that CRAN fixes that.
+
+Clang is programmed to print a message saying "PLEASE submit a bug
+report" when it receives an unexpected fatal signal. Here, the fatal
+signal is SIGXCPU, delivered by the kernel because of the 90-minute
+per-process CPU time limit set for the job [0]. This is not a crash,
+you can see this for yourself using something like
+
+( ulimit -S -t 2; R -q -s -e 'repeat runif(100)' )
+
+The bits of information we have are Ttotal=19394.68s [1], the R CMD
+check output [2] saying that R CMD INSTALL tool 94 minutes of real time
+but 323 minutes of userspace plus kernel CPU time, and 00install.log
+saying that the processes being stopped for going over the limit are
+compiling rcpp_bcRel_dec.cpp and rcpp_bc_int.cpp.
+
+Using compilers from [3], it's possible to reproduce something similar
+to but not as drastic as the problem visible on CRAN:
+
+/usr/bin/time \
+ ~/LLVM-21.1.2-Linux-X64/bin/clang++ -std=gnu++17 -I ~/R/include \
+ -DNDEBUG  -I$HOME'/R/library/Rcpp/include' \
+ -fpic  -O3 -Wall -pedantic -frtti -Wp,-D_FORTIFY_SOURCE=3 \
+ -Wno-missing-template-arg-list-after-template-kw  \
+ -c rcpp_bc_int.cpp -o rcpp_bc_int.o
+657.00user 613.26system 21:10.42elapsed 99%CPU (0avgtext+0avgdata
+455572maxresident)k
+0inputs+2160outputs (0major+245790794minor)pagefaults 0swaps
+
+/usr/bin/time \
+ ~/LLVM-21.1.2-Linux-X64/bin/clang++ -std=gnu++17 -I ~/R/include \
+ -DNDEBUG  -I$HOME'/R/library/Rcpp/include' \
+ -fpic  -O3 -Wall -pedantic -frtti -Wp,-D_FORTIFY_SOURCE=3 \
+ -Wno-missing-template-arg-list-after-template-kw  \
+ -c rcpp_bcRel_dec.cpp -o rcpp_bcRel_dec.o
+628.51user 359.64system 16:28.33elapsed 99%CPU (0avgtext+0avgdata
+450924maxresident)k
+0inputs+1888outputs (0major+74883426minor)pagefaults 0swaps
+
+Why does it take more than 90 minutes of CPU time on the Fedora
+machine running CRAN checks but only ~11 minutes on my lab workstation?
+This probably has to do with 7 years of difference between the CPUs
+running the code: Prof. Brian D. Ripley uses a server-oriented Intel
+Xeon E5-2440 from ~2012, while mine is a desktop-oriented Ryzen from
+2019.
+
+Preprocessing the *.cpp files from your package and passing them
+through clang-format, I see a lot of declarations and some inline
+functions from Rcpp, but the code from files rcpp_bc_b.cpp,
+rcpp_bc_int.cpp, and rcpp_bcRel_dec.cpp expands to tens of thousands of
+lines on top of that, with some blocks nested ~28 times. Perhaps you
+could join the #llvm channel at irc.oftc.net and ask for
+recommendations regarding this kind of code? You may have a genuine
+performance bug report on your hands.
+
+With the deadline looming, are there any workarounds that would stop
+the acute symptoms without spending the time treating the underlying
+condition? It might help to put each macro-heavy function into a
+separate *.cpp file, but I haven't tested that suggestion. 
+
+-- 
+Best regards,
+Ivan
+
+[0] See 'limit cputime':
+https://svn.r-project.org/R-dev-web/trunk/CRAN/QA/BDR/gannet/packages/common.csh
+
+[1]
+https://cran.r-project.org/web/checks/check_results_broadcast.html
+
+[2]
+https://www.r-project.org/nosvn/R.check/r-devel-linux-x86_64-fedora-clang/broadcast-00check.html
+
+[3]
+https://github.com/llvm/llvm-project/releases/tag/llvmorg-21.1.2
+
+
+From edd @end|ng |rom deb|@n@org  Tue Oct  7 19:37:04 2025
+From: edd @end|ng |rom deb|@n@org (Dirk Eddelbuettel)
+Date: Tue, 7 Oct 2025 12:37:04 -0500
+Subject: [R-pkg-devel] new package version fails on r-devel fedora clang
+In-Reply-To: <20251007200759.17ea648c@arachnoid>
+References: <AS4P195MB1430635DA878FF6296A8206EBEE4A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+ <26847.51829.976200.825288@paul.eddelbuettel.com>
+ <26847.59111.455987.635269@paul.eddelbuettel.com>
+ <26847.61646.890668.776467@paul.eddelbuettel.com>
+ <AS4P195MB1430285D6BB7EF0B59723C66BEE4A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+ <AS4P195MB143058AE91FE01C7DAA29229BEE2A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+ <CAJXgQP2NNRcoYJqqTxMcW=OeGHnjxpXturCCTod=3mE-2HXRFw@mail.gmail.com>
+ <AS4P195MB143013DD4F30F9889365995FBEE0A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+ <20251007200759.17ea648c@arachnoid>
+Message-ID: <26853.20416.724039.32429@paul.eddelbuettel.com>
+
+
+On 7 October 2025 at 20:07, Ivan Krylov via R-package-devel wrote:
+| Clang is programmed to print a message saying "PLEASE submit a bug
+| report" when it receives an unexpected fatal signal. Here, the fatal
+| signal is SIGXCPU, delivered by the kernel because of the 90-minute
+| per-process CPU time limit set for the job [0]. This is not a crash,
+| you can see this for yourself using something like
+| 
+| ( ulimit -S -t 2; R -q -s -e 'repeat runif(100)' )
+| 
+| The bits of information we have are Ttotal=19394.68s [1], the R CMD
+| check output [2] saying that R CMD INSTALL tool 94 minutes of real time
+| but 323 minutes of userspace plus kernel CPU time, and 00install.log
+| saying that the processes being stopped for going over the limit are
+| compiling rcpp_bcRel_dec.cpp and rcpp_bc_int.cpp.
+
+Most excellent work. I suspected this, but was not careful enough: I looked
+for SIGKILL so 'today I learned' about SIGXCPU.
+
+My recommendation ended up being the same though: those files should to be
+smaller / simpler.
+
+Dirk
+
+-- 
+dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From kev|nu@hey @end|ng |rom gm@||@com  Tue Oct  7 20:37:15 2025
+From: kev|nu@hey @end|ng |rom gm@||@com (Kevin Ushey)
+Date: Tue, 7 Oct 2025 11:37:15 -0700
+Subject: [R-pkg-devel] new package version fails on r-devel fedora clang
+In-Reply-To: <26853.20416.724039.32429@paul.eddelbuettel.com>
+References: <AS4P195MB1430635DA878FF6296A8206EBEE4A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+ <26847.51829.976200.825288@paul.eddelbuettel.com>
+ <26847.59111.455987.635269@paul.eddelbuettel.com>
+ <26847.61646.890668.776467@paul.eddelbuettel.com>
+ <AS4P195MB1430285D6BB7EF0B59723C66BEE4A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+ <AS4P195MB143058AE91FE01C7DAA29229BEE2A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+ <CAJXgQP2NNRcoYJqqTxMcW=OeGHnjxpXturCCTod=3mE-2HXRFw@mail.gmail.com>
+ <AS4P195MB143013DD4F30F9889365995FBEE0A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+ <20251007200759.17ea648c@arachnoid>
+ <26853.20416.724039.32429@paul.eddelbuettel.com>
+Message-ID: <CAJXgQP3fHxB+jERDYCHVPU-d-Eq4VorbrnM7oi+ex_-=KBiN-w@mail.gmail.com>
+
+Should we ask the LLVM team if they think it's worth handling the
+SIGXCPU signal in an alternate way? Since the message they're printing
+here implies it's a bug in the compiler... or at least, they could
+print the signal number / signal name in the message log produced.
+Unless I missed something?
+
+In any case, I agree with the other suggestions re: splitting those
+functions out into separate files.
+
+Another thing worth trying would be to try porting some of these
+functions from C++ to C -- as far as I can see, you aren't making use
+of (any?) C++-specific features, beyond the automatic generation of
+interfaces offered by Rcpp. You could even keep the C++ interfaces
+auto-generated by Rcpp, but have those call back to separate C
+functions each defined in separate files, just to keep life simple.
+
+Best,
+Kevin
+
+On Tue, Oct 7, 2025 at 10:37?AM Dirk Eddelbuettel <edd at debian.org> wrote:
+>
+>
+> On 7 October 2025 at 20:07, Ivan Krylov via R-package-devel wrote:
+> | Clang is programmed to print a message saying "PLEASE submit a bug
+> | report" when it receives an unexpected fatal signal. Here, the fatal
+> | signal is SIGXCPU, delivered by the kernel because of the 90-minute
+> | per-process CPU time limit set for the job [0]. This is not a crash,
+> | you can see this for yourself using something like
+> |
+> | ( ulimit -S -t 2; R -q -s -e 'repeat runif(100)' )
+> |
+> | The bits of information we have are Ttotal=19394.68s [1], the R CMD
+> | check output [2] saying that R CMD INSTALL tool 94 minutes of real time
+> | but 323 minutes of userspace plus kernel CPU time, and 00install.log
+> | saying that the processes being stopped for going over the limit are
+> | compiling rcpp_bcRel_dec.cpp and rcpp_bc_int.cpp.
+>
+> Most excellent work. I suspected this, but was not careful enough: I looked
+> for SIGKILL so 'today I learned' about SIGXCPU.
+>
+> My recommendation ended up being the same though: those files should to be
+> smaller / simpler.
+>
+> Dirk
+>
+> --
+> dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+>
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+
+From tony_@_w||ke@ @end|ng |rom out|ook@com  Thu Oct  9 14:05:57 2025
+From: tony_@_w||ke@ @end|ng |rom out|ook@com (Tony Wilkes)
+Date: Thu, 9 Oct 2025 12:05:57 +0000
+Subject: [R-pkg-devel] new package version fails on r-devel fedora clang
+In-Reply-To: <26853.20416.724039.32429@paul.eddelbuettel.com>
+References: <AS4P195MB1430635DA878FF6296A8206EBEE4A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+ <26847.51829.976200.825288@paul.eddelbuettel.com>
+ <26847.59111.455987.635269@paul.eddelbuettel.com>
+ <26847.61646.890668.776467@paul.eddelbuettel.com>
+ <AS4P195MB1430285D6BB7EF0B59723C66BEE4A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+ <AS4P195MB143058AE91FE01C7DAA29229BEE2A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+ <CAJXgQP2NNRcoYJqqTxMcW=OeGHnjxpXturCCTod=3mE-2HXRFw@mail.gmail.com>
+ <AS4P195MB143013DD4F30F9889365995FBEE0A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+ <20251007200759.17ea648c@arachnoid>
+ <26853.20416.724039.32429@paul.eddelbuettel.com>
+Message-ID: <AS4P195MB14300A690AA39EC1CA4F0A1ABEEEA@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+
+Hi everyone,
+
+I followed the given advise to the best of my abilities: rewritten some c++ scripts to c, split large c++ scripts into smaller pieces, simplified the macros, reduced the install size & time of the package, and checked the package against fedora clang using rhub (unfortunately they didnt have clang21, but I checked what I could).
+I re-submitted the new version pf package, version 0.1.5.2, to cran.
+But when I checked the cran incoming website, i saw it was put under folder "archive", which means (I think) rejection. Not even pretest, just straight rejection. But i got no mail from cran. Did I miss something?
+
+
+
+________________________________
+Van: Dirk Eddelbuettel <edd at debian.org>
+Verstuurd: dinsdag, oktober 7, 2025 7:37:12 p.m.
+Aan: Ivan Krylov <ikrylov at disroot.org>
+CC: Tony Wilkes <tony_a_wilkes at outlook.com>; List r-package-devel <r-package-devel at r-project.org>
+Onderwerp: Re: [R-pkg-devel] new package version fails on r-devel fedora clang
+
+
+On 7 October 2025 at 20:07, Ivan Krylov via R-package-devel wrote:
+| Clang is programmed to print a message saying "PLEASE submit a bug
+| report" when it receives an unexpected fatal signal. Here, the fatal
+| signal is SIGXCPU, delivered by the kernel because of the 90-minute
+| per-process CPU time limit set for the job [0]. This is not a crash,
+| you can see this for yourself using something like
+|
+| ( ulimit -S -t 2; R -q -s -e 'repeat runif(100)' )
+|
+| The bits of information we have are Ttotal=19394.68s [1], the R CMD
+| check output [2] saying that R CMD INSTALL tool 94 minutes of real time
+| but 323 minutes of userspace plus kernel CPU time, and 00install.log
+| saying that the processes being stopped for going over the limit are
+| compiling rcpp_bcRel_dec.cpp and rcpp_bc_int.cpp.
+
+Most excellent work. I suspected this, but was not careful enough: I looked
+for SIGKILL so 'today I learned' about SIGXCPU.
+
+My recommendation ended up being the same though: those files should to be
+smaller / simpler.
+
+Dirk
+
+--
+dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+	[[alternative HTML version deleted]]
+
+
+From edd @end|ng |rom deb|@n@org  Thu Oct  9 14:43:12 2025
+From: edd @end|ng |rom deb|@n@org (Dirk Eddelbuettel)
+Date: Thu, 9 Oct 2025 07:43:12 -0500
+Subject: [R-pkg-devel] new package version fails on r-devel fedora clang
+In-Reply-To: <AS4P195MB14300A690AA39EC1CA4F0A1ABEEEA@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+References: <AS4P195MB1430635DA878FF6296A8206EBEE4A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+ <26847.51829.976200.825288@paul.eddelbuettel.com>
+ <26847.59111.455987.635269@paul.eddelbuettel.com>
+ <26847.61646.890668.776467@paul.eddelbuettel.com>
+ <AS4P195MB1430285D6BB7EF0B59723C66BEE4A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+ <AS4P195MB143058AE91FE01C7DAA29229BEE2A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+ <CAJXgQP2NNRcoYJqqTxMcW=OeGHnjxpXturCCTod=3mE-2HXRFw@mail.gmail.com>
+ <AS4P195MB143013DD4F30F9889365995FBEE0A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+ <20251007200759.17ea648c@arachnoid>
+ <26853.20416.724039.32429@paul.eddelbuettel.com>
+ <AS4P195MB14300A690AA39EC1CA4F0A1ABEEEA@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+Message-ID: <26855.44512.268343.226303@paul.eddelbuettel.com>
+
+
+On 9 October 2025 at 12:05, Tony Wilkes wrote:
+| But when I checked the cran incoming website, i saw it was put under folder "archive", which means (I think) rejection. Not even pretest, just straight rejection. But i got no mail from cran. Did I miss something?
+
+As far as I know, and as best as I can tell, there is *always* an email as
+this is driven by a scripted process.
+
+Now email / SMTP reliability is not what it used to be, outages happen
+(e.g. Uwe acknowledged that U Dortmund had a recent mishap -- but mail was
+still queued and delivered), spam is an issue etc so I would carefully check
+spam folders and alike. It would be nice if there was redundancy (i.e. an
+email and public webpage log) but we all wish for different ponies.
+
+Also, I am glad to hear you made progress at your end. You could use GitHub
+Actions to run a Debian container and use clang-21 or clang-22, possibly with
+the more taxing -O3 -D_FORTIFY_SOURCE=3 settings, and see if the build times
+is net improved. Chances are that will help you with the Fedora machine in
+Oxford too.
+
+Cheers, Dirk
+
+-- 
+dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From |kry|ov @end|ng |rom d|@root@org  Thu Oct  9 14:47:20 2025
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Thu, 9 Oct 2025 15:47:20 +0300
+Subject: [R-pkg-devel] new package version fails on r-devel fedora clang
+In-Reply-To: <AS4P195MB14300A690AA39EC1CA4F0A1ABEEEA@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+References: <AS4P195MB1430635DA878FF6296A8206EBEE4A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+ <26847.51829.976200.825288@paul.eddelbuettel.com>
+ <26847.59111.455987.635269@paul.eddelbuettel.com>
+ <26847.61646.890668.776467@paul.eddelbuettel.com>
+ <AS4P195MB1430285D6BB7EF0B59723C66BEE4A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+ <AS4P195MB143058AE91FE01C7DAA29229BEE2A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+ <CAJXgQP2NNRcoYJqqTxMcW=OeGHnjxpXturCCTod=3mE-2HXRFw@mail.gmail.com>
+ <AS4P195MB143013DD4F30F9889365995FBEE0A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+ <20251007200759.17ea648c@arachnoid>
+ <26853.20416.724039.32429@paul.eddelbuettel.com>
+ <AS4P195MB14300A690AA39EC1CA4F0A1ABEEEA@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+Message-ID: <20251009154720.3487c3ed@arachnoid>
+
+? Thu, 9 Oct 2025 12:05:57 +0000
+Tony Wilkes <tony_a_wilkes at outlook.com> ?????:
+
+> when I checked the cran incoming website, i saw it was put under
+> folder "archive", which means (I think) rejection. Not even pretest,
+> just straight rejection. But i got no mail from cran. Did I miss
+> something?
+
+Mail delivery problems, probably:
+
+> * checking whether package ?broadcast? can be installed ...
+> [134s/134s] WARNING
+> Found the following significant warnings:
+>   rcpp_bcFact_int.cpp:16:17: warning: absolute value function 'abs'
+> given an argument of type 'long long' but has parameter of type 'int'
+> which may cause truncation of value [-Wabsolute-value]
+>   rcpp_bcFact_int.cpp:17:17: warning: absolute value function 'abs'
+> given an argument of type 'long long' but has parameter of type 'int'
+> which may cause truncation of value [-Wabsolute-value]
+
+https://win-builder.r-project.org/incoming_pretest/broadcast_0.1.5.2_20251009_080233/Debian/00check.log
+
+Hopefully this one will be easy to fix.
+
+-- 
+Best regards,
+Ivan
+
+
+From i@bi@@@ber@h@rd m@iii@g oii u@ibe@ch  Thu Oct  9 16:14:47 2025
+From: i@bi@@@ber@h@rd m@iii@g oii u@ibe@ch (i@bi@@@ber@h@rd m@iii@g oii u@ibe@ch)
+Date: Thu, 9 Oct 2025 14:14:47 +0000
+Subject: [R-pkg-devel] Installation took CPU time XXX times elapsed time
+In-Reply-To: <20251003173446.07b022f8@arachnoid>
+References: <188A464A-2FCF-4FF5-B7D0-D39A9D7B64EE@unibe.ch>
+ <20251003173446.07b022f8@arachnoid>
+Message-ID: <88EF23CF-FFEA-4B5A-A98A-AF7D49BC1D93@unibe.ch>
+
+Thank you for your answers, Dirk and Ivan!
+
+With your help I managed to reduce the compilation time on CRAN Debian pretest (from [89s/32s] to [48s/20s]) by modifying the Makevars of the rsofun package.
+It appears that there is still some multi-core going on (see [1]) but probably since this is just < 2.5x it does not trigger the NOTE seen previously.
+This is good enough for me.
+
+Thanks again and best regards,
+Fabian
+
+[1] https://win-builder.r-project.org/incoming_pretest/rsofun_5.1.0_20251009_153415/Debian/00check.log
+
+	[[alternative HTML version deleted]]
+
+
+From tony_@_w||ke@ @end|ng |rom out|ook@com  Thu Oct  9 17:13:41 2025
+From: tony_@_w||ke@ @end|ng |rom out|ook@com (Tony Wilkes)
+Date: Thu, 9 Oct 2025 15:13:41 +0000
+Subject: [R-pkg-devel] new package version fails on r-devel fedora clang
+In-Reply-To: <20251009154720.3487c3ed@arachnoid>
+References: <AS4P195MB1430635DA878FF6296A8206EBEE4A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+ <26847.51829.976200.825288@paul.eddelbuettel.com>
+ <26847.59111.455987.635269@paul.eddelbuettel.com>
+ <26847.61646.890668.776467@paul.eddelbuettel.com>
+ <AS4P195MB1430285D6BB7EF0B59723C66BEE4A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+ <AS4P195MB143058AE91FE01C7DAA29229BEE2A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+ <CAJXgQP2NNRcoYJqqTxMcW=OeGHnjxpXturCCTod=3mE-2HXRFw@mail.gmail.com>
+ <AS4P195MB143013DD4F30F9889365995FBEE0A@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+ <20251007200759.17ea648c@arachnoid>
+ <26853.20416.724039.32429@paul.eddelbuettel.com>
+ <AS4P195MB14300A690AA39EC1CA4F0A1ABEEEA@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+ <20251009154720.3487c3ed@arachnoid>
+Message-ID: <AS4P195MB14309A63C74218E923FED7B5BEEEA@AS4P195MB1430.EURP195.PROD.OUTLOOK.COM>
+
+Thanks! Yes this is very easy to fix.
+
+________________________________
+Van: Ivan Krylov <ikrylov at disroot.org>
+Verstuurd: donderdag, oktober 9, 2025 2:47:28 p.m.
+Aan: Tony Wilkes <tony_a_wilkes at outlook.com>
+CC: List r-package-devel <r-package-devel at r-project.org>
+Onderwerp: Re: [R-pkg-devel] new package version fails on r-devel fedora clang
+
+? Thu, 9 Oct 2025 12:05:57 +0000
+Tony Wilkes <tony_a_wilkes at outlook.com> ?????:
+
+> when I checked the cran incoming website, i saw it was put under
+> folder "archive", which means (I think) rejection. Not even pretest,
+> just straight rejection. But i got no mail from cran. Did I miss
+> something?
+
+Mail delivery problems, probably:
+
+> * checking whether package ?broadcast? can be installed ...
+> [134s/134s] WARNING
+> Found the following significant warnings:
+>   rcpp_bcFact_int.cpp:16:17: warning: absolute value function 'abs'
+> given an argument of type 'long long' but has parameter of type 'int'
+> which may cause truncation of value [-Wabsolute-value]
+>   rcpp_bcFact_int.cpp:17:17: warning: absolute value function 'abs'
+> given an argument of type 'long long' but has parameter of type 'int'
+> which may cause truncation of value [-Wabsolute-value]
+
+https://win-builder.r-project.org/incoming_pretest/broadcast_0.1.5.2_20251009_080233/Debian/00check.log<https://win-builder.r-project.org/incoming_pretest/broadcast_0.1.5.2_20251009_080233/Debian/00check.log>
+
+Hopefully this one will be easy to fix.
+
+--
+Best regards,
+Ivan
+
+
+	[[alternative HTML version deleted]]
+
+
+From edd @end|ng |rom deb|@n@org  Fri Oct 10 16:42:41 2025
+From: edd @end|ng |rom deb|@n@org (Dirk Eddelbuettel)
+Date: Fri, 10 Oct 2025 09:42:41 -0500
+Subject: [R-pkg-devel] Open Source Office Hours for RcppArmadillo 15.0.*
+ Changes
+Message-ID: <26857.7009.739947.474897@paul.eddelbuettel.com>
+
+
+Armadillo 15.0.* brought upstream changes that lead to two CRAN 'Deadlines'.
+A lot of packages have adjusted, some more still seem to need help.
+
+I detailed this, and the nine (!!) issue tickets around this having further
+detail in a blog post [1] I don't want to repeat here. But the crux of it is:
+If you have a package using RcppArmadillo, and you are facing the upcoming
+deadlines, I can offer help in on-line office hours you can book (using a
+service I had not used before, so a small experiment -- fingers crossed).
+
+Please consult the post linked below for the details and link. See you there!
+
+Cheers, Dirk
+
+[1] https://dirk.eddelbuettel.com/blog/2025/10/10#rcpparmadillo_15_transition_office_hours
+
+-- 
+dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From m@tt@@ummer@g||| @end|ng |rom gm@||@com  Fri Oct 10 15:34:00 2025
+From: m@tt@@ummer@g||| @end|ng |rom gm@||@com (Matt Summersgill)
+Date: Fri, 10 Oct 2025 08:34:00 -0500
+Subject: [R-pkg-devel] Plotly is retiring its R documentation
+Message-ID: <CABeHTUC033AJazdXLc-A9qyR4Pq3Nz8yg5OW0zeJgB63SQ8zog@mail.gmail.com>
+
+The plotly R package is a tool that makes the Shiny and the
+RMarkdown/Quarto HTML formats truly shine. According to this community
+announcement, the Plotly organization is preparing to retire R
+documentation in November 2025.
+https://forum.posit.co/t/plotly-is-retiring-its-r-documentation/208325
+
+I don't want to come across as disparaging the work of other package
+creators - there are alternatives for time-series data like dygraphs, newer
+projects like ggiraph are taking a stab at interactive plots as ggplot2
+focused extension, the rgl package provides a low-level, flexible 3D
+plotting capabilities, other interactive GIS libraries provide good mapping
+tools, and echarts4r shows promise. However, no single package is as widely
+used or provides the full feature-set that the plotly package does today
+for interactive visualization. Just based on Stack Overflow question
+volume, plotly is used at least an order of magnitude more than any of the
+alternatives mentioned above.
+
+To say the least, losing this part of the R ecosystem would create a hole
+that might not be filled for some time.
+
+I have opened Issue #2456 on the Github repo for community discussion.
+https://github.com/plotly/plotly.R/issues/2456
+
+Matt Summersgill
+
+	[[alternative HTML version deleted]]
+
+
+From g@br|e|@b|@|n @end|ng |rom @p@gov@br  Mon Oct 13 15:39:07 2025
+From: g@br|e|@b|@|n @end|ng |rom @p@gov@br (Gabriel Constantino Blain)
+Date: Mon, 13 Oct 2025 13:39:07 +0000
+Subject: [R-pkg-devel] @autoglobal tag not recognized after updating to
+ roxygen2 v7.3.3
+Message-ID: <CP5P284MB1870E5D161D7E535CDA0CFECA7EAA@CP5P284MB1870.BRAP284.PROD.OUTLOOK.COM>
+
+Hello everyone,
+I recently updated the roxygen2 version used in my package (SPIChanges on CRAN<https://cran.r-project.org/web/packages/SPIChanges/index.html>) from v7.3.2 to v7.3.3.
+Running the following checks:
+
+  *
+devtools::check(remote = TRUE, manual = TRUE)
+  *
+devtools::check_win_devel()
+
+produces no errors, warnings, or notes, and devtools::install() works perfectly.
+However, when I run:
+
+devtools::document(roclets = c("rd", "collate", "namespace"))
+
+
+I get the message:
+
+? SPIChanges.R:52: @autoglobal is not a known tag
+
+
+Could someone please advise on how to fix this issue in the new package version?
+Thanks in advance for your help,
+Gabriel Blain
+
+
+	[[alternative HTML version deleted]]
+
+
+From edd @end|ng |rom deb|@n@org  Mon Oct 13 15:51:37 2025
+From: edd @end|ng |rom deb|@n@org (Dirk Eddelbuettel)
+Date: Mon, 13 Oct 2025 08:51:37 -0500
+Subject: [R-pkg-devel] @autoglobal tag not recognized after updating to
+ roxygen2 v7.3.3
+In-Reply-To: <CP5P284MB1870E5D161D7E535CDA0CFECA7EAA@CP5P284MB1870.BRAP284.PROD.OUTLOOK.COM>
+References: <CP5P284MB1870E5D161D7E535CDA0CFECA7EAA@CP5P284MB1870.BRAP284.PROD.OUTLOOK.COM>
+Message-ID: <26861.1001.960449.873259@paul.eddelbuettel.com>
+
+
+On 13 October 2025 at 13:39, Gabriel Constantino Blain wrote:
+| Hello everyone,
+| I recently updated the roxygen2 version used in my package (SPIChanges on CRAN<https://cran.r-project.org/web/packages/SPIChanges/index.html>) from v7.3.2 to v7.3.3.
+
+[...]
+
+| I get the message:
+| 
+| ? SPIChanges.R:52: @autoglobal is not a known tag
+| 
+| Could someone please advise on how to fix this issue in the new package version?
+
+This tag is apparently provided by the (additional) package `roxyglobals` so
+you should consult its documentation e.g. at
+
+  https://cran.r-project.org/web/packages/roxyglobals/refman/roxyglobals.html
+
+Hth, Dirk
+
+-- 
+dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From jdnewm|| @end|ng |rom dcn@d@v|@@c@@u@  Mon Oct 13 15:57:54 2025
+From: jdnewm|| @end|ng |rom dcn@d@v|@@c@@u@ (Jeff Newmiller)
+Date: Mon, 13 Oct 2025 06:57:54 -0700
+Subject: [R-pkg-devel] @autoglobal tag not recognized after updating to
+ roxygen2 v7.3.3
+In-Reply-To: <CP5P284MB1870E5D161D7E535CDA0CFECA7EAA@CP5P284MB1870.BRAP284.PROD.OUTLOOK.COM>
+References: <CP5P284MB1870E5D161D7E535CDA0CFECA7EAA@CP5P284MB1870.BRAP284.PROD.OUTLOOK.COM>
+Message-ID: <67FBCACD-6FAC-4AD1-82E9-3AD05537F34B@dcn.davis.ca.us>
+
+Did you search for a solution? I did... and apparently this feature is not supplied by devtools.
+
+On October 13, 2025 6:39:07 AM PDT, Gabriel Constantino Blain <gabriel.blain at sp.gov.br> wrote:
+>Hello everyone,
+>I recently updated the roxygen2 version used in my package (SPIChanges on CRAN<https://cran.r-project.org/web/packages/SPIChanges/index.html>) from v7.3.2 to v7.3.3.
+>Running the following checks:
+>
+>  *
+>devtools::check(remote = TRUE, manual = TRUE)
+>  *
+>devtools::check_win_devel()
+>
+>produces no errors, warnings, or notes, and devtools::install() works perfectly.
+>However, when I run:
+>
+>devtools::document(roclets = c("rd", "collate", "namespace"))
+>
+>
+>I get the message:
+>
+>? SPIChanges.R:52: @autoglobal is not a known tag
+>
+>
+>Could someone please advise on how to fix this issue in the new package version?
+>Thanks in advance for your help,
+>Gabriel Blain
+>
+>
+>	[[alternative HTML version deleted]]
+>
+>______________________________________________
+>R-package-devel at r-project.org mailing list
+>https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+-- 
+Sent from my phone. Please excuse my brevity.
+
+
+From @pencer@gr@ve@ @end|ng |rom e||ect|vede|en@e@org  Tue Oct 14 01:03:46 2025
+From: @pencer@gr@ve@ @end|ng |rom e||ect|vede|en@e@org (Spencer Graves)
+Date: Mon, 13 Oct 2025 18:03:46 -0500
+Subject: [R-pkg-devel] "Undefined global functions or variables" locally but
+ NOT on GitHub
+Message-ID: <a8a20ef6-fbbd-4059-a5bf-9dea5c090230@effectivedefense.org>
+
+Hello, All:
+
+
+GitHub actions has seen no problems with:
+
+
+https://github.com/sbgraves237/MaddisonData
+
+
+However, R CMD check on my local computer cannot find any of the 
+datasets defined in this package. I think I have the current version of 
+everything including upgrading macOS to 26.0.1, upgrading RStudio and 
+running "update.packages()". I've studied Wickham and Bryan, R Packages, 
+without finding how to fix this problem. I've compared the roxygen2 code 
+in this package with data documentation in other tidyverse packages 
+without being able to resolve this issue. Below please find 
+sessionInfo() and 00check.log from "R CMD check MaddisonData_0.0.1.tar.gz".
+
+
+Suggestions? Thanks, Spencer Graves
+
+
+p.s. I was having the same problem with 
+"github.com/sbgraves237/SS4Maddison", so I created the MaddisonData 
+project from scratch and copied only what I needed from SS4Maddison. The 
+problem followed me.
+
+
+ > sessionInfo()
+R version 4.5.1 (2025-06-13)
+Platform: aarch64-apple-darwin20
+Running under: macOS Tahoe 26.0.1
+
+Matrix products: default
+BLAS: 
+/System/Library/Frameworks/Accelerate.framework/Versions/A/Frameworks/vecLib.framework/Versions/A/libBLAS.dylib 
+
+LAPACK: 
+/Library/Frameworks/R.framework/Versions/4.5-arm64/Resources/lib/libRlapack.dylib; 
+  LAPACK version 3.12.1
+
+locale:
+[1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+
+time zone: America/Chicago
+tzcode source: internal
+
+attached base packages:
+[1] stats     graphics  grDevices utils     datasets
+[6] methods   base
+
+other attached packages:
+[1] devtools_2.4.6 usethis_3.2.1
+
+loaded via a namespace (and not attached):
+  [1] R6_2.6.1           fastmap_1.2.0
+  [3] magrittr_2.0.4     cachem_1.1.0
+  [5] remotes_2.5.0.9000 glue_1.8.0
+  [7] memoise_2.0.1      lifecycle_1.0.4
+  [9] cli_3.6.5          sessioninfo_1.2.3
+[11] vctrs_0.6.5        compiler_4.5.1
+[13] pkgload_1.4.1      tools_4.5.1
+[15] purrr_1.1.0        rstudioapi_0.17.1
+[17] pkgbuild_1.4.8     ellipsis_0.3.2
+[19] rlang_1.1.6        fs_1.6.6
+
+
+##################
+
+
+00check.log
+
+
+* using log directory 
+?/Users/sg/Documents/current/R/MaddisonData/MaddisonData.Rcheck?
+* using R version 4.5.1 (2025-06-13)
+* using platform: aarch64-apple-darwin20
+* R was compiled by
+     Apple clang version 16.0.0 (clang-1600.0.26.6)
+     GNU Fortran (GCC) 14.2.0
+* running under: macOS Tahoe 26.0.1
+* using session charset: UTF-8
+* checking for file ?MaddisonData/DESCRIPTION? ... OK
+* this is package ?MaddisonData? version ?0.0.1?
+* package encoding: UTF-8
+* checking package namespace information ... OK
+* checking package dependencies ... OK
+* checking if this is a source package ... OK
+* checking if there is a namespace ... OK
+* checking for executable files ... OK
+* checking for hidden files and directories ... OK
+* checking for portable file names ... OK
+* checking for sufficient/correct file permissions ... OK
+* checking whether package ?MaddisonData? can be installed ... OK
+* checking installed package size ... INFO
+   installed size is  5.1Mb
+   sub-directories of 1Mb or more:
+     extdata   4.7Mb
+* checking package directory ... OK
+* checking ?build? directory ... OK
+* checking DESCRIPTION meta-information ... OK
+* checking top-level files ... OK
+* checking for left-over files ... OK
+* checking index information ... OK
+* checking package subdirectories ... OK
+* checking code files for non-ASCII characters ... OK
+* checking R files for syntax errors ... OK
+* checking whether the package can be loaded ... OK
+* checking whether the package can be loaded with stated dependencies ... OK
+* checking whether the package can be unloaded cleanly ... OK
+* checking whether the namespace can be loaded with stated dependencies 
+... OK
+* checking whether the namespace can be unloaded cleanly ... OK
+* checking loading without being on the library search path ... OK
+* checking dependencies in R code ... OK
+* checking S3 generic/method consistency ... OK
+* checking replacement functions ... OK
+* checking foreign function calls ... OK
+* checking R code for possible problems ... NOTE
+getMaddisonSources: no visible binding for global variable
+   ?MaddisonSources?
+getMaddisonSources: no visible binding for global variable
+   ?MaddisonYears?
+logMaddison: no visible binding for global variable ?MaddisonData?
+logMaddison: no visible binding for global variable ?MaddisonCountries?
+Undefined global functions or variables:
+   MaddisonCountries MaddisonData MaddisonSources MaddisonYears
+* checking Rd files ... OK
+* checking Rd metadata ... OK
+* checking Rd cross-references ... OK
+* checking for missing documentation entries ... OK
+* checking for code/documentation mismatches ... OK
+* checking Rd \usage sections ... OK
+* checking Rd contents ... OK
+* checking for unstated dependencies in examples ... OK
+* checking contents of ?data? directory ... OK
+* checking data for non-ASCII characters ... OK
+* checking LazyData ... OK
+* checking data for ASCII and uncompressed saves ... OK
+* checking installed files from ?inst/doc? ... OK
+* checking files in ?vignettes? ... OK
+* checking examples ... OK
+* checking for unstated dependencies in vignettes ... OK
+* checking package vignettes ... OK
+* checking re-building of vignette outputs ... OK
+* checking PDF version of manual ... OK
+* DONE
+Status: 1 NOTE
+
+
+From d|ego@hern@ngomezherrero @end|ng |rom gm@||@com  Tue Oct 14 08:56:40 2025
+From: d|ego@hern@ngomezherrero @end|ng |rom gm@||@com (=?UTF-8?Q?Diego_Hernang=C3=B3mez_Herrero?=)
+Date: Tue, 14 Oct 2025 08:56:40 +0200
+Subject: [R-pkg-devel] 
+ "Undefined global functions or variables" locally but NOT on GitHub
+In-Reply-To: <a8a20ef6-fbbd-4059-a5bf-9dea5c090230@effectivedefense.org>
+References: <a8a20ef6-fbbd-4059-a5bf-9dea5c090230@effectivedefense.org>
+Message-ID: <CAA-ibazGcSAzw8Koz+H-AWG4f1x4DOagxMTapH7+jj8MGVkqdg@mail.gmail.com>
+
+Hi:
+
+Maybe remove those rda files from .Rbuildignore (as in a previous question)?
+
+
+
+Have a nice day!
+
+
+El El mar, 14 oct 2025 a las 1:04, Spencer Graves <
+spencer.graves at effectivedefense.org> escribi?:
+
+> Hello, All:
+>
+>
+> GitHub actions has seen no problems with:
+>
+>
+> https://github.com/sbgraves237/MaddisonData
+>
+>
+> However, R CMD check on my local computer cannot find any of the
+> datasets defined in this package. I think I have the current version of
+> everything including upgrading macOS to 26.0.1, upgrading RStudio and
+> running "update.packages()". I've studied Wickham and Bryan, R Packages,
+> without finding how to fix this problem. I've compared the roxygen2 code
+> in this package with data documentation in other tidyverse packages
+> without being able to resolve this issue. Below please find
+> sessionInfo() and 00check.log from "R CMD check MaddisonData_0.0.1.tar.gz".
+>
+>
+> Suggestions? Thanks, Spencer Graves
+>
+>
+> p.s. I was having the same problem with
+> "github.com/sbgraves237/SS4Maddison", so I created the MaddisonData
+> project from scratch and copied only what I needed from SS4Maddison. The
+> problem followed me.
+>
+>
+>  > sessionInfo()
+> R version 4.5.1 (2025-06-13)
+> Platform: aarch64-apple-darwin20
+> Running under: macOS Tahoe 26.0.1
+>
+> Matrix products: default
+> BLAS:
+> /System/Library/Frameworks/Accelerate.framework/Versions/A/Frameworks/vecLib.framework/Versions/A/libBLAS.dylib
+>
+>
+> LAPACK:
+> /Library/Frameworks/R.framework/Versions/4.5-arm64/Resources/lib/libRlapack.dylib;
+>
+>   LAPACK version 3.12.1
+>
+> locale:
+> [1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+>
+> time zone: America/Chicago
+> tzcode source: internal
+>
+> attached base packages:
+> [1] stats     graphics  grDevices utils     datasets
+> [6] methods   base
+>
+> other attached packages:
+> [1] devtools_2.4.6 usethis_3.2.1
+>
+> loaded via a namespace (and not attached):
+>   [1] R6_2.6.1           fastmap_1.2.0
+>   [3] magrittr_2.0.4     cachem_1.1.0
+>   [5] remotes_2.5.0.9000 glue_1.8.0
+>   [7] memoise_2.0.1      lifecycle_1.0.4
+>   [9] cli_3.6.5          sessioninfo_1.2.3
+> [11] vctrs_0.6.5        compiler_4.5.1
+> [13] pkgload_1.4.1      tools_4.5.1
+> [15] purrr_1.1.0        rstudioapi_0.17.1
+> [17] pkgbuild_1.4.8     ellipsis_0.3.2
+> [19] rlang_1.1.6        fs_1.6.6
+>
+>
+> ##################
+>
+>
+> 00check.log
+>
+>
+> * using log directory
+> ?/Users/sg/Documents/current/R/MaddisonData/MaddisonData.Rcheck?
+> * using R version 4.5.1 (2025-06-13)
+> * using platform: aarch64-apple-darwin20
+> * R was compiled by
+>      Apple clang version 16.0.0 (clang-1600.0.26.6)
+>      GNU Fortran (GCC) 14.2.0
+> * running under: macOS Tahoe 26.0.1
+> * using session charset: UTF-8
+> * checking for file ?MaddisonData/DESCRIPTION? ... OK
+> * this is package ?MaddisonData? version ?0.0.1?
+> * package encoding: UTF-8
+> * checking package namespace information ... OK
+> * checking package dependencies ... OK
+> * checking if this is a source package ... OK
+> * checking if there is a namespace ... OK
+> * checking for executable files ... OK
+> * checking for hidden files and directories ... OK
+> * checking for portable file names ... OK
+> * checking for sufficient/correct file permissions ... OK
+> * checking whether package ?MaddisonData? can be installed ... OK
+> * checking installed package size ... INFO
+>    installed size is  5.1Mb
+>    sub-directories of 1Mb or more:
+>      extdata   4.7Mb
+> * checking package directory ... OK
+> * checking ?build? directory ... OK
+> * checking DESCRIPTION meta-information ... OK
+> * checking top-level files ... OK
+> * checking for left-over files ... OK
+> * checking index information ... OK
+> * checking package subdirectories ... OK
+> * checking code files for non-ASCII characters ... OK
+> * checking R files for syntax errors ... OK
+> * checking whether the package can be loaded ... OK
+> * checking whether the package can be loaded with stated dependencies ...
+> OK
+> * checking whether the package can be unloaded cleanly ... OK
+> * checking whether the namespace can be loaded with stated dependencies
+> ... OK
+> * checking whether the namespace can be unloaded cleanly ... OK
+> * checking loading without being on the library search path ... OK
+> * checking dependencies in R code ... OK
+> * checking S3 generic/method consistency ... OK
+> * checking replacement functions ... OK
+> * checking foreign function calls ... OK
+> * checking R code for possible problems ... NOTE
+> getMaddisonSources: no visible binding for global variable
+>    ?MaddisonSources?
+> getMaddisonSources: no visible binding for global variable
+>    ?MaddisonYears?
+> logMaddison: no visible binding for global variable ?MaddisonData?
+> logMaddison: no visible binding for global variable ?MaddisonCountries?
+> Undefined global functions or variables:
+>    MaddisonCountries MaddisonData MaddisonSources MaddisonYears
+> * checking Rd files ... OK
+> * checking Rd metadata ... OK
+> * checking Rd cross-references ... OK
+> * checking for missing documentation entries ... OK
+> * checking for code/documentation mismatches ... OK
+> * checking Rd \usage sections ... OK
+> * checking Rd contents ... OK
+> * checking for unstated dependencies in examples ... OK
+> * checking contents of ?data? directory ... OK
+> * checking data for non-ASCII characters ... OK
+> * checking LazyData ... OK
+> * checking data for ASCII and uncompressed saves ... OK
+> * checking installed files from ?inst/doc? ... OK
+> * checking files in ?vignettes? ... OK
+> * checking examples ... OK
+> * checking for unstated dependencies in vignettes ... OK
+> * checking package vignettes ... OK
+> * checking re-building of vignette outputs ... OK
+> * checking PDF version of manual ... OK
+> * DONE
+> Status: 1 NOTE
+>
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+
+	[[alternative HTML version deleted]]
+
+
+From georg|@bo@hn@kov @end|ng |rom m@nche@ter@@c@uk  Tue Oct 14 10:38:12 2025
+From: georg|@bo@hn@kov @end|ng |rom m@nche@ter@@c@uk (Georgi Boshnakov)
+Date: Tue, 14 Oct 2025 08:38:12 +0000
+Subject: [R-pkg-devel] 
+ "Undefined global functions or variables" locally but NOT on GitHub
+In-Reply-To: <a8a20ef6-fbbd-4059-a5bf-9dea5c090230@effectivedefense.org>
+References: <a8a20ef6-fbbd-4059-a5bf-9dea5c090230@effectivedefense.org>
+Message-ID: <LO0P265MB63250D278F8B3BE5CAD76834AEEBA@LO0P265MB6325.GBRP265.PROD.OUTLOOK.COM>
+
+Datasets are somewhat special, in that they are not in the namespace of the package. So, you can't access them with the '::' operator, you need to use data(). When inside functions, preferably with envir = environment() to avoid putting the datasets in the user's workspace, see the help page of data().
+
+Georgi Boshnakov
+
+________________________________________
+From: R-package-devel <r-package-devel-bounces at r-project.org> on behalf of Spencer Graves <spencer.graves at effectivedefense.org>
+Sent: 14 October 2025 00:03
+To: r-package-devel at r-project.org
+Subject: [R-pkg-devel] "Undefined global functions or variables" locally but NOT on GitHub
+
+Hello, All:
+
+
+GitHub actions has seen no problems with:
+
+
+https://urldefense.com/v3/__https://github.com/sbgraves237/MaddisonData__;!!PDiH4ENfjr2_Jw!AV0E6CfZS8E1jXuDa5DiIi0ORXQzjlJGiZYd5YBVl6_i05LSgAXspPn4jj-Afy87jGSuyd2V30E2t9n-P_gyU7t7pRJGtHyLWV9CXc2TIzbRfGQ$ [github[.]com]
+
+
+However, R CMD check on my local computer cannot find any of the
+datasets defined in this package. I think I have the current version of
+everything including upgrading macOS to 26.0.1, upgrading RStudio and
+running "update.packages()". I've studied Wickham and Bryan, R Packages,
+without finding how to fix this problem. I've compared the roxygen2 code
+in this package with data documentation in other tidyverse packages
+without being able to resolve this issue. Below please find
+sessionInfo() and 00check.log from "R CMD check MaddisonData_0.0.1.tar.gz".
+
+
+Suggestions? Thanks, Spencer Graves
+
+
+p.s. I was having the same problem with
+"github.com/sbgraves237/SS4Maddison", so I created the MaddisonData
+project from scratch and copied only what I needed from SS4Maddison. The
+problem followed me.
+
+
+ > sessionInfo()
+R version 4.5.1 (2025-06-13)
+Platform: aarch64-apple-darwin20
+Running under: macOS Tahoe 26.0.1
+
+Matrix products: default
+BLAS:
+/System/Library/Frameworks/Accelerate.framework/Versions/A/Frameworks/vecLib.framework/Versions/A/libBLAS.dylib
+
+LAPACK:
+/Library/Frameworks/R.framework/Versions/4.5-arm64/Resources/lib/libRlapack.dylib;
+  LAPACK version 3.12.1
+
+locale:
+[1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+
+time zone: America/Chicago
+tzcode source: internal
+
+attached base packages:
+[1] stats     graphics  grDevices utils     datasets
+[6] methods   base
+
+other attached packages:
+[1] devtools_2.4.6 usethis_3.2.1
+
+loaded via a namespace (and not attached):
+  [1] R6_2.6.1           fastmap_1.2.0
+  [3] magrittr_2.0.4     cachem_1.1.0
+  [5] remotes_2.5.0.9000 glue_1.8.0
+  [7] memoise_2.0.1      lifecycle_1.0.4
+  [9] cli_3.6.5          sessioninfo_1.2.3
+[11] vctrs_0.6.5        compiler_4.5.1
+[13] pkgload_1.4.1      tools_4.5.1
+[15] purrr_1.1.0        rstudioapi_0.17.1
+[17] pkgbuild_1.4.8     ellipsis_0.3.2
+[19] rlang_1.1.6        fs_1.6.6
+
+
+##################
+
+
+00check.log
+
+
+* using log directory
+?/Users/sg/Documents/current/R/MaddisonData/MaddisonData.Rcheck?
+* using R version 4.5.1 (2025-06-13)
+* using platform: aarch64-apple-darwin20
+* R was compiled by
+     Apple clang version 16.0.0 (clang-1600.0.26.6)
+     GNU Fortran (GCC) 14.2.0
+* running under: macOS Tahoe 26.0.1
+* using session charset: UTF-8
+* checking for file ?MaddisonData/DESCRIPTION? ... OK
+* this is package ?MaddisonData? version ?0.0.1?
+* package encoding: UTF-8
+* checking package namespace information ... OK
+* checking package dependencies ... OK
+* checking if this is a source package ... OK
+* checking if there is a namespace ... OK
+* checking for executable files ... OK
+* checking for hidden files and directories ... OK
+* checking for portable file names ... OK
+* checking for sufficient/correct file permissions ... OK
+* checking whether package ?MaddisonData? can be installed ... OK
+* checking installed package size ... INFO
+   installed size is  5.1Mb
+   sub-directories of 1Mb or more:
+     extdata   4.7Mb
+* checking package directory ... OK
+* checking ?build? directory ... OK
+* checking DESCRIPTION meta-information ... OK
+* checking top-level files ... OK
+* checking for left-over files ... OK
+* checking index information ... OK
+* checking package subdirectories ... OK
+* checking code files for non-ASCII characters ... OK
+* checking R files for syntax errors ... OK
+* checking whether the package can be loaded ... OK
+* checking whether the package can be loaded with stated dependencies ... OK
+* checking whether the package can be unloaded cleanly ... OK
+* checking whether the namespace can be loaded with stated dependencies
+... OK
+* checking whether the namespace can be unloaded cleanly ... OK
+* checking loading without being on the library search path ... OK
+* checking dependencies in R code ... OK
+* checking S3 generic/method consistency ... OK
+* checking replacement functions ... OK
+* checking foreign function calls ... OK
+* checking R code for possible problems ... NOTE
+getMaddisonSources: no visible binding for global variable
+   ?MaddisonSources?
+getMaddisonSources: no visible binding for global variable
+   ?MaddisonYears?
+logMaddison: no visible binding for global variable ?MaddisonData?
+logMaddison: no visible binding for global variable ?MaddisonCountries?
+Undefined global functions or variables:
+   MaddisonCountries MaddisonData MaddisonSources MaddisonYears
+* checking Rd files ... OK
+* checking Rd metadata ... OK
+* checking Rd cross-references ... OK
+* checking for missing documentation entries ... OK
+* checking for code/documentation mismatches ... OK
+* checking Rd \usage sections ... OK
+* checking Rd contents ... OK
+* checking for unstated dependencies in examples ... OK
+* checking contents of ?data? directory ... OK
+* checking data for non-ASCII characters ... OK
+* checking LazyData ... OK
+* checking data for ASCII and uncompressed saves ... OK
+* checking installed files from ?inst/doc? ... OK
+* checking files in ?vignettes? ... OK
+* checking examples ... OK
+* checking for unstated dependencies in vignettes ... OK
+* checking package vignettes ... OK
+* checking re-building of vignette outputs ... OK
+* checking PDF version of manual ... OK
+* DONE
+Status: 1 NOTE
+
+______________________________________________
+R-package-devel at r-project.org mailing list
+https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-package-devel__;!!PDiH4ENfjr2_Jw!AV0E6CfZS8E1jXuDa5DiIi0ORXQzjlJGiZYd5YBVl6_i05LSgAXspPn4jj-Afy87jGSuyd2V30E2t9n-P_gyU7t7pRJGtHyLWV9CXc2TBzk31as$ [stat[.]ethz[.]ch]
+
+
+From chr|@ @end|ng |rom ckb|@ck@org  Tue Oct 14 11:16:31 2025
+From: chr|@ @end|ng |rom ckb|@ck@org (Chris Black)
+Date: Tue, 14 Oct 2025 02:16:31 -0700
+Subject: [R-pkg-devel] 
+ "Undefined global functions or variables" locally but NOT on GitHub
+In-Reply-To: <LO0P265MB63250D278F8B3BE5CAD76834AEEBA@LO0P265MB6325.GBRP265.PROD.OUTLOOK.COM>
+References: <a8a20ef6-fbbd-4059-a5bf-9dea5c090230@effectivedefense.org>
+ <LO0P265MB63250D278F8B3BE5CAD76834AEEBA@LO0P265MB6325.GBRP265.PROD.OUTLOOK.COM>
+Message-ID: <2BA393B5-4C90-4F8B-83B6-D8D1BC886F54@ckblack.org>
+
+
+
+> On Oct 14, 2025, at 1:38?AM, Georgi Boshnakov <georgi.boshnakov at manchester.ac.uk> wrote:
+> 
+> So, you can't access them with the '::' operator, you need to use data().
+
+You can, though!
+
+```
+% R --vanilla -q -e 'datasets::AirPassengers'
+> datasets::AirPassengers
+     Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec
+1949 112 118 132 129 121 135 148 148 136 119 104 118
+1950 115 126 141 135 125 149 170 170 158 133 114 140
+1951 145 150 178 163 172 178 199 199 184 162 146 166
+1952 171 180 193 181 183 218 230 242 209 191 172 194
+1953 196 196 236 235 229 243 264 272 237 211 180 201
+1954 204 188 235 227 234 264 302 293 259 229 203 229
+1955 242 233 267 269 270 315 364 347 312 274 237 278
+1956 284 277 317 313 318 374 413 405 355 306 271 306
+1957 315 301 356 348 355 422 465 467 404 347 305 336
+1958 340 318 362 348 363 435 491 505 404 359 310 337
+1959 360 342 406 396 420 472 548 559 463 407 362 405
+1960 417 391 419 461 472 535 622 606 508 461 390 432
+```
+
+This is also explicit in R Internals 1.17 ([1], emphasis added): "Lazy-load databases are loaded into the exports for a package, but not into the namespace environment itself. Thus they are visible when the package is attached, ***and also via the :: operator.***? 
+
+[1] https://cran.r-project.org/doc/manuals/r-release/R-ints.html#Lazy-loading
+
+From jbenn|ngho|| @end|ng |rom m@c@com  Tue Oct 14 22:50:27 2025
+From: jbenn|ngho|| @end|ng |rom m@c@com (John Benninghoff)
+Date: Tue, 14 Oct 2025 15:50:27 -0500
+Subject: [R-pkg-devel] 
+ "Undefined global functions or variables" locally but NOT on GitHub
+In-Reply-To: <LO0P265MB63250D278F8B3BE5CAD76834AEEBA@LO0P265MB6325.GBRP265.PROD.OUTLOOK.COM>
+References: <a8a20ef6-fbbd-4059-a5bf-9dea5c090230@effectivedefense.org>
+ <LO0P265MB63250D278F8B3BE5CAD76834AEEBA@LO0P265MB6325.GBRP265.PROD.OUTLOOK.COM>
+Message-ID: <EF0CF66A-D73D-4C18-8255-0F1D85C2DD48@mac.com>
+
+As Chris Black pointed out, you can use `::`. The help page for `data()` recommends this approach for Spencer?s use case:
+
+"In the unusual case that a package uses a lazy-loaded dataset as a default argument to a function, that needs to be specified by :: <http://127.0.0.1:16056/help/library/utils/help/%3A%3A>, e.g., survival::survexp.us."
+
+
+> On Oct 14, 2025, at 3:38?AM, Georgi Boshnakov <georgi.boshnakov at manchester.ac.uk> wrote:
+> 
+> Datasets are somewhat special, in that they are not in the namespace of the package. So, you can't access them with the '::' operator, you need to use data(). When inside functions, preferably with envir = environment() to avoid putting the datasets in the user's workspace, see the help page of data().
+> 
+> Georgi Boshnakov
+> 
+> ________________________________________
+> From: R-package-devel <r-package-devel-bounces at r-project.org <mailto:r-package-devel-bounces at r-project.org>> on behalf of Spencer Graves <spencer.graves at effectivedefense.org <mailto:spencer.graves at effectivedefense.org>>
+> Sent: 14 October 2025 00:03
+> To: r-package-devel at r-project.org <mailto:r-package-devel at r-project.org>
+> Subject: [R-pkg-devel] "Undefined global functions or variables" locally but NOT on GitHub
+> 
+> Hello, All:
+> 
+> 
+> GitHub actions has seen no problems with:
+> 
+> 
+> https://urldefense.com/v3/__https://github.com/sbgraves237/MaddisonData__;!!PDiH4ENfjr2_Jw!AV0E6CfZS8E1jXuDa5DiIi0ORXQzjlJGiZYd5YBVl6_i05LSgAXspPn4jj-Afy87jGSuyd2V30E2t9n-P_gyU7t7pRJGtHyLWV9CXc2TIzbRfGQ$ [github[.]com]
+> 
+> 
+> However, R CMD check on my local computer cannot find any of the
+> datasets defined in this package. I think I have the current version of
+> everything including upgrading macOS to 26.0.1, upgrading RStudio and
+> running "update.packages()". I've studied Wickham and Bryan, R Packages,
+> without finding how to fix this problem. I've compared the roxygen2 code
+> in this package with data documentation in other tidyverse packages
+> without being able to resolve this issue. Below please find
+> sessionInfo() and 00check.log from "R CMD check MaddisonData_0.0.1.tar.gz".
+> 
+> 
+> Suggestions? Thanks, Spencer Graves
+> 
+> 
+> p.s. I was having the same problem with
+> "github.com/sbgraves237/SS4Maddison", so I created the MaddisonData
+> project from scratch and copied only what I needed from SS4Maddison. The
+> problem followed me.
+> 
+> 
+>> sessionInfo()
+> R version 4.5.1 (2025-06-13)
+> Platform: aarch64-apple-darwin20
+> Running under: macOS Tahoe 26.0.1
+> 
+> Matrix products: default
+> BLAS:
+> /System/Library/Frameworks/Accelerate.framework/Versions/A/Frameworks/vecLib.framework/Versions/A/libBLAS.dylib
+> 
+> LAPACK:
+> /Library/Frameworks/R.framework/Versions/4.5-arm64/Resources/lib/libRlapack.dylib;
+>  LAPACK version 3.12.1
+> 
+> locale:
+> [1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+> 
+> time zone: America/Chicago
+> tzcode source: internal
+> 
+> attached base packages:
+> [1] stats     graphics  grDevices utils     datasets
+> [6] methods   base
+> 
+> other attached packages:
+> [1] devtools_2.4.6 usethis_3.2.1
+> 
+> loaded via a namespace (and not attached):
+>  [1] R6_2.6.1           fastmap_1.2.0
+>  [3] magrittr_2.0.4     cachem_1.1.0
+>  [5] remotes_2.5.0.9000 glue_1.8.0
+>  [7] memoise_2.0.1      lifecycle_1.0.4
+>  [9] cli_3.6.5          sessioninfo_1.2.3
+> [11] vctrs_0.6.5        compiler_4.5.1
+> [13] pkgload_1.4.1      tools_4.5.1
+> [15] purrr_1.1.0        rstudioapi_0.17.1
+> [17] pkgbuild_1.4.8     ellipsis_0.3.2
+> [19] rlang_1.1.6        fs_1.6.6
+> 
+> 
+> ##################
+> 
+> 
+> 00check.log
+> 
+> 
+> * using log directory
+> ?/Users/sg/Documents/current/R/MaddisonData/MaddisonData.Rcheck?
+> * using R version 4.5.1 (2025-06-13)
+> * using platform: aarch64-apple-darwin20
+> * R was compiled by
+>     Apple clang version 16.0.0 (clang-1600.0.26.6)
+>     GNU Fortran (GCC) 14.2.0
+> * running under: macOS Tahoe 26.0.1
+> * using session charset: UTF-8
+> * checking for file ?MaddisonData/DESCRIPTION? ... OK
+> * this is package ?MaddisonData? version ?0.0.1?
+> * package encoding: UTF-8
+> * checking package namespace information ... OK
+> * checking package dependencies ... OK
+> * checking if this is a source package ... OK
+> * checking if there is a namespace ... OK
+> * checking for executable files ... OK
+> * checking for hidden files and directories ... OK
+> * checking for portable file names ... OK
+> * checking for sufficient/correct file permissions ... OK
+> * checking whether package ?MaddisonData? can be installed ... OK
+> * checking installed package size ... INFO
+>   installed size is  5.1Mb
+>   sub-directories of 1Mb or more:
+>     extdata   4.7Mb
+> * checking package directory ... OK
+> * checking ?build? directory ... OK
+> * checking DESCRIPTION meta-information ... OK
+> * checking top-level files ... OK
+> * checking for left-over files ... OK
+> * checking index information ... OK
+> * checking package subdirectories ... OK
+> * checking code files for non-ASCII characters ... OK
+> * checking R files for syntax errors ... OK
+> * checking whether the package can be loaded ... OK
+> * checking whether the package can be loaded with stated dependencies ... OK
+> * checking whether the package can be unloaded cleanly ... OK
+> * checking whether the namespace can be loaded with stated dependencies
+> ... OK
+> * checking whether the namespace can be unloaded cleanly ... OK
+> * checking loading without being on the library search path ... OK
+> * checking dependencies in R code ... OK
+> * checking S3 generic/method consistency ... OK
+> * checking replacement functions ... OK
+> * checking foreign function calls ... OK
+> * checking R code for possible problems ... NOTE
+> getMaddisonSources: no visible binding for global variable
+>   ?MaddisonSources?
+> getMaddisonSources: no visible binding for global variable
+>   ?MaddisonYears?
+> logMaddison: no visible binding for global variable ?MaddisonData?
+> logMaddison: no visible binding for global variable ?MaddisonCountries?
+> Undefined global functions or variables:
+>   MaddisonCountries MaddisonData MaddisonSources MaddisonYears
+> * checking Rd files ... OK
+> * checking Rd metadata ... OK
+> * checking Rd cross-references ... OK
+> * checking for missing documentation entries ... OK
+> * checking for code/documentation mismatches ... OK
+> * checking Rd \usage sections ... OK
+> * checking Rd contents ... OK
+> * checking for unstated dependencies in examples ... OK
+> * checking contents of ?data? directory ... OK
+> * checking data for non-ASCII characters ... OK
+> * checking LazyData ... OK
+> * checking data for ASCII and uncompressed saves ... OK
+> * checking installed files from ?inst/doc? ... OK
+> * checking files in ?vignettes? ... OK
+> * checking examples ... OK
+> * checking for unstated dependencies in vignettes ... OK
+> * checking package vignettes ... OK
+> * checking re-building of vignette outputs ... OK
+> * checking PDF version of manual ... OK
+> * DONE
+> Status: 1 NOTE
+> 
+> ______________________________________________
+> R-package-devel at r-project.org <mailto:R-package-devel at r-project.org> mailing list
+> https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-package-devel__;!!PDiH4ENfjr2_Jw!AV0E6CfZS8E1jXuDa5DiIi0ORXQzjlJGiZYd5YBVl6_i05LSgAXspPn4jj-Afy87jGSuyd2V30E2t9n-P_gyU7t7pRJGtHyLWV9CXc2TBzk31as$ [stat[.]ethz[.]ch]
+> 
+> ______________________________________________
+> R-package-devel at r-project.org <mailto:R-package-devel at r-project.org> mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+
+	[[alternative HTML version deleted]]
+
+
+From @pencer@gr@ve@ @end|ng |rom e||ect|vede|en@e@org  Tue Oct 14 23:24:29 2025
+From: @pencer@gr@ve@ @end|ng |rom e||ect|vede|en@e@org (Spencer Graves)
+Date: Tue, 14 Oct 2025 16:24:29 -0500
+Subject: [R-pkg-devel] 
+ "Undefined global functions or variables" locally but NOT on GitHub
+In-Reply-To: <2BA393B5-4C90-4F8B-83B6-D8D1BC886F54@ckblack.org>
+References: <a8a20ef6-fbbd-4059-a5bf-9dea5c090230@effectivedefense.org>
+ <LO0P265MB63250D278F8B3BE5CAD76834AEEBA@LO0P265MB6325.GBRP265.PROD.OUTLOOK.COM>
+ <2BA393B5-4C90-4F8B-83B6-D8D1BC886F54@ckblack.org>
+Message-ID: <44e28cfa-f18b-4bbe-85e4-b323a577e2b1@effectivedefense.org>
+
+Thanks to all who replied. John Benninghoff and Georgi Boshnakov 
+suggested I use the "::" operator. That fixed that problem.
+
+
+Please excuse: Since those objects were part of the package under 
+development, it didn't occur to me that I would need that.
+
+
+ANOTHER QUESTION: I'm getting:
+
+checking package vignettes ... NOTE
+   Duplicated vignette title:
+     ?UpdateMaddisonData?
+   Ensure that the %\VignetteIndexEntry lines in the vignette sources
+   correspond to the vignette titles.
+
+
+I think I've done that: In
+
+
+https://github.com/sbgraves237/MaddisonData/blob/main/vignettes/UpdateMaddisonData.Rmd
+
+
+title: "UpdateMaddisonData"
+
+
+...
+
+
+   %\VignetteIndexEntry{UpdateMaddisonData}
+
+
+** Both title and %\VignetteIndexEntry match each other and the filename.
+
+
+???
+
+
+Thanks, Spencer Graves
+
+
+On 10/14/25 04:16, Chris Black wrote:
+> 
+> 
+>> On Oct 14, 2025, at 1:38?AM, Georgi Boshnakov <georgi.boshnakov at manchester.ac.uk> wrote:
+>>
+>> So, you can't access them with the '::' operator, you need to use data().
+> 
+> You can, though!
+> 
+> ```
+> % R --vanilla -q -e 'datasets::AirPassengers'
+>> datasets::AirPassengers
+>       Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec
+> 1949 112 118 132 129 121 135 148 148 136 119 104 118
+> 1950 115 126 141 135 125 149 170 170 158 133 114 140
+> 1951 145 150 178 163 172 178 199 199 184 162 146 166
+> 1952 171 180 193 181 183 218 230 242 209 191 172 194
+> 1953 196 196 236 235 229 243 264 272 237 211 180 201
+> 1954 204 188 235 227 234 264 302 293 259 229 203 229
+> 1955 242 233 267 269 270 315 364 347 312 274 237 278
+> 1956 284 277 317 313 318 374 413 405 355 306 271 306
+> 1957 315 301 356 348 355 422 465 467 404 347 305 336
+> 1958 340 318 362 348 363 435 491 505 404 359 310 337
+> 1959 360 342 406 396 420 472 548 559 463 407 362 405
+> 1960 417 391 419 461 472 535 622 606 508 461 390 432
+> ```
+> 
+> This is also explicit in R Internals 1.17 ([1], emphasis added): "Lazy-load databases are loaded into the exports for a package, but not into the namespace environment itself. Thus they are visible when the package is attached, ***and also via the :: operator.***?
+> 
+> [1] https://cran.r-project.org/doc/manuals/r-release/R-ints.html#Lazy-loading
+
+
+From n|cho|@@@t|erney @end|ng |rom gm@||@com  Wed Oct 15 01:02:00 2025
+From: n|cho|@@@t|erney @end|ng |rom gm@||@com (Nicholas Tierney)
+Date: Wed, 15 Oct 2025 10:02:00 +1100
+Subject: [R-pkg-devel] 
+ "Undefined global functions or variables" locally but NOT on GitHub
+In-Reply-To: <44e28cfa-f18b-4bbe-85e4-b323a577e2b1@effectivedefense.org>
+References: <a8a20ef6-fbbd-4059-a5bf-9dea5c090230@effectivedefense.org>
+ <LO0P265MB63250D278F8B3BE5CAD76834AEEBA@LO0P265MB6325.GBRP265.PROD.OUTLOOK.COM>
+ <2BA393B5-4C90-4F8B-83B6-D8D1BC886F54@ckblack.org>
+ <44e28cfa-f18b-4bbe-85e4-b323a577e2b1@effectivedefense.org>
+Message-ID: <CACrL82VWsR+bUu7S6+T=zLFSx=t+3Ts+bDSn4XcgQNZaQnbfyw@mail.gmail.com>
+
+Hi Spencer,
+
+I believe the issue is that you have the same VignetteIndexEntry
+
+%\VignetteIndexEntry{UpdateMaddisonData}"
+
+in _both_ of those vignettes. So I think you want the other one to be:
+
+%\VignetteIndexEntry{SS4Maddison}"
+
+See
+
+https://github.com/sbgraves237/MaddisonData/blob/main/vignettes/SS4Maddison.Rmd#L7
+and
+https://github.com/sbgraves237/MaddisonData/blob/main/vignettes/UpdateMaddisonData.Rmd#L5
+
+Hope that helps!
+
+On Wed, 15 Oct 2025 at 08:24, Spencer Graves <
+spencer.graves at effectivedefense.org> wrote:
+
+> Thanks to all who replied. John Benninghoff and Georgi Boshnakov
+> suggested I use the "::" operator. That fixed that problem.
+>
+>
+> Please excuse: Since those objects were part of the package under
+> development, it didn't occur to me that I would need that.
+>
+>
+> ANOTHER QUESTION: I'm getting:
+>
+> checking package vignettes ... NOTE
+>    Duplicated vignette title:
+>      ?UpdateMaddisonData?
+>    Ensure that the %\VignetteIndexEntry lines in the vignette sources
+>    correspond to the vignette titles.
+>
+>
+> I think I've done that: In
+>
+>
+>
+> https://github.com/sbgraves237/MaddisonData/blob/main/vignettes/UpdateMaddisonData.Rmd
+>
+>
+> title: "UpdateMaddisonData"
+>
+>
+> ...
+>
+>
+>    %\VignetteIndexEntry{UpdateMaddisonData}
+>
+>
+> ** Both title and %\VignetteIndexEntry match each other and the filename.
+>
+>
+> ???
+>
+>
+> Thanks, Spencer Graves
+>
+>
+> On 10/14/25 04:16, Chris Black wrote:
+> >
+> >
+> >> On Oct 14, 2025, at 1:38?AM, Georgi Boshnakov <
+> georgi.boshnakov at manchester.ac.uk> wrote:
+> >>
+> >> So, you can't access them with the '::' operator, you need to use
+> data().
+> >
+> > You can, though!
+> >
+> > ```
+> > % R --vanilla -q -e 'datasets::AirPassengers'
+> >> datasets::AirPassengers
+> >       Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec
+> > 1949 112 118 132 129 121 135 148 148 136 119 104 118
+> > 1950 115 126 141 135 125 149 170 170 158 133 114 140
+> > 1951 145 150 178 163 172 178 199 199 184 162 146 166
+> > 1952 171 180 193 181 183 218 230 242 209 191 172 194
+> > 1953 196 196 236 235 229 243 264 272 237 211 180 201
+> > 1954 204 188 235 227 234 264 302 293 259 229 203 229
+> > 1955 242 233 267 269 270 315 364 347 312 274 237 278
+> > 1956 284 277 317 313 318 374 413 405 355 306 271 306
+> > 1957 315 301 356 348 355 422 465 467 404 347 305 336
+> > 1958 340 318 362 348 363 435 491 505 404 359 310 337
+> > 1959 360 342 406 396 420 472 548 559 463 407 362 405
+> > 1960 417 391 419 461 472 535 622 606 508 461 390 432
+> > ```
+> >
+> > This is also explicit in R Internals 1.17 ([1], emphasis added):
+> "Lazy-load databases are loaded into the exports for a package, but not
+> into the namespace environment itself. Thus they are visible when the
+> package is attached, ***and also via the :: operator.***?
+> >
+> > [1]
+> https://cran.r-project.org/doc/manuals/r-release/R-ints.html#Lazy-loading
+>
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+
+	[[alternative HTML version deleted]]
+
+
+From @pencer@gr@ve@ @end|ng |rom e||ect|vede|en@e@org  Wed Oct 15 02:18:39 2025
+From: @pencer@gr@ve@ @end|ng |rom e||ect|vede|en@e@org (Spencer Graves)
+Date: Tue, 14 Oct 2025 19:18:39 -0500
+Subject: [R-pkg-devel] 
+ "Undefined global functions or variables" locally but NOT on GitHub
+In-Reply-To: <CACrL82VWsR+bUu7S6+T=zLFSx=t+3Ts+bDSn4XcgQNZaQnbfyw@mail.gmail.com>
+References: <a8a20ef6-fbbd-4059-a5bf-9dea5c090230@effectivedefense.org>
+ <LO0P265MB63250D278F8B3BE5CAD76834AEEBA@LO0P265MB6325.GBRP265.PROD.OUTLOOK.COM>
+ <2BA393B5-4C90-4F8B-83B6-D8D1BC886F54@ckblack.org>
+ <44e28cfa-f18b-4bbe-85e4-b323a577e2b1@effectivedefense.org>
+ <CACrL82VWsR+bUu7S6+T=zLFSx=t+3Ts+bDSn4XcgQNZaQnbfyw@mail.gmail.com>
+Message-ID: <b37031bd-fc3b-4ac8-b7f7-b0dabcb9b83a@effectivedefense.org>
+
+Hi, Nicholas:
+
+
+Thanks very much. I see it now and fixed it.
+
+
+(I should have grepped for it in the vignette's folder, but I didn't 
+think to do that before I posted the question.)
+
+
+Spencer Graves
+
+
+On 10/14/25 18:02, Nicholas Tierney wrote:
+> Hi Spencer,
+> 
+> I believe the issue is that you have the same VignetteIndexEntry
+> 
+> %\VignetteIndexEntry{UpdateMaddisonData}"
+> 
+> in _both_ of those vignettes. So I think you want the other one to be:
+> 
+> %\VignetteIndexEntry{SS4Maddison}"
+> 
+> See
+> 
+> https://github.com/sbgraves237/MaddisonData/blob/main/vignettes/ 
+> SS4Maddison.Rmd#L7 <https://github.com/sbgraves237/MaddisonData/blob/ 
+> main/vignettes/SS4Maddison.Rmd#L7>
+> and
+> https://github.com/sbgraves237/MaddisonData/blob/main/vignettes/ 
+> UpdateMaddisonData.Rmd#L5 <https://github.com/sbgraves237/MaddisonData/ 
+> blob/main/vignettes/UpdateMaddisonData.Rmd#L5>
+> 
+> Hope that helps!
+> 
+> On Wed, 15 Oct 2025 at 08:24, Spencer Graves 
+> <spencer.graves at effectivedefense.org 
+> <mailto:spencer.graves at effectivedefense.org>> wrote:
+> 
+>     Thanks to all who replied. John Benninghoff and Georgi Boshnakov
+>     suggested I use the "::" operator. That fixed that problem.
+> 
+> 
+>     Please excuse: Since those objects were part of the package under
+>     development, it didn't occur to me that I would need that.
+> 
+> 
+>     ANOTHER QUESTION: I'm getting:
+> 
+>     checking package vignettes ... NOTE
+>      ? ?Duplicated vignette title:
+>      ? ? ??UpdateMaddisonData?
+>      ? ?Ensure that the %\VignetteIndexEntry lines in the vignette sources
+>      ? ?correspond to the vignette titles.
+> 
+> 
+>     I think I've done that: In
+> 
+> 
+>     https://github.com/sbgraves237/MaddisonData/blob/main/vignettes/
+>     UpdateMaddisonData.Rmd <https://github.com/sbgraves237/MaddisonData/
+>     blob/main/vignettes/UpdateMaddisonData.Rmd>
+> 
+> 
+>     title: "UpdateMaddisonData"
+> 
+> 
+>     ...
+> 
+> 
+>      ? ?%\VignetteIndexEntry{UpdateMaddisonData}
+> 
+> 
+>     ** Both title and %\VignetteIndexEntry match each other and the
+>     filename.
+> 
+> 
+>     ???
+> 
+> 
+>     Thanks, Spencer Graves
+> 
+> 
+>     On 10/14/25 04:16, Chris Black wrote:
+>      >
+>      >
+>      >> On Oct 14, 2025, at 1:38?AM, Georgi Boshnakov
+>     <georgi.boshnakov at manchester.ac.uk
+>     <mailto:georgi.boshnakov at manchester.ac.uk>> wrote:
+>      >>
+>      >> So, you can't access them with the '::' operator, you need to
+>     use data().
+>      >
+>      > You can, though!
+>      >
+>      > ```
+>      > % R --vanilla -q -e 'datasets::AirPassengers'
+>      >> datasets::AirPassengers
+>      >? ? ? ?Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec
+>      > 1949 112 118 132 129 121 135 148 148 136 119 104 118
+>      > 1950 115 126 141 135 125 149 170 170 158 133 114 140
+>      > 1951 145 150 178 163 172 178 199 199 184 162 146 166
+>      > 1952 171 180 193 181 183 218 230 242 209 191 172 194
+>      > 1953 196 196 236 235 229 243 264 272 237 211 180 201
+>      > 1954 204 188 235 227 234 264 302 293 259 229 203 229
+>      > 1955 242 233 267 269 270 315 364 347 312 274 237 278
+>      > 1956 284 277 317 313 318 374 413 405 355 306 271 306
+>      > 1957 315 301 356 348 355 422 465 467 404 347 305 336
+>      > 1958 340 318 362 348 363 435 491 505 404 359 310 337
+>      > 1959 360 342 406 396 420 472 548 559 463 407 362 405
+>      > 1960 417 391 419 461 472 535 622 606 508 461 390 432
+>      > ```
+>      >
+>      > This is also explicit in R Internals 1.17 ([1], emphasis added):
+>     "Lazy-load databases are loaded into the exports for a package, but
+>     not into the namespace environment itself. Thus they are visible
+>     when the package is attached, ***and also via the :: operator.***?
+>      >
+>      > [1] https://cran.r-project.org/doc/manuals/r-release/R-
+>     ints.html#Lazy-loading <https://cran.r-project.org/doc/manuals/r-
+>     release/R-ints.html#Lazy-loading>
+> 
+>     ______________________________________________
+>     R-package-devel at r-project.org <mailto:R-package-devel at r-project.org>
+>     mailing list
+>     https://stat.ethz.ch/mailman/listinfo/r-package-devel <https://
+>     stat.ethz.ch/mailman/listinfo/r-package-devel>
+>
+
+
