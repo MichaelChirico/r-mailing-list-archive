@@ -8,12 +8,13 @@ today = as.POSIXlt(Sys.time())
 mailing_lists = read.table(header = TRUE, text = "
 name               frequency
 r-devel            month
-r-package-devel    quarter
-r-sig-mac          month
 r-help             month
 r-sig-geo          month
+r-sig-mac          month
+r-package-devel    quarter
 r-sig-finance      quarter
 r-sig-mixed-models quarter
+r-announe          annual
 ")
 
 for (ii in seq_len(nrow(mailing_lists))) {
