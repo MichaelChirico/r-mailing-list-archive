@@ -1,0 +1,556 @@
+From @|mon@urb@nek @end|ng |rom R-project@org  Sun Jan  4 03:11:42 2026
+From: @|mon@urb@nek @end|ng |rom R-project@org (Simon Urbanek)
+Date: Sun, 4 Jan 2026 15:11:42 +1300
+Subject: [R-SIG-Mac] configure tests for OpenMP fail when building CRAN
+ binary packages
+In-Reply-To: <20251230010942.050573fa@Tarkus>
+References: <20251230010942.050573fa@Tarkus>
+Message-ID: <43A0564F-CB5F-4777-9580-350BAE432294@R-project.org>
+
+Ivan, thanks, now fixed (yes, the new VMs didn't have omp.h automatically since it is not part of recipes). Please make sure you re-install any such packages directly, e.g.
+
+install.packages("data.table",repos="https://mac.r-project.org")
+
+since update.packages() will not see the updated binaries.
+
+Cheers,
+Simon
+
+
+> On 30/12/2025, at 11:09, Ivan Krylov via R-SIG-Mac <r-sig-mac at r-project.org> wrote:
+> 
+> Hello,
+> 
+> Some packages that use a configure test for OpenMP support now don't
+> detect it when being compiled for macOS:
+> 
+> https://www.r-project.org/nosvn/R.check/r-release-macos-arm64/RcppArmadillo-00install.html
+> https://www.r-project.org/nosvn/R.check/r-release-macos-x86_64/data.table-00install.html
+> 
+> The test for working OpenMP support used by these two packages is
+> 
+> PKG_CFLAGS='-Xclang -fopenmp' PKG_LIBS=-lomp R CMD SHLIB test.c
+> 
+> ...completing with an exit status of 0. (Where test.c contains some
+> valid OpenMP directives.) It's not ideal, but it's prone to false
+> positives, not false negatives.
+> 
+> The problem does not happen on the macOS builder.
+> 
+> Could the CRAN builder be possibly missing some configuration
+> pertaining to libomp.dylib? Is there anything I could do to help
+> diagnose the problem?
+> 
+> -- 
+> Best regards,
+> Ivan
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+> 
+
+
+From @|mon@urb@nek @end|ng |rom R-project@org  Sun Jan  4 03:43:05 2026
+From: @|mon@urb@nek @end|ng |rom R-project@org (Simon Urbanek)
+Date: Sun, 4 Jan 2026 15:43:05 +1300
+Subject: [R-SIG-Mac] [R] data.table does not find openmp support
+In-Reply-To: <DM3PPF9A5B544E06CC4A1731F23560D144CFABFA@DM3PPF9A5B544E0.NAMP223.PROD.OUTLOOK.COM>
+References: <51DE1882-0E64-4616-9BE8-81C1DCED719B@hotmail.com>
+ <DM3PPF9A5B544E06CC4A1731F23560D144CFABFA@DM3PPF9A5B544E0.NAMP223.PROD.OUTLOOK.COM>
+Message-ID: <C04DCEBD-1F6E-4D66-9BA8-C6E3B5636DEB@R-project.org>
+
+Naresh,
+
+as for the original problem, just re-install the package binary from CRAN (see [1], i.e., just run install.packages("data.table",repos="https://mac.r-project.org")).
+
+As for your secondary problem (which should be irrelevant by now since you can get the right binary from CRAN), you have mismatching Xcode and OpenMP versions. I suspect you are using Xocde/CLT > 16.2 which is incompatible with the clang 17 run-time (see the note on the OpenMP page). So if you really want to compile it from sources, the two options you have are a) install Xcode/CLT 16.2 (which uses clang 17) or b) use OpenMP from clang 19. For the latter, however, you may need some work since that run-time is incompatible with the libomp shipped with R so you may need to modify the flags (see the note in the flags section of the OpenMP page), but I'm not 100% sure if data.table supports that (or you can replace the R run-time with the clang 19 run-time if you don't use any packages that link to it). Again, it's much easier to install the updated CRAN binary.
+
+Cheers,
+Simon
+
+[1] - https://stat.ethz.ch/pipermail/r-sig-mac/2026-January/015314.html
+
+
+> On 30/12/2025, at 11:55, Naresh Gurbuxani <naresh_gurbuxani at hotmail.com> wrote:
+> 
+> I should have posted this here.
+> 
+> Sent from my iPhone
+> 
+> Begin forwarded message:
+> 
+> From: Naresh Gurbuxani <naresh_gurbuxani at hotmail.com>
+> Date: December 29, 2025 at 12:02:10?PM EST
+> To: r-help at r-project.org
+> Subject: [R] data.table does not find openmp support
+> 
+> ?
+> On my Intel Mac, with R 4.4, data.table worked with openmp support.
+> After installing R 4.5, I reinstalled data.table using
+> install.packages("data.table").  Installation went smoothly, but
+> data.table did not detect openmp support.  I removed data.table, then
+> reinstalled using install.packages("data.table", type = "source").  Now
+> data.table install has non-zero exit status.
+> 
+> Following instructions at https://mac.r-project.org/openmp/, I installed
+> Open MP support by running on command line
+> 
+> curl -O https://mac.r-project.org/openmp/openmp-17.0.6-darwin20-Release.tar.gz
+> sudo tar fvxz openmp-17.0.6-darwin20-Release.tar.gz -C /
+> 
+> Below is information from my R session:
+> 
+> sessionInfo()
+> R version 4.5.2 (2025-10-31)
+> Platform: x86_64-apple-darwin20
+> Running under: macOS Sequoia 15.7.3
+> 
+> Matrix products: default
+> BLAS:   /Library/Frameworks/R.framework/Versions/4.5-x86_64/Resources/lib/libRblas.0.dylib
+> LAPACK: /Library/Frameworks/R.framework/Versions/4.5-x86_64/Resources/lib/libRlapack.dylib;  LAPACK version 3.12.1
+> 
+> locale:
+> [1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+> 
+> time zone: America/New_York
+> tzcode source: internal
+> 
+> attached base packages:
+> [1] stats     graphics  utils     datasets  grDevices methods   base
+> 
+> other attached packages:
+> [1] lattice_0.22-7
+> 
+> loaded via a namespace (and not attached):
+> [1] compiler_4.5.2 tools_4.5.2    grid_4.5.2
+> system("gfortran --version")
+> GNU Fortran (GCC) 14.2.0
+> Copyright (C) 2024 Free Software Foundation, Inc.
+> This is free software; see the source for copying conditions.  There is NO
+> warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+> system("xcode-select -version")
+> xcode-select version 2410.
+> system("gcc --version")
+> Apple clang version 17.0.0 (clang-1700.6.3.2)
+> Target: x86_64-apple-darwin24.6.0
+> Thread model: posix
+> InstalledDir: /Library/Developer/CommandLineTools/usr/bin
+> install.packages("data.table", lib = .libPaths()[2], type = "source")
+> trying URL 'https://cran.r-project.org/src/contrib/data.table_1.18.0.tar.gz'
+> Content type 'application/x-gzip' length 6020932 bytes (5.7 MB)
+> ==================================================
+> downloaded 5.7 MB
+> 
+> * installing *source* package ?data.table? ...
+> ** this is package ?data.table? version ?1.18.0?
+> ** package ?data.table? successfully unpacked and MD5 sums checked
+> ** using staged installation
+> zlib 1.3.1 is available ok
+> * checking if R installation supports OpenMP with "-Xclang -fopenmp" ... yes
+> ** libs
+> using C compiler: ?Apple clang version 17.0.0 (clang-1700.6.3.2)?
+> using SDK: ?MacOSX26.2.sdk?
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c assign.c -o assign.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c between.c -o between.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c bmerge.c -o bmerge.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c chmatch.c -o chmatch.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c cj.c -o cj.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c coalesce.c -o coalesce.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c dogroups.c -o dogroups.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c fastmean.c -o fastmean.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c fcast.c -o fcast.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c fifelse.c -o fifelse.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c fmelt.c -o fmelt.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c forder.c -o forder.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c frank.c -o frank.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c fread.c -o fread.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c freadR.c -o freadR.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c froll.c -o froll.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c frollR.c -o frollR.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c frolladaptive.c -o frolladaptive.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c frollapply.c -o frollapply.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c fsort.c -o fsort.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c fwrite.c -o fwrite.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c fwriteR.c -o fwriteR.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c gsumm.c -o gsumm.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c hash.c -o hash.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c idatetime.c -o idatetime.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c ijoin.c -o ijoin.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c init.c -o init.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c inrange.c -o inrange.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c mergelist.c -o mergelist.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c nafill.c -o nafill.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c negate.c -o negate.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c nqrecreateindices.c -o nqrecreateindices.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c openmp-utils.c -o openmp-utils.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c programming.c -o programming.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c quickselect.c -o quickselect.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c rbindlist.c -o rbindlist.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c reorder.c -o reorder.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c shellsort.c -o shellsort.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c shift.c -o shift.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c snprintf.c -o snprintf.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c subset.c -o subset.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c transpose.c -o transpose.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c types.c -o types.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c uniqlist.c -o uniqlist.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c utils.c -o utils.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c vecseq.c -o vecseq.o
+> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c wrappers.c -o wrappers.o
+> clang -arch x86_64 -dynamiclib -Wl,-headerpad_max_install_names -undefined dynamic_lookup -L/Library/Frameworks/R.framework/Resources/lib -L/opt/R/x86_64/lib -o data.table.so assign.o between.o bmerge.o chmatch.o cj.o coalesce.o dogroups.o fastmean.o fcast.o fifelse.o fmelt.o forder.o frank.o fread.o freadR.o froll.o frollR.o frolladaptive.o frollapply.o fsort.o fwrite.o fwriteR.o gsumm.o hash.o idatetime.o ijoin.o init.o inrange.o mergelist.o nafill.o negate.o nqrecreateindices.o openmp-utils.o programming.o quickselect.o rbindlist.o reorder.o shellsort.o shift.o snprintf.o subset.o transpose.o types.o uniqlist.o utils.o vecseq.o wrappers.o -lomp -L/opt/local/lib -lz -F/Library/Frameworks/R.framework/.. -framework R
+> PKG_CFLAGS = -Xclang -fopenmp -I/opt/local/include
+> PKG_LIBS = -lomp -L/opt/local/lib -lz
+> if [ "data.table.so" != "data_table.so" ]; then mv data.table.so data_table.so; fi
+> if [ "" != "Windows_NT" ] && [ `uname -s` = 'Darwin' ]; then install_name_tool -id data_table.so data_table.so; fi
+> installing to /Library/Frameworks/R.framework/Versions/4.5-x86_64/Resources/library/00LOCK-data.table/00new/data.table/libs
+> ** R
+> ** inst
+> ** byte-compile and prepare package for lazy loading
+> ** help
+> *** installing help indices
+> ** building package indices
+> ** installing vignettes
+> ** testing if installed package can be loaded from temporary location
+> Error: package or namespace load failed for ?data.table? in dyn.load(file, DLLpath = DLLpath, ...):
+> unable to load shared object '/Library/Frameworks/R.framework/Versions/4.5-x86_64/Resources/library/00LOCK-data.table/00new/data.table/libs/data_table.so':
+> dlopen(/Library/Frameworks/R.framework/Versions/4.5-x86_64/Resources/library/00LOCK-data.table/00new/data.table/libs/data_table.so, 0x0006): symbol not found in flat namespace '___kmpc_dispatch_deinit'
+> Error: loading failed
+> Execution halted
+> ERROR: loading failed
+> * removing ?/Library/Frameworks/R.framework/Versions/4.5-x86_64/Resources/library/data.table?
+> 
+> The downloaded source packages are in
+>   ?/private/var/folders/d5/sbs6108j6qd9jw7g652bm9sr0000gn/T/RtmpqcFVH3/downloaded_packages?
+> Warning message:
+> In install.packages("data.table", lib = .libPaths()[2], type = "source") :
+> installation of package ?data.table? had non-zero exit status
+> ______________________________________________
+> R-help at r-project.org mailing list -- To UNSUBSCRIBE and more, see
+> https://stat.ethz.ch/mailman/listinfo/r-help
+> PLEASE do read the posting guide https://www.R-project.org/posting-guide.html
+> and provide commented, minimal, self-contained, reproducible code.
+> 
+> [[alternative HTML version deleted]]
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+
+
+From n@re@h_gurbux@n| @end|ng |rom hotm@||@com  Sun Jan 11 04:25:40 2026
+From: n@re@h_gurbux@n| @end|ng |rom hotm@||@com (Naresh Gurbuxani)
+Date: Sun, 11 Jan 2026 03:25:40 +0000
+Subject: [R-SIG-Mac] [R] data.table does not find openmp support
+In-Reply-To: <C04DCEBD-1F6E-4D66-9BA8-C6E3B5636DEB@R-project.org>
+References: <51DE1882-0E64-4616-9BE8-81C1DCED719B@hotmail.com>
+ <DM3PPF9A5B544E06CC4A1731F23560D144CFABFA@DM3PPF9A5B544E0.NAMP223.PROD.OUTLOOK.COM>
+ <C04DCEBD-1F6E-4D66-9BA8-C6E3B5636DEB@R-project.org>
+Message-ID: <9AED688E-8586-43A4-8F8C-196B5B18BD69@hotmail.com>
+
+I just installed data.table binary.  It detects openmp support.  This is all I need. 
+
+My Mac only has command line tools.  My xcode-select version is 2410.  How does it map to Xcode/CLT?
+
+> system("xcode-select --version?)
+xcode-select version 2410.                                                                   
+> system("clang --version")                                                                  
+Apple clang version 17.0.0 (clang-1700.6.3.2)                                                
+Target: x86_64-apple-darwin24.6.0                                                            
+Thread model: posix                                                                          
+InstalledDir: /Library/Developer/CommandLineTools/usr/bin                                   
+!> system("gfortran --version")                                                               
+GNU Fortran (GCC) 14.2.0                                                                     
+Copyright (C) 2024 Free Software Foundation, Inc.   
+
+Thanks,
+Naresh
+
+> On Jan 3, 2026, at 9:43?PM, Simon Urbanek <simon.urbanek at R-project.org> wrote:
+> 
+> Naresh,
+> 
+> as for the original problem, just re-install the package binary from CRAN (see [1], i.e., just run install.packages("data.table",repos="https://mac.r-project.org")).
+> 
+> As for your secondary problem (which should be irrelevant by now since you can get the right binary from CRAN), you have mismatching Xcode and OpenMP versions. I suspect you are using Xocde/CLT > 16.2 which is incompatible with the clang 17 run-time (see the note on the OpenMP page). So if you really want to compile it from sources, the two options you have are a) install Xcode/CLT 16.2 (which uses clang 17) or b) use OpenMP from clang 19. For the latter, however, you may need some work since that run-time is incompatible with the libomp shipped with R so you may need to modify the flags (see the note in the flags section of the OpenMP page), but I'm not 100% sure if data.table supports that (or you can replace the R run-time with the clang 19 run-time if you don't use any packages that link to it). Again, it's much easier to install the updated CRAN binary.
+> 
+> Cheers,
+> Simon
+> 
+> [1] - https://stat.ethz.ch/pipermail/r-sig-mac/2026-January/015314.html
+> 
+> 
+>> On 30/12/2025, at 11:55, Naresh Gurbuxani <naresh_gurbuxani at hotmail.com> wrote:
+>> 
+>> I should have posted this here.
+>> 
+>> Sent from my iPhone
+>> 
+>> Begin forwarded message:
+>> 
+>> From: Naresh Gurbuxani <naresh_gurbuxani at hotmail.com>
+>> Date: December 29, 2025 at 12:02:10?PM EST
+>> To: r-help at r-project.org
+>> Subject: [R] data.table does not find openmp support
+>> 
+>> ?
+>> On my Intel Mac, with R 4.4, data.table worked with openmp support.
+>> After installing R 4.5, I reinstalled data.table using
+>> install.packages("data.table").  Installation went smoothly, but
+>> data.table did not detect openmp support.  I removed data.table, then
+>> reinstalled using install.packages("data.table", type = "source").  Now
+>> data.table install has non-zero exit status.
+>> 
+>> Following instructions at https://mac.r-project.org/openmp/, I installed
+>> Open MP support by running on command line
+>> 
+>> curl -O https://mac.r-project.org/openmp/openmp-17.0.6-darwin20-Release.tar.gz
+>> sudo tar fvxz openmp-17.0.6-darwin20-Release.tar.gz -C /
+>> 
+>> Below is information from my R session:
+>> 
+>> sessionInfo()
+>> R version 4.5.2 (2025-10-31)
+>> Platform: x86_64-apple-darwin20
+>> Running under: macOS Sequoia 15.7.3
+>> 
+>> Matrix products: default
+>> BLAS:   /Library/Frameworks/R.framework/Versions/4.5-x86_64/Resources/lib/libRblas.0.dylib
+>> LAPACK: /Library/Frameworks/R.framework/Versions/4.5-x86_64/Resources/lib/libRlapack.dylib;  LAPACK version 3.12.1
+>> 
+>> locale:
+>> [1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+>> 
+>> time zone: America/New_York
+>> tzcode source: internal
+>> 
+>> attached base packages:
+>> [1] stats     graphics  utils     datasets  grDevices methods   base
+>> 
+>> other attached packages:
+>> [1] lattice_0.22-7
+>> 
+>> loaded via a namespace (and not attached):
+>> [1] compiler_4.5.2 tools_4.5.2    grid_4.5.2
+>> system("gfortran --version")
+>> GNU Fortran (GCC) 14.2.0
+>> Copyright (C) 2024 Free Software Foundation, Inc.
+>> This is free software; see the source for copying conditions.  There is NO
+>> warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+>> system("xcode-select -version")
+>> xcode-select version 2410.
+>> system("gcc --version")
+>> Apple clang version 17.0.0 (clang-1700.6.3.2)
+>> Target: x86_64-apple-darwin24.6.0
+>> Thread model: posix
+>> InstalledDir: /Library/Developer/CommandLineTools/usr/bin
+>> install.packages("data.table", lib = .libPaths()[2], type = "source")
+>> trying URL 'https://cran.r-project.org/src/contrib/data.table_1.18.0.tar.gz'
+>> Content type 'application/x-gzip' length 6020932 bytes (5.7 MB)
+>> ==================================================
+>> downloaded 5.7 MB
+>> 
+>> * installing *source* package ?data.table? ...
+>> ** this is package ?data.table? version ?1.18.0?
+>> ** package ?data.table? successfully unpacked and MD5 sums checked
+>> ** using staged installation
+>> zlib 1.3.1 is available ok
+>> * checking if R installation supports OpenMP with "-Xclang -fopenmp" ... yes
+>> ** libs
+>> using C compiler: ?Apple clang version 17.0.0 (clang-1700.6.3.2)?
+>> using SDK: ?MacOSX26.2.sdk?
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c assign.c -o assign.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c between.c -o between.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c bmerge.c -o bmerge.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c chmatch.c -o chmatch.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c cj.c -o cj.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c coalesce.c -o coalesce.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c dogroups.c -o dogroups.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c fastmean.c -o fastmean.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c fcast.c -o fcast.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c fifelse.c -o fifelse.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c fmelt.c -o fmelt.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c forder.c -o forder.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c frank.c -o frank.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c fread.c -o fread.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c freadR.c -o freadR.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c froll.c -o froll.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c frollR.c -o frollR.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c frolladaptive.c -o frolladaptive.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c frollapply.c -o frollapply.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c fsort.c -o fsort.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c fwrite.c -o fwrite.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c fwriteR.c -o fwriteR.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c gsumm.c -o gsumm.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c hash.c -o hash.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c idatetime.c -o idatetime.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c ijoin.c -o ijoin.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c init.c -o init.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c inrange.c -o inrange.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c mergelist.c -o mergelist.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c nafill.c -o nafill.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c negate.c -o negate.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c nqrecreateindices.c -o nqrecreateindices.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c openmp-utils.c -o openmp-utils.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c programming.c -o programming.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c quickselect.c -o quickselect.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c rbindlist.c -o rbindlist.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c reorder.c -o reorder.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c shellsort.c -o shellsort.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c shift.c -o shift.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c snprintf.c -o snprintf.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c subset.c -o subset.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c transpose.c -o transpose.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c types.c -o types.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c uniqlist.c -o uniqlist.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c utils.c -o utils.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c vecseq.c -o vecseq.o
+>> clang -arch x86_64 -I"/Library/Frameworks/R.framework/Resources/include" -DNDEBUG   -I/opt/R/x86_64/include   -Xclang -fopenmp  -I/opt/local/include -fPIC  -falign-functions=64 -Wall -g -O2  -c wrappers.c -o wrappers.o
+>> clang -arch x86_64 -dynamiclib -Wl,-headerpad_max_install_names -undefined dynamic_lookup -L/Library/Frameworks/R.framework/Resources/lib -L/opt/R/x86_64/lib -o data.table.so assign.o between.o bmerge.o chmatch.o cj.o coalesce.o dogroups.o fastmean.o fcast.o fifelse.o fmelt.o forder.o frank.o fread.o freadR.o froll.o frollR.o frolladaptive.o frollapply.o fsort.o fwrite.o fwriteR.o gsumm.o hash.o idatetime.o ijoin.o init.o inrange.o mergelist.o nafill.o negate.o nqrecreateindices.o openmp-utils.o programming.o quickselect.o rbindlist.o reorder.o shellsort.o shift.o snprintf.o subset.o transpose.o types.o uniqlist.o utils.o vecseq.o wrappers.o -lomp -L/opt/local/lib -lz -F/Library/Frameworks/R.framework/.. -framework R
+>> PKG_CFLAGS = -Xclang -fopenmp -I/opt/local/include
+>> PKG_LIBS = -lomp -L/opt/local/lib -lz
+>> if [ "data.table.so" != "data_table.so" ]; then mv data.table.so data_table.so; fi
+>> if [ "" != "Windows_NT" ] && [ `uname -s` = 'Darwin' ]; then install_name_tool -id data_table.so data_table.so; fi
+>> installing to /Library/Frameworks/R.framework/Versions/4.5-x86_64/Resources/library/00LOCK-data.table/00new/data.table/libs
+>> ** R
+>> ** inst
+>> ** byte-compile and prepare package for lazy loading
+>> ** help
+>> *** installing help indices
+>> ** building package indices
+>> ** installing vignettes
+>> ** testing if installed package can be loaded from temporary location
+>> Error: package or namespace load failed for ?data.table? in dyn.load(file, DLLpath = DLLpath, ...):
+>> unable to load shared object '/Library/Frameworks/R.framework/Versions/4.5-x86_64/Resources/library/00LOCK-data.table/00new/data.table/libs/data_table.so':
+>> dlopen(/Library/Frameworks/R.framework/Versions/4.5-x86_64/Resources/library/00LOCK-data.table/00new/data.table/libs/data_table.so, 0x0006): symbol not found in flat namespace '___kmpc_dispatch_deinit'
+>> Error: loading failed
+>> Execution halted
+>> ERROR: loading failed
+>> * removing ?/Library/Frameworks/R.framework/Versions/4.5-x86_64/Resources/library/data.table?
+>> 
+>> The downloaded source packages are in
+>>  ?/private/var/folders/d5/sbs6108j6qd9jw7g652bm9sr0000gn/T/RtmpqcFVH3/downloaded_packages?
+>> Warning message:
+>> In install.packages("data.table", lib = .libPaths()[2], type = "source") :
+>> installation of package ?data.table? had non-zero exit status
+>> ______________________________________________
+>> R-help at r-project.org mailing list -- To UNSUBSCRIBE and more, see
+>> https://stat.ethz.ch/mailman/listinfo/r-help
+>> PLEASE do read the posting guide https://www.R-project.org/posting-guide.html
+>> and provide commented, minimal, self-contained, reproducible code.
+>> 
+>> [[alternative HTML version deleted]]
+>> 
+>> _______________________________________________
+>> R-SIG-Mac mailing list
+>> R-SIG-Mac at r-project.org
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+> 
+
+
+From roy@mende|@@ohn @end|ng |rom no@@@gov  Tue Jan 13 19:22:35 2026
+From: roy@mende|@@ohn @end|ng |rom no@@@gov (Roy Mendelssohn - NOAA Federal)
+Date: Tue, 13 Jan 2026 10:22:35 -0800
+Subject: [R-SIG-Mac] sf  and PROJ  problem?
+Message-ID: <EF77BFE6-B79B-46F9-A685-E5E3392CF88D@noaa.gov>
+
+I just updated packages on my Mac  (apple silicon,  R 4.5.2) and the package ?sf? was updated.  After the update,  anything using ?sf? was throwing errors that:
+
+proj_create: Cannot find proj.db
+proj_create: no database context specified
+
+This did not occur before the update.  When I compiled sf from source,  the problem went away.
+
+Thanks,
+
+-Roy
+
+From r|p|eybd @end|ng |rom |c|oud@com  Tue Jan 13 20:25:50 2026
+From: r|p|eybd @end|ng |rom |c|oud@com (Prof Brian Ripley)
+Date: Tue, 13 Jan 2026 19:25:50 +0000
+Subject: [R-SIG-Mac] sf and PROJ problem?
+In-Reply-To: <EF77BFE6-B79B-46F9-A685-E5E3392CF88D@noaa.gov>
+References: <EF77BFE6-B79B-46F9-A685-E5E3392CF88D@noaa.gov>
+Message-ID: <4d6e1ad6-c36f-4b3f-98ed-c881176013bb@icloud.com>
+
+On 13/01/2026 18:22, Roy Mendelssohn - NOAA Federal via R-SIG-Mac wrote:
+> I just updated packages on my Mac  (apple silicon,  R 4.5.2) and the package ?sf? was updated.  After the update,  anything using ?sf? was throwing errors that:
+> 
+> proj_create: Cannot find proj.db
+> proj_create: no database context specified
+> 
+> This did not occur before the update.  When I compiled sf from source,  the problem went away.
+
+To be host-independent, sf needed to be installed using something like
+
+--configure-args='--with-data-copy --with-proj-data=/opt/R/arm64/share/proj
+
+so the proj auxiliary files are copied into the package (as directory 
+proj). (Analogously for gdal files.)  This may not be needed if you have 
+an installation of PROJ (the software, not the R package), as presumably 
+you do if you installed sf from source.
+
+This applies also to packages terra and vapour.
+
+-- 
+Brian D. Ripley,                  ripleybd at icloud.com
+Emeritus Professor of Applied Statistics, University of Oxford
+
+
+From @|mon@urb@nek @end|ng |rom R-project@org  Wed Jan 14 02:00:33 2026
+From: @|mon@urb@nek @end|ng |rom R-project@org (Simon Urbanek)
+Date: Wed, 14 Jan 2026 14:00:33 +1300
+Subject: [R-SIG-Mac] sf  and PROJ  problem?
+In-Reply-To: <EF77BFE6-B79B-46F9-A685-E5E3392CF88D@noaa.gov>
+References: <EF77BFE6-B79B-46F9-A685-E5E3392CF88D@noaa.gov>
+Message-ID: <EBD95D8A-543E-45AB-9341-24E1EE50CFC8@R-project.org>
+
+Roy,
+
+I think you may have misidentified the package, because sf *does* include proj.db:
+
+$ tar fvtz big-sur-arm64/bin/4.5/sf_1.0-24.tgz | grep proj.db
+-rw-rw-r--  0 root   admin  9261056 13 Jan 15:13 sf/proj/proj.db
+
+(that's why reproducible examples are so crucial!) because the flags Brian mentioned are used for sf:
+
+https://svn.r-project.org/R-dev-web/trunk/QA/Simon/packages/flags.inst/sf
+
+However, you are onto something, because it looks like due to a bug in SVN where softlinks are incorrectly resolved the other packages in flags.inst that were linking to the same (soft-linked) sf flags could not use them:
+apcf
+gdalcubes
+gdalraster
+rgdal
+terra
+uFTIR
+vapour
+vol2birdR
+I'm still not too happy about the fact that they don't just simply use the db from sf and thus all require overrides and private copies, but at least I have replaced the softlinks with copies which should fix the problem (albeit they all still duplicate everything).
+
+I think the reason that re-install from source worked for you (even though you re-installed the one package that already worked!) is that if you install *any* of the above packages (+sf) from source they will copy those files into your system location so then all of them will be able to find it. (Binary packages are not allowed to write into your system that's why we can't do it).
+
+Cheers,
+Simon
+
+
+> On 14/01/2026, at 07:22, Roy Mendelssohn - NOAA Federal via R-SIG-Mac <r-sig-mac at r-project.org> wrote:
+> 
+> I just updated packages on my Mac  (apple silicon,  R 4.5.2) and the package ?sf? was updated.  After the update,  anything using ?sf? was throwing errors that:
+> 
+> proj_create: Cannot find proj.db
+> proj_create: no database context specified
+> 
+> This did not occur before the update.  When I compiled sf from source,  the problem went away.
+> 
+> Thanks,
+> 
+> -Roy
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+> 
+
+
