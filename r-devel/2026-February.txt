@@ -1,0 +1,416 @@
+From bbo|ker @end|ng |rom gm@||@com  Mon Feb  2 02:13:59 2026
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Sun, 1 Feb 2026 20:13:59 -0500
+Subject: [Rd] weighted.residuals()
+Message-ID: <39921e44-3afc-4673-83a9-12250f858145@mcmaster.ca>
+
+
+    The weighted.residuals() function has been under development 
+recently: the current version is
+
+## see PR#7961, 
+https://stat.ethz.ch/pipermail/r-devel/2011-January/059642.html
+## (Note, Jan 2026: PR# 7961 suggested use of deviance residuals but 
+then dfbeta et al. are
+## not one-step approximations to leave-one-out coeff.)
+weighted.residuals <- function(obj, drop0 = TRUE)
+{
+#    w <- weights(obj, type="working")
+#    r <- residuals(obj, type="working")
+     w <- naresid(obj$na.action, obj$weights)
+     r <- naresid(obj$na.action, obj$residuals)
+     if (!is.null(w)) r <- r * sqrt(w)
+     if (inherits(obj, "glm")) w <- weights(obj, "prior")
+     if(drop0 && !is.null(w)) {
+         if(is.matrix(r)) r[w != 0, , drop = FALSE] # e.g. mlm fit
+         else r[w != 0]
+     } else r
+}
+
+    The previous version was, as per 
+https://bugs.r-project.org/show_bug.cgi?id=7961,
+
+
+## see PR#7961
+weighted.residuals <- function(obj, drop0 = TRUE)
+{
+     w <- weights(obj)
+     r <- residuals(obj, type="deviance")
+     if(drop0 && !is.null(w)) r[w != 0] else r
+}
+
+    The problem with the current version is that it only works with 
+list-like objects that have $na.action, $weights, and $residuals 
+components. Among other things
+
+   * lme4's merMod objects, which are objects with an S4 class, throw an 
+error (because you can't access an S4 object element with $; even if you 
+used getElement() you'd get an error because those slots don't exist).
+   * glmmTMB objects return NULL (they're list-like but don't have the 
+appropriate elements).
+
+    A robust solution would use na.action(), residuals(), weights() 
+accessor methods.  However, we can't count on working weights being the 
+default type, and some residuals.* or weights.* methods might not have 
+type="working" allowed (an intermediate version of weighted.residuals() 
+used weights(., type = "working"); lme4 throws an error for type = 
+"working" with GLMMs ... glmmTMB takes a type argument but ignores it ...
+
+   Another solution to this would be to make weighted.residuals() an S3 
+method and let other packages provide a method if they liked ...
+
+    Thoughts welcome.
+
+   Ben Bolker
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Mon Feb  2 12:28:38 2026
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Mon, 2 Feb 2026 12:28:38 +0100
+Subject: [Rd] weighted.residuals()
+In-Reply-To: <fake-VM-id.e564ccfbd319e06e275b83d7d8f69fea@talos.iv>
+References: <39921e44-3afc-4673-83a9-12250f858145@mcmaster.ca>
+Message-ID: <27008.35430.140054.673517@stat.math.ethz.ch>
+
+>>>>> Ben Bolker 
+>>>>>     on Sun, 1 Feb 2026 20:13:59 -0500 writes:
+
+    > The weighted.residuals() function has been under development 
+    > recently: 
+
+yes, notably to make the subsequent *uses* of
+weighted.residuals() in the  influence() (*)
+related functions dfbeta() [DEFBETAS in the Belsley, Kuh & Welsch etc}
+see e.g.
+         https://stat.ethz.ch/R-manual/R-devel/library/stats/html/influence.measures.html
+
+--
+*) leave-one-out influence measures, not really robust, but that's another story, ...
+   they are better than no influence measures, and quite widely
+   used ... well at least before ML and A"I" ..
+   
+[read on]
+
+
+    > the current version is
+
+    > ## see PR#7961, 
+    > https://stat.ethz.ch/pipermail/r-devel/2011-January/059642.html
+    > ## (Note, Jan 2026: PR# 7961 suggested use of deviance residuals but 
+    > then dfbeta et al. are
+    > ## not one-step approximations to leave-one-out coeff.)
+    > weighted.residuals <- function(obj, drop0 = TRUE)
+    > {
+    > #    w <- weights(obj, type="working")
+    > #    r <- residuals(obj, type="working")
+    > w <- naresid(obj$na.action, obj$weights)
+    > r <- naresid(obj$na.action, obj$residuals)
+    > if (!is.null(w)) r <- r * sqrt(w)
+    > if (inherits(obj, "glm")) w <- weights(obj, "prior")
+    > if(drop0 && !is.null(w)) {
+    > if(is.matrix(r)) r[w != 0, , drop = FALSE] # e.g. mlm fit
+    > else r[w != 0]
+    > } else r
+    > }
+
+    > The previous version was, as per 
+    > https://bugs.r-project.org/show_bug.cgi?id=7961,
+
+
+    > ## see PR#7961
+    > weighted.residuals <- function(obj, drop0 = TRUE)
+    > {
+    >    w <- weights(obj)
+    >    r <- residuals(obj, type="deviance")
+    >    if(drop0 && !is.null(w)) r[w != 0] else r
+    > }
+
+{not quite, there was one more change later; the previous one
+ being
+
+## see PR#7961, https://stat.ethz.ch/pipermail/r-devel/2011-January/059642.html
+weighted.residuals <- function(obj, drop0 = TRUE)
+{
+    w <- weights(obj)
+    r <- residuals(obj, type="deviance")
+    if(drop0 && !is.null(w)) {
+        if(is.matrix(r)) r[w != 0, , drop = FALSE] # e.g. mlm fit
+        else r[w != 0]
+    } else r
+}
+
+from 
+------------------------------------------------------------------------
+r54046 | ripley | 2011-01-20 | fix weighted.residuals() on a "mlm" object
+------------------------------------------------------------------------
+
+However, the "mlm" related bug fix is not relevant to the
+current subject.
+
+
+
+    > The problem with the current version is that it only works with 
+    > list-like objects that have $na.action, $weights, and $residuals 
+    > components. Among other things
+
+    > * lme4's merMod objects, which are objects with an S4 class, throw an 
+    > error (because you can't access an S4 object element with $; even if you 
+    > used getElement() you'd get an error because those slots don't exist).
+
+    > * glmmTMB objects return NULL (they're list-like but don't have the 
+    > appropriate elements).
+
+    > A robust solution would use na.action(), residuals(), weights() 
+    > accessor methods.  However, we can't count on working weights being the 
+    > default type, and some residuals.* or weights.* methods might not have 
+    > type="working" allowed (an intermediate version of weighted.residuals() 
+    > used weights(., type = "working"); lme4 throws an error for type = 
+    > "working" with GLMMs ... glmmTMB takes a type argument but ignores it ...
+
+As weighted.residuals() did use  weights() and residuals() and
+these are generic,
+I think we should try to cooperate (with the relevant packages
+authors) to agree that weights() and residuals() methods should _obey_  `type = <string>`
+settings in the sense to at least *work* for some  of these.
+{at least such as {glmmTMB}'s which seems to  ignore them ..}
+
+The reasoning would be that at least  GLM-like models (which
+would include some  GLMM , GAM, probably) should provide these,
+and users could use the influence measures (mentioned in the
+above help page) for their models.
+
+
+    > Another solution to this would be to make weighted.residuals() an S3 
+    > method and let other packages provide a method if they liked ...
+
+yes.. that would be an alternative, more modular (but with extra
+hassles, notably not ensuring at all that subsequent use of
+rstudent(), dfbetas(), .... would be valid.
+
+Martin
+
+    > Thoughts welcome.
+
+    > Ben Bolker
+
+
+From pd@|gd @end|ng |rom gm@||@com  Mon Feb  2 14:43:30 2026
+From: pd@|gd @end|ng |rom gm@||@com (Peter Dalgaard)
+Date: Mon, 2 Feb 2026 14:43:30 +0100
+Subject: [Rd] weighted.residuals()
+In-Reply-To: <27008.35430.140054.673517@stat.math.ethz.ch>
+References: <39921e44-3afc-4673-83a9-12250f858145@mcmaster.ca>
+ <27008.35430.140054.673517@stat.math.ethz.ch>
+Message-ID: <8A48C40D-11FA-4A34-AEC8-E471E8CCB1EB@gmail.com>
+
+[Including Achim, since he maintains "ivreg"]
+
+There was an intermediate version, relected in the commented-out lines, but that threw errors on 4 CRAN pakcages because some models have residuals/weights methods that do not know about type="working". More precisely, 3 of them (forecast, ivreg, robustbase) did and the 4th (insight) had a unit test comparing the output to another computation of weighted residuals, which of course is bound to fail if you change one of them.
+
+The underlying issue is that deviance residuals (for glm and other models) are generically a bad idea for the purposes of influence measures (and other forms of model checking). They are not unbiased, and it is fairly easy to find examples where the bias is quite substantial. They specifically do not work in dfbeta() et al. if what you want is to generate the one-step approximation to the leave-one-out quantities.
+
+An alternative would be to ask the authors of the offended packages to figure out what needs to be changed. It looks like it might be fairly easy for "ivreg" and "robustbase", which just have issues in weights() which I think could be updated to understand type="working". 
+
+
+It looks like "forecast" defines a bundle of residuals() methods, but no weights() and the residuals() methods only distinguish between "innovation"/"response"/"deviance". However, it doesn't actually do influence measures, but gets in trouble with its CV() function that calls stats:::deviance.lm() via extractAIC()  which in turn does
+
+sum(weighted.residuals(object)^2, na.rm = TRUE)
+
+This is just plain dumb because it might as well have used deviance residuals directly (it is pretty much the definition of deviance residuals that their sum of squares is the deviance). I had in fact already changed that, so maybe the whole thing already went away for that package.
+
+- Peter
+
+
+> On 2 Feb 2026, at 12.28, Martin Maechler <maechler at stat.math.ethz.ch> wrote:
+> 
+>>>>>> Ben Bolker 
+>>>>>>    on Sun, 1 Feb 2026 20:13:59 -0500 writes:
+> 
+>> The weighted.residuals() function has been under development 
+>> recently: 
+> 
+> yes, notably to make the subsequent *uses* of
+> weighted.residuals() in the  influence() (*)
+> related functions dfbeta() [DEFBETAS in the Belsley, Kuh & Welsch etc}
+> see e.g.
+>         https://stat.ethz.ch/R-manual/R-devel/library/stats/html/influence.measures.html
+> 
+> --
+> *) leave-one-out influence measures, not really robust, but that's another story, ...
+>   they are better than no influence measures, and quite widely
+>   used ... well at least before ML and A"I" ..
+> 
+> [read on]
+> 
+> 
+>> the current version is
+> 
+>> ## see PR#7961, 
+>> https://stat.ethz.ch/pipermail/r-devel/2011-January/059642.html
+>> ## (Note, Jan 2026: PR# 7961 suggested use of deviance residuals but 
+>> then dfbeta et al. are
+>> ## not one-step approximations to leave-one-out coeff.)
+>> weighted.residuals <- function(obj, drop0 = TRUE)
+>> {
+>> #    w <- weights(obj, type="working")
+>> #    r <- residuals(obj, type="working")
+>> w <- naresid(obj$na.action, obj$weights)
+>> r <- naresid(obj$na.action, obj$residuals)
+>> if (!is.null(w)) r <- r * sqrt(w)
+>> if (inherits(obj, "glm")) w <- weights(obj, "prior")
+>> if(drop0 && !is.null(w)) {
+>> if(is.matrix(r)) r[w != 0, , drop = FALSE] # e.g. mlm fit
+>> else r[w != 0]
+>> } else r
+>> }
+> 
+>> The previous version was, as per 
+>> https://bugs.r-project.org/show_bug.cgi?id=7961,
+> 
+> 
+>> ## see PR#7961
+>> weighted.residuals <- function(obj, drop0 = TRUE)
+>> {
+>>   w <- weights(obj)
+>>   r <- residuals(obj, type="deviance")
+>>   if(drop0 && !is.null(w)) r[w != 0] else r
+>> }
+> 
+> {not quite, there was one more change later; the previous one
+> being
+> 
+> ## see PR#7961, https://stat.ethz.ch/pipermail/r-devel/2011-January/059642.html
+> weighted.residuals <- function(obj, drop0 = TRUE)
+> {
+>    w <- weights(obj)
+>    r <- residuals(obj, type="deviance")
+>    if(drop0 && !is.null(w)) {
+>        if(is.matrix(r)) r[w != 0, , drop = FALSE] # e.g. mlm fit
+>        else r[w != 0]
+>    } else r
+> }
+> 
+> from 
+> ------------------------------------------------------------------------
+> r54046 | ripley | 2011-01-20 | fix weighted.residuals() on a "mlm" object
+> ------------------------------------------------------------------------
+> 
+> However, the "mlm" related bug fix is not relevant to the
+> current subject.
+> 
+> 
+> 
+>> The problem with the current version is that it only works with 
+>> list-like objects that have $na.action, $weights, and $residuals 
+>> components. Among other things
+> 
+>> * lme4's merMod objects, which are objects with an S4 class, throw an 
+>> error (because you can't access an S4 object element with $; even if you 
+>> used getElement() you'd get an error because those slots don't exist).
+> 
+>> * glmmTMB objects return NULL (they're list-like but don't have the 
+>> appropriate elements).
+> 
+>> A robust solution would use na.action(), residuals(), weights() 
+>> accessor methods.  However, we can't count on working weights being the 
+>> default type, and some residuals.* or weights.* methods might not have 
+>> type="working" allowed (an intermediate version of weighted.residuals() 
+>> used weights(., type = "working"); lme4 throws an error for type = 
+>> "working" with GLMMs ... glmmTMB takes a type argument but ignores it ...
+> 
+> As weighted.residuals() did use  weights() and residuals() and
+> these are generic,
+> I think we should try to cooperate (with the relevant packages
+> authors) to agree that weights() and residuals() methods should _obey_  `type = <string>`
+> settings in the sense to at least *work* for some  of these.
+> {at least such as {glmmTMB}'s which seems to  ignore them ..}
+> 
+> The reasoning would be that at least  GLM-like models (which
+> would include some  GLMM , GAM, probably) should provide these,
+> and users could use the influence measures (mentioned in the
+> above help page) for their models.
+> 
+> 
+>> Another solution to this would be to make weighted.residuals() an S3 
+>> method and let other packages provide a method if they liked ...
+> 
+> yes.. that would be an alternative, more modular (but with extra
+> hassles, notably not ensuring at all that subsequent use of
+> rstudent(), dfbetas(), .... would be valid.
+> 
+> Martin
+> 
+>> Thoughts welcome.
+> 
+>> Ben Bolker
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+-- 
+Peter Dalgaard, Professor,
+Center for Statistics, Copenhagen Business School
+Solbjerg Plads 3, 2000 Frederiksberg, Denmark
+Phone: (+45)38153501
+Office: A 4.23
+Email: pd.mes at cbs.dk  Priv: PDalgd at gmail.com
+
+
+From therne@u @end|ng |rom m@yo@edu  Mon Feb  2 15:55:22 2026
+From: therne@u @end|ng |rom m@yo@edu (Therneau, Terry M., Ph.D.)
+Date: Mon, 02 Feb 2026 08:55:22 -0600
+Subject: [Rd] weighted residuals
+Message-ID: <ff0126de-c06c-40f3-aaa1-ab2197a6a7ca@mayo.edu>
+
+The survival package is one of the few with a default of model=FALSE.?? There are a couple 
+of reasons for this, one major one is that I work in medical research and making unnoticed 
+copies of the data is a risk to patient confidentiality, e.g.,? multi-state models all 
+have an "id=" argument.?? (The primary one, however, is probably that I'm stubborn.)
+
+In any case, this would argue for making weighted.residuals an S3 method.? The survival 
+NAMESPACE file currently has 200 S3 methods, so what's one more?
+
+PS. An addition I would like to see in the Writing R Extensions manual would be a 
+discussion of how to find a list of all the S3 methods which one's current package might 
+need, or be useful to add.?? A good fraction of those in the survival package were in 
+response to user email of "why don't you have a method for? XYZ", when I was completely 
+unaware of the existence of S3 method XYZ. At one time I did a search for UseMethod in the 
+R source tree, but that doesn't find things like xtrfm(), which is defined using .Primitive.
+
+
+Terry T.
+
+-- 
+Terry M Therneau, PhD
+Department of Quantitative Health Sciences
+Mayo Clinic
+therneau at mayo.edu
+
+"TERR-ree THUR-noh"
+
+	[[alternative HTML version deleted]]
+
+
+From |vo@we|ch @end|ng |rom uc|@@edu  Fri Feb 13 02:52:29 2026
+From: |vo@we|ch @end|ng |rom uc|@@edu (ivo welch)
+Date: Thu, 12 Feb 2026 17:52:29 -0800
+Subject: [Rd] Rotated Triangles at pch 26 and 27
+Message-ID: <CAJrNScRXSKyBxMZ3vKtOKSBzbd_f8EvrCaL1eAQV-X2Ht-VMkQ@mail.gmail.com>
+
+I believe pch=26 and 27 are not used.
+
+suggestion: low priority but would be nice:  the other symbols are pch
+symmetric.  the triangles do not have 90 degree rotated equivalents.
+
+use case: the triangle makes a nice way, e.g., to indicate a mean (at the
+box bottom) for the x axis pointing upways.  there is no triangle for the
+mean for the y axis to point sideways.
+
+--
+Ivo Welch (ivo.welch at ucla.edu)
+
+	[[alternative HTML version deleted]]
+
+

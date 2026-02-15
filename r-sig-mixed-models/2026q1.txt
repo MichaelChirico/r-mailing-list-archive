@@ -1,0 +1,585 @@
+From c@roz @end|ng |rom zed@t@|u-ber||n@de  Tue Jan 13 18:56:08 2026
+From: c@roz @end|ng |rom zed@t@|u-ber||n@de (Caroline Zanchi)
+Date: Tue, 13 Jan 2026 18:56:08 +0100
+Subject: [R-sig-ME] glmmTMB with beta family and 0-inflation
+In-Reply-To: <353046fd-0ef5-45ef-8777-39439b3c53fd@gmail.com>
+References: <fa18dc1a-46bd-4872-94e1-43535eb93caf@zedat.fu-berlin.de>
+ <353046fd-0ef5-45ef-8777-39439b3c53fd@gmail.com>
+Message-ID: <da7e532a-1aac-45f0-b62f-d847cff5fb83@zedat.fu-berlin.de>
+
+Hello,
+
+Sorry for my late reply.
+
+I do not the total number of cells, and yes it is pretty large.
+
+I tried family = "ordbeta" :
+
+M1b <- glmmTMB(propCFU~ parent_state * TIME + (1|SAMPLE), 
+data=prop_daughters, family=ordbeta)
+
+Anova(M1b,type="III")
+Analysis of Deviance Table (Type III Wald chisquare tests)
+
+Response: propCFUdaught
+ ??????????????????? Chisq Df Pr(>Chisq)
+(Intercept)?????? 184.388? 1? < 2.2e-16 ***
+parent_treat?????? 23.174? 1? 1.480e-06 ***
+TIME?????????????? 24.162? 4? 7.411e-05 ***
+parent_treat:TIME? 20.683? 4? 0.0003659 ***
+
+when I use plot(simulateResiduals(M1b)) from the DHARMa package, the 
+plots do not show significant deivations which is a clear improvement 
+compared to my previous model. However, I am worried that the p-values I 
+obtain are pretty low considering I have between 11 and 14 data points 
+per treatment combination and a random factor.
+
+How would I run a zero-inflated beta-binomial model ? I have found the 
+ZIBR package which seems to have been developed for analysing microbiome 
+data. I am not sure this is adapted to what I am trying to test ?
+
+Best, and happy new year !!
+
+Caroline
+
+
+On 12/20/25 22:03, Ben Bolker wrote:
+> ? Hi Caroline,
+>
+> ?comments below/inline.
+>
+> On 12/19/25 07:37, Caroline Zanchi wrote:
+>> Dear community,
+>>
+>> I am having trouble understanding the way 0-inflation is taken into 
+>> account in mixed-effects beta regressions with the glmmTMB package.
+>>
+>> I have a dataset which consists in readouts of bacterial cells which 
+>> express or not a certain behaviour according to the state of their 
+>> parent cell and over time. The response variable is expressed as a 
+>> number of cells expressing the behaviour over the total number of 
+>> cells. There are 0s in one parental state, but not the other.
+>
+> ? In principle, if you know the original total number of cells, you 
+> could use a zero-inflated beta-binomial model instead of a 
+> hurdle-beta. This may not matter as much if the total number of cells 
+> is very large (in which case the beta-binomial will approximate a beta 
+> pretty well anyway).? (You might not even need the zero-inflation, if 
+> the conditional distribution is such that the proportion of non-CFU 
+> daughters is well described by the zeros in the beta-binomial 
+> distribution).
+>
+> ?You could also try family = "ordbeta".
+>
+> ??? >
+>> I fitted :
+>> \\
+>> M1 <- glmmTMB(propCFU~ parent_state * TIME + (1|SAMPLE), 
+>> data=prop_daughters, ziformula= ~1, family=beta_family(link = "logit"))
+>>
+>> Which gives :
+>>
+>> summary(M1)
+>> ??Family: beta? ( logit )
+>> Formula:????????? propCFUdaught ~ parent_treat * TIME + (1 | SAMPLE)
+>> Zero inflation:???????????????? ~1
+>> Data: prop_daughters
+>>
+>> ?????? AIC?????? BIC??? logLik -2*log(L)? df.resid
+>> ??? -672.9??? -640.7???? 349.4??? -698.9??????? 75
+>>
+>> Random effects:
+>>
+>> Conditional model:
+>> ??Groups Name??????? Variance? Std.Dev.
+>> ??SAMPLE (Intercept) 4.322e-09 6.574e-05
+>
+> ? Your fit is singular. (There's little enough among-sample variance 
+> that it is estimated as zero -- all the variance can be explained by 
+> the variability in the conditional distribution.) You can see the GLMM 
+> FAQ for more discussion of singular fits.
+>
+>> Number of obs: 88, groups:? SAMPLE, 30
+>>
+>> Dispersion parameter for beta family ():? 327
+>
+> ? This corresponds to a very sharp (low-variance) conditional 
+> distribution. From ?beta_binomial:
+>
+> V=mu*(1-mu)/(phi+1)
+>
+>>
+>> Conditional model:
+>> ?????????????????????????????? Estimate Std. Error z value Pr(>|z|)
+>> (Intercept)?????????????????? -7.67870??? 0.73063 -10.510 <2e-16 ***
+>> parent_treatstationary???????? 1.22248??? 0.75556?? 1.618 0.106
+>> TIME20???????????????????????? 0.06966??? 0.80420?? 0.087 0.931
+>> TIME40???????????????????????? 0.70438??? 0.78492?? 0.897 0.370
+>> TIME60???????????????????????? 1.00432??? 0.81196?? 1.237 0.216
+>> TIME80???????????????????????? 0.91809??? 0.81363?? 1.128 0.259
+>> parent_treatstationary:TIME20 -0.16829??? 0.90534? -0.186 0.853
+>> parent_treatstationary:TIME40 -1.34558??? 0.94120? -1.430 0.153
+>> parent_treatstationary:TIME60 -1.43812??? 0.91828? -1.566 0.117
+>> parent_treatstationary:TIME80 -0.50110??? 0.98536? -0.509 0.611
+>> ---
+>> Signif. codes:? 0 ?***? 0.001 ?**? 0.01 ?*? 0.05 ?.? 0.1 ? ? 1
+>>
+>> Zero-inflation model:
+>> ???????????? Estimate Std. Error z value Pr(>|z|)
+>> (Intercept)? -0.8150???? 0.2312? -3.526 0.000422 ***
+>
+> ? Nothing here looks especially strange.>
+>> ... and a pretty terrible fit, because of the 0s I suppose :
+>>
+>> plot(simulateResiduals(M1))
+> ? We can't see the simulated residuals plot (the mailing list doesn't 
+> accept attachments), so we don't know what's wrong.
+>
+> ? Nothing looks obviously wrong with your model. You might also try 
+> performance::check_model() for a different set of diagnostics.
+>
+>>
+>> ... which makes me think that the 0s might not be properly taken into 
+>> account.
+>>
+>> Is there anything I am doing wrong ? I would take any advice on how 
+>> to improve this.
+>>
+>> Thank you ! (for taking the time to read it so close to holiday time...)
+>>
+>> Caroline
+>>
+>>
+>>
+>>
+>>
+>>
+>>
+>>
+>>
+>>
+>>
+>>
+>> _______________________________________________
+>> R-sig-mixed-models at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+>
+
+
+From o||verhooker @end|ng |rom pr@t@t|@t|c@@com  Tue Jan 20 13:49:16 2026
+From: o||verhooker @end|ng |rom pr@t@t|@t|c@@com (Oliver Hooker)
+Date: Tue, 20 Jan 2026 12:49:16 +0000
+Subject: [R-sig-ME] Introduction to Generalised Linear Mixed Models for
+ Ecologists
+Message-ID: <CAEsSYzz11EUojrNDOMjvH15XkfD7tbYho6BHAc59HevBM-JU1g@mail.gmail.com>
+
+Introduction to Generalised Linear Mixed Models for Ecologists
+<https://prstats.org/course/introduction-to-generalised-linear-mixed-models-for-ecologists-mmie01/>Learn
+to build and interpret linear, generalised linear, and multilevel models
+for ecological data using R, lme4, and rstanarm in this five day applied
+training course.
+
+https://prstats.org/course/bayesian-multilevel-modelling-using-brms-for-ecologists-mmie02/
+
+Join our intensive live-online workshop: *Bayesian Multilevel Modelling
+using brms for Ecologists*. If you work with ecological data and want to
+advance beyond standard regression into hierarchical modelling,
+spatial/temporal structure and full Bayesian workflows, this course is for
+you.
+
+*What you will learn*
+
+   -
+
+   A full foundation in Bayesian inference: priors, posteriors, credible
+   intervals and uncertainty quantification.
+   -
+
+   How to fit and interpret generalised linear models (GLMs) and
+   multilevel/hierarchical models using the brms package in R.
+   -
+
+   How to specify meaningful priors for ecological parameters and perform
+   model criticism via posterior predictive checks, WAIC, LOO-CV and other
+   diagnostics.
+   -
+
+   How to model non-Gaussian ecological responses (counts, proportions,
+   zero-inflation), and account for spatial and temporal autocorrelation in
+   your hierarchical models.
+   -
+
+   How to build multivariate or joint species-distribution models,
+   interpret group-level effects, visualise hierarchical structures and
+   communicate results effectively.
+
+*Who should attend*
+This course is designed for ecologists, data analysts, postgraduate
+researchers and early-career scientists who already have some experience
+with R and basic statistical concepts (e.g., mean, variance, correlation,
+linear regression). While prior exposure to GLMs is helpful, the essentials
+will be reviewed and built upon.
+
+*Format & logistics*
+
+   -
+
+   Live online sessions (5 days, approx. 6 hours per day) covering 30 hours
+   of instruction, practical exercises and guided coding.
+   -
+
+   Sessions are recorded and made available so you can revisit content if
+   you miss a live slot.
+   -
+
+   Participants are encouraged to bring their own ecological datasets where
+   possible, for practical application.
+
+*Why this course stands out*
+
+   -
+
+   It bridges the gap between theoretical Bayesian modelling and applied
+   ecological data analysis, focusing on workflows that ecologists can use in
+   real research settings.
+   -
+
+   Emphasis on interpretation, visualisation and clear communication of
+   uncertainty ? not just model fitting.
+   -
+
+   Uses the brms package which allows flexible specification of
+   hierarchical models while leveraging powerful backend tools (Stan) for
+   Bayesian computation.
+
+*How to register / next steps*
+Visit the PR Stats website for full course details, upcoming dates and
+registration information. Early registration is recommended as places may
+be limited. If you have questions about suitability, software requirements
+(R, RStudio, brms package) or data prerequisites, contact the course
+organisers for guidance.
+https://prstats.org/course/bayesian-multilevel-modelling-using-brms-for-ecologists-mmie02/
+
+-- 
+Oliver Hooker PhD.
+PR stats
+
+	[[alternative HTML version deleted]]
+
+
+From o||verhooker @end|ng |rom pr@t@t|@t|c@@com  Thu Jan 22 19:55:07 2026
+From: o||verhooker @end|ng |rom pr@t@t|@t|c@@com (Oliver Hooker)
+Date: Thu, 22 Jan 2026 18:55:07 +0000
+Subject: [R-sig-ME] Bayesian Statistical Modelling with Stan and brms
+ (BMSB01)
+Message-ID: <CAEsSYzzhVxshS7z5eRj5pOLdWv=ExAWDaZWv8oOp8uw7YESqYw@mail.gmail.com>
+
+Bayesian Statistical Modelling with Stan and brms (BMSB01)
+<https://prstats.org/course/bayesian-statistical-modelling-with-stan-and-brms-bmsb01/>
+
+Bayesian Statistical Modelling with Stan and brms is an advanced R course
+for researchers covering Bayesian model building, diagnostics, and
+interpretation using Stan and brms.
+
+*Advance Your Statistical Expertise with Bayesian Modelling in R*
+*Bayesian Statistical Modelling with Stan and brms (BMSB01)*
+
+https://prstats.org/course/bayesian-statistical-modelling-with-stan-and-brms-bmsb01/
+
+*Next Offering: *Live online *5?7 May 2026* (UK/GMT+1)
+
+Take your data analysis skills to the next level with this comprehensive
+three-day live workshop designed for empirical researchers who want to
+confidently apply Bayesian statistical methods using modern computational
+tools in R. Delivered online with recorded sessions, this course offers both
+ *conceptual foundations* and *hands-on practice* with real datasets and
+workflows.
+
+*What You Will Learn:*
+? Core principles of Bayesian inference and how they differ from classical
+approaches.
+? How to apply Bayesian reasoning and Bayes? rule to real data problems.
+? Practical model building using *Stan* and the *brms* R package,
+leveraging Bayesian regression, generalized models, and hierarchical
+structures.
+? Model diagnostics, prior specification, posterior inference, and model
+comparison with tools like WAIC and LOO.
+? Extensions to robust regression, heteroskedastic modeling, logistic and
+count data models, and Bayesian mixed effects models.
+
+*Format & Features:*
+? *Duration:* 3 days (6 hours per day), live online with recordings
+available.
+? *Interactive learning:* Combines lecture, coding exercises, and guided
+discussions.
+? *Materials included:* Code, datasets, and slides provided to all
+participants.
+? *Support:* Continued email support for 30 days post-course.
+? *Prerequisites:* Familiarity with fitting linear or generalized linear
+models in R recommended.
+
+*Who Should Attend:*
+This course is ideal for researchers in the social, behavioural,
+biological, and applied sciences who want to deepen their understanding of
+Bayesian inference and learn to use *Stan*?a state-of-the-art probabilistic
+programming language?with the user-friendly *brms* interface.
+
+Email oliver at prstats.org with any questions.
+
+
+-- 
+Oliver Hooker PhD.
+PR stats
+
+	[[alternative HTML version deleted]]
+
+
+From o||verhooker @end|ng |rom pr@t@t|@t|c@@com  Wed Jan 28 14:39:50 2026
+From: o||verhooker @end|ng |rom pr@t@t|@t|c@@com (Oliver Hooker)
+Date: Wed, 28 Jan 2026 13:39:50 +0000
+Subject: [R-sig-ME] Introduction to Generalised Linear Mixed Models for
+ Ecologists
+Message-ID: <CAEsSYzwbWnH007PAsOqfyb6KYmS2LnqjjehU=ZnUzdHEbfD0fg@mail.gmail.com>
+
+Introduction to Generalised Linear Mixed Models for Ecologists
+<https://prstats.org/course/introduction-to-generalised-linear-mixed-models-for-ecologists-mmie01/>Learn
+to build and interpret linear, generalised linear, and multilevel models
+for ecological data using R, lme4, and rstanarm in this five day applied
+training course.
+
+*ONLY 4 PLACES LEFT!  *
+*THIS COURSE SOLD OUT LAST TIME - BOOK YOUR PLACE NOW!*
+
+https://prstats.org/course/bayesian-multilevel-modelling-using-brms-for-ecologists-mmie02/
+
+Join our intensive live-online workshop: *Bayesian Multilevel Modelling
+using brms for Ecologists*. If you work with ecological data and want to
+advance beyond standard regression into hierarchical modelling,
+spatial/temporal structure and full Bayesian workflows, this course is for
+you.
+
+*What you will learn*
+
+   -
+
+   A full foundation in Bayesian inference: priors, posteriors, credible
+   intervals and uncertainty quantification.
+   -
+
+   How to fit and interpret generalised linear models (GLMs) and
+   multilevel/hierarchical models using the brms package in R.
+   -
+
+   How to specify meaningful priors for ecological parameters and perform
+   model criticism via posterior predictive checks, WAIC, LOO-CV and other
+   diagnostics.
+   -
+
+   How to model non-Gaussian ecological responses (counts, proportions,
+   zero-inflation), and account for spatial and temporal autocorrelation in
+   your hierarchical models.
+   -
+
+   How to build multivariate or joint species-distribution models,
+   interpret group-level effects, visualise hierarchical structures and
+   communicate results effectively.
+
+*Who should attend*
+This course is designed for ecologists, data analysts, postgraduate
+researchers and early-career scientists who already have some experience
+with R and basic statistical concepts (e.g., mean, variance, correlation,
+linear regression). While prior exposure to GLMs is helpful, the essentials
+will be reviewed and built upon.
+
+*Format & logistics*
+
+   -
+
+   Live online sessions (5 days, approx. 6 hours per day) covering 30 hours
+   of instruction, practical exercises and guided coding.
+   -
+
+   Sessions are recorded and made available so you can revisit content if
+   you miss a live slot.
+   -
+
+   Participants are encouraged to bring their own ecological datasets where
+   possible, for practical application.
+
+*Why this course stands out*
+
+   -
+
+   It bridges the gap between theoretical Bayesian modelling and applied
+   ecological data analysis, focusing on workflows that ecologists can use in
+   real research settings.
+   -
+
+   Emphasis on interpretation, visualisation and clear communication of
+   uncertainty ? not just model fitting.
+   -
+
+   Uses the brms package which allows flexible specification of
+   hierarchical models while leveraging powerful backend tools (Stan) for
+   Bayesian computation.
+
+*How to register / next steps*
+Visit the PR Stats website for full course details, upcoming dates and
+registration information. Early registration is recommended as places may
+be limited. If you have questions about suitability, software requirements
+(R, RStudio, brms package) or data prerequisites, contact the course
+organisers for guidance.
+https://prstats.org/course/bayesian-multilevel-modelling-using-brms-for-ecologists-mmie02/
+
+-- 
+Oliver Hooker PhD.
+PR stats
+
+	[[alternative HTML version deleted]]
+
+
+From h|gh@t@t @end|ng |rom h|gh@t@t@com  Thu Jan 29 10:34:59 2026
+From: h|gh@t@t @end|ng |rom h|gh@t@t@com (Alain Zuur)
+Date: Thu, 29 Jan 2026 09:34:59 +0000
+Subject: [R-sig-ME] =?utf-8?q?Hybrid_course=3A_GLMMs_and_GAMMs_with_R_?=
+ =?utf-8?q?=E2=80=93_Townsville?=
+Message-ID: <e7ae7a14-176c-4589-b87f-2bdef5070908@highstat.com>
+
+Dear colleagues,
+
+We?re happy to announce an upcoming hybrid course:
+
+Introduction to GLMMs and GAMMs with R. - With applications to spatial, 
+temporal, and spatial-temporal data-
+2?6 March 2026, James Cook University, Townsville, Australia (or join 
+online via Zoom)
+
+This is a hands-on, applied course designed for people who want to use 
+GLMMs and GAMMs in practice, rather than get lost in theory or heavy 
+maths. The aim is to help you understand what these models are doing, 
+how to fit them in R, and how to interpret and visualise the results.
+
+We start with a short refresher on multiple linear regression and 
+generalised linear models, then move on to generalised additive models 
+(GAMs) ? a flexible and intuitive way to deal with non-linear 
+relationships. From there, we introduce mixed-effects models for grouped 
+or repeated-measures data, and finally bring everything together in 
+generalised additive mixed models (GAMMs).
+
+In the final part of the course, we apply these models to spatial, 
+temporal, and spatial-temporal data, using realistic examples with 
+different types of response variables, including continuous and count data.
+
+Across five modules, we cover:
+
+* How GAMs work, including model selection and smoother interactions
+* Linear mixed-effects models and Gaussian additive mixed models
+* Hierarchical GAMs (the GAM equivalent of random-slope models)
+* Poisson and negative binomial GLMMs and GAMMs
+* Applications to spatial and spatial-temporal data
+* Guidance on analysing binary, proportional, and continuous data (time 
+allowing)
+
+All analyses are done in R, mainly using the mgcv and glmmTMB packages.
+
+Each module includes practical exercises with real data and fully 
+annotated R scripts. Before the course starts, you?ll also get access to 
+preparatory materials (short videos and exercises) covering linear 
+regression, Poisson GLMs, DHARMa model validation, and variograms. PDF 
+copies of all theory slides are provided as well.
+
+As part of the course, we also include a free 1-hour one-to-one video 
+meeting, where you can discuss your own data or analysis questions with 
+one or both instructors.
+
+Venue: James Cook University, Townsville Campus, Australia (hybrid format)
+Dates & times: 2?6 March 2026, 09.00?16.00 (local time)
+Price: ?500
+Instructors: Dr. Alain Zuur and Dr. Elena Ieno
+
+Flyer and registration: https://www.highstat.com/
+
+
+Please feel free to share this with colleagues who might find it useful.
+
+Kind regards,
+Alain Zuur
+Highland Statistics Ltd.
+
+
+From i@io m@iii@g oii phys@ii@-courses@org  Fri Jan 30 12:47:14 2026
+From: i@io m@iii@g oii phys@ii@-courses@org (i@io m@iii@g oii phys@ii@-courses@org)
+Date: Fri, 30 Jan 2026 12:47:14 +0100 (CET)
+Subject: [R-sig-ME] =?utf-8?q?Generalised_Linear_Models_in_R_course_=283r?=
+ =?utf-8?q?d_edition=29?=
+Message-ID: <1769773634.934126050@webmail.jimdo.com>
+
+
+Dear all,
+ Our Generalised Linear Models in R course (3rd edition) runs online from 23?27 February.
+ 
+ 
+In this course, attendees will learn how to analyse diverse data types with GLMs?a unified, powerful framework that covers everything from linear regression to logistic and count models?all hands-on in R.
+Perfect for grad students and researchers with basic stats and R experience.
+ Sessions run mornings (9 AM?1 PM Berlin time) with lectures, discussions, and practical exercises.
+ 
+Check it out: [ https://www.physalia-courses.org/courses-workshops/glm-in-r-1/ ]( https://www.physalia-courses.org/courses-workshops/glm-in-r-1/ ) 
+ 
+Best, Carlo
+--------------------
+
+Carlo Pecoraro, Ph.D
+
+
+Physalia-courses DIRECTOR
+
+info at physalia-courses.org
+
+mobile: +49 17645230846
+
+[ Bluesky ]( https://bsky.app/profile/physaliacourses.bsky.social ) [ Linkedin ]( https://www.linkedin.com/in/physalia-courses-a64418127/ )
+
+
+	[[alternative HTML version deleted]]
+
+
+From i@io m@iii@g oii phys@ii@-courses@org  Tue Feb  3 16:06:53 2026
+From: i@io m@iii@g oii phys@ii@-courses@org (i@io m@iii@g oii phys@ii@-courses@org)
+Date: Tue, 3 Feb 2026 16:06:53 +0100 (CET)
+Subject: [R-sig-ME] =?utf-8?q?Generalized_Linear_Mixed_Models_=28GLMMs=29?=
+ =?utf-8?q?_in_R__-_online_course?=
+Message-ID: <1770131213.809813329@webmail.jimdo.com>
+
+
+Dear all,
+ 
+We are excited to announce the 4th edition of our Generalized Linear Mixed Models (GLMMs) in R online course, taking place September 21?24..
+ 
+For more information and to register, please visit:
+[ https://www.physalia-courses.org/courses-work/glmms-in-r ]( https://www.physalia-courses.org/courses-work/glmms-in-r )
+ 
+ 
+This course is designed for graduate students and researchers with experience in generalized linear models who want to deepen their skills to analyze complex grouped and correlated data. You will learn to specify, interpret, and validate GLMMs using the R packages lme4 and glmmTMB, along with hands-on training on model diagnostics and assumption checking using DHARMa.
+ 
+The basics of linear models (LM), generalized linear models (GLM), and ANOVA are reviewed at the start of the course. However, if you do not have a solid understanding of these topics, you may benefit more from our course ?Generalized Linear Models as a Unified Framework for Data Analysis in R,? also offered by Physalia: [ https://www.physalia-courses.org/courses-workshops/glm-in-r-1/ ]( https://www.physalia-courses.org/courses-workshops/glm-in-r-1/ ) 
+ 
+ 
+Best regards,
+Carlo
+--------------------
+
+Carlo Pecoraro, Ph.D
+
+
+Physalia-courses DIRECTOR
+
+info at physalia-courses.org
+
+mobile: +49 17645230846
+
+[ Bluesky ]( https://bsky.app/profile/physaliacourses.bsky.social ) [ Linkedin ]( https://www.linkedin.com/in/physalia-courses-a64418127/ )
+
+
+	[[alternative HTML version deleted]]
+
+
