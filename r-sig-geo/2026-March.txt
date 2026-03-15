@@ -1,0 +1,274 @@
+From n|ko@@tz|ok@@ @end|ng |rom gm@||@com  Wed Mar  4 09:40:17 2026
+From: n|ko@@tz|ok@@ @end|ng |rom gm@||@com (Nikolaos Tziokas)
+Date: Wed, 4 Mar 2026 09:40:17 +0100
+Subject: [R-sig-Geo] 
+ How to "translate" math to R code to apply blurring to spatraster
+In-Reply-To: <CAGg5H0Zsihn_yB9p6fMw0H5Ka6RRF=NjrTcQkJ8pn6TS-5wAjA@mail.gmail.com>
+References: <CAGg5H0Zsihn_yB9p6fMw0H5Ka6RRF=NjrTcQkJ8pn6TS-5wAjA@mail.gmail.com>
+Message-ID: <CAGg5H0byysL6CGsiRpCXveveo7UB1S_jmDuqA_HcAQPme7_Nxw@mail.gmail.com>
+
+I manage to create a code the looks about right, but I am not 100% sure
+about it.
+
+library(terra)
+
+# High-resolution covariate (100m)
+set.seed(123)
+high_res_covariate <- rast(nrows=230, ncols=255, xmin=17013000,
+xmax=17038500, ymin=-3180000, ymax=-3157000, crs="EPSG:3857")
+res(high_res_covariate) <- c(100, 100)
+values(high_res_covariate) <- runif(ncell(high_res_covariate), 0, 100)
+
+viirs_ntl <- rast(nrows=46, ncols=51, xmin=17013000, xmax=17038500,
+ymin=-3180000, ymax=-3157000, crs="EPSG:3857")
+res(viirs_ntl) <- c(500, 500)
+va_viirs <- rast(viirs_ntl)
+values(va_viirs) <- rep(seq(22.5, 24.5, length.out=ncol(va_viirs)),
+times=nrow(va_viirs))
+va_high_res <- resample(va_viirs, high_res_covariate, method="near")
+
+R_E <- 6371         # km
+h_VIIRS <- 824      # km (Note: image shows 833)
+sigma_nadir <- 0.742 # km
+
+# 1. Calculate sigma_cross per pixel (Your exact function)
+calc_sigma_cross <- function(theta_deg) {
+  theta_rad <- theta_deg * pi / 180
+  D_view <- (R_E + h_VIIRS) * cos(theta_rad) -
+    sqrt(R_E^2 - (R_E + h_VIIRS)^2 * sin(theta_rad)^2)
+  beta <- asin((R_E + h_VIIRS) / R_E * sin(theta_rad))
+  sigma_cross <- sigma_nadir * (D_view / h_VIIRS) * (1 / cos(beta))
+  return(sigma_cross * 1000 / 100)  # Convert km -> m -> pixels
+}
+sigma_cross_pixels <- app(va_high_res, calc_sigma_cross)
+
+
+
+# 2. SEPARABLE FILTERING: Y-Direction (Constant sigma = 2 pixels)
+sigma_along_pixels <- 2
+radius_y <- ceiling(3 * sigma_along_pixels) # 3 standard deviations
+y_seq <- seq(-radius_y, radius_y)
+kernel_y <- dnorm(y_seq, mean = 0, sd = sigma_along_pixels)
+kernel_y <- matrix(kernel_y / sum(kernel_y), ncol = 1) # Vertical kernel
+
+# Apply vertical blur
+y_blurred <- focal(high_res_covariate, w = kernel_y, na.rm = TRUE)
+
+
+
+# 3. SEPARABLE FILTERING: X-Direction (Varying sigma)
+# Extract to matrices for fast row-by-row processing
+val_mat <- as.matrix(y_blurred, wide = TRUE)
+sig_mat <- as.matrix(sigma_cross_pixels, wide = TRUE)
+
+out_mat <- matrix(NA, nrow = nrow(val_mat), ncol = ncol(val_mat))
+cols <- 1:ncol(val_mat)
+
+# Pre-calculate a meshgrid of column indices
+j_mat <- matrix(cols, nrow = length(cols), ncol = length(cols), byrow =
+TRUE)  # Source columns
+i_mat <- matrix(cols, nrow = length(cols), ncol = length(cols), byrow =
+FALSE) # Target columns
+
+for (r in 1:nrow(val_mat)) {
+  row_vals <- val_mat[r, ]
+  row_sigs <- sig_mat[r, ]
+
+  # Broadcast the target pixel's standard deviation across the weight matrix
+  sig_i <- matrix(row_sigs, nrow = length(cols), ncol = length(cols), byrow
+= FALSE)
+
+  # Calculate Gaussian weights (W[i,j] is the weight of source j on target
+i)
+  W <- exp(- ((j_mat - i_mat)^2) / (2 * sig_i^2))
+
+  # Normalize rows so weights sum to 1 (this naturally handles image edges)
+  W <- W / rowSums(W)
+
+  # Apply weights to the row values using matrix multiplication
+  out_mat[r, ] <- as.numeric(W %*% row_vals)
+}
+
+# Assign back to a SpatRaster
+final_filtered <- y_blurred
+values(final_filtered) <- as.vector(t(out_mat)) # t() ensures correct
+row-major assignment
+
+plot(final_filtered, main="Anisotropic Filtered Output")
+
+# Ensure consistent color scale
+range_vals <- range(
+  values(high_res_covariate),
+  values(final_filtered),
+  na.rm = TRUE
+)
+
+# Side-by-side layout
+par(mfrow = c(1, 2), mar = c(4, 4, 3, 5))
+
+plot(
+  high_res_covariate,
+  main = "Original Predictor (100m)",
+  col = hcl.colors(100, "YlOrRd"),
+  zlim = range_vals
+)
+
+plot(
+  final_filtered,
+  main = "Anisotropic Gaussian Blurred",
+  col = hcl.colors(100, "YlOrRd"),
+  zlim = range_vals
+)
+
+par(mfrow = c(1, 1))  # reset layout
+
+???? ??? 27 ??? 2026 ???? 5:56??.?., ?/? Nikolaos Tziokas <
+nikos.tziokas at gmail.com> ??????:
+
+> I need to apply an anisotropic filter to a raster where:
+>
+> ?_along (along-track, y-direction) is constant = 2 pixels
+> ?_cross (cross-track, x-direction) varies per pixel based on viewing angle
+> I have the mathematical formulas to calculate ?_cross for each pixel:
+>
+> Given:
+>
+> R_E = 6371 km (Earth's radius)
+>
+> h_VIIRS = 824 km (satellite altitude)
+>
+> ? = viewing angle from nadir (varies per pixel)
+>
+> ?_nadir = 742 m
+>
+> D_view = (R_E + h_VIIRS) ? cos(?) - ?[R_E? - (R_E + h_VIIRS)? ? sin?(?)] ?
+> = arcsin[(R_E + h_VIIRS)/R_E ? sin(?)] ?_cross = ?_nadir ? (D_view /
+> h_VIIRS) ? [1 / cos(?)]
+>
+> Please see this link (https://www.desmos.com/calculator/zwvoyxzpoz) for
+> the actual maths I need to translate into R code to blur the spatraster.
+>
+>
+> My current pixel-by-pixel nested loop implementation produces diagonal
+> striping artifacts, suggesting I'm not correctly translating the
+> mathematics into working code.
+>
+> Reproducible example:
+>
+> library(terra)
+>
+> # High-resolution covariate (100m)
+> set.seed(123)
+> high_res_covariate <- rast(nrows=230, ncols=255,
+>                            xmin=17013000, xmax=17038500,
+>                            ymin=-3180000, ymax=-3157000,
+>                            crs="EPSG:3857")
+> res(high_res_covariate) <- c(100, 100)
+> values(high_res_covariate) <- runif(ncell(high_res_covariate), 0, 100)
+>
+> # Viewing angle raster (500m, varies left to right)
+> viirs_ntl <- rast(nrows=46, ncols=51,
+>                   xmin=17013000, xmax=17038500,
+>                   ymin=-3180000, ymax=-3157000,
+>                   crs="EPSG:3857")
+> res(viirs_ntl) <- c(500, 500)
+> va_viirs <- rast(viirs_ntl)
+> va_values <- rep(seq(22.5, 24.5, length.out=ncol(va_viirs)),
+> times=nrow(va_viirs))
+> values(va_viirs) <- va_values
+> va_high_res <- resample(va_viirs, high_res_covariate, method="near")
+>
+> # Parameters
+> R_E <- 6371  # km
+> h_VIIRS <- 824  # km
+> sigma_nadir <- 0.742  # km
+>
+> # Calculate sigma_cross per pixel
+> calc_sigma_cross <- function(theta_deg) {
+>   theta_rad <- theta_deg * pi / 180
+>   D_view <- (R_E + h_VIIRS) * cos(theta_rad) -
+>             sqrt(R_E^2 - (R_E + h_VIIRS)^2 * sin(theta_rad)^2)
+>   beta <- asin((R_E + h_VIIRS) / R_E * sin(theta_rad))
+>   sigma_cross <- sigma_nadir * (D_view / h_VIIRS) * (1 / cos(beta))
+>   return(sigma_cross * 1000 / 100)  # Convert to pixels
+> }
+>
+> sigma_cross_pixels <- app(va_high_res, calc_sigma_cross)
+> sigma_along_pixels <- 2  # constant
+> How do I use terra::focal() with these spatially-varying sigma values?
+>
+> SessionInfo
+>
+> R version 4.5.2 (2025-10-31 ucrt)
+> Platform: x86_64-w64-mingw32/x64
+> Running under: Windows 11 x64 (build 26200)
+>
+> Matrix products: default
+>   LAPACK version 3.12.1
+>
+> locale:
+> [3] LC_COLLATE=English_United States.utf8  LC_CTYPE=English_United
+> States.utf8    LC_MONETARY=English_United States.utf8
+> [4] LC_NUMERIC=C                           LC_TIME=English_United
+> States.utf8
+>
+> time zone: Europe/Budapest
+> tzcode source: internal
+>
+> attached base packages:
+> [3] stats     graphics  grDevices utils     datasets  methods   base
+>
+> other attached packages:
+> [3] terra_1.8-93
+>
+> loaded via a namespace (and not attached):
+>  [3] compiler_4.5.2    cli_3.6.5         ragg_1.5.0        tools_4.5.2
+>   rstudioapi_0.18.0 Rcpp_1.1.1        codetools_0.2-20
+>  [8] textshaping_1.0.4 lifecycle_1.0.5   rlang_1.1.7
+> systemfonts_1.3.1
+>
+>
+> --
+> Tziokas Nikolaos
+> PhD in Geography
+>
+> Tel:(+30)6974365780
+> LinkedIn <http://linkedin.com/in/nikolaos-tziokas-896081130>
+>
+
+
+-- 
+Tziokas Nikolaos
+PhD in Geography
+
+Tel:(+30)6974365780
+LinkedIn <http://linkedin.com/in/nikolaos-tziokas-896081130>
+
+	[[alternative HTML version deleted]]
+
+
+From Roger@B|v@nd @end|ng |rom nhh@no  Fri Mar 13 11:05:33 2026
+From: Roger@B|v@nd @end|ng |rom nhh@no (Roger Bivand)
+Date: Fri, 13 Mar 2026 10:05:33 +0000
+Subject: [R-sig-Geo] useR! submissions - request for comment
+Message-ID: <SV0P279MB0475A875D232DFDF59E49CB9EE45A@SV0P279MB0475.NORP279.PROD.OUTLOOK.COM>
+
+Tomorrow is the extended deadline for useR! 2026 submissions. I'd like to encourage those with ideas that could benefit from discussion in Warsaw in early July at useR! to join in.
+
+Specifically, I am considering submitting a talk/lightning talk/poster on the imminent confusion that will hit us when NAD83 is replaced by modernized NSRS (see ia. https://www.ngs.noaa.gov/datums/newdatums/index.shtml, https://www.esri.com/about/newsroom/arcuser/moving-from-static-spatial-reference-systems-in-2022) in North America, and the ETRS89 standard being considered as a datum ensemble in Europe (see ia. https://evrs.bkg.bund.de/Subsites/EVRS/EN/Results_and_Products/NationalRealizationsETRS89/national_realization.html). This hit PROJ with the updated EPSG database released with PROJ 9.8.0 (thread starting https://lists.osgeo.org/pipermail/proj/2026-March/012026.html). 
+
+The changes are going to affect all geospatial software relying on position whether we like it ot not, even if the changes are single-digit metres or less. So affecting anything linking to GDAL/PROJ, and packages using terra, sf, gdalraster, vapour, gdalcubes.
+
+I would like to ask for help in submitting (by tomorrow evening 14 March) and for some input to a "task force" to try to prepare for oncoming changes. Please rely on-list or directly by email - I have set up a github repo https://github.com/rsbivand/new_ref_systems, so issues can also be used by github users. Please tell me not to worry and drop this concern, or consider helping to see how to move forward, including talking about this at useR!.
+
+Hoping for contributions,
+
+Roger
+
+--
+Roger Bivand
+Emeritus Professor
+Norwegian School of Economics
+Postboks 3490 Ytre Sandviken, 5045 Bergen, Norway
+Roger.Bivand at nhh.no
+

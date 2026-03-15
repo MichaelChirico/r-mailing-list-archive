@@ -1,0 +1,361 @@
+From n|ko@@tz|ok@@ @end|ng |rom gm@||@com  Thu Feb  5 21:45:40 2026
+From: n|ko@@tz|ok@@ @end|ng |rom gm@||@com (Nikolaos Tziokas)
+Date: Thu, 5 Feb 2026 21:45:40 +0100
+Subject: [R-sig-Geo] =?utf-8?q?How_to_implement_an_anisotropic_Gaussian_f?=
+	=?utf-8?q?ilter_with_position-dependent_=CF=83_from_a_viewing_angl?=
+	=?utf-8?q?e_raster=3F?=
+Message-ID: <CAGg5H0Y1F_R6aoXAiLg7KKdH7eL2+51Qa3aCEAQ1ssstX3kHAQ@mail.gmail.com>
+
+I am working on downscaling (increasing the spatial resolution) satellite
+imagery from VIIRS (VNP46A2 nighttime lights product). VIIRS is a
+whiskbroom sensor, and I need to model its point spread function (PSF) as
+part of the downscaling process.
+
+When downscaling continua, the PSF of interest is not the actual PSF but
+the transfer function (i.e., Gaussian filter in most cases) (Wang et al.,
+2020).
+
+My downscaling approach uses high-resolution covariates (e.g., land cover,
+population density) to predict VIIRS nighttime lights. To account for
+VIIRS's spatial response, I need to:
+
+
+   1. *Apply a Gaussian filter to the high-resolution covariates (to
+   simulate VIIRS blurring)*
+   2. Aggregate the filtered covariates to VIIRS resolution
+   3. Run a regression model (e.g., Random Forest) between the aggregated
+   covariates and actual VIIRS observations
+   4. Select the optimal ? that maximizes R?
+
+For an isotropic filter, this is straightforward?I test ? values from 1 to
+6 (step 0.1), apply terra::focal() to each covariate, aggregate, and
+compare R? values.
+
+However, VIIRS has an anisotropic spatial response. The effect of viewing
+angle (VA) on the PSF is geometric: when the sensor views at an angle
+off-nadir, the viewing cone projects an elliptical footprint with larger
+area compared to the circular footprint at nadir. The greater the angle
+off-nadir, the more pronounced the ellipse and the larger the area. This
+areal increase can be calculated from geometry as the elongation occurs in
+the cross-track direction. The along-track direction remains relatively
+constant.
+
+I need to estimate the unique PSF geometry for each pixel as a function of
+the nadir PSF and the distortion caused by the viewing angle. This means
+applying an anisotropic Gaussian filter to my high-resolution covariates
+where ?_x (along-track) is fixed and ?_y (cross-track) varies per pixel
+based on the viewing angle.
+
+I have high-resolution covariate rasters at 100m resolution to be filtered
+and aggregated, a VIIRS nighttime lights image at 500m resolution, and a
+viewing angle raster at 500m resolution. The viewing angle raster varies
+from left to right (cross-track direction).
+
+Existing downscaling approaches use isotropic Gaussian filters with a
+single, constant ?. I haven't found examples of applying a Gaussian filter
+where one dimension has spatially-varying ? based on the viewing angle.
+
+Reproducible example (created by an LLM, not sure if it's correct or not):
+
+library(terra)
+
+# 1. High-resolution covariate (100m pixel size)
+set.seed(123)
+high_res_covariate <- rast(nrows=230, ncols=255,
+                           xmin=17013000, xmax=17038500,
+                           ymin=-3180000, ymax=-3157000,
+                           crs="EPSG:3857")
+res(high_res_covariate) <- c(100, 100)
+values(high_res_covariate) <- runif(ncell(high_res_covariate), 0, 100)
+
+# 2. VIIRS nighttime lights (500m resolution)
+viirs_ntl <- rast(nrows=46, ncols=51,
+                  xmin=17013000, xmax=17038500,
+                  ymin=-3180000, ymax=-3157000,
+                  crs="EPSG:3857")
+res(viirs_ntl) <- c(500, 500)
+values(viirs_ntl) <- runif(ncell(viirs_ntl), 0, 170)
+
+# 3. VIIRS viewing angle (500m resolution, varies left to right)
+va_viirs <- rast(viirs_ntl)
+va_values <- rep(seq(22.5, 24.5, length.out=ncol(va_viirs)),
+times=nrow(va_viirs))
+values(va_viirs) <- va_values
+
+par(mfrow = c(1, 3))
+plot(high_res_covariate, main = "High-res Covariate (100m)")
+plot(viirs_ntl, main = "VIIRS NTL (500m)")
+plot(va_viirs, main = "Viewing Angle (500m)")
+
+# Resample VA to high resolution (using nearest neighbor so each 5x5 block
+# has the same VA value, since 5 high-res pixels = 1 VIIRS pixel)
+va_high_res <- resample(va_viirs, high_res_covariate, method="near")
+
+# Convert viewing angle to sigma_y based on geometric distortion
+# ?_y = ?_nadir / cos(?) where ? is off-nadir angle
+va_to_sigma_y <- function(va_degrees, sigma_nadir = 1.5) {
+  va_radians <- va_degrees * pi / 180
+  sigma_nadir / cos(va_radians)
+}
+
+# Create sigma_y raster
+sigma_y_raster <- app(va_high_res, function(va) va_to_sigma_y(va,
+sigma_nadir = 1.5))
+
+# Anisotropic Gaussian filter function
+anisotropic_gaussian_filter <- function(img, sigma_x, sigma_y_raster,
+kernel_size = NULL) {
+
+  # Determine kernel size based on maximum sigma
+  sigma_y_max <- global(sigma_y_raster, "max", na.rm=TRUE)[1,1]
+  sigma_max <- max(sigma_x, sigma_y_max)
+
+  if (is.null(kernel_size)) {
+    kernel_size <- ceiling(6 * sigma_max)
+    if (kernel_size %% 2 == 0) kernel_size <- kernel_size + 1
+  }
+
+  k_radius <- (kernel_size - 1) / 2
+
+  # Create result raster
+  result <- rast(img)
+
+  cat("Processing", nrow(img), "rows...\n")
+
+  # Process each pixel
+  for (i in seq_len(nrow(img))) {
+    for (j in seq_len(ncol(img))) {
+
+      # Get local sigma_y value
+      sigma_y_local <- sigma_y_raster[i, j][[1]]
+
+      if (is.na(sigma_y_local) || is.na(img[i, j][[1]])) {
+        result[i, j] <- NA
+        next
+      }
+
+      # Define window bounds
+      r_start <- max(1, i - k_radius)
+      r_end <- min(nrow(img), i + k_radius)
+      c_start <- max(1, j - k_radius)
+      c_end <- min(ncol(img), j + k_radius)
+
+      # Extract focal window
+      focal_window <- as.matrix(img[r_start:r_end, c_start:c_end])
+
+      # Calculate center position in the window
+      actual_rows <- nrow(focal_window)
+      actual_cols <- ncol(focal_window)
+      center_row <- i - r_start + 1
+      center_col <- j - c_start + 1
+
+      # Create anisotropic Gaussian kernel
+      weights <- matrix(0, nrow = actual_rows, ncol = actual_cols)
+      for (ri in 1:actual_rows) {
+        for (ci in 1:actual_cols) {
+          # Distance from center
+          dx <- ci - center_col  # cross-track (x direction)
+          dy <- ri - center_row  # along-track (y direction)
+
+          # Anisotropic Gaussian
+          # sigma_x for along-track (y), sigma_y for cross-track (x)
+          weights[ri, ci] <- exp(-(dx^2 / (2 * sigma_y_local^2) +
+                                     dy^2 / (2 * sigma_x^2)))
+        }
+      }
+
+      # Normalize weights
+      weights <- weights / sum(weights, na.rm = TRUE)
+
+      # Apply weighted average
+      valid_mask <- !is.na(focal_window)
+      if (sum(valid_mask) > 0) {
+        result[i, j] <- sum(focal_window * weights, na.rm = TRUE) /
+          sum(weights[valid_mask], na.rm = TRUE)
+      } else {
+        result[i, j] <- NA
+      }
+    }
+
+    if (i %% 50 == 0) {
+      cat("  Processed row", i, "of", nrow(img), "\n")
+    }
+  }
+
+  return(result)
+}
+
+# Apply the filter with fixed sigma_x and spatially-varying sigma_y
+sigma_x_fixed <- 1.5  # along-track (fixed)
+filtered_covariate <- anisotropic_gaussian_filter(high_res_covariate,
+                                                  sigma_x = sigma_x_fixed,
+                                                  sigma_y_raster =
+sigma_y_raster)
+
+# Visualize
+par(mfrow = c(2, 2))
+plot(high_res_covariate, main = "Original (100m)")
+plot(va_high_res, main = "Viewing Angle")
+plot(sigma_y_raster, main = "Sigma_y (cross-track)")
+plot(filtered_covariate, main = "Filtered")
+
+# Aggregate to VIIRS resolution for comparison
+filtered_aggregated <- resample(filtered_covariate, viirs_ntl, "mean")
+plot(filtered_aggregated, main = "Aggregated to 500m")
+
+
+Session Info:
+
+R version 4.5.2 (2025-10-31 ucrt)
+Platform: x86_64-w64-mingw32/x64
+Running under: Windows 11 x64 (build 26200)
+
+Matrix products: default
+  LAPACK version 3.12.1
+
+locale:
+[1] LC_COLLATE=English_United States.utf8  LC_CTYPE=English_United
+States.utf8    LC_MONETARY=English_United States.utf8
+[4] LC_NUMERIC=C                           LC_TIME=English_United
+States.utf8
+
+time zone: Europe/Budapest
+tzcode source: internal
+
+attached base packages:
+[1] stats     graphics  grDevices utils     datasets  methods   base
+
+other attached packages:
+[1] terra_1.8-93
+
+loaded via a namespace (and not attached):
+ [1] compiler_4.5.2    cli_3.6.5         ragg_1.5.0        tools_4.5.2
+  rstudioapi_0.18.0 Rcpp_1.1.1        codetools_0.2-20
+ [8] textshaping_1.0.4 lifecycle_1.0.5   rlang_1.1.7       systemfonts_1.3.1
+
+-- 
+Tziokas Nikolaos
+PhD in Geography
+
+	[[alternative HTML version deleted]]
+
+
+From n|ko@@tz|ok@@ @end|ng |rom gm@||@com  Fri Feb 27 17:56:34 2026
+From: n|ko@@tz|ok@@ @end|ng |rom gm@||@com (Nikolaos Tziokas)
+Date: Fri, 27 Feb 2026 17:56:34 +0100
+Subject: [R-sig-Geo] How to "translate" math to R code to apply blurring to
+ spatraster
+Message-ID: <CAGg5H0Zsihn_yB9p6fMw0H5Ka6RRF=NjrTcQkJ8pn6TS-5wAjA@mail.gmail.com>
+
+I need to apply an anisotropic filter to a raster where:
+
+?_along (along-track, y-direction) is constant = 2 pixels
+?_cross (cross-track, x-direction) varies per pixel based on viewing angle
+I have the mathematical formulas to calculate ?_cross for each pixel:
+
+Given:
+
+R_E = 6371 km (Earth's radius)
+
+h_VIIRS = 824 km (satellite altitude)
+
+? = viewing angle from nadir (varies per pixel)
+
+?_nadir = 742 m
+
+D_view = (R_E + h_VIIRS) ? cos(?) - ?[R_E? - (R_E + h_VIIRS)? ? sin?(?)] ?
+= arcsin[(R_E + h_VIIRS)/R_E ? sin(?)] ?_cross = ?_nadir ? (D_view /
+h_VIIRS) ? [1 / cos(?)]
+
+Please see this link (https://www.desmos.com/calculator/zwvoyxzpoz) for the
+actual maths I need to translate into R code to blur the spatraster.
+
+
+My current pixel-by-pixel nested loop implementation produces diagonal
+striping artifacts, suggesting I'm not correctly translating the
+mathematics into working code.
+
+Reproducible example:
+
+library(terra)
+
+# High-resolution covariate (100m)
+set.seed(123)
+high_res_covariate <- rast(nrows=230, ncols=255,
+                           xmin=17013000, xmax=17038500,
+                           ymin=-3180000, ymax=-3157000,
+                           crs="EPSG:3857")
+res(high_res_covariate) <- c(100, 100)
+values(high_res_covariate) <- runif(ncell(high_res_covariate), 0, 100)
+
+# Viewing angle raster (500m, varies left to right)
+viirs_ntl <- rast(nrows=46, ncols=51,
+                  xmin=17013000, xmax=17038500,
+                  ymin=-3180000, ymax=-3157000,
+                  crs="EPSG:3857")
+res(viirs_ntl) <- c(500, 500)
+va_viirs <- rast(viirs_ntl)
+va_values <- rep(seq(22.5, 24.5, length.out=ncol(va_viirs)),
+times=nrow(va_viirs))
+values(va_viirs) <- va_values
+va_high_res <- resample(va_viirs, high_res_covariate, method="near")
+
+# Parameters
+R_E <- 6371  # km
+h_VIIRS <- 824  # km
+sigma_nadir <- 0.742  # km
+
+# Calculate sigma_cross per pixel
+calc_sigma_cross <- function(theta_deg) {
+  theta_rad <- theta_deg * pi / 180
+  D_view <- (R_E + h_VIIRS) * cos(theta_rad) -
+            sqrt(R_E^2 - (R_E + h_VIIRS)^2 * sin(theta_rad)^2)
+  beta <- asin((R_E + h_VIIRS) / R_E * sin(theta_rad))
+  sigma_cross <- sigma_nadir * (D_view / h_VIIRS) * (1 / cos(beta))
+  return(sigma_cross * 1000 / 100)  # Convert to pixels
+}
+
+sigma_cross_pixels <- app(va_high_res, calc_sigma_cross)
+sigma_along_pixels <- 2  # constant
+How do I use terra::focal() with these spatially-varying sigma values?
+
+SessionInfo
+
+R version 4.5.2 (2025-10-31 ucrt)
+Platform: x86_64-w64-mingw32/x64
+Running under: Windows 11 x64 (build 26200)
+
+Matrix products: default
+  LAPACK version 3.12.1
+
+locale:
+[3] LC_COLLATE=English_United States.utf8  LC_CTYPE=English_United
+States.utf8    LC_MONETARY=English_United States.utf8
+[4] LC_NUMERIC=C                           LC_TIME=English_United
+States.utf8
+
+time zone: Europe/Budapest
+tzcode source: internal
+
+attached base packages:
+[3] stats     graphics  grDevices utils     datasets  methods   base
+
+other attached packages:
+[3] terra_1.8-93
+
+loaded via a namespace (and not attached):
+ [3] compiler_4.5.2    cli_3.6.5         ragg_1.5.0        tools_4.5.2
+  rstudioapi_0.18.0 Rcpp_1.1.1        codetools_0.2-20
+ [8] textshaping_1.0.4 lifecycle_1.0.5   rlang_1.1.7       systemfonts_1.3.1
+
+
+-- 
+Tziokas Nikolaos
+PhD in Geography
+
+Tel:(+30)6974365780
+LinkedIn <http://linkedin.com/in/nikolaos-tziokas-896081130>
+
+	[[alternative HTML version deleted]]
+
+

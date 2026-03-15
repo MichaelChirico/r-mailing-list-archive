@@ -1,0 +1,2221 @@
+From g@u@@e||m|ner|ng @end|ng |rom gm@||@com  Sun Mar  1 13:18:30 2026
+From: g@u@@e||m|ner|ng @end|ng |rom gm@||@com (=?UTF-8?B?TcOlbnMgVGh1bGlu?=)
+Date: Sun, 1 Mar 2026 13:18:30 +0100
+Subject: [Rd] 
+ Suggestion: Modify common hypothesis tests and models to work
+ better with pipes
+In-Reply-To: <CAMdJUypT0-eGfgC-cfTKTkLEdCYncmi=vFqss7FVMyDyxe-ZAg@mail.gmail.com>
+References: <CAMdJUypT0-eGfgC-cfTKTkLEdCYncmi=vFqss7FVMyDyxe-ZAg@mail.gmail.com>
+Message-ID: <CAMdJUypQMannCBRcSUa79L_unH02XC3YZ=GbiOT_rOBtUBsUUw@mail.gmail.com>
+
+Dear R-devel,
+
+Some months ago I posted to this list proposing that common statistical
+functions such as t.test, wilcox.test, lm, glm, and aov could benefit from
+data.frame S3 methods, so that a data frame can be piped into them directly
+without the placeholder syntax:
+
+    penguins |>
+      subset(species != "Gentoo") |>
+      t.test(bill_len ~ species)
+
+That post went largely unnoticed. Rather than assume the idea had no merit,
+I decided to implement it and see how it worked in practice.
+
+The result is pipedreams, a small CRAN-ready package that adds data.frame
+methods for t.test, wilcox.test, lm, glm, aov, and nls from base R, as well
+as survfit, coxph, and survreg from survival, lmer and glmer from lme4, and
+polr, rlm, lda, and qda from MASS. The implementation is straightforward in
+every case: the data.frame method simply reorders the arguments and
+delegates to the existing formula method. No existing behaviour is changed.
+
+The package is available at: https://github.com/mthulin/pipedreams
+
+Having lived with this for a while, I am more convinced than before that
+these changes belong in the packages themselves rather than in a wrapper
+package. The case for including them in base R (and in survival, lme4, and
+MASS, if the package maintainers are interested) is:
+
+1. These functions predate the pipe. Had they been written today, the data
+argument would almost certainly have come first. The data.frame methods
+correct an accidental asymmetry rather than introduce new design.
+
+2. The implementation is small and carries no risk of breaking existing
+code, since no currently-valid call passes a data frame as the first
+positional argument to any of these functions.
+
+3. Keeping this in a third-party package means users must know to install
+it, documentation is scattered, and the fix is invisible to people who
+encounter the friction in the first place.
+
+For the base R functions the change amounts to registering a method of the
+form:
+
+    t.test.data.frame <- function(x, formula, ...) {
+      if (!inherits(formula, "formula"))
+        stop("'formula' must be a formula object")
+      t.test(formula, data = x, ...)
+    }
+
+For lm, glm, aov, and nls, which are not currently S3 generics, the change
+would additionally require promoting them to generics; something the
+pipedreams package demonstrates is workable, with default methods that pass
+through to the originals.
+
+I recognise that changes to base R go through Bugzilla and require
+consensus among the core team. I am happy to file a formal feature request,
+provide a patch, or do whatever is most useful. I would also welcome any
+feedback on why this approach might be problematic ? the lack of response
+to my earlier post left me uncertain whether the idea was uncontroversial,
+unwanted, or simply missed.
+
+Thank you for your time.
+M?ns
+
+On Tue, Jun 10, 2025 at 8:46?AM M?ns Thulin <gausseliminering at gmail.com>
+wrote:
+
+> To use functions for common statistical tests/models, like t.test,
+> wilcox.test, lm, glm, and aov, we must currently use the pipe placeholder _
+> when using pipes:
+>
+> penguins |>
+>     subset(species != "Gentoo") |>
+>     t.test(bill_len ~ species, data = _)
+>
+> The syntax would be cleaner and perhaps more intuitive if we didn't have
+> to add the `data = _` bit:
+>
+> penguins |>
+>     subset(species != "Gentoo") |>
+>     t.test(bill_len ~ species)
+>
+> I believe that this is how t.test and the other functions I mentioned
+> would have worked if they'd been written after the base pipe was introduced.
+>
+> Currently, t.test and friends only accept a vector and/or a formula as
+> their first argument. Since there already is a formula method for these
+> functions, a simple way to make the second example above work would be to
+> define a data.frame method like so:
+>
+> t.test.data.frame <- function(x, formula, ...)
+> {
+>     t.test.formula(formula, x, ...)
+> }
+>
+> ...perhaps with a check to make sure that the formula argument actually is
+> a formula.
+>
+> Now, this seems like an easy thing to fix, and it doesn't break any
+> existing functionality of these functions. Since the base pipe was
+> introduced four years ago, I suspect that there might be some reason why
+> this hasn't been implemented already, and I'm curious to find out what that
+> is. Or, if there is support for the idea above, I'd be happy to submit a
+> feature request in Bugzilla and provide code for implementing this.
+>
+> Best regards,
+> M?ns
+>
+
+	[[alternative HTML version deleted]]
+
+
+From pd@|gd @end|ng |rom gm@||@com  Mon Mar  2 14:37:22 2026
+From: pd@|gd @end|ng |rom gm@||@com (Peter Dalgaard)
+Date: Mon, 2 Mar 2026 14:37:22 +0100
+Subject: [Rd] Wrong move of NEWS item
+In-Reply-To: <630650197.3484737.1772279863294@mail.yahoo.com>
+References: <2128797252.1120005.1771732693812.ref@mail.yahoo.com>
+ <2128797252.1120005.1771732693812@mail.yahoo.com>
+ <fake-VM-id.6d776b3ae1213c9af92fe6df6450ef4a@talos.iv>
+ <27036.17696.727900.514006@stat.math.ethz.ch>
+ <630650197.3484737.1772279863294@mail.yahoo.com>
+Message-ID: <C981C64E-7FBA-4F8E-816F-D393B7EC3FEF@gmail.com>
+
+I do hope Martin sees this. Code freeze for 4.5.3 is Wednesday @0:02 ...
+ 
+- Peter
+
+ 
+> On 28 Feb 2026, at 12.57, Suharto Anggono Suharto Anggono via R-devel <r-devel at r-project.org> wrote:
+> 
+> Now that the NEWS item is gone from "CHANGES IN R 4.5.2 patched", please also revert the change to 'Ops.ts' in R-4-5-branch, as I have mentioned. In R-4-5-branch, the change makes diff(m) inconsistent with m - lag(m, -1) for 1-row ts matrix m. Previously, neither of them was a matrix.
+> 
+> _______
+> On Monday, 23 February 2026 at 07:16:36 pm GMT+7, Martin Maechler <maechler at stat.math.ethz.ch> wrote:
+> 
+> 
+>>>>>> Suharto Anggono Suharto Anggono via R-devel
+>>>>>>     on Sun, 22 Feb 2026 03:58:13 +0000 (UTC) writes:
+> 
+>     > diff(m, lag, dif) for matrix m now still returns
+>     >       matrices, also when lag * dif > nrow(m) (PR#18972, thanks to
+>     >       Mikael Jagan and Suharto Anggono).
+>     >       diff(<ts-matrix>) remains matrix, even when it has length zero.
+> 
+>     > The above NEWS item has been moved to "CHANGES IN R 4.5.2 patched".
+> 
+>     > In fact, in R-4-5-branch, diff(m, lag, dif) for matrix m is still not a matrix when lag * dif > nrow(m) (see https://svn.r-project.org/R/branches/R-4-5-branch/src/library/base/R/diff.R for 'diff.default'; https://svn.r-project.org/R/branches/R-4-5-branch/src/library/base/R/datetime.R for 'diff.POSIXt'; https://svn.r-project.org/R/branches/R-4-5-branch/src/library/base/R/dates.R for 'diff.Date'; https://svn.r-project.org/R/branches/R-4-5-branch/src/library/stats/R/ts.R for 'diff.ts').
+> 
+>     > And I suggest keeping it so. Because it has been like that simce the beginning, I think changing it in a patch release is not appropriate.
+> 
+> We have ported  bug fixes of "forever bugs" to the "R patched
+> branch", before,  quite on purpose.
+> Typically they have been really rare use cases and for that
+> reason probably were not detected and reported earlier... and we
+> (R core) still thought these bugs should disappear as quickly as
+> possible.
+> 
+> For the above reason(s), I *had* actually planned to port this bug
+> fix also to R "4.5.2 patched" ...
+> But then it has become somewhat late to do the port only now,
+> and R 4.5.3 will only be a "wrap up" release anyway..
+> 
+> Hence, I agree with your opinion  and will now move the NEWS
+> entry instead of porting the bug fix which was the original plan.
+> 
+> Martin
+> 
+> 
+>     > What have been ported to R-4-5-branch are just- replacing 'tsLag' with 'lag' in 'diff.ts'- 'Ops.ts' to return matrix when e1 or e2 is matrix but e1 and e2 are not overlapping
+>     > I suggest reverting the port. A justification of diff(m) for 1-row ts matrix m not being a matrix was that m - lag(m, -1) was not a matrix.
+>     > Replacing 'tsLag' with 'lag' in 'diff.ts' is actually OK, but not necessary.
+> 
+> [[alternative HTML version deleted]]
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+-- 
+Peter Dalgaard, Professor,
+Center for Statistics, Copenhagen Business School
+Solbjerg Plads 3, 2000 Frederiksberg, Denmark
+Phone: (+45)38153501
+Office: A 4.23
+Email: pd.mes at cbs.dk  Priv: PDalgd at gmail.com
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Tue Mar  3 10:02:09 2026
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Tue, 3 Mar 2026 10:02:09 +0100
+Subject: [Rd] Wrong move of NEWS item
+In-Reply-To: <fake-VM-id.1e87d2dd26fb615308fceacb50668e83@talos.iv>
+References: <2128797252.1120005.1771732693812.ref@mail.yahoo.com>
+ <2128797252.1120005.1771732693812@mail.yahoo.com>
+ <fake-VM-id.6d776b3ae1213c9af92fe6df6450ef4a@talos.iv>
+ <27036.17696.727900.514006@stat.math.ethz.ch>
+ <630650197.3484737.1772279863294@mail.yahoo.com>
+ <C981C64E-7FBA-4F8E-816F-D393B7EC3FEF@gmail.com>
+Message-ID: <27046.41873.814612.726309@stat.math.ethz.ch>
+
+>>>>> Peter Dalgaard 
+>>>>>     on Mon, 2 Mar 2026 14:37:22 +0100 writes:
+
+    > I do hope Martin sees this. Code freeze for 4.5.3 is
+    > Wednesday @0:02 ...  - Peter
+
+ 
+Yes, I did see and think about it, but decided that it was "too
+late" now, *and* not a "problem" I think:
+ `-` now exhibits the correct behaviour  but the diff()
+     methods do not yet (but do in R-devel etc).
+
+Martin
+
+    >> On 28 Feb 2026, at 12.57, Suharto Anggono Suharto Anggono
+    >> via R-devel <r-devel at r-project.org> wrote:
+    >> 
+    >> Now that the NEWS item is gone from "CHANGES IN R 4.5.2
+    >> patched", please also revert the change to 'Ops.ts' in
+    >> R-4-5-branch, as I have mentioned. In R-4-5-branch, the
+    >> change makes diff(m) inconsistent with m - lag(m, -1) for
+    >> 1-row ts matrix m. Previously, neither of them was a
+    >> matrix.
+    >> 
+    >> _______ On Monday, 23 February 2026 at 07:16:36 pm GMT+7,
+    >> Martin Maechler <maechler at stat.math.ethz.ch> wrote:
+    >> 
+    >> 
+    >>>>>>> Suharto Anggono Suharto Anggono via R-devel on Sun,
+    >>>>>>> 22 Feb 2026 03:58:13 +0000 (UTC) writes:
+    >> 
+    >> > diff(m, lag, dif) for matrix m now still returns >
+    >> matrices, also when lag * dif > nrow(m) (PR#18972, thanks
+    >> to > Mikael Jagan and Suharto Anggono).  >
+    >> diff(<ts-matrix>) remains matrix, even when it has length
+    >> zero.
+    >> 
+    >> > The above NEWS item has been moved to "CHANGES IN R
+    >> 4.5.2 patched".
+    >> 
+    >> > In fact, in R-4-5-branch, diff(m, lag, dif) for matrix
+    >> m is still not a matrix when lag * dif > nrow(m) (see
+    >> https://svn.r-project.org/R/branches/R-4-5-branch/src/library/base/R/diff.R
+    >> for 'diff.default';
+    >> https://svn.r-project.org/R/branches/R-4-5-branch/src/library/base/R/datetime.R
+    >> for 'diff.POSIXt';
+    >> https://svn.r-project.org/R/branches/R-4-5-branch/src/library/base/R/dates.R
+    >> for 'diff.Date';
+    >> https://svn.r-project.org/R/branches/R-4-5-branch/src/library/stats/R/ts.R
+    >> for 'diff.ts').
+    >> 
+    >> > And I suggest keeping it so. Because it has been like
+    >> that simce the beginning, I think changing it in a patch
+    >> release is not appropriate.
+    >> 
+    >> We have ported bug fixes of "forever bugs" to the "R
+    >> patched branch", before, quite on purpose.  Typically
+    >> they have been really rare use cases and for that reason
+    >> probably were not detected and reported earlier... and we
+    >> (R core) still thought these bugs should disappear as
+    >> quickly as possible.
+    >> 
+    >> For the above reason(s), I *had* actually planned to port
+    >> this bug fix also to R "4.5.2 patched" ...  But then it
+    >> has become somewhat late to do the port only now, and R
+    >> 4.5.3 will only be a "wrap up" release anyway..
+    >> 
+    >> Hence, I agree with your opinion and will now move the
+    >> NEWS entry instead of porting the bug fix which was the
+    >> original plan.
+    >> 
+    >> Martin
+    >> 
+    >> 
+    >> > What have been ported to R-4-5-branch are just-
+    >> replacing 'tsLag' with 'lag' in 'diff.ts'- 'Ops.ts' to
+    >> return matrix when e1 or e2 is matrix but e1 and e2 are
+    >> not overlapping > I suggest reverting the port. A
+    >> justification of diff(m) for 1-row ts matrix m not being
+    >> a matrix was that m - lag(m, -1) was not a matrix.  >
+    >> Replacing 'tsLag' with 'lag' in 'diff.ts' is actually OK,
+    >> but not necessary.
+    >> 
+    >> [[alternative HTML version deleted]]
+    >> 
+    >> ______________________________________________
+    >> R-devel at r-project.org mailing list
+    >> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+    > -- 
+    > Peter Dalgaard, Professor, Center for Statistics,
+    > Copenhagen Business School Solbjerg Plads 3, 2000
+    > Frederiksberg, Denmark Phone: (+45)38153501 Office: A 4.23
+    > Email: pd.mes at cbs.dk Priv: PDalgd at gmail.com
+
+
+From @uh@rto_@nggono @end|ng |rom y@hoo@com  Wed Mar  4 07:05:18 2026
+From: @uh@rto_@nggono @end|ng |rom y@hoo@com (Suharto Anggono Suharto Anggono)
+Date: Wed, 4 Mar 2026 06:05:18 +0000 (UTC)
+Subject: [Rd] Wrong move of NEWS item
+In-Reply-To: <27046.41873.814612.726309@stat.math.ethz.ch>
+References: <2128797252.1120005.1771732693812.ref@mail.yahoo.com>
+ <2128797252.1120005.1771732693812@mail.yahoo.com>
+ <fake-VM-id.6d776b3ae1213c9af92fe6df6450ef4a@talos.iv>
+ <27036.17696.727900.514006@stat.math.ethz.ch>
+ <630650197.3484737.1772279863294@mail.yahoo.com>
+ <C981C64E-7FBA-4F8E-816F-D393B7EC3FEF@gmail.com>
+ <fake-VM-id.1e87d2dd26fb615308fceacb50668e83@talos.iv>
+ <27046.41873.814612.726309@stat.math.ethz.ch>
+Message-ID: <1872996678.4809050.1772604318096@mail.yahoo.com>
+
+ Then, please announce the change in NEWS. For example:
+The result of arithmetic and comparison operations of non-overlapping "ts" objects where either is a matrix is now a matrix.
+
+It seems that the statement "diff(<ts-matrix>) remains matrix, even when it has length zero" was meant for the change to 'Ops.ts'. But the wording is about diff(<ts-matrix>), which is included in the previous statement.
+
+But I've just realized this.
+Suppose that
+x <- ts(0)
+With the change, x - lag(x, -1) and x == lag(x, -1) are NULL.
+In R 4.5.2, x - lag(x, -1) is integer(0) and x == lag(x, -1) is logical(0).
+
+________
+On Tuesday, 3 March 2026 at 04:02:14 pm GMT+7, Martin Maechler <maechler at stat.math.ethz.ch> wrote:
+
+
+>>>>> Peter Dalgaard
+>>>>>? ? on Mon, 2 Mar 2026 14:37:22 +0100 writes:
+
+? ? > I do hope Martin sees this. Code freeze for 4.5.3 is
+? ? > Wednesday @0:02 ...? - Peter
+
+
+Yes, I did see and think about it, but decided that it was "too
+late" now, *and* not a "problem" I think:
+`-` now exhibits the correct behaviour? but the diff()
+? ? methods do not yet (but do in R-devel etc).
+
+Martin
+
+? ? >> On 28 Feb 2026, at 12.57, Suharto Anggono Suharto Anggono
+? ? >> via R-devel <r-devel at r-project.org> wrote:
+? ? >>
+? ? >> Now that the NEWS item is gone from "CHANGES IN R 4.5.2
+? ? >> patched", please also revert the change to 'Ops.ts' in
+? ? >> R-4-5-branch, as I have mentioned. In R-4-5-branch, the
+? ? >> change makes diff(m) inconsistent with m - lag(m, -1) for
+? ? >> 1-row ts matrix m. Previously, neither of them was a
+? ? >> matrix.
+? ? >>
+? ? >> _______ On Monday, 23 February 2026 at 07:16:36 pm GMT+7,
+? ? >> Martin Maechler <maechler at stat.math.ethz.ch> wrote:
+? ? >>
+? ? >>
+? ? >>>>>>> Suharto Anggono Suharto Anggono via R-devel on Sun,
+? ? >>>>>>> 22 Feb 2026 03:58:13 +0000 (UTC) writes:
+? ? >>
+? ? >> > diff(m, lag, dif) for matrix m now still returns >
+? ? >> matrices, also when lag * dif > nrow(m) (PR#18972, thanks
+? ? >> to > Mikael Jagan and Suharto Anggono).? >
+? ? >> diff(<ts-matrix>) remains matrix, even when it has length
+? ? >> zero.
+? ? >>
+? ? >> > The above NEWS item has been moved to "CHANGES IN R
+? ? >> 4.5.2 patched".
+? ? >>
+? ? >> > In fact, in R-4-5-branch, diff(m, lag, dif) for matrix
+? ? >> m is still not a matrix when lag * dif > nrow(m) (see
+? ? >> https://svn.r-project.org/R/branches/R-4-5-branch/src/library/base/R/diff.R
+? ? >> for 'diff.default';
+? ? >> https://svn.r-project.org/R/branches/R-4-5-branch/src/library/base/R/datetime.R
+? ? >> for 'diff.POSIXt';
+? ? >> https://svn.r-project.org/R/branches/R-4-5-branch/src/library/base/R/dates.R
+? ? >> for 'diff.Date';
+? ? >> https://svn.r-project.org/R/branches/R-4-5-branch/src/library/stats/R/ts.R
+? ? >> for 'diff.ts').
+? ? >>
+? ? >> > And I suggest keeping it so. Because it has been like
+? ? >> that simce the beginning, I think changing it in a patch
+? ? >> release is not appropriate.
+? ? >>
+? ? >> We have ported bug fixes of "forever bugs" to the "R
+? ? >> patched branch", before, quite on purpose.? Typically
+? ? >> they have been really rare use cases and for that reason
+? ? >> probably were not detected and reported earlier... and we
+? ? >> (R core) still thought these bugs should disappear as
+? ? >> quickly as possible.
+? ? >>
+? ? >> For the above reason(s), I *had* actually planned to port
+? ? >> this bug fix also to R "4.5.2 patched" ...? But then it
+? ? >> has become somewhat late to do the port only now, and R
+? ? >> 4.5.3 will only be a "wrap up" release anyway..
+? ? >>
+? ? >> Hence, I agree with your opinion and will now move the
+? ? >> NEWS entry instead of porting the bug fix which was the
+? ? >> original plan.
+? ? >>
+? ? >> Martin
+? ? >>
+? ? >>
+? ? >> > What have been ported to R-4-5-branch are just-
+? ? >> replacing 'tsLag' with 'lag' in 'diff.ts'- 'Ops.ts' to
+? ? >> return matrix when e1 or e2 is matrix but e1 and e2 are
+? ? >> not overlapping > I suggest reverting the port. A
+? ? >> justification of diff(m) for 1-row ts matrix m not being
+? ? >> a matrix was that m - lag(m, -1) was not a matrix.? >
+? ? >> Replacing 'tsLag' with 'lag' in 'diff.ts' is actually OK,
+? ? >> but not necessary.
+? ? >>
+? ? >> [[alternative HTML version deleted]]
+? ? >>
+? ? >> ______________________________________________
+? ? >> R-devel at r-project.org mailing list
+? ? >> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+? ? > --
+? ? > Peter Dalgaard, Professor, Center for Statistics,
+? ? > Copenhagen Business School Solbjerg Plads 3, 2000
+? ? > Frederiksberg, Denmark Phone: (+45)38153501 Office: A 4.23
+? ? > Email: pd.mes at cbs.dk Priv: PDalgd at gmail.com  
+	[[alternative HTML version deleted]]
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Wed Mar  4 12:42:20 2026
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Wed, 4 Mar 2026 12:42:20 +0100
+Subject: [Rd] Wrong move of NEWS item
+In-Reply-To: <fake-VM-id.3b83375086f564194404c17c221e1437@talos.iv>
+References: <2128797252.1120005.1771732693812.ref@mail.yahoo.com>
+ <2128797252.1120005.1771732693812@mail.yahoo.com>
+ <fake-VM-id.6d776b3ae1213c9af92fe6df6450ef4a@talos.iv>
+ <27036.17696.727900.514006@stat.math.ethz.ch>
+ <630650197.3484737.1772279863294@mail.yahoo.com>
+ <C981C64E-7FBA-4F8E-816F-D393B7EC3FEF@gmail.com>
+ <fake-VM-id.1e87d2dd26fb615308fceacb50668e83@talos.iv>
+ <27046.41873.814612.726309@stat.math.ethz.ch>
+ <1872996678.4809050.1772604318096@mail.yahoo.com>
+Message-ID: <27048.6812.306265.880083@stat.math.ethz.ch>
+
+>>>>> Suharto Anggono Suharto Anggono 
+>>>>>     on Wed, 4 Mar 2026 06:05:18 +0000 (UTC) writes:
+
+    > Then, please announce the change in NEWS. For example:
+    > The result of arithmetic and comparison operations of non-overlapping "ts" objects where either is a matrix is now a matrix.
+
+    > It seems that the statement "diff(<ts-matrix>) remains matrix, even when it has length zero" was meant for the change to 'Ops.ts'. But the wording is about diff(<ts-matrix>), which is included in the previous statement.
+
+    > But I've just realized this.
+
+    > Suppose that
+    > x <- ts(0)
+
+    > With the change, x - lag(x, -1) and x == lag(x, -1) are NULL.
+    > In R 4.5.2, x - lag(x, -1) is integer(0) and x == lag(x, -1) is logical(0).
+
+Indeed, so we may even have to change R-devel further (for this
+rare boundary case).
+
+But the R 4.5.2   x - lag(x, -1)  giving integer(0)  is only somewhat better than
+giving NULL  when in principle the "truly correct" answer should
+be  double(0) and we'd rather get that right in R-devel.
+
+Re NEWS, you are right: I will add a small note, indeed {as it
+is not "code" that's frozen}.
+
+
+Martin
+
+
+
+    > ________
+    > On Tuesday, 3 March 2026 at 04:02:14 pm GMT+7, Martin Maechler <maechler at stat.math.ethz.ch> wrote:
+
+
+>>>>> Peter Dalgaard
+    >>>>>> ? ? on Mon, 2 Mar 2026 14:37:22 +0100 writes:
+
+    > ? ? > I do hope Martin sees this. Code freeze for 4.5.3 is
+    > ? ? > Wednesday @0:02 ...? - Peter
+
+
+    > Yes, I did see and think about it, but decided that it was "too
+    > late" now, *and* not a "problem" I think:
+    > `-` now exhibits the correct behaviour? but the diff()
+    > ? ? methods do not yet (but do in R-devel etc).
+
+    > Martin
+
+    > ? ? >> On 28 Feb 2026, at 12.57, Suharto Anggono Suharto Anggono
+    > ? ? >> via R-devel <r-devel at r-project.org> wrote:
+    > ? ? >>
+    > ? ? >> Now that the NEWS item is gone from "CHANGES IN R 4.5.2
+    > ? ? >> patched", please also revert the change to 'Ops.ts' in
+    > ? ? >> R-4-5-branch, as I have mentioned. In R-4-5-branch, the
+    > ? ? >> change makes diff(m) inconsistent with m - lag(m, -1) for
+    > ? ? >> 1-row ts matrix m. Previously, neither of them was a
+    > ? ? >> matrix.
+    > ? ? >>
+    > ? ? >> _______ On Monday, 23 February 2026 at 07:16:36 pm GMT+7,
+    > ? ? >> Martin Maechler <maechler at stat.math.ethz.ch> wrote:
+    > ? ? >>
+    > ? ? >>
+    > ? ? >>>>>>> Suharto Anggono Suharto Anggono via R-devel on Sun,
+    > ? ? >>>>>>> 22 Feb 2026 03:58:13 +0000 (UTC) writes:
+    > ? ? >>
+    > ? ? >> > diff(m, lag, dif) for matrix m now still returns >
+    > ? ? >> matrices, also when lag * dif > nrow(m) (PR#18972, thanks
+    > ? ? >> to > Mikael Jagan and Suharto Anggono).? >
+    > ? ? >> diff(<ts-matrix>) remains matrix, even when it has length
+    > ? ? >> zero.
+    > ? ? >>
+    > ? ? >> > The above NEWS item has been moved to "CHANGES IN R
+    > ? ? >> 4.5.2 patched".
+    > ? ? >>
+    > ? ? >> > In fact, in R-4-5-branch, diff(m, lag, dif) for matrix
+    > ? ? >> m is still not a matrix when lag * dif > nrow(m) (see
+    > ? ? >> https://svn.r-project.org/R/branches/R-4-5-branch/src/library/base/R/diff.R
+    > ? ? >> for 'diff.default';
+    > ? ? >> https://svn.r-project.org/R/branches/R-4-5-branch/src/library/base/R/datetime.R
+    > ? ? >> for 'diff.POSIXt';
+    > ? ? >> https://svn.r-project.org/R/branches/R-4-5-branch/src/library/base/R/dates.R
+    > ? ? >> for 'diff.Date';
+    > ? ? >> https://svn.r-project.org/R/branches/R-4-5-branch/src/library/stats/R/ts.R
+    > ? ? >> for 'diff.ts').
+    > ? ? >>
+    > ? ? >> > And I suggest keeping it so. Because it has been like
+    > ? ? >> that simce the beginning, I think changing it in a patch
+    > ? ? >> release is not appropriate.
+    > ? ? >>
+    > ? ? >> We have ported bug fixes of "forever bugs" to the "R
+    > ? ? >> patched branch", before, quite on purpose.? Typically
+    > ? ? >> they have been really rare use cases and for that reason
+    > ? ? >> probably were not detected and reported earlier... and we
+    > ? ? >> (R core) still thought these bugs should disappear as
+    > ? ? >> quickly as possible.
+    > ? ? >>
+    > ? ? >> For the above reason(s), I *had* actually planned to port
+    > ? ? >> this bug fix also to R "4.5.2 patched" ...? But then it
+    > ? ? >> has become somewhat late to do the port only now, and R
+    > ? ? >> 4.5.3 will only be a "wrap up" release anyway..
+    > ? ? >>
+    > ? ? >> Hence, I agree with your opinion and will now move the
+    > ? ? >> NEWS entry instead of porting the bug fix which was the
+    > ? ? >> original plan.
+    > ? ? >>
+    > ? ? >> Martin
+    > ? ? >>
+    > ? ? >>
+    > ? ? >> > What have been ported to R-4-5-branch are just-
+    > ? ? >> replacing 'tsLag' with 'lag' in 'diff.ts'- 'Ops.ts' to
+    > ? ? >> return matrix when e1 or e2 is matrix but e1 and e2 are
+    > ? ? >> not overlapping > I suggest reverting the port. A
+    > ? ? >> justification of diff(m) for 1-row ts matrix m not being
+    > ? ? >> a matrix was that m - lag(m, -1) was not a matrix.? >
+    > ? ? >> Replacing 'tsLag' with 'lag' in 'diff.ts' is actually OK,
+    > ? ? >> but not necessary.
+    > ? ? >>
+    > ? ? >> [[alternative HTML version deleted]]
+    > ? ? >>
+    > ? ? >> ______________________________________________
+    > ? ? >> R-devel at r-project.org mailing list
+    > ? ? >> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+    > ? ? > --
+    > ? ? > Peter Dalgaard, Professor, Center for Statistics,
+    > ? ? > Copenhagen Business School Solbjerg Plads 3, 2000
+    > ? ? > Frederiksberg, Denmark Phone: (+45)38153501 Office: A 4.23
+    > ? ? > Email: pd.mes at cbs.dk Priv: PDalgd at gmail.com  
+    > [[alternative HTML version deleted]]
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Wed Mar  4 12:57:47 2026
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Wed, 4 Mar 2026 12:57:47 +0100
+Subject: [Rd] diff(<ts-matrix>), Ops.ts -- R Bugzilla PR#18972
+In-Reply-To: <fake-VM-id.e680667cf19cd4b00410eae2f74abc3a@talos.iv>
+References: <2128797252.1120005.1771732693812.ref@mail.yahoo.com>
+ <2128797252.1120005.1771732693812@mail.yahoo.com>
+ <fake-VM-id.6d776b3ae1213c9af92fe6df6450ef4a@talos.iv>
+ <27036.17696.727900.514006@stat.math.ethz.ch>
+ <630650197.3484737.1772279863294@mail.yahoo.com>
+ <C981C64E-7FBA-4F8E-816F-D393B7EC3FEF@gmail.com>
+ <fake-VM-id.1e87d2dd26fb615308fceacb50668e83@talos.iv>
+ <27046.41873.814612.726309@stat.math.ethz.ch>
+ <1872996678.4809050.1772604318096@mail.yahoo.com>
+ <27048.6812.306265.880083@stat.math.ethz.ch>
+Message-ID: <27048.7739.470561.910241@stat.math.ethz.ch>
+
+>>>>> Martin Maechler 
+>>>>>     on Wed, 4 Mar 2026 12:42:20 +0100 writes:
+
+>>>>> Suharto Anggono Suharto Anggono 
+>>>>>     on Wed, 4 Mar 2026 06:05:18 +0000 (UTC) writes:
+
+    >> Then, please announce the change in NEWS. For example:
+    >> The result of arithmetic and comparison operations of non-overlapping "ts" objects where either is a matrix is now a matrix.
+
+    >> It seems that the statement "diff(<ts-matrix>) remains matrix, even when it has length zero" was meant for the change to 'Ops.ts'. But the wording is about diff(<ts-matrix>), which is included in the previous statement.
+
+    >> But I've just realized this :
+
+    >> Suppose that
+    >> x <- ts(0)
+
+    >> With the change, x - lag(x, -1) and x == lag(x, -1) are NULL.
+    >> In R 4.5.2, x - lag(x, -1) is integer(0) and x == lag(x, -1) is logical(0).
+
+    > Indeed, so we may even have to change R-devel further (for this
+    > rare boundary case).
+
+    > But the R 4.5.2   x - lag(x, -1)  giving integer(0)  is only somewhat better than
+    > giving NULL  when in principle the "truly correct" answer should
+    > be  double(0) and we'd rather get that right in R-devel.
+
+==> So, we should probably reopen R Bugzilla item PR#18972, at
+ ---> https://bugs.r-project.org/show_bug.cgi?id=18972
+
+Martin
+
+
+From |kry|ov @end|ng |rom d|@root@org  Thu Mar  5 22:24:42 2026
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Fri, 6 Mar 2026 00:24:42 +0300
+Subject: [Rd] Latest R-devel fails to compile with --enable-strict-barrier
+Message-ID: <20260306002442.7dc5e22d@Tarkus>
+
+Hello R developers,
+
+'.../configure --enable-strict-barrier && make' eventually fails to
+load tools.so due to an undefined reference to OBJECT().
+
+Judging by the disassembly, the call surfaces in deparseRd(), close to
+the beginning of the function:
+
+    if(!isString(e) || LENGTH(e) != 1) 
+        error(_("'deparseRd' only supports deparsing character elements"));
+    e = STRING_ELT(e, 0);
+    return (TYPEOF(s) == INTSXP && !inherits(s, "factor"));
+    if(!isInteger(state) || LENGTH(state) != 5) error(_("bad state"));
+
+    if (OBJECT(s)) {
+   12828:       48 89 df                mov    %rbx,%rdi
+   1282b:       e8 d0 19 ff ff          call   4200 <OBJECT at plt>
+   12830:       85 c0                   test   %eax,%eax
+   12832:       0f 85 57 03 00 00       jne    12b8f <deparseRd+0x3df>
+...
+        klass = getAttrib(s, R_ClassSymbol);
+   12b8f:       48 8b 05 ca 73 00 00    mov    0x73ca(%rip),%rax # R_ClassSymbol
+   12b96:       48 89 df                mov    %rbx,%rdi
+   12b99:       48 8b 30                mov    (%rax),%rsi
+   12b9c:       e8 3f 1b ff ff          call   46e0 <Rf_getAttrib at plt>
+
+Looking at the preprocessor output, I think that the call to OBJECT()
+appears through the inlined function isInteger(), which calls inlined
+function inherits(), which contains the call to OBJECT(), which is not
+available to the 'tools' shared library due to being newly hidden.
+
+Without strict barrier checking, OBJECT(s) gets expanded to
+((s)->sxpinfo.obj), and all works well.
+
+-- 
+Best regards,
+Ivan
+
+
+From m|ch@e|ch|r|co4 @end|ng |rom gm@||@com  Thu Mar  5 23:26:16 2026
+From: m|ch@e|ch|r|co4 @end|ng |rom gm@||@com (Michael Chirico)
+Date: Thu, 5 Mar 2026 14:26:16 -0800
+Subject: [Rd] Is "difftime" an appropriate addition to
+ methods::.OldClassesList?
+Message-ID: <CAPRVBcw+=8XbO8wz4zRrDZcNreQJ-M9k-S1J6MBeepT-XswBrA@mail.gmail.com>
+
+I found myself needing to add methods::setOldClass("difftime") in
+order to also set a coercion method for my class to difftime:
+
+methods::setAs("myClass", "difftime", ...)
+
+And thus avoid the on-load message:
+
+in method for ?coerce? with signature ?"myClass","difftime"?: no
+definition for class ?difftime?
+
+I see 10 or so other packages also doing the same [1].
+
+I am wondering, though, since {base} owns this class, if it shouldn't
+be registered already? I see inclusions for, e.g., closely-related S3
+classes Date and POSIXt [2].
+
+OTOH, I see .OldClassesList hasn't really been edited in 15+ years, so
+maybe this approach has lost favor and is better not amended anymore
+[3].
+
+(or maybe this is really an r-package-devel question about whether
+supporting as(<my class>, "difftime") is actually beneficial...)
+
+Mike C
+
+[1] https://github.com/search?q=org%3Acran%20%2FsetOldClass.*difftime%2F&type=code
+[2] https://github.com/r-devel/r-svn/blob/b7850c8cae0956592019c5f8f59e885d3d39ae6f/src/library/methods/R/BasicClasses.R#L550-L552
+[3] https://github.com/r-devel/r-svn/blame/b7850c8cae0956592019c5f8f59e885d3d39ae6f/src/library/methods/R/BasicClasses.R#L541-L569
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Fri Mar  6 11:36:24 2026
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Fri, 6 Mar 2026 11:36:24 +0100
+Subject: [Rd] Is "difftime" an appropriate addition to
+ methods::.OldClassesList?
+In-Reply-To: <fake-VM-id.50eaad27f2924bab3368154f2319f718@talos.iv>
+References: <CAPRVBcw+=8XbO8wz4zRrDZcNreQJ-M9k-S1J6MBeepT-XswBrA@mail.gmail.com>
+Message-ID: <27050.44584.478122.867248@stat.math.ethz.ch>
+
+>>>>> Michael Chirico 
+>>>>>     on Thu, 5 Mar 2026 14:26:16 -0800 writes:
+
+    > I found myself needing to add methods::setOldClass("difftime") in
+    > order to also set a coercion method for my class to difftime:
+
+    > methods::setAs("myClass", "difftime", ...)
+
+    > And thus avoid the on-load message:
+
+    > in method for ?coerce? with signature ?"myClass","difftime"?: no
+    > definition for class ?difftime?
+
+    > I see 10 or so other packages also doing the same [1].
+
+    > I am wondering, though, since {base} owns this class, if it shouldn't
+    > be registered already? I see inclusions for, e.g., closely-related S3
+    > classes Date and POSIXt [2].
+
+In my vague recollection  "difftime" came a bit later than "Date"
+and "POSIXlt".  This may be the reason for its non-presence.
+
+    > OTOH, I see .OldClassesList hasn't really been edited in 15+ years, so
+    > maybe this approach has lost favor and is better not amended anymore
+    > [3].
+
+well, favors related to S4 have always been somewhat segregated ..
+
+    > (or maybe this is really an r-package-devel question about whether
+    > supporting as(<my class>, "difftime") is actually beneficial...)
+
+The use of  as(., <...>)  is an R-help question really  not
+restricted to package development at all.
+
+I agree that "difftime" does naturally belong alongside "POSIXt"
+and I am happy to add it to the list;
+(I did check to see if an unneeded   setOldClass(<already_set>)
+ gives a warning, and it doesn't)
+
+Martin
+
+
+    > Mike C
+
+    > [1] https://github.com/search?q=org%3Acran%20%2FsetOldClass.*difftime%2F&type=code
+    > [2] https://github.com/r-devel/r-svn/blob/b7850c8cae0956592019c5f8f59e885d3d39ae6f/src/library/methods/R/BasicClasses.R#L550-L552
+    > [3] https://github.com/r-devel/r-svn/blame/b7850c8cae0956592019c5f8f59e885d3d39ae6f/src/library/methods/R/BasicClasses.R#L541-L569
+
+
+From @g|@nner|n| @end|ng |rom gm@||@com  Mon Mar  9 12:43:07 2026
+From: @g|@nner|n| @end|ng |rom gm@||@com (Simone Giannerini)
+Date: Mon, 9 Mar 2026 12:43:07 +0100
+Subject: [Rd] Typo/bug in ar.yw.default, ar.ols, ar.burg.default
+Message-ID: <CANcXGiyf=4yGeoR8ZULVEcjKEGQqVRCXp9HK03tO4eL16aVYmA@mail.gmail.com>
+
+Dear all,
+
+I think there is a (small) bug in
+
+  ar.yw.default   (line 142 of the source file ar.R)
+  ar.ols               (line 429 of the source file ar.R)
+  ar.burg.default (line 570 of the source file ar.R)
+
+
+   maic <- min(aic)
+
+should be
+
+   maic <- min(xaic)
+
+Note that, apparently, this typo/bug does little harm since the
+subsequent line of code
+
+   xaic <- setNames(if(is.finite(maic)) xaic - min(xaic) else
+             ifelse(xaic == maic, 0, Inf), 0L:order.max)
+
+does not use maic but min(xaic) directly. In any case, after fixing,
+one could replace min(xaic) with maic to avoid recomputing min(xaic).
+In absence of comments I will file a bug report.
+
+Kind regards
+
+Simone
+
+  Tested against R-devel 2026-03-06
+
+-- 
+___________________________________________________
+
+Simone Giannerini
+Dipartimento di Scienze Economiche e Statistiche
+Universita' di Udine
+Via Tomadini 30/A - 33100 Udine,  ITALY
+Tel: +39 0432 249577
+https://simonegiannerini.net/
+
+
+From t|m@t@y|or @end|ng |rom h|ddene|eph@nt@@co@uk  Mon Mar  9 12:53:18 2026
+From: t|m@t@y|or @end|ng |rom h|ddene|eph@nt@@co@uk (Tim Taylor)
+Date: Mon, 09 Mar 2026 11:53:18 +0000
+Subject: [Rd] In glm explicitly search stats for family functions
+Message-ID: <feba2c09-0a6c-4bc9-8cfb-a63b9b856e06@app.fastmail.com>
+
+I appreciate there are likely many places where calling a stats function via `::` and without the stats package being loaded could be problematic but would R core have any interest in adapting functions to accommodate this where possible?
+
+The example I ran in to today can be seen below:
+
+ex <- function() {
+    counts <- c(18,17,15,20,10,20,25,13,12)
+    outcome <- gl(3,1,9)
+    treatment <- gl(3,3)
+    stats::glm(counts ~ outcome + treatment, family = "poisson")
+}
+
+tools::R(ex)
+#> 
+#> Call:  stats::glm(formula = counts ~ outcome + treatment, family = "poisson")
+#> 
+#> Coefficients:
+#> (Intercept)     outcome2     outcome3   treatment2   treatment3  
+#>   3.045e+00   -4.543e-01   -2.930e-01    6.972e-16    8.237e-16  
+#> 
+#> Degrees of Freedom: 8 Total (i.e. Null);  4 Residual
+#> Null Deviance:	    10.58 
+#> Residual Deviance: 5.129 	AIC: 56.76
+
+tools::R(ex, env=c("R_DEFAULT_PACKAGES=NULL"))
+#> Error: error in inferior call:
+#>   object 'poisson' of mode 'function' was not found
+
+The second call fails due to the following line in glm:
+
+if (is.character(family)) 
+        family <- get(family, mode = "function", envir = parent.frame())
+
+A non-breaking patch (AFAICT) could add an additional branch that explicitly searches a lookup of functions in the stats package if the above call to `get` failed.
+
+Again I understand this could very much be a case of, "don't do that", but ...
+
+Regards
+
+Tim
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Mon Mar  9 13:27:10 2026
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Mon, 9 Mar 2026 13:27:10 +0100
+Subject: [Rd] Is "difftime" an appropriate addition to .OldClassesList?
+In-Reply-To: <fake-VM-id.65a7ce87f75825f6fb595bb92dceb333@talos.iv>
+References: <CAPRVBcw+=8XbO8wz4zRrDZcNreQJ-M9k-S1J6MBeepT-XswBrA@mail.gmail.com>
+ <27050.44584.478122.867248@stat.math.ethz.ch>
+Message-ID: <27054.48286.211150.898952@stat.math.ethz.ch>
+
+>>>>> Martin Maechler 
+>>>>>     on Fri, 6 Mar 2026 11:36:24 +0100 writes:
+
+>>>>> Michael Chirico 
+>>>>>     on Thu, 5 Mar 2026 14:26:16 -0800 writes:
+
+    >> I found myself needing to add methods::setOldClass("difftime") in
+    >> order to also set a coercion method for my class to difftime:
+
+    >> methods::setAs("myClass", "difftime", ...)
+
+    >> And thus avoid the on-load message:
+
+    >> in method for ?coerce? with signature ?"myClass","difftime"?: no
+    >> definition for class ?difftime?
+
+    >> I see 10 or so other packages also doing the same [1].
+
+    >> I am wondering, though, since {base} owns this class, if it shouldn't
+    >> be registered already? I see inclusions for, e.g., closely-related S3
+    >> classes Date and POSIXt [2].
+
+    > In my vague recollection  "difftime" came a bit later than "Date"
+    > and "POSIXlt".  This may be the reason for its non-presence.
+
+    >> OTOH, I see .OldClassesList hasn't really been edited in 15+ years, so
+    >> maybe this approach has lost favor and is better not amended anymore
+    >> [3].
+
+    > well, favors related to S4 have always been somewhat segregated ..
+
+    >> (or maybe this is really an r-package-devel question about whether
+    >> supporting as(<my class>, "difftime") is actually beneficial...)
+
+    > The use of  as(., <...>)  is an R-help question really  not
+    > restricted to package development at all.
+
+    > I agree that "difftime" does naturally belong alongside "POSIXt"
+    > and I am happy to add it to the list;
+    > (I did check to see if an unneeded   setOldClass(<already_set>)
+    > gives a warning, and it doesn't)
+
+With svn rev 89582, I have committed this now to "R-devel".
+Thank you, Michael, for the suggestion!
+
+Martin
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Mon Mar  9 16:19:02 2026
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Mon, 9 Mar 2026 16:19:02 +0100
+Subject: [Rd] In glm explicitly search stats for family functions
+In-Reply-To: <fake-VM-id.2d3c08adaa63ca2965d3363ff7220e73@talos.iv>
+References: <feba2c09-0a6c-4bc9-8cfb-a63b9b856e06@app.fastmail.com>
+Message-ID: <27054.58598.817558.514533@stat.math.ethz.ch>
+
+>>>>> Tim Taylor 
+>>>>>     on Mon, 09 Mar 2026 11:53:18 +0000 writes:
+
+    > I appreciate there are likely many places where calling a stats function via `::` and without the stats package being loaded could be problematic but would R core have any interest in adapting functions to accommodate this where possible?
+
+For my part (just one R corer): No, not at all.
+Using R without 'stats' is like  "<your favorite> without
+<your_other_fav>", e.g., like doing math without the (greek
+Sigma) summation sign:  possible, but rarely a good idea and just
+complicating things unnecessarily.
+
+Martin
+
+
+    > The example I ran in to today can be seen below:
+
+    > ex <- function() {
+    > counts <- c(18,17,15,20,10,20,25,13,12)
+    > outcome <- gl(3,1,9)
+    > treatment <- gl(3,3)
+    > stats::glm(counts ~ outcome + treatment, family = "poisson")
+    > }
+
+    > tools::R(ex)
+    > #> 
+    > #> Call:  stats::glm(formula = counts ~ outcome + treatment, family = "poisson")
+    > #> 
+    > #> Coefficients:
+    > #> (Intercept)     outcome2     outcome3   treatment2   treatment3  
+    > #>   3.045e+00   -4.543e-01   -2.930e-01    6.972e-16    8.237e-16  
+    > #> 
+    > #> Degrees of Freedom: 8 Total (i.e. Null);  4 Residual
+    > #> Null Deviance:	    10.58 
+    > #> Residual Deviance: 5.129 	AIC: 56.76
+
+    > tools::R(ex, env=c("R_DEFAULT_PACKAGES=NULL"))
+    > #> Error: error in inferior call:
+    > #>   object 'poisson' of mode 'function' was not found
+
+    > The second call fails due to the following line in glm:
+
+    > if (is.character(family)) 
+    > family <- get(family, mode = "function", envir = parent.frame())
+
+    > A non-breaking patch (AFAICT) could add an additional branch that explicitly searches a lookup of functions in the stats package if the above call to `get` failed.
+
+    > Again I understand this could very much be a case of, "don't do that", but ...
+
+    > Regards
+
+    > Tim
+
+    > ______________________________________________
+    > R-devel at r-project.org mailing list
+    > https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From @oko| @end|ng |rom |n@@-tou|ou@e@|r  Mon Mar  9 16:39:03 2026
+From: @oko| @end|ng |rom |n@@-tou|ou@e@|r (Serguei Sokol)
+Date: Mon, 9 Mar 2026 16:39:03 +0100
+Subject: [Rd] In glm explicitly search stats for family functions
+In-Reply-To: <feba2c09-0a6c-4bc9-8cfb-a63b9b856e06@app.fastmail.com>
+References: <feba2c09-0a6c-4bc9-8cfb-a63b9b856e06@app.fastmail.com>
+Message-ID: <2111b4f6-75fc-4e42-b593-f4061a7f73fe@insa-toulouse.fr>
+
+Le 09/03/2026 ? 12:53, Tim Taylor a ?crit?:
+> I appreciate there are likely many places where calling a stats function via `::` and without the stats package being loaded could be problematic but would R core have any interest in adapting functions to accommodate this where possible?
+>
+> The example I ran in to today can be seen below:
+>
+> ex <- function() {
+>      counts <- c(18,17,15,20,10,20,25,13,12)
+>      outcome <- gl(3,1,9)
+>      treatment <- gl(3,3)
+>      stats::glm(counts ~ outcome + treatment, family = "poisson")
+> }
+>
+> tools::R(ex)
+> #>
+> #> Call:  stats::glm(formula = counts ~ outcome + treatment, family = "poisson")
+> #>
+> #> Coefficients:
+> #> (Intercept)     outcome2     outcome3   treatment2   treatment3
+> #>   3.045e+00   -4.543e-01   -2.930e-01    6.972e-16    8.237e-16
+> #>
+> #> Degrees of Freedom: 8 Total (i.e. Null);  4 Residual
+> #> Null Deviance:	    10.58
+> #> Residual Deviance: 5.129 	AIC: 56.76
+>
+> tools::R(ex, env=c("R_DEFAULT_PACKAGES=NULL"))
+> #> Error: error in inferior call:
+> #>   object 'poisson' of mode 'function' was not found
+>
+> The second call fails due to the following line in glm:
+>
+> if (is.character(family))
+>          family <- get(family, mode = "function", envir = parent.frame())
+>
+> A non-breaking patch (AFAICT) could add an additional branch that explicitly searches a lookup of functions in the stats package if the above call to `get` failed.
+You can do it on your own side by modifying the function 'ex' like:
+
+ex <- function() {
+     counts <- c(18,17,15,20,10,20,25,13,12)
+     outcome <- gl(3,1,9)
+     treatment <- gl(3,3)
+     require(stats)
+     stats::glm(counts ~ outcome + treatment, family = "poisson")
+}
+
+Note "require(stats)" before glm() call. In a classical R env, this is almost a no-cost operation because stats is already attached and in R_DEFAULT_PACKAGES=NULL
+  case, it does what you need.
+
+Best,
+Serguei.
+
+>
+> Again I understand this could very much be a case of, "don't do that", but ...
+>
+> Regards
+>
+> Tim
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+>
+>
+>
+
+
+From m|ch@|2992 @end|ng |rom gm@||@com  Mon Mar  9 16:47:20 2026
+From: m|ch@|2992 @end|ng |rom gm@||@com (=?UTF-8?Q?Micha=C5=82_Bojanowski?=)
+Date: Mon, 9 Mar 2026 16:47:20 +0100
+Subject: [Rd] In glm explicitly search stats for family functions
+In-Reply-To: <feba2c09-0a6c-4bc9-8cfb-a63b9b856e06@app.fastmail.com>
+References: <feba2c09-0a6c-4bc9-8cfb-a63b9b856e06@app.fastmail.com>
+Message-ID: <CAByPayH06uyOwtr7xhgS3fM7X1VVPUf0dmcoERiP9itymp36yQ@mail.gmail.com>
+
+I believe you can
+
+ex3 <- function() {
+  counts <- c(18,17,15,20,10,20,25,13,12)
+  outcome <- gl(3,1,9)
+  treatment <- gl(3,3)
+  stats::glm(counts ~ outcome + treatment, family = stats::poisson)
+}
+
+I think if family is character it's searching in parent.frame() rather
+than package namespace.
+
+
+~Michal
+
+
+On Mon, Mar 9, 2026 at 12:54?PM Tim Taylor
+<tim.taylor at hiddenelephants.co.uk> wrote:
+>
+> I appreciate there are likely many places where calling a stats function via `::` and without the stats package being loaded could be problematic but would R core have any interest in adapting functions to accommodate this where possible?
+>
+> The example I ran in to today can be seen below:
+>
+> ex <- function() {
+>     counts <- c(18,17,15,20,10,20,25,13,12)
+>     outcome <- gl(3,1,9)
+>     treatment <- gl(3,3)
+>     stats::glm(counts ~ outcome + treatment, family = "poisson")
+> }
+>
+> tools::R(ex)
+> #>
+> #> Call:  stats::glm(formula = counts ~ outcome + treatment, family = "poisson")
+> #>
+> #> Coefficients:
+> #> (Intercept)     outcome2     outcome3   treatment2   treatment3
+> #>   3.045e+00   -4.543e-01   -2.930e-01    6.972e-16    8.237e-16
+> #>
+> #> Degrees of Freedom: 8 Total (i.e. Null);  4 Residual
+> #> Null Deviance:           10.58
+> #> Residual Deviance: 5.129     AIC: 56.76
+>
+> tools::R(ex, env=c("R_DEFAULT_PACKAGES=NULL"))
+> #> Error: error in inferior call:
+> #>   object 'poisson' of mode 'function' was not found
+>
+> The second call fails due to the following line in glm:
+>
+> if (is.character(family))
+>         family <- get(family, mode = "function", envir = parent.frame())
+>
+> A non-breaking patch (AFAICT) could add an additional branch that explicitly searches a lookup of functions in the stats package if the above call to `get` failed.
+>
+> Again I understand this could very much be a case of, "don't do that", but ...
+>
+> Regards
+>
+> Tim
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Mon Mar  9 16:49:13 2026
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Mon, 9 Mar 2026 11:49:13 -0400
+Subject: [Rd] In glm explicitly search stats for family functions
+In-Reply-To: <2111b4f6-75fc-4e42-b593-f4061a7f73fe@insa-toulouse.fr>
+References: <feba2c09-0a6c-4bc9-8cfb-a63b9b856e06@app.fastmail.com>
+ <2111b4f6-75fc-4e42-b593-f4061a7f73fe@insa-toulouse.fr>
+Message-ID: <3443eaae-fcf3-4a82-b8e6-8af3abc7179d@gmail.com>
+
+On 2026-03-09 11:39 a.m., Serguei Sokol via R-devel wrote:
+> Le 09/03/2026 ? 12:53, Tim Taylor a ?crit?:
+>> I appreciate there are likely many places where calling a stats function via `::` and without the stats package being loaded could be problematic but would R core have any interest in adapting functions to accommodate this where possible?
+>>
+>> The example I ran in to today can be seen below:
+>>
+>> ex <- function() {
+>>       counts <- c(18,17,15,20,10,20,25,13,12)
+>>       outcome <- gl(3,1,9)
+>>       treatment <- gl(3,3)
+>>       stats::glm(counts ~ outcome + treatment, family = "poisson")
+>> }
+>>
+>> tools::R(ex)
+>> #>
+>> #> Call:  stats::glm(formula = counts ~ outcome + treatment, family = "poisson")
+>> #>
+>> #> Coefficients:
+>> #> (Intercept)     outcome2     outcome3   treatment2   treatment3
+>> #>   3.045e+00   -4.543e-01   -2.930e-01    6.972e-16    8.237e-16
+>> #>
+>> #> Degrees of Freedom: 8 Total (i.e. Null);  4 Residual
+>> #> Null Deviance:	    10.58
+>> #> Residual Deviance: 5.129 	AIC: 56.76
+>>
+>> tools::R(ex, env=c("R_DEFAULT_PACKAGES=NULL"))
+>> #> Error: error in inferior call:
+>> #>   object 'poisson' of mode 'function' was not found
+>>
+>> The second call fails due to the following line in glm:
+>>
+>> if (is.character(family))
+>>           family <- get(family, mode = "function", envir = parent.frame())
+>>
+>> A non-breaking patch (AFAICT) could add an additional branch that explicitly searches a lookup of functions in the stats package if the above call to `get` failed.
+> You can do it on your own side by modifying the function 'ex' like:
+> 
+> ex <- function() {
+>       counts <- c(18,17,15,20,10,20,25,13,12)
+>       outcome <- gl(3,1,9)
+>       treatment <- gl(3,3)
+>       require(stats)
+>       stats::glm(counts ~ outcome + treatment, family = "poisson")
+> }
+> 
+> Note "require(stats)" before glm() call. In a classical R env, this is almost a no-cost operation because stats is already attached and in R_DEFAULT_PACKAGES=NULL
+>    case, it does what you need.
+
+That's a relatively harmless thing to do in your own scripts, but you 
+shouldn't do that in a package that you expect others to use.  There may 
+be a reason they don't have stats on the search list, and that puts it 
+there.
+
+Duncan Murdoch
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Mon Mar  9 16:49:19 2026
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Mon, 9 Mar 2026 11:49:19 -0400
+Subject: [Rd] In glm explicitly search stats for family functions
+In-Reply-To: <feba2c09-0a6c-4bc9-8cfb-a63b9b856e06@app.fastmail.com>
+References: <feba2c09-0a6c-4bc9-8cfb-a63b9b856e06@app.fastmail.com>
+Message-ID: <b27d1dab-ef52-45d9-97d9-1b2c76ca3279@gmail.com>
+
+On 2026-03-09 7:53 a.m., Tim Taylor wrote:
+> I appreciate there are likely many places where calling a stats function via `::` and without the stats package being loaded could be problematic but would R core have any interest in adapting functions to accommodate this where possible?
+> 
+> The example I ran in to today can be seen below:
+> 
+> ex <- function() {
+>      counts <- c(18,17,15,20,10,20,25,13,12)
+>      outcome <- gl(3,1,9)
+>      treatment <- gl(3,3)
+>      stats::glm(counts ~ outcome + treatment, family = "poisson")
+> }
+> 
+> tools::R(ex)
+> #>
+> #> Call:  stats::glm(formula = counts ~ outcome + treatment, family = "poisson")
+> #>
+> #> Coefficients:
+> #> (Intercept)     outcome2     outcome3   treatment2   treatment3
+> #>   3.045e+00   -4.543e-01   -2.930e-01    6.972e-16    8.237e-16
+> #>
+> #> Degrees of Freedom: 8 Total (i.e. Null);  4 Residual
+> #> Null Deviance:	    10.58
+> #> Residual Deviance: 5.129 	AIC: 56.76
+> 
+> tools::R(ex, env=c("R_DEFAULT_PACKAGES=NULL"))
+> #> Error: error in inferior call:
+> #>   object 'poisson' of mode 'function' was not found
+> 
+> The second call fails due to the following line in glm:
+> 
+> if (is.character(family))
+>          family <- get(family, mode = "function", envir = parent.frame())
+> 
+> A non-breaking patch (AFAICT) could add an additional branch that explicitly searches a lookup of functions in the stats package if the above call to `get` failed.
+> 
+> Again I understand this could very much be a case of, "don't do that", but ...
+
+There are several other cases in stats where functions assume that a 
+function name passed as a string can be found on the search list.  They 
+aren't always consistent about the search order:
+
+C() searches for contr in the stats namespace first, as does 
+make.tables.aovproj().
+
+contrasts() does like glm() for family, it looks in the parent frame.
+ks.test.default() likewise.
+
+make.tables.aovprojlist() looks locally first, but doesn't restrict the 
+search to functions.
+
+I'm not sure I spotted all cases of this, and I didn't look in any other 
+base packages besides stats.
+
+So I think a patch to fix this should determine a consistent approach, 
+and apply it everywhere.  Maybe too big a can of worms?
+
+Duncan Murdoch
+
+
+From t|m@t@y|or @end|ng |rom h|ddene|eph@nt@@co@uk  Mon Mar  9 17:25:45 2026
+From: t|m@t@y|or @end|ng |rom h|ddene|eph@nt@@co@uk (Tim Taylor)
+Date: Mon, 09 Mar 2026 16:25:45 +0000
+Subject: [Rd] In glm explicitly search stats for family functions
+In-Reply-To: <b27d1dab-ef52-45d9-97d9-1b2c76ca3279@gmail.com>
+References: <feba2c09-0a6c-4bc9-8cfb-a63b9b856e06@app.fastmail.com>
+ <b27d1dab-ef52-45d9-97d9-1b2c76ca3279@gmail.com>
+Message-ID: <b49bfa97-5942-48b8-8264-41cdd7b7f6ba@app.fastmail.com>
+
+Thank you Duncan
+
+Yes, given Martin's comment it is probably too big a can for the reward.
+
+To other commentators - the example was purely to illustrate what Duncan more clearly articulated (i.e. stats looking for strings on the search path).  In my own code I was evaluating things in an environment whose parent was `basenv()`. I'm now restructuring this as clearly it was a little too restrictive/fragile.
+
+Best
+
+Tim 
+
+On Mon, 9 Mar 2026, at 3:49 PM, Duncan Murdoch wrote:
+> On 2026-03-09 7:53 a.m., Tim Taylor wrote:
+>> I appreciate there are likely many places where calling a stats function via `::` and without the stats package being loaded could be problematic but would R core have any interest in adapting functions to accommodate this where possible?
+>> 
+>> The example I ran in to today can be seen below:
+>> 
+>> ex <- function() {
+>>      counts <- c(18,17,15,20,10,20,25,13,12)
+>>      outcome <- gl(3,1,9)
+>>      treatment <- gl(3,3)
+>>      stats::glm(counts ~ outcome + treatment, family = "poisson")
+>> }
+>> 
+>> tools::R(ex)
+>> #>
+>> #> Call:  stats::glm(formula = counts ~ outcome + treatment, family = "poisson")
+>> #>
+>> #> Coefficients:
+>> #> (Intercept)     outcome2     outcome3   treatment2   treatment3
+>> #>   3.045e+00   -4.543e-01   -2.930e-01    6.972e-16    8.237e-16
+>> #>
+>> #> Degrees of Freedom: 8 Total (i.e. Null);  4 Residual
+>> #> Null Deviance:	    10.58
+>> #> Residual Deviance: 5.129 	AIC: 56.76
+>> 
+>> tools::R(ex, env=c("R_DEFAULT_PACKAGES=NULL"))
+>> #> Error: error in inferior call:
+>> #>   object 'poisson' of mode 'function' was not found
+>> 
+>> The second call fails due to the following line in glm:
+>> 
+>> if (is.character(family))
+>>          family <- get(family, mode = "function", envir = parent.frame())
+>> 
+>> A non-breaking patch (AFAICT) could add an additional branch that explicitly searches a lookup of functions in the stats package if the above call to `get` failed.
+>> 
+>> Again I understand this could very much be a case of, "don't do that", but ...
+>
+> There are several other cases in stats where functions assume that a 
+> function name passed as a string can be found on the search list.  They 
+> aren't always consistent about the search order:
+>
+> C() searches for contr in the stats namespace first, as does 
+> make.tables.aovproj().
+>
+> contrasts() does like glm() for family, it looks in the parent frame.
+> ks.test.default() likewise.
+>
+> make.tables.aovprojlist() looks locally first, but doesn't restrict the 
+> search to functions.
+>
+> I'm not sure I spotted all cases of this, and I didn't look in any other 
+> base packages besides stats.
+>
+> So I think a patch to fix this should determine a consistent approach, 
+> and apply it everywhere.  Maybe too big a can of worms?
+>
+> Duncan Murdoch
+
+
+From Ku@h@|@Verm@1 @end|ng |rom |bm@com  Mon Mar  9 18:42:42 2026
+From: Ku@h@|@Verm@1 @end|ng |rom |bm@com (Kushal Verma)
+Date: Mon, 9 Mar 2026 17:42:42 +0000
+Subject: [Rd] R on IBM AIX
+Message-ID: <DM6PR15MB40556B7BF3697914845A3BD9A979A@DM6PR15MB4055.namprd15.prod.outlook.com>
+
+Dear R Community,
+I hope this message finds you well.
+I'm part of the IBM AIX Toolbox team. For the past eight years, we have been providing R support to our customers on IBM AIX as part of our toolbox offerings. R has been an invaluable tool for our users, and the demand for it continues to grow ? as you can see from the active discussions in our IBM AIX community forum<https://community.ibm.com/community/user/groups/community-home/digestviewer?CommunityKey=329e8662-cb5a-4e9e-80ee-47b1c3b5848c>.
+Over the years, we have identified a small set of trivial, non-intrusive patches that are necessary to build R on AIX. These patches do not alter R's behavior on any other platform ? they simply allow R to compile and run correctly in the AIX environment.
+We would love to contribute these patches back to the R project so that AIX support is maintained natively, reducing the burden on our team and making R more accessible to the broader AIX user community.
+We believe this aligns well with the spirit of open-source collaboration, and we are committed to working with the maintainers to ensure these changes meet the project's standards and guidelines.
+We would be grateful for your guidance on the best way to submit these patches ? whether through a pull request, a bug report, or any other preferred channel.
+Thank you so much for your time and for the incredible work you do maintaining R. We truly appreciate the community's efforts and look forward to contributing.
+Warm regards,
+Kushal Verma
+IBM AIX Toolbox Team
+
+
+
+	[[alternative HTML version deleted]]
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Mon Mar  9 22:54:13 2026
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Mon, 9 Mar 2026 17:54:13 -0400
+Subject: [Rd] R on IBM AIX
+In-Reply-To: <DM6PR15MB40556B7BF3697914845A3BD9A979A@DM6PR15MB4055.namprd15.prod.outlook.com>
+References: <DM6PR15MB40556B7BF3697914845A3BD9A979A@DM6PR15MB4055.namprd15.prod.outlook.com>
+Message-ID: <8521a67f-630f-429a-803f-a6a3758b15a6@gmail.com>
+
+I haven't seen a response to this, so I'll give some general advice.
+
+You need to give more details before you'll get an answer.  As far as I 
+know, R Core doesn't have an AIX system to test your patches on, so the 
+patches need to be obviously safe and trouble free.  If they're not, 
+then I think R Core would be very reluctant to accept them.  They don't 
+want something that will interfere with future changes, and they 
+probably don't want something that will make it look like they're 
+supporting AIX when they don't have the resources to do that.
+
+So the path forward that I'd suggest is that you should put together 
+some of the simple patches and submit them to the bugs.r-project.org 
+site.  You may need to follow the instructions there to get write access 
+first if you don't already have it.
+
+Duncan Murdoch
+
+
+On 2026-03-09 1:42 p.m., Kushal Verma via R-devel wrote:
+> Dear R Community,
+> I hope this message finds you well.
+> I'm part of the IBM AIX Toolbox team. For the past eight years, we have been providing R support to our customers on IBM AIX as part of our toolbox offerings. R has been an invaluable tool for our users, and the demand for it continues to grow ? as you can see from the active discussions in our IBM AIX community forum<https://community.ibm.com/community/user/groups/community-home/digestviewer?CommunityKey=329e8662-cb5a-4e9e-80ee-47b1c3b5848c>.
+> Over the years, we have identified a small set of trivial, non-intrusive patches that are necessary to build R on AIX. These patches do not alter R's behavior on any other platform ? they simply allow R to compile and run correctly in the AIX environment.
+> We would love to contribute these patches back to the R project so that AIX support is maintained natively, reducing the burden on our team and making R more accessible to the broader AIX user community.
+> We believe this aligns well with the spirit of open-source collaboration, and we are committed to working with the maintainers to ensure these changes meet the project's standards and guidelines.
+> We would be grateful for your guidance on the best way to submit these patches ? whether through a pull request, a bug report, or any other preferred channel.
+> Thank you so much for your time and for the incredible work you do maintaining R. We truly appreciate the community's efforts and look forward to contributing.
+> Warm regards,
+> Kushal Verma
+> IBM AIX Toolbox Team
+> 
+> 
+> 
+> 	[[alternative HTML version deleted]]
+> 
+> 
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From pd@|gd @end|ng |rom gm@||@com  Wed Mar 11 10:43:18 2026
+From: pd@|gd @end|ng |rom gm@||@com (Peter Dalgaard)
+Date: Wed, 11 Mar 2026 10:43:18 +0100
+Subject: [Rd] R 4.5.3 is released
+Message-ID: <D6FF5994-D8AE-4A24-9F10-37CDECC2615C@gmail.com>
+
+The build system rolled up R-4.5.3.tar.gz and .xz (codename ?Reassured Reassurer") this morning.
+
+This is a patch release with a handful of minor changes and fixups, intended to be the wrap-up release for R-4.5.x.
+
+The list below details the changes in this release. 
+
+You can get the source code from
+
+https://cran.r-project.org/src/base/R-4/R-4.5.3.tar.gz
+https://cran.r-project.org/src/base/R-4/R-4.5.3.tar.xz
+
+or wait for it to be mirrored at a CRAN site nearer to you.
+
+Binaries for various platforms will appear in due course. 
+
+
+For the R Core Team,
+
+Peter Dalgaard
+
+
+These are the checksums (md5 and SHA-256) for the freshly created files, in case you wish
+to check that they are uncorrupted:
+
+MD5 (AUTHORS) = 07651d43d483521300ca8d68fc797522
+MD5 (build-dist.log) = 890a67356958e736e4886e433182039e
+MD5 (COPYING) = eb723b61539feef013de476e68b5c50a
+MD5 (COPYING.LIB) = a6f89e2100d9b6cdffcea4f398e37343
+MD5 (FAQ) = 1b03721cdb2f3493d5a0975ad45a66be
+MD5 (INSTALL) = 7893f754308ca31f1ccf62055090ad7b
+MD5 (NEWS) = abf573c3b45df69a7e0b99939c2c362d
+MD5 (NEWS.0) = bfcd7c147251b5474d96848c6f57e5a8
+MD5 (NEWS.1) = f8466e418dec6b958b4ce484a13f9a9d
+MD5 (NEWS.2) = 05e4a57b645e651ba13019c3cf5c495f
+MD5 (NEWS.3) = 082abfc2fdc36912075e78b92fb2941e
+MD5 (R-latest.tar.gz) = cff9da5529a0caff9ca7c718ca6c7f5a
+MD5 (R-latest.tar.xz) = 956bd2386728f62e4bda67e5b24c2c04
+MD5 (README) = e8e5ee38544d34409177cd479025fe66
+MD5 (RESOURCES) = 94ab0226460af048446af1041a23771b
+MD5 (THANKS) = 61d146aa6a2cf5999295b2fb340991c1
+MD5 (VERSION-INFO.dcf) = 1daa1c318f1dbbf83ede3bf15879c6da
+MD5 (R-4/R-4.5.3.tar.gz) = cff9da5529a0caff9ca7c718ca6c7f5a
+MD5 (R-4/R-4.5.3.tar.xz) = 956bd2386728f62e4bda67e5b24c2c04
+
+b87c4dfcb4300f8af91009e2473f2ee5747e9e199df353c90146cba2aee8f444  AUTHORS
+7ec7270a97c773e4bc4cb81b7e92220abe00f50afb7da2b820583cd60b695e5f  build-dist.log
+e6d6a009505e345fe949e1310334fcb0747f28dae2856759de102ab66b722cb4  COPYING
+6095e9ffa777dd22839f7801aa845b31c9ed07f3d6bf8a26dc5d2dec8ccc0ef3  COPYING.LIB
+d41a5f9047903d8d6a8388b69b004df060614e2ed0812535a322244733ad8828  FAQ
+f87461be6cbaecc4dce44ac58e5bd52364b0491ccdadaf846cb9b452e9550f31  INSTALL
+e8c28d0d40bed1262a0f3ecc4ee652d68d18136d438240c555b2799a185f3666  NEWS
+4e21b62f515b749f80997063fceab626d7258c7d650e81a662ba8e0640f12f62  NEWS.0
+602f3a40ef759c7b2a6c485a33dc674af34249644ac5fb53b21283d4e12e808d  NEWS.1
+7babb6d82a4479b2c3803f7dbfaab63125b0f0d1b6bb40b1389d3af65eaf83aa  NEWS.2
+eb473efd365822e7ae64eb0f86028ea019815fdd273fe7daa9c6fe5e28fd2737  NEWS.3
+aa5c1ed4293c7271ac513d654670356ac0e8a6ad5e42be014365d11150b5b8f2  R-latest.tar.gz
+c9a6555bb94c104b9c02905360c57de0dcac5dd31923dc5bb6ef3af7744615f1  R-latest.tar.xz
+f5aa875c23185cbfc3a50739d7295b0caba2cf0e38ba082850be338cc9541154  README
+fa76f82f7e3664afa4394623afedbc696a2ee90925be65ca57fc9e4b399f3ed6  RESOURCES
+1d5064c86b6813865a033763f43212064c0a67ef05f5af13b13c4feb08264a33  THANKS
+169369c78c7ed3d4c05094a7d446520385c68b66ed762287412f9d93dad44517  VERSION-INFO.dcf
+aa5c1ed4293c7271ac513d654670356ac0e8a6ad5e42be014365d11150b5b8f2  R-4/R-4.5.3.tar.gz
+c9a6555bb94c104b9c02905360c57de0dcac5dd31923dc5bb6ef3af7744615f1  R-4/R-4.5.3.tar.xz
+
+This is the relevant part of the NEWS file
+
+CHANGES IN R 4.5.3:
+
+  UTILITIES:
+
+    ? tools/fetch-recommended can be used instead of
+      tools/rsync-recommended to fetch recommended packages into R
+      sources using curl on systems without rsync or behind firewalls.
+
+  PACKAGE INSTALLATION:
+
+    ? C++ standard specifications (CXX_STD = in src/Makevars* and in
+      the SystemRequirements field of the DESCRIPTION file) are now
+      checked more thoroughly.  Invalid values are still ignored but
+      now give a warning, as do contradictory specifications.
+
+    ? (Preliminary) support for C++26 has been extended to Windows.
+
+    ? A non-zero exit status from cleanup, cleanup.win or cleanup.ucrt,
+      if requested via options --clean or --preclean, is now reported
+      with a warning.
+
+  BUG FIXES:
+
+    ? all.equal(obj, simple, check.class=FALSE) now is true, also when
+      simple is a bare atomic vector and obj has a simple class, fixing
+      the first part of PR#18971 thanks to Jan Gorecki.
+
+    ? str(x, give.attr=FALSE) no longer shows attributes when x is a
+      zero length "Date" or "POSIXt" object.
+
+    ? Tweaks to binning for bw.SJ() and bw.ucv() in the very rare case
+      of data which have an extremely small range compared to their
+      absolute values, e.g., x <- 6e9 + 6:9.
+
+    ? Formatting book-type bibentry objects now converts LaTeX accents
+      also in the publisher and series fields.
+
+    ? model.frame(~1, list(), na.action=na.pass) and similar
+      ?border-line? uses no longer produce invalid data frames, fixing
+      PR#18977, reported with patch by Mikael Jagan.
+
+    ? length(<POSIXlt>) <- v is more careful about balancing, notably
+      when v is not integer, thanks to Suharto Anggono's remarks on the
+      mailing list R-devel.
+
+    ? approx(<x_with_ties>, <y_with_NA>, na.rm = FALSE) now should
+      always call the ties() function, fixing PR#17604 reported by Bill
+      Dunlap.
+
+    ? besselJ(1, 1e-15) and similar now give correct results, thanks to
+      Leo Mada and other ?R-help?ers.
+
+    ? vignette(<pkg>::<topic>) is now a documented usage variant and
+      confines vignette retrieval to the specified package.
+
+    ? pretty(ch) again correctly works with ch a character vector of
+      numbers.
+
+    ? persp() labels the three axes correctly also when C level
+      atan2pi() is available, fixing PR#19007 by Klaus Schliep.
+
+    ? Large (tall) subscripts in plotmath expressions are now
+      positioned correctly.  They were being positioned too high.
+
+    ? Ops group (Arith, Compare,..) methods for matrix-"ts" now do
+      return (zero length) matrices even when the two series do not
+      overlap, a very partial fix of PR#18972 which is to be fully
+      addressed later.
+
+
+-- 
+Peter Dalgaard, Professor,
+Center for Statistics, Copenhagen Business School
+Solbjerg Plads 3, 2000 Frederiksberg, Denmark
+Phone: (+45)38153501
+Office: A 4.23
+Email: pd.mes at cbs.dk  Priv: PDalgd at gmail.com
+
+
+From Kurt@Horn|k @end|ng |rom wu@@c@@t  Wed Mar 11 16:27:22 2026
+From: Kurt@Horn|k @end|ng |rom wu@@c@@t (Kurt Hornik)
+Date: Wed, 11 Mar 2026 16:27:22 +0100
+Subject: [Rd] tenure track position in statistical computing @ WU
+Message-ID: <27057.35290.470642.403277@hornik.net>
+
+At WU we have an opening for a tenure track position in statistical
+computing (previously held by Bettina Gruen who will join Uni Innsbruck
+as full professor of Data Science), see
+
+  <https://wirtschaftsuniversitaet-wien-portal.rexx-systems.com/Assistant-Professor-tenure-track-qualification-agreement-eng-j2682.html>
+
+for the official announcement.
+
+Ideally this would be someone who can eventually make substantial
+contributions to the R ecosystem, including base R itself.  If you know
+somebody who fits this profile and might be interested (and either is
+about to complete their PhD or has done so not too long ago), can you
+please pass on the information?
+
+Please note that this mailing list should *not* be used for info on job
+openings.  The above is an exception as ideally it is very closely
+related to the development of the R ecosystem, including base R.
+
+Best
+-k
+
+
+From |@go@mo@que|r@ @end|ng |rom wur@n|  Thu Mar 12 08:26:06 2026
+From: |@go@mo@que|r@ @end|ng |rom wur@n| (Mosqueira Sanchez, Iago)
+Date: Thu, 12 Mar 2026 07:26:06 +0000
+Subject: [Rd] Timing of operations of S4 class
+Message-ID: <1ce1ece4ab53cd889798e5d76bd850e2032fca01.camel@wur.nl>
+
+An S4 class based on an array, but with a fixed number of dimensions,
+requires overloading the '[' method so that drop=FALSE even when single
+elements are selected in one of them.
+
+This works well, but once the S4 object is saved to a file and then loaded,
+the speed drops greatly (20 times larger, code below), while memory usage
+increases from 0 to 2.5 Mb.
+
+What could be causing this? Is there anything that can be done to avoid this
+penalty?
+
+Is the difference in timing between array and the S4 class just due to the
+S4 system? Using callNextMethod() inside the '[' method made it faster but
+not if called with all arguments specified, as needed to override the
+drop=TRUE default.
+
+Are there any suggestions of a better mechanism than the call to
+
+x at .Data <- x at .Data[i, j, k, l, m, n, drop=FALSE]
+
+the method is using?
+
+Many thanks,
+
+
+Iago
+
+
+# Set farray class, a 6D array
+setClass("farray",	representation("array"),
+	prototype(array(as.numeric(NA), dim=c(1,1,1,1,1,1)))
+)
+
+# Overload '[' to ensure drop=FALSE
+setMethod("[", signature(x="farray"),
+    function(x, i, j, k, l, m, n, ..., drop=FALSE) {
+      x at .Data <- x at .Data[i, j, k, l, m, n, drop=FALSE]
+      return(x)
+  }
+)
+
+# Example array
+arr <- array(
+  runif(prod(c(10, 20, 2, 4, 2, 100))),
+  dim = c(10, 20, 2, 4, 2, 100),
+  dimnames = list(a=seq(10), b=seq(20), c=seq(2), d=seq(4), e=seq(2),
+f=seq(100))
+)
+
+# Example farray
+farr <- new('farray', arr)
+
+# Save farr
+saveRDS(farr, file='farr.rds')
+
+# Check speed
+library(microbenchmark)
+
+library(bench)
+
+# array
+microbenchmark(arr[1,1,1,1,1,1], times=500L, unit='us')
+bench::mark(arr[1,1,1,1,1,1])
+
+# remove and load
+rm(farr)
+farr <- readRDS('farr.rds')
+microbenchmark(farr[1,1,1,1,1,1], times=500L, unit='us')
+bench::mark(farr[1,1,1,1,1,1])
+
+
+
+-- 
+Iago Mosqueira
+
+Wageningen Marine Research
+
+Haringkade 1
+Postbus 68
+1976CP, IJmuiden
+The Netherlands
+
+Tel.: +31 (0)317 488 995
+iago.mosqueira at wur.nl
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Thu Mar 12 12:12:25 2026
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Thu, 12 Mar 2026 12:12:25 +0100
+Subject: [Rd] Typo/bug in ar.yw.default, ar.ols, ar.burg.default
+In-Reply-To: <fake-VM-id.de6d212f5024b0393ce4a3f4031ef156@talos.iv>
+References: <CANcXGiyf=4yGeoR8ZULVEcjKEGQqVRCXp9HK03tO4eL16aVYmA@mail.gmail.com>
+Message-ID: <27058.40857.762563.725573@stat.math.ethz.ch>
+
+>>>>> Simone Giannerini 
+>>>>>     on Mon, 9 Mar 2026 12:43:07 +0100 writes:
+
+    > Dear all,
+    > I think there is a (small) bug in
+
+    > ar.yw.default   (line 142 of the source file ar.R)
+    > ar.ols          (line 429 of the source file ar.R)
+    > ar.burg.default (line 570 of the source file ar.R)
+
+    > maic <- min(aic)
+
+    > should be
+
+    > maic <- min(xaic)
+
+    > Note that, apparently, this typo/bug does little harm since the
+    > subsequent line of code
+
+    > xaic <- setNames(if(is.finite(maic)) xaic - min(xaic) else
+    > ifelse(xaic == maic, 0, Inf), 0L:order.max)
+
+    > does not use maic but min(xaic) directly. In any case, after fixing,
+    > one could replace min(xaic) with maic to avoid recomputing min(xaic).
+    > In absence of comments I will file a bug report.
+
+I'm looking into this, thank you, Simone.
+This is not really a bug, e.g., in the sense of
+     https://www.R-project.org/bugs.html ,
+as you mention yourself that the code works (flawlessly).
+
+Still, of course,  (if you are right which I assume currently)
+it is a code infelicity we will be happy to fix.
+
+Best,
+Martin
+
+
+    > Kind regards
+    > Simone
+
+    > Tested against R-devel 2026-03-06
+
+    > ___________________________________________________
+
+    > Simone Giannerini
+    > Dipartimento di Scienze Economiche e Statistiche
+    > Universita' di Udine
+    > Via Tomadini 30/A - 33100 Udine,  ITALY
+    > Tel: +39 0432 249577
+    > https://simonegiannerini.net/
+
+
+From @g|@nner|n| @end|ng |rom gm@||@com  Thu Mar 12 18:17:53 2026
+From: @g|@nner|n| @end|ng |rom gm@||@com (Simone Giannerini)
+Date: Thu, 12 Mar 2026 18:17:53 +0100
+Subject: [Rd] Typo/bug in ar.yw.default, ar.ols, ar.burg.default
+In-Reply-To: <27058.40857.762563.725573@stat.math.ethz.ch>
+References: <CANcXGiyf=4yGeoR8ZULVEcjKEGQqVRCXp9HK03tO4eL16aVYmA@mail.gmail.com>
+ <fake-VM-id.de6d212f5024b0393ce4a3f4031ef156@talos.iv>
+ <27058.40857.762563.725573@stat.math.ethz.ch>
+Message-ID: <CANcXGixOnaC8bOu6pnunMfESrC_hkzauXxe3141X4UbwRGMYMg@mail.gmail.com>
+
+Dear Martin,
+
+thanks for the reply,
+
+the instruction after the bugged line of code is
+
+xaic <- setNames(if(is.finite(maic)) xaic - min(xaic) else
+            ifelse(xaic == maic, 0, Inf), 0L:order.max)
+
+and checks whether  is.finite(maic), which, in the present version, is
+always the case since maic is either 0 or 1.
+But if min(xaic) is truly not finite, say, NA, then  xaic - min(xaic) will
+also be a vector of NAs, which is not the intended output, so to me this
+looks like a bug.
+
+Kind regards,
+
+Simone
+
+
+
+On Thu, Mar 12, 2026 at 12:12?PM Martin Maechler <maechler at stat.math.ethz.ch>
+wrote:
+
+> >>>>> Simone Giannerini
+> >>>>>     on Mon, 9 Mar 2026 12:43:07 +0100 writes:
+>
+>     > Dear all,
+>     > I think there is a (small) bug in
+>
+>     > ar.yw.default   (line 142 of the source file ar.R)
+>     > ar.ols          (line 429 of the source file ar.R)
+>     > ar.burg.default (line 570 of the source file ar.R)
+>
+>     > maic <- min(aic)
+>
+>     > should be
+>
+>     > maic <- min(xaic)
+>
+>     > Note that, apparently, this typo/bug does little harm since the
+>     > subsequent line of code
+>
+>     > xaic <- setNames(if(is.finite(maic)) xaic - min(xaic) else
+>     > ifelse(xaic == maic, 0, Inf), 0L:order.max)
+>
+>     > does not use maic but min(xaic) directly. In any case, after fixing,
+>     > one could replace min(xaic) with maic to avoid recomputing min(xaic).
+>     > In absence of comments I will file a bug report.
+>
+> I'm looking into this, thank you, Simone.
+> This is not really a bug, e.g., in the sense of
+>      https://www.R-project.org/bugs.html ,
+> as you mention yourself that the code works (flawlessly).
+>
+> Still, of course,  (if you are right which I assume currently)
+> it is a code infelicity we will be happy to fix.
+>
+> Best,
+> Martin
+>
+>
+>     > Kind regards
+>     > Simone
+>
+>     > Tested against R-devel 2026-03-06
+>
+>     > ___________________________________________________
+>
+>     > Simone Giannerini
+>     > Dipartimento di Scienze Economiche e Statistiche
+>     > Universita' di Udine
+>     > Via Tomadini 30/A - 33100 Udine,  ITALY
+>     > Tel: +39 0432 249577
+>     > https://simonegiannerini.net/
+>
+
+
+-- 
+___________________________________________________
+
+Simone Giannerini
+Dipartimento di Scienze Economiche e Statistiche
+Universita' di Udine
+Via Tomadini 30/A - 33100 Udine,  ITALY
+Tel: +39 0432 249577
+https://simonegiannerini.net/
+___________________________________________________
+
+	[[alternative HTML version deleted]]
+
+
+From |@n@|@rm @end|ng |rom m@|ne@edu  Thu Mar 12 22:30:19 2026
+From: |@n@|@rm @end|ng |rom m@|ne@edu (Ian Farm)
+Date: Thu, 12 Mar 2026 17:30:19 -0400
+Subject: [Rd] Timing of operations of S4 class
+In-Reply-To: <1ce1ece4ab53cd889798e5d76bd850e2032fca01.camel@wur.nl>
+References: <1ce1ece4ab53cd889798e5d76bd850e2032fca01.camel@wur.nl>
+Message-ID: <CAP8nD2wUm1ZyFVayZmdbket5-OqzFBGfpnox4_+w3-puzMKEpg@mail.gmail.com>
+
+Hello Iago,
+
+Before being saved to RDS, farr is a wrapper ALTREP; it contains a
+reference to the array, and a separate list of attributes including the
+class and dims. This avoids having to copy arr just to add some attributes.
+After being loaded from RDS, farr is not ALTREP; all of its attributes are
+attached to the array as normal.
+
+farr1 <- new('farray', arr)
+farr_rds <- tempfile(fileext = ".rds")
+saveRDS(new('farray', arr), file = farr_rds)
+farr2 <- readRDS(farr_rds)
+
+.Internal(inspect(farr1, max.depth = 1))
+#> @7fd96c7c4d80 14 REALSXP g0c0 [OBJ,MARK,REF(3),S4,gp=0x10,ATT]  wrapper
+[srt=-2147483648,no_na=0]
+#>   @7fd976272000 14 REALSXP g0c7 [MARK,REF(8),ATT] (len=320000, tl=0)
+0.0586121,0.335355,0.365133,0.492381,0.0354994,...
+#>   ATTRIB:
+#>     @7fd9741a4f60 02 LISTSXP g0c0 [MARK,REF(1)]
+#> ATTRIB:
+#>   @7fd96c7c4c68 02 LISTSXP g0c0 [MARK,REF(1)]
+#>       ...
+
+.Internal(inspect(farr2, max.depth = 1))
+#> @7fd9764e4000 14 REALSXP g0c7 [OBJ,REF(1),S4,gp=0x10,ATT] (len=320000,
+tl=0) 0.0586121,0.335355,0.365133,0.492381,0.0354994,...
+#> ATTRIB:
+#>   @7fd96fc30a10 02 LISTSXP g0c0 [REF(1)]
+#>       ...
+
+Using tracemem() on the array object (which is arr for farr1, and just
+farr2 itself for farr2) shows that the array is copied once when subsetting
+farr2, but not when subsetting farr1.
+
+tracemem(arr)
+#> [1] "<0x7fd976272000>"
+sub1 <- farr1[1,1,1,1,1,1]
+
+tracemem(farr2)
+#> [1] "<0x7fd9764e4000>"
+sub2 <- farr2[1,1,1,1,1,1]
+#> tracemem[0x7fd9764e4000 -> 0x7fd976756000]: getDataPart .local [
+
+The copying happens during getDataPart(), i.e., x at .Data. As I understand
+it, for farr2, getDataPart() needs to strip the class attribute from the
+array, requiring it to copy the array. But for farr1, the class attribute
+is attached to the ALTREP object and not the array itself, so getDataPart()
+does not need to strip the class attribute from the array and does not need
+to copy it.
+
+I'd be interested to hear any suggestions to avoid copying the array here.
+
+Cheers,
+
+Ian
+
+____
+Ian Farm
+Laboratory Manager, The Agroecology Lab & Soil Functions and Trajectories
+Lab
+University of Maine School of Food and Agriculture
+5762 Roger Clapp Greenhouses, Orono, Maine 04469
+
+On Thu, Mar 12, 2026 at 7:01?AM Mosqueira Sanchez, Iago via R-devel <
+r-devel at r-project.org> wrote:
+
+> An S4 class based on an array, but with a fixed number of dimensions,
+> requires overloading the '[' method so that drop=FALSE even when single
+> elements are selected in one of them.
+>
+> This works well, but once the S4 object is saved to a file and then loaded,
+> the speed drops greatly (20 times larger, code below), while memory usage
+> increases from 0 to 2.5 Mb.
+>
+> What could be causing this? Is there anything that can be done to avoid
+> this
+> penalty?
+>
+> Is the difference in timing between array and the S4 class just due to the
+> S4 system? Using callNextMethod() inside the '[' method made it faster but
+> not if called with all arguments specified, as needed to override the
+> drop=TRUE default.
+>
+> Are there any suggestions of a better mechanism than the call to
+>
+> x at .Data <- x at .Data[i, j, k, l, m, n, drop=FALSE]
+>
+> the method is using?
+>
+> Many thanks,
+>
+>
+> Iago
+>
+>
+> # Set farray class, a 6D array
+> setClass("farray",      representation("array"),
+>         prototype(array(as.numeric(NA), dim=c(1,1,1,1,1,1)))
+> )
+>
+> # Overload '[' to ensure drop=FALSE
+> setMethod("[", signature(x="farray"),
+>     function(x, i, j, k, l, m, n, ..., drop=FALSE) {
+>       x at .Data <- x at .Data[i, j, k, l, m, n, drop=FALSE]
+>       return(x)
+>   }
+> )
+>
+> # Example array
+> arr <- array(
+>   runif(prod(c(10, 20, 2, 4, 2, 100))),
+>   dim = c(10, 20, 2, 4, 2, 100),
+>   dimnames = list(a=seq(10), b=seq(20), c=seq(2), d=seq(4), e=seq(2),
+> f=seq(100))
+> )
+>
+> # Example farray
+> farr <- new('farray', arr)
+>
+> # Save farr
+> saveRDS(farr, file='farr.rds')
+>
+> # Check speed
+> library(microbenchmark)
+>
+> library(bench)
+>
+> # array
+> microbenchmark(arr[1,1,1,1,1,1], times=500L, unit='us')
+> bench::mark(arr[1,1,1,1,1,1])
+>
+> # remove and load
+> rm(farr)
+> farr <- readRDS('farr.rds')
+> microbenchmark(farr[1,1,1,1,1,1], times=500L, unit='us')
+> bench::mark(farr[1,1,1,1,1,1])
+>
+>
+>
+> --
+> Iago Mosqueira
+>
+> Wageningen Marine Research
+>
+> Haringkade 1
+> Postbus 68
+> 1976CP, IJmuiden
+> The Netherlands
+>
+> Tel.: +31 (0)317 488 995
+> iago.mosqueira at wur.nl
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+
+	[[alternative HTML version deleted]]
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Fri Mar 13 08:55:56 2026
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Fri, 13 Mar 2026 08:55:56 +0100
+Subject: [Rd] Typo/bug in ar.yw.default, ar.ols, ar.burg.default
+In-Reply-To: <fake-VM-id.3d5c8999c1592d5da776ae342ec0383b@talos.iv>
+References: <CANcXGiyf=4yGeoR8ZULVEcjKEGQqVRCXp9HK03tO4eL16aVYmA@mail.gmail.com>
+ <27058.40857.762563.725573@stat.math.ethz.ch>
+Message-ID: <27059.49932.537947.112942@stat.math.ethz.ch>
+
+>>>>> Martin Maechler 
+>>>>>     on Thu, 12 Mar 2026 12:12:25 +0100 writes:
+
+>>>>> Simone Giannerini 
+>>>>>     on Mon, 9 Mar 2026 12:43:07 +0100 writes:
+
+    >> Dear all,
+    >> I think there is a (small) bug in
+
+    >> ar.yw.default   (line 142 of the source file ar.R)
+    >> ar.ols          (line 429 of the source file ar.R)
+    >> ar.burg.default (line 570 of the source file ar.R)
+
+    >> maic <- min(aic)
+
+    >> should be
+
+    >> maic <- min(xaic)
+
+    >> Note that, apparently, this typo/bug does little harm since the
+    >> subsequent line of code
+
+    >> xaic <- setNames(if(is.finite(maic)) xaic - min(xaic) else
+    >>                  ifelse(xaic == maic, 0, Inf), 0L:order.max)
+
+    >> does not use maic but min(xaic) directly. 
+
+but that is _NOT_ true (as I only see now, when looking more closely):
+`maic` is even used *twice* in the above (2nd) construction of `xaic`.
+Note that the "bad" code,  maic <- min(aic)   would typically
+set maic to 1 (aic = TRUE is the default) or then 0 (for
+aic=FALSE), hence always finite.
+
+Consequently the case where some 'xaic' where *not* finite (but
+NA, NaN, or +/-Inf) has never been dealt with "properly" till
+now (and I think we not know if it *is* "good" now, as we
+probably never had test code for such boundary cases ...)
+
+I still think the proposed change should happen, as  min(aic)
+never made any sense.
+Can anyone think of / create artificial time series data where
+the changed code would make a difference?
+
+Martin
+
+    >> does not use maic but min(xaic) directly. In any case, after fixing,
+    >> one could replace min(xaic) with maic to avoid recomputing min(xaic).
+    >> In absence of comments I will file a bug report.
+
+    > I'm looking into this, thank you, Simone.
+    > This is not really a bug, e.g., in the sense of
+    > https://www.R-project.org/bugs.html ,
+    > as you mention yourself that the code works (flawlessly).
+
+    > Still, of course,  (if you are right which I assume currently)
+    > it is a code infelicity we will be happy to fix.
+
+    > Best,
+    > Martin
+
+
+    >> Kind regards
+    >> Simone
+
+    >> Tested against R-devel 2026-03-06
+
+    >> ___________________________________________________
+
+    >> Simone Giannerini
+    >> Dipartimento di Scienze Economiche e Statistiche
+    >> Universita' di Udine
+    >> Via Tomadini 30/A - 33100 Udine,  ITALY
+    >> Tel: +39 0432 249577
+    >> https://simonegiannerini.net/
+
+    > ______________________________________________
+    > R-devel at r-project.org mailing list
+    > https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Fri Mar 13 09:20:06 2026
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Fri, 13 Mar 2026 09:20:06 +0100
+Subject: [Rd] Typo/bug in ar.yw.default, ar.ols, ar.burg.default
+In-Reply-To: <fake-VM-id.f7b79bb9bd0548a9b9047dbe3521f3cf@talos.iv>
+References: <CANcXGiyf=4yGeoR8ZULVEcjKEGQqVRCXp9HK03tO4eL16aVYmA@mail.gmail.com>
+ <fake-VM-id.de6d212f5024b0393ce4a3f4031ef156@talos.iv>
+ <27058.40857.762563.725573@stat.math.ethz.ch>
+ <CANcXGixOnaC8bOu6pnunMfESrC_hkzauXxe3141X4UbwRGMYMg@mail.gmail.com>
+Message-ID: <27059.51382.336942.825567@stat.math.ethz.ch>
+
+>>>>> Simone Giannerini 
+>>>>>     on Thu, 12 Mar 2026 18:17:53 +0100 writes:
+
+    > Dear Martin,
+    > thanks for the reply,
+
+    > the instruction after the bugged line of code is
+
+    > xaic <- setNames(if(is.finite(maic)) xaic - min(xaic) else
+    > ifelse(xaic == maic, 0, Inf), 0L:order.max)
+
+    > and checks whether  is.finite(maic), which, in the present version, is
+    > always the case since maic is either 0 or 1.
+    > But if min(xaic) is truly not finite, say, NA, then  xaic - min(xaic) will
+    > also be a vector of NAs, which is not the intended output, so to me this
+    > looks like a bug.
+
+    > Kind regards,
+
+    > Simone
+
+I wrote my reply before yours yesterday, but did only get to
+send it off now (~ 20 min ago).
+I see you came to the same conclusion.
+
+Martin
+
+
+    > On Thu, Mar 12, 2026 at 12:12?PM Martin Maechler <maechler at stat.math.ethz.ch>
+    > wrote:
+
+    >> >>>>> Simone Giannerini
+    >> >>>>>     on Mon, 9 Mar 2026 12:43:07 +0100 writes:
+    >> 
+    >> > Dear all,
+    >> > I think there is a (small) bug in
+    >> 
+    >> > ar.yw.default   (line 142 of the source file ar.R)
+    >> > ar.ols          (line 429 of the source file ar.R)
+    >> > ar.burg.default (line 570 of the source file ar.R)
+    >> 
+    >> > maic <- min(aic)
+    >> 
+    >> > should be
+    >> 
+    >> > maic <- min(xaic)
+    >> 
+    >> > Note that, apparently, this typo/bug does little harm since the
+    >> > subsequent line of code
+    >> 
+    >> > xaic <- setNames(if(is.finite(maic)) xaic - min(xaic) else
+    >> > ifelse(xaic == maic, 0, Inf), 0L:order.max)
+    >> 
+    >> > does not use maic but min(xaic) directly. In any case, after fixing,
+    >> > one could replace min(xaic) with maic to avoid recomputing min(xaic).
+    >> > In absence of comments I will file a bug report.
+    >> 
+    >> I'm looking into this, thank you, Simone.
+    >> This is not really a bug, e.g., in the sense of
+    >> https://www.R-project.org/bugs.html ,
+    >> as you mention yourself that the code works (flawlessly).
+    >> 
+    >> Still, of course,  (if you are right which I assume currently)
+    >> it is a code infelicity we will be happy to fix.
+    >> 
+    >> Best,
+    >> Martin
+    >> 
+    >> 
+    >> > Kind regards
+    >> > Simone
+    >> 
+    >> > Tested against R-devel 2026-03-06
+    >> 
+    >> > ___________________________________________________
+    >> 
+    >> > Simone Giannerini
+    >> > Dipartimento di Scienze Economiche e Statistiche
+    >> > Universita' di Udine
+    >> > Via Tomadini 30/A - 33100 Udine,  ITALY
+    >> > Tel: +39 0432 249577
+    >> > https://simonegiannerini.net/
+    >> 
+
+
+    > -- 
+    > ___________________________________________________
+
+    > Simone Giannerini
+    > Dipartimento di Scienze Economiche e Statistiche
+    > Universita' di Udine
+    > Via Tomadini 30/A - 33100 Udine,  ITALY
+    > Tel: +39 0432 249577
+    > https://simonegiannerini.net/
+    > ___________________________________________________
+
+    > [[alternative HTML version deleted]]
+
+
