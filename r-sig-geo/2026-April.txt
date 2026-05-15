@@ -1,0 +1,145 @@
+From m@p|no|@10 @end|ng |rom gm@||@com  Fri Apr 17 19:10:08 2026
+From: m@p|no|@10 @end|ng |rom gm@||@com (=?UTF-8?Q?Manuel_Sp=C3=ADnola?=)
+Date: Fri, 17 Apr 2026 11:10:08 -0600
+Subject: [R-sig-Geo] h3sdm: H3 hexagonal grids for polygon-based species
+ distribution and landscape modeling in R
+Message-ID: <CABkCotSm13WTNsrB4T+2WSb=YG2_HhKHVi8iaFNYVb6cOxCSVw@mail.gmail.com>
+
+Dear list members,
+
+I am pleased to announce that h3sdm is now available on CRAN.
+
+h3sdm takes a different approach from traditional raster-based SDMs:
+instead of working at the pixel level, it uses H3 hexagonal grids as the
+unit of analysis. Environmental and land cover information is aggregated
+within each hexagon, and information theory (IT) metrics are computed to
+characterize spatial heterogeneity and landscape composition at the polygon
+level.
+
+This polygon-based framework makes the package suitable not only for
+species distribution modeling, but also for habitat and landscape analysis
+at regional or local scales ? watersheds, protected areas, or biological
+corridors ? where pixel-level approaches are often too fine-grained or
+noisy for ecological interpretation.
+
+Modeling is built on tidymodels, allowing users to fit any classification
+or regression algorithm available in that ecosystem ? from GAMs to random
+forests or gradient boosting ? within the same reproducible workflow.
+
+Key features:
+- H3 hexagonal grid integration
+- Extraction of continuous and categorical environmental variables per
+hexagon
+- Calculation of information theory metrics to characterize within-polygon
+heterogeneity
+- tidymodels-based modeling pipeline, open to any supported algorithm
+
+Install from CRAN:
+
+  install.packages("h3sdm")
+
+GitHub: https://github.com/ManuelSpinola/h3sdm
+
+Feedback and contributions are welcome.
+
+Best regards,
+
+Manuel Spinola
+
+-- 
+*Manuel Sp?nola, Ph.D.*
+Instituto Internacional en Conservaci?n y Manejo de Vida Silvestre
+Universidad Nacional
+Apartado 1350-3000
+Heredia
+COSTA RICA
+mspinola at una.cr <mspinola at una.ac.cr>
+mspinola10 at gmail.com
+Tel?fono: (506) 8706 - 4662
+Sitio web institucional: ICOMVIS
+<http://www.icomvis.una.ac.cr/index.php/manuel>
+Sitio web personal: Sitio personal <https://mspinola-sitioweb.netlify.app>
+Blog sobre Ciencia de Datos: Blog de Ciencia de Datos
+<https://mspinola-ciencia-de-datos.netlify.app>
+
+	[[alternative HTML version deleted]]
+
+
+From n|ko@@tz|ok@@ @end|ng |rom gm@||@com  Sun Apr 26 13:59:30 2026
+From: n|ko@@tz|ok@@ @end|ng |rom gm@||@com (Nikolaos Tziokas)
+Date: Sun, 26 Apr 2026 14:59:30 +0300
+Subject: [R-sig-Geo] =?utf-8?q?How_to_apply_a_geometric_anisotropic_filte?=
+	=?utf-8?q?r_1/cos=C2=B2=28theta=29_to_a_raster=3F?=
+Message-ID: <CAGg5H0auRT8Z59Y7v1U9pHbAXdY7dJij0VOkuAGPyMezGRk1rg@mail.gmail.com>
+
+I am downscaling (i.e., increasing the spatial resolution) VIIRS nighttime
+lights imagery. The transfer function between the coarse and fine
+resolution is approximated by a Gaussian filter whose width
+
+In the cross?track direction (left?right), the sigma scales as
+
+?(?) = ?_0/cos(^2)?
+
+where *?* is the per?pixel viewing angle. The filter should act only
+horizontally (along x), pooling all y?values within the column uniformly.
+My earlier attempt simply multiplied the raster values by 1/cos(^2)? but I
+now realise the operation is a *convolution* with a 1?D Gaussian kernel
+whose width depends on the column?s *?*.
+
+Given a value raster x and an angle raster theta with identical dimensions,
+what is the correct and efficient way in R (using terra) to apply a 1?D
+Gaussian blur on each row, where the kernel?s standard deviation is
+determined by theta at the central pixel?s column?
+
+*Current (incomplete) attempt:*
+
+library(terra)
+# ---- 1. Create example rasters ----
+set.seed(42)
+nrows <- 5
+ncols <- 200
+
+x <- rast(nrows = nrows, ncols = ncols, vals = runif(nrows * ncols))
+theta_vals <- rep(seq(20, 26, length.out = ncols), each = nrows)
+theta <- rast(nrows = nrows, ncols = ncols, vals = theta_vals)
+# ---- 2. Spatially varying Gaussian blur function ----# sigma0 =
+standard deviation of Gaussian at nadir (in pixel units)# theta:
+raster of angles in degrees (same dimensions as x)
+anisotropic_blur <- function(x, theta, sigma0 = 10) {
+  # Convert to matrix (rows = y, cols = x)
+  mat_x <- as.matrix(x, wide = TRUE)
+  mat_angle <- as.matrix(theta, wide = TRUE)  # same dimensions
+  nr <- nrow(mat_x)
+  nc <- ncol(mat_x)
+  mat_out <- matrix(NA_real_, nr, nc)
+
+  # For each row, apply convolution with column-dependent sigma
+  for (r in 1:nr) {
+    row_vals <- mat_x[r, ]
+    for (c in 1:nc) {
+      theta_c <- mat_angle[r, c]               # angle at this pixel (degrees)
+      sigma <- sigma0 / (cos(theta_c * pi/180)^2)
+      halfwin <- ceiling(3 * sigma)            # kernel half?width
+      col_idx <- max(1, c - halfwin) : min(nc, c + halfwin)
+      dist <- abs(col_idx - c)
+      w <- exp(-0.5 * (dist / sigma)^2)
+      w <- w / sum(w)
+      mat_out[r, c] <- sum(w * row_vals[col_idx])
+    }
+  }
+  # Return as raster with same properties
+  rast(mat_out, crs = crs(x), ext = ext(x))}
+# ---- 3. Apply the filter ----
+x_blurred <- anisotropic_blur(x, theta, sigma0 = 10)
+# ---- 4. Plot side?by?side ----
+par(mfrow = c(1, 2))
+plot(x, main = "Original predictor")
+plot(x_blurred, main = expression("Filtered: Gaussian "*sigma*" =
+"*sigma[0]/cos^2*theta))
+
+ I need to actually perform a 1?D Gaussian convolution along rows with a
+column?varying (\sigma). What is an idiomatic way to do this in terra?
+
+	[[alternative HTML version deleted]]
+
+

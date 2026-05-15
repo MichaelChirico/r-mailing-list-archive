@@ -1,0 +1,1249 @@
+From murdoch@dunc@n @end|ng |rom gm@||@com  Wed Apr  1 21:32:59 2026
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Wed, 1 Apr 2026 15:32:59 -0400
+Subject: [R-SIG-Mac] Sys.sleep() in R.app can't be interrupted
+Message-ID: <ae420c75-dd74-4e6c-8798-c6af314ebd1e@gmail.com>
+
+This might be a well known issue, but I couldn't spot it in the FAQ or 
+bug list or mailing list archives.
+
+If you execute Sys.sleep(60) in R.app, the command can't be interrupted 
+by ESC or Cmd-C until it is done.  R.app becomes completely unresponsive.
+
+The number 60 isn't important, as far as I can tell this is true for any 
+sleep time.
+
+A simple workaround is to limit the duration of Sys.sleep() calls, e.g. 
+using a function like this:
+
+  Sleep <- function(duration) {
+   seconds <- floor(duration)
+   for (i in seq_len(seconds))
+     Sys.sleep(1)
+   Sys.sleep(duration - seconds)
+  }
+
+R.app handles interrupts every time Sys.sleep returns, so this means the 
+biggest delay is 1 second.
+
+In case this isn't universal, here's my session info:
+
+```
+R version 4.5.3 (2026-03-11)
+Platform: aarch64-apple-darwin20
+Running under: macOS Sequoia 15.7.4
+
+Matrix products: default
+BLAS: 
+/Library/Frameworks/R.framework/Versions/4.5-arm64/Resources/lib/libRblas.0.dylib 
+
+LAPACK: 
+/Library/Frameworks/R.framework/Versions/4.5-arm64/Resources/lib/libRlapack.dylib; 
+  LAPACK version 3.12.1
+
+locale:
+[1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+
+time zone: America/Toronto
+tzcode source: internal
+
+attached base packages:
+[1] stats     graphics  grDevices utils     datasets  methods   base
+
+loaded via a namespace (and not attached):
+[1] compiler_4.5.3
+```
+
+Duncan Murdoch
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Thu Apr  2 00:39:57 2026
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Wed, 1 Apr 2026 18:39:57 -0400
+Subject: [R-SIG-Mac] Sys.sleep() in R.app can't be interrupted
+In-Reply-To: <ae420c75-dd74-4e6c-8798-c6af314ebd1e@gmail.com>
+References: <ae420c75-dd74-4e6c-8798-c6af314ebd1e@gmail.com>
+Message-ID: <95c5ff6c-76cc-4ed2-89b1-dbb112f78cfd@gmail.com>
+
+As I've realized, my simple workaround is a little too simple, not 
+necessarily matching the requested duration.  A better one looks at the 
+elapsed time after the "one second" sleep.
+
+Duncan Murdoch
+
+On 2026-04-01 3:32 p.m., Duncan Murdoch wrote:
+> This might be a well known issue, but I couldn't spot it in the FAQ or
+> bug list or mailing list archives.
+> 
+> If you execute Sys.sleep(60) in R.app, the command can't be interrupted
+> by ESC or Cmd-C until it is done.  R.app becomes completely unresponsive.
+> 
+> The number 60 isn't important, as far as I can tell this is true for any
+> sleep time.
+> 
+> A simple workaround is to limit the duration of Sys.sleep() calls, e.g.
+> using a function like this:
+> 
+>    Sleep <- function(duration) {
+>     seconds <- floor(duration)
+>     for (i in seq_len(seconds))
+>       Sys.sleep(1)
+>     Sys.sleep(duration - seconds)
+>    }
+> 
+> R.app handles interrupts every time Sys.sleep returns, so this means the
+> biggest delay is 1 second.
+> 
+> In case this isn't universal, here's my session info:
+> 
+> ```
+> R version 4.5.3 (2026-03-11)
+> Platform: aarch64-apple-darwin20
+> Running under: macOS Sequoia 15.7.4
+> 
+> Matrix products: default
+> BLAS:
+> /Library/Frameworks/R.framework/Versions/4.5-arm64/Resources/lib/libRblas.0.dylib
+> 
+> LAPACK:
+> /Library/Frameworks/R.framework/Versions/4.5-arm64/Resources/lib/libRlapack.dylib;
+>    LAPACK version 3.12.1
+> 
+> locale:
+> [1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+> 
+> time zone: America/Toronto
+> tzcode source: internal
+> 
+> attached base packages:
+> [1] stats     graphics  grDevices utils     datasets  methods   base
+> 
+> loaded via a namespace (and not attached):
+> [1] compiler_4.5.3
+> ```
+> 
+> Duncan Murdoch
+
+
+From @|mon@urb@nek @end|ng |rom R-project@org  Thu Apr  2 01:20:02 2026
+From: @|mon@urb@nek @end|ng |rom R-project@org (Simon Urbanek)
+Date: Thu, 2 Apr 2026 12:20:02 +1300
+Subject: [R-SIG-Mac] Sys.sleep() in R.app can't be interrupted
+In-Reply-To: <ae420c75-dd74-4e6c-8798-c6af314ebd1e@gmail.com>
+References: <ae420c75-dd74-4e6c-8798-c6af314ebd1e@gmail.com>
+Message-ID: <FADD90A5-E3EA-4B91-9955-157D9D745460@R-project.org>
+
+Duncan,
+
+thanks. I can replicate it. Something must have happened with the meshing of the event loops, because Sys.sleep() is not supposed to actually sleep the whole time, it should run the system event loop to check for interrupts periodically, but apparently doesn't.
+
+Cheers,
+Simon
+
+
+> On 2 Apr 2026, at 08:32, Duncan Murdoch <murdoch.duncan at gmail.com> wrote:
+> 
+> This might be a well known issue, but I couldn't spot it in the FAQ or bug list or mailing list archives.
+> 
+> If you execute Sys.sleep(60) in R.app, the command can't be interrupted by ESC or Cmd-C until it is done.  R.app becomes completely unresponsive.
+> 
+> The number 60 isn't important, as far as I can tell this is true for any sleep time.
+> 
+> A simple workaround is to limit the duration of Sys.sleep() calls, e.g. using a function like this:
+> 
+> Sleep <- function(duration) {
+>  seconds <- floor(duration)
+>  for (i in seq_len(seconds))
+>    Sys.sleep(1)
+>  Sys.sleep(duration - seconds)
+> }
+> 
+> R.app handles interrupts every time Sys.sleep returns, so this means the biggest delay is 1 second.
+> 
+> In case this isn't universal, here's my session info:
+> 
+> ```
+> R version 4.5.3 (2026-03-11)
+> Platform: aarch64-apple-darwin20
+> Running under: macOS Sequoia 15.7.4
+> 
+> Matrix products: default
+> BLAS: /Library/Frameworks/R.framework/Versions/4.5-arm64/Resources/lib/libRblas.0.dylib 
+> LAPACK: /Library/Frameworks/R.framework/Versions/4.5-arm64/Resources/lib/libRlapack.dylib;  LAPACK version 3.12.1
+> 
+> locale:
+> [1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+> 
+> time zone: America/Toronto
+> tzcode source: internal
+> 
+> attached base packages:
+> [1] stats     graphics  grDevices utils     datasets  methods   base
+> 
+> loaded via a namespace (and not attached):
+> [1] compiler_4.5.3
+> ```
+> 
+> Duncan Murdoch
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+> 
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Sat Apr 18 22:34:12 2026
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Sat, 18 Apr 2026 16:34:12 -0400
+Subject: [R-SIG-Mac] Failing to build R-devel: lzma.h missing
+Message-ID: <8bf3e308-416f-4560-be16-8e0793b8240a@gmail.com>
+
+I'm trying to build R-devel.  I used this command line to configure it:
+
+../R-devel-src//configure -C --enable-R-shlib --enable-memory-profiling 
+--x-includes=/opt/X11/include --x-libraries=/opt/X11/lib 
+--with-tcl-config=/opt/R/arm64/lib/tclConfig.sh 
+--with-tk-config=/opt/R/arm64/lib/tkConfig.sh 
+PKG_CONFIG_PATH=/opt/R/arm64/lib/pkgconfig:/usr/lib/pkgconfig
+
+(I found that in the old config.log, with "pkg-config" in the 
+PKG_CONFIG_PATH instead of "pkgconfig".  Neither one works.  I think it 
+also matches the suggestion in the R-admin manual.)  Is there something 
+missing?  It fails with this error at the end:
+
+
+   checking for lzma_version_number in -llzma... yes
+   checking for lzma.h... no
+   configure: error: "liblzma library and headers are required"
+
+But I see lzma.h in /opt/R/arm64/include, and that's where pkg-config 
+--cflags liblzma says it should be.  I tried removing PKG_CONFIG_PATH 
+and got the same result.
+
+Duncan Murdoch
+
+
+From pd@|gd @end|ng |rom gm@||@com  Sun Apr 19 09:44:52 2026
+From: pd@|gd @end|ng |rom gm@||@com (peter dalgaard)
+Date: Sun, 19 Apr 2026 09:44:52 +0200
+Subject: [R-SIG-Mac] Failing to build R-devel: lzma.h missing
+In-Reply-To: <8bf3e308-416f-4560-be16-8e0793b8240a@gmail.com>
+References: <8bf3e308-416f-4560-be16-8e0793b8240a@gmail.com>
+Message-ID: <AA5957B9-7FD6-4AC1-9CB5-DA5779BCD468@gmail.com>
+
+I have
+
+$ cat ~/r-devel/BUILD/config.site 
+CPPFLAGS=-I/opt/R/x86_64/include
+LDFLAGS=-L/opt/R/x86_64/lib
+with_tcl_config=/opt/R/x86_64/lib/tclConfig.sh
+with_tk_config=/opt/R/x86_64/lib/tkConfig.sh
+
+(even though Simon says I shouldn't use config files...)
+
+I.e. you may need to set the *FLAGS in your setup (switch out the arch of course).
+
+-pd
+
+
+> On 18 Apr 2026, at 22.34, Duncan Murdoch <murdoch.duncan at gmail.com> wrote:
+> 
+> I'm trying to build R-devel.  I used this command line to configure it:
+> 
+> ../R-devel-src//configure -C --enable-R-shlib --enable-memory-profiling --x-includes=/opt/X11/include --x-libraries=/opt/X11/lib --with-tcl-config=/opt/R/arm64/lib/tclConfig.sh --with-tk-config=/opt/R/arm64/lib/tkConfig.sh PKG_CONFIG_PATH=/opt/R/arm64/lib/pkgconfig:/usr/lib/pkgconfig
+> 
+> (I found that in the old config.log, with "pkg-config" in the PKG_CONFIG_PATH instead of "pkgconfig".  Neither one works.  I think it also matches the suggestion in the R-admin manual.)  Is there something missing?  It fails with this error at the end:
+> 
+> 
+>  checking for lzma_version_number in -llzma... yes
+>  checking for lzma.h... no
+>  configure: error: "liblzma library and headers are required"
+> 
+> But I see lzma.h in /opt/R/arm64/include, and that's where pkg-config --cflags liblzma says it should be.  I tried removing PKG_CONFIG_PATH and got the same result.
+> 
+> Duncan Murdoch
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+
+-- 
+Peter Dalgaard, Professor,
+Center for Statistics, Copenhagen Business School
+Solbjerg Plads 3, 2000 Frederiksberg, Denmark
+Phone: (+45)38153501
+Office: A 4.23
+Email: pd.mes at cbs.dk  Priv: PDalgd at gmail.com
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Sun Apr 19 12:11:56 2026
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Sun, 19 Apr 2026 06:11:56 -0400
+Subject: [R-SIG-Mac] Failing to build R-devel: lzma.h missing
+In-Reply-To: <AA5957B9-7FD6-4AC1-9CB5-DA5779BCD468@gmail.com>
+References: <8bf3e308-416f-4560-be16-8e0793b8240a@gmail.com>
+ <AA5957B9-7FD6-4AC1-9CB5-DA5779BCD468@gmail.com>
+Message-ID: <aa9b8cad-7391-44c2-a1d0-b0cb30e3bca3@gmail.com>
+
+Thanks, that was it.  I had something similar to yours, but mine 
+depended on $LOCAL as in the R-admin value, and I didn't have $LOCAL set 
+properly.
+
+Duncan
+
+On 2026-04-19 3:44 a.m., peter dalgaard wrote:
+> I have
+> 
+> $ cat ~/r-devel/BUILD/config.site
+> CPPFLAGS=-I/opt/R/x86_64/include
+> LDFLAGS=-L/opt/R/x86_64/lib
+> with_tcl_config=/opt/R/x86_64/lib/tclConfig.sh
+> with_tk_config=/opt/R/x86_64/lib/tkConfig.sh
+> 
+> (even though Simon says I shouldn't use config files...)
+> 
+> I.e. you may need to set the *FLAGS in your setup (switch out the arch of course).
+> 
+> -pd
+> 
+> 
+>> On 18 Apr 2026, at 22.34, Duncan Murdoch <murdoch.duncan at gmail.com> wrote:
+>>
+>> I'm trying to build R-devel.  I used this command line to configure it:
+>>
+>> ../R-devel-src//configure -C --enable-R-shlib --enable-memory-profiling --x-includes=/opt/X11/include --x-libraries=/opt/X11/lib --with-tcl-config=/opt/R/arm64/lib/tclConfig.sh --with-tk-config=/opt/R/arm64/lib/tkConfig.sh PKG_CONFIG_PATH=/opt/R/arm64/lib/pkgconfig:/usr/lib/pkgconfig
+>>
+>> (I found that in the old config.log, with "pkg-config" in the PKG_CONFIG_PATH instead of "pkgconfig".  Neither one works.  I think it also matches the suggestion in the R-admin manual.)  Is there something missing?  It fails with this error at the end:
+>>
+>>
+>>   checking for lzma_version_number in -llzma... yes
+>>   checking for lzma.h... no
+>>   configure: error: "liblzma library and headers are required"
+>>
+>> But I see lzma.h in /opt/R/arm64/include, and that's where pkg-config --cflags liblzma says it should be.  I tried removing PKG_CONFIG_PATH and got the same result.
+>>
+>> Duncan Murdoch
+>>
+>> _______________________________________________
+>> R-SIG-Mac mailing list
+>> R-SIG-Mac at r-project.org
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>
+
+
+From hp@ge@@on@g|thub @end|ng |rom gm@||@com  Wed Apr 22 00:35:55 2026
+From: hp@ge@@on@g|thub @end|ng |rom gm@||@com (=?UTF-8?B?SGVydsOpIFBhZ8Oocw==?=)
+Date: Tue, 21 Apr 2026 15:35:55 -0700
+Subject: [R-SIG-Mac] utils:::.available.both() breaks install.packages() on
+ Mac sonoma-arm64
+Message-ID: <5c3413f9-72cc-49cc-8cad-7ea8473ded88@gmail.com>
+
+With?R 4.6 >= r89829? we're seeing this install.packages() error on Mac 
+sonoma-arm64 in various places:
+
+ ? ? Error in av.src[pkg.bin, "Version"] : subscript out of bounds
+
+This happens for example with install.packages("OSTA.data", 
+repos=BiocManager::repositories()).
+
+Also started to happen in this GitHub action a few days ago: 
+https://github.com/HyrienLab/igblastr/actions/runs/24495733061/job/71590105822
+
+The error occurs in the new utils:::.available.both() function 
+introduced at r89827 in trunk and?r89829 in R-4-6-branch (file 
+src/library/utils/R/packages.R). It can simply be reproduced with:
+
+utils:::.available.both("https://cran.r-project.org")
+
+ ? ? # Error in av.src[pkg.bin, "Version"] : subscript out of bounds
+
+It seems that the function should be able to handle the situation where 
+some binary packages in the repo don't have a corresponding source 
+package. Something like this maybe:
+
+.available.both <- function(repos, method, ...) {
+ ? ? ## "both" gets complicated as we have to use available.packages twice
+ ? ? fields <- c(tools:::.get_standard_repository_db_fields(), "File", 
+"Built")
+ ? ? av.src <- available.packages(contriburl = contrib.url(repos, 
+"source"), method = method, fields = fields, ...)
+ ? ? av.bin <- available.packages(contriburl = contrib.url(repos, 
+"binary"), method = method, fields = fields, ...)
+ ? ? ## we keep things simple in that we use source unless there is the 
+same binary version
+ ? ? ## so that we can get at the Built field. This is more simple than 
+in install.packages
+ ? ? ## since we only care about determining whether a package is new, 
+but not which type is
+ ? ? ## preferred - install.packages will sort that out.
+ ? ? all_src_pkgs <- row.names(av.src)
+ ? ? all_bin_pkgs <- row.names(av.bin)
+ ? ? dual_pkgs <- intersect(all_src_pkgs, all_bin_pkgs)
+ ? ? src_ver <- av.src[dual_pkgs, "Version"]
+ ? ? bin_ver <- av.bin[dual_pkgs, "Version"]
+ ? ? use_bin <- as.numeric_version(bin_ver) >= as.numeric_version(src_ver)
+ ? ? ## If for some reason 'src_ver' or 'bin_ver' contain NAs, they 
+would propagate
+ ? ? ## to 'use_bin', but can this ever happen?
+ ? ? use_bin[is.na(use_bin)] <- TRUE
+ ? ? src_pkgs <- c(setdiff(all_src_pkgs, dual_pkgs), dual_pkgs[!use_bin])
+ ? ? bin_pkgs <- c(setdiff(all_bin_pkgs, dual_pkgs), dual_pkgs[use_bin])
+ ? ? ## Returned matrix has 1 row per package in 'union(all_src_pkgs, 
+all_bin_pkgs)'.
+ ? ? rbind(av.src[src_pkgs, ], av.bin[bin_pkgs, ])
+}
+
+Best,
+
+H.
+
+-- 
+Herv? Pag?s
+
+Bioconductor Core Team
+hpages.on.github at gmail.com
+
+
+From hp@ge@@on@g|thub @end|ng |rom gm@||@com  Wed Apr 22 01:00:29 2026
+From: hp@ge@@on@g|thub @end|ng |rom gm@||@com (=?UTF-8?B?SGVydsOpIFBhZ8Oocw==?=)
+Date: Tue, 21 Apr 2026 16:00:29 -0700
+Subject: [R-SIG-Mac] 
+ utils:::.available.both() breaks install.packages() on
+ Mac sonoma-arm64
+In-Reply-To: <5c3413f9-72cc-49cc-8cad-7ea8473ded88@gmail.com>
+References: <5c3413f9-72cc-49cc-8cad-7ea8473ded88@gmail.com>
+Message-ID: <3c26aa77-32e7-4d3e-ad51-02c004bbf0fe@gmail.com>
+
+Also
+
+ ? ? rbind(av.src[src_pkgs, ], av.bin[bin_pkgs, ])
+
+should be
+
+ ? ? rbind(av.src[src_pkgs, , drop=FALSE], av.bin[bin_pkgs, , drop=FALSE])
+
+or bad things will happen if src_pkgs or bin_pkgs have length 1.
+
+H.
+
+
+On 21/04/2026 15:35, Herv? Pag?s wrote:
+> With?R 4.6 >= r89829? we're seeing this install.packages() error on 
+> Mac sonoma-arm64 in various places:
+>
+> ? ? Error in av.src[pkg.bin, "Version"] : subscript out of bounds
+>
+> This happens for example with install.packages("OSTA.data", 
+> repos=BiocManager::repositories()).
+>
+> Also started to happen in this GitHub action a few days ago: 
+> https://github.com/HyrienLab/igblastr/actions/runs/24495733061/job/71590105822
+>
+> The error occurs in the new utils:::.available.both() function 
+> introduced at r89827 in trunk and?r89829 in R-4-6-branch (file 
+> src/library/utils/R/packages.R). It can simply be reproduced with:
+>
+> utils:::.available.both("https://cran.r-project.org")
+>
+> ? ? # Error in av.src[pkg.bin, "Version"] : subscript out of bounds
+>
+> It seems that the function should be able to handle the situation 
+> where some binary packages in the repo don't have a corresponding 
+> source package. Something like this maybe:
+>
+> .available.both <- function(repos, method, ...) {
+> ? ? ## "both" gets complicated as we have to use available.packages twice
+> ? ? fields <- c(tools:::.get_standard_repository_db_fields(), "File", 
+> "Built")
+> ? ? av.src <- available.packages(contriburl = contrib.url(repos, 
+> "source"), method = method, fields = fields, ...)
+> ? ? av.bin <- available.packages(contriburl = contrib.url(repos, 
+> "binary"), method = method, fields = fields, ...)
+> ? ? ## we keep things simple in that we use source unless there is the 
+> same binary version
+> ? ? ## so that we can get at the Built field. This is more simple than 
+> in install.packages
+> ? ? ## since we only care about determining whether a package is new, 
+> but not which type is
+> ? ? ## preferred - install.packages will sort that out.
+> ? ? all_src_pkgs <- row.names(av.src)
+> ? ? all_bin_pkgs <- row.names(av.bin)
+> ? ? dual_pkgs <- intersect(all_src_pkgs, all_bin_pkgs)
+> ? ? src_ver <- av.src[dual_pkgs, "Version"]
+> ? ? bin_ver <- av.bin[dual_pkgs, "Version"]
+> ? ? use_bin <- as.numeric_version(bin_ver) >= as.numeric_version(src_ver)
+> ? ? ## If for some reason 'src_ver' or 'bin_ver' contain NAs, they 
+> would propagate
+> ? ? ## to 'use_bin', but can this ever happen?
+> ? ? use_bin[is.na(use_bin)] <- TRUE
+> ? ? src_pkgs <- c(setdiff(all_src_pkgs, dual_pkgs), dual_pkgs[!use_bin])
+> ? ? bin_pkgs <- c(setdiff(all_bin_pkgs, dual_pkgs), dual_pkgs[use_bin])
+> ? ? ## Returned matrix has 1 row per package in 'union(all_src_pkgs, 
+> all_bin_pkgs)'.
+> ? ? rbind(av.src[src_pkgs, ], av.bin[bin_pkgs, ])
+> }
+>
+> Best,
+>
+> H.
+>
+-- 
+Herv? Pag?s
+
+Bioconductor Core Team
+hpages.on.github at gmail.com
+
+
+From pd@|gd @end|ng |rom gm@||@com  Wed Apr 22 13:30:31 2026
+From: pd@|gd @end|ng |rom gm@||@com (Peter Dalgaard)
+Date: Wed, 22 Apr 2026 13:30:31 +0200
+Subject: [R-SIG-Mac] 
+ utils:::.available.both() breaks install.packages() on
+ Mac sonoma-arm64
+In-Reply-To: <5c3413f9-72cc-49cc-8cad-7ea8473ded88@gmail.com>
+References: <5c3413f9-72cc-49cc-8cad-7ea8473ded88@gmail.com>
+Message-ID: <FA46BDEE-18D3-42C9-8FF1-5B9697C65284@gmail.com>
+
+Thanks for spotting this, Herv?.
+
+You are probably right that this condition should be checked for in the code.
+
+However, we are in code freeze and the direct cause of the issue is that the PACKAGES file in the binaries directory on CRAN is out of sync with it contents (AFAICS some Archived pakages had their binaries removed, but they remained listed in PACKAGES). 
+
+In normal operation, the source dir should have a superset of the binary dir and the PACKAGES file likewise and the problem shouldn't appear. 
+
+- Peter D.
+
+> On 22 Apr 2026, at 00.35, Herv? Pag?s <hpages.on.github at gmail.com> wrote:
+> 
+> With R 4.6 >= r89829  we're seeing this install.packages() error on Mac sonoma-arm64 in various places:
+> 
+>     Error in av.src[pkg.bin, "Version"] : subscript out of bounds
+> 
+> This happens for example with install.packages("OSTA.data", repos=BiocManager::repositories()).
+> 
+> Also started to happen in this GitHub action a few days ago: https://github.com/HyrienLab/igblastr/actions/runs/24495733061/job/71590105822
+> 
+> The error occurs in the new utils:::.available.both() function introduced at r89827 in trunk and r89829 in R-4-6-branch (file src/library/utils/R/packages.R). It can simply be reproduced with:
+> 
+> utils:::.available.both("https://cran.r-project.org")
+> 
+>     # Error in av.src[pkg.bin, "Version"] : subscript out of bounds
+> 
+> It seems that the function should be able to handle the situation where some binary packages in the repo don't have a corresponding source package. Something like this maybe:
+> 
+> .available.both <- function(repos, method, ...) {
+>     ## "both" gets complicated as we have to use available.packages twice
+>     fields <- c(tools:::.get_standard_repository_db_fields(), "File", "Built")
+>     av.src <- available.packages(contriburl = contrib.url(repos, "source"), method = method, fields = fields, ...)
+>     av.bin <- available.packages(contriburl = contrib.url(repos, "binary"), method = method, fields = fields, ...)
+>     ## we keep things simple in that we use source unless there is the same binary version
+>     ## so that we can get at the Built field. This is more simple than in install.packages
+>     ## since we only care about determining whether a package is new, but not which type is
+>     ## preferred - install.packages will sort that out.
+>     all_src_pkgs <- row.names(av.src)
+>     all_bin_pkgs <- row.names(av.bin)
+>     dual_pkgs <- intersect(all_src_pkgs, all_bin_pkgs)
+>     src_ver <- av.src[dual_pkgs, "Version"]
+>     bin_ver <- av.bin[dual_pkgs, "Version"]
+>     use_bin <- as.numeric_version(bin_ver) >= as.numeric_version(src_ver)
+>     ## If for some reason 'src_ver' or 'bin_ver' contain NAs, they would propagate
+>     ## to 'use_bin', but can this ever happen?
+>     use_bin[is.na(use_bin)] <- TRUE
+>     src_pkgs <- c(setdiff(all_src_pkgs, dual_pkgs), dual_pkgs[!use_bin])
+>     bin_pkgs <- c(setdiff(all_bin_pkgs, dual_pkgs), dual_pkgs[use_bin])
+>     ## Returned matrix has 1 row per package in 'union(all_src_pkgs, all_bin_pkgs)'.
+>     rbind(av.src[src_pkgs, ], av.bin[bin_pkgs, ])
+> }
+> 
+> Best,
+> 
+> H.
+> 
+> -- 
+> Herv? Pag?s
+> 
+> Bioconductor Core Team
+> hpages.on.github at gmail.com
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+
+-- 
+Peter Dalgaard, Professor,
+Center for Statistics, Copenhagen Business School
+Solbjerg Plads 3, 2000 Frederiksberg, Denmark
+Phone: (+45)38153501
+Office: A 4.23
+Email: pd.mes at cbs.dk  Priv: PDalgd at gmail.com
+
+
+From pd@|gd @end|ng |rom gm@||@com  Wed Apr 22 15:40:40 2026
+From: pd@|gd @end|ng |rom gm@||@com (Peter Dalgaard)
+Date: Wed, 22 Apr 2026 15:40:40 +0200
+Subject: [R-SIG-Mac] 
+ utils:::.available.both() breaks install.packages() on
+ Mac sonoma-arm64
+In-Reply-To: <FA46BDEE-18D3-42C9-8FF1-5B9697C65284@gmail.com>
+References: <5c3413f9-72cc-49cc-8cad-7ea8473ded88@gmail.com>
+ <FA46BDEE-18D3-42C9-8FF1-5B9697C65284@gmail.com>
+Message-ID: <A006C348-3E7B-43ED-89A5-F67963959C54@gmail.com>
+
+I decided to put in a stopgap measure, so hopefully things should work with r89945 (4.6 RC only because there are no 4.7 binaries yet). It does seem to allow the Bioconductor stuff to be installed for me.
+
+This is in spite of the hard code freeze, so please watch carefully for any anomalies!
+
+-pd
+
+> On 22 Apr 2026, at 13.30, Peter Dalgaard <pdalgd at gmail.com> wrote:
+> 
+> Thanks for spotting this, Herv?.
+> 
+> You are probably right that this condition should be checked for in the code.
+> 
+> However, we are in code freeze and the direct cause of the issue is that the PACKAGES file in the binaries directory on CRAN is out of sync with it contents (AFAICS some Archived pakages had their binaries removed, but they remained listed in PACKAGES). 
+> 
+> In normal operation, the source dir should have a superset of the binary dir and the PACKAGES file likewise and the problem shouldn't appear. 
+> 
+> - Peter D.
+> 
+>> On 22 Apr 2026, at 00.35, Herv? Pag?s <hpages.on.github at gmail.com> wrote:
+>> 
+>> With R 4.6 >= r89829  we're seeing this install.packages() error on Mac sonoma-arm64 in various places:
+>> 
+>>    Error in av.src[pkg.bin, "Version"] : subscript out of bounds
+>> 
+>> This happens for example with install.packages("OSTA.data", repos=BiocManager::repositories()).
+>> 
+>> Also started to happen in this GitHub action a few days ago: https://github.com/HyrienLab/igblastr/actions/runs/24495733061/job/71590105822
+>> 
+>> The error occurs in the new utils:::.available.both() function introduced at r89827 in trunk and r89829 in R-4-6-branch (file src/library/utils/R/packages.R). It can simply be reproduced with:
+>> 
+>> utils:::.available.both("https://cran.r-project.org")
+>> 
+>>    # Error in av.src[pkg.bin, "Version"] : subscript out of bounds
+>> 
+>> It seems that the function should be able to handle the situation where some binary packages in the repo don't have a corresponding source package. Something like this maybe:
+>> 
+>> .available.both <- function(repos, method, ...) {
+>>    ## "both" gets complicated as we have to use available.packages twice
+>>    fields <- c(tools:::.get_standard_repository_db_fields(), "File", "Built")
+>>    av.src <- available.packages(contriburl = contrib.url(repos, "source"), method = method, fields = fields, ...)
+>>    av.bin <- available.packages(contriburl = contrib.url(repos, "binary"), method = method, fields = fields, ...)
+>>    ## we keep things simple in that we use source unless there is the same binary version
+>>    ## so that we can get at the Built field. This is more simple than in install.packages
+>>    ## since we only care about determining whether a package is new, but not which type is
+>>    ## preferred - install.packages will sort that out.
+>>    all_src_pkgs <- row.names(av.src)
+>>    all_bin_pkgs <- row.names(av.bin)
+>>    dual_pkgs <- intersect(all_src_pkgs, all_bin_pkgs)
+>>    src_ver <- av.src[dual_pkgs, "Version"]
+>>    bin_ver <- av.bin[dual_pkgs, "Version"]
+>>    use_bin <- as.numeric_version(bin_ver) >= as.numeric_version(src_ver)
+>>    ## If for some reason 'src_ver' or 'bin_ver' contain NAs, they would propagate
+>>    ## to 'use_bin', but can this ever happen?
+>>    use_bin[is.na(use_bin)] <- TRUE
+>>    src_pkgs <- c(setdiff(all_src_pkgs, dual_pkgs), dual_pkgs[!use_bin])
+>>    bin_pkgs <- c(setdiff(all_bin_pkgs, dual_pkgs), dual_pkgs[use_bin])
+>>    ## Returned matrix has 1 row per package in 'union(all_src_pkgs, all_bin_pkgs)'.
+>>    rbind(av.src[src_pkgs, ], av.bin[bin_pkgs, ])
+>> }
+>> 
+>> Best,
+>> 
+>> H.
+>> 
+>> -- 
+>> Herv? Pag?s
+>> 
+>> Bioconductor Core Team
+>> hpages.on.github at gmail.com
+>> 
+>> _______________________________________________
+>> R-SIG-Mac mailing list
+>> R-SIG-Mac at r-project.org
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+> 
+> -- 
+> Peter Dalgaard, Professor,
+> Center for Statistics, Copenhagen Business School
+> Solbjerg Plads 3, 2000 Frederiksberg, Denmark
+> Phone: (+45)38153501
+> Office: A 4.23
+> Email: pd.mes at cbs.dk  Priv: PDalgd at gmail.com
+> 
+
+-- 
+Peter Dalgaard, Professor,
+Center for Statistics, Copenhagen Business School
+Solbjerg Plads 3, 2000 Frederiksberg, Denmark
+Phone: (+45)38153501
+Office: A 4.23
+Email: pd.mes at cbs.dk  Priv: PDalgd at gmail.com
+
+
+From ||gge@ @end|ng |rom @t@t|@t|k@tu-dortmund@de  Wed Apr 22 16:09:03 2026
+From: ||gge@ @end|ng |rom @t@t|@t|k@tu-dortmund@de (Uwe Ligges)
+Date: Wed, 22 Apr 2026 16:09:03 +0200
+Subject: [R-SIG-Mac] 
+ utils:::.available.both() breaks install.packages() on
+ Mac sonoma-arm64
+In-Reply-To: <FA46BDEE-18D3-42C9-8FF1-5B9697C65284@gmail.com>
+References: <5c3413f9-72cc-49cc-8cad-7ea8473ded88@gmail.com>
+ <FA46BDEE-18D3-42C9-8FF1-5B9697C65284@gmail.com>
+Message-ID: <1735a4e4-6cb3-4c42-96ca-c0a4ed462737@statistik.tu-dortmund.de>
+
+
+
+On 22.04.2026 13:30, Peter Dalgaard wrote:
+> Thanks for spotting this, Herv?.
+> 
+> You are probably right that this condition should be checked for in the code.
+> 
+> However, we are in code freeze and the direct cause of the issue is that the PACKAGES file in the binaries directory on CRAN is out of sync with it contents (AFAICS some Archived pakages had their binaries removed, but they remained listed in PACKAGES).
+> 
+> In normal operation, the source dir should have a superset of the binary dir and the PACKAGES file likewise and the problem shouldn't appear.
+
+
+Peter,
+
+there are separate PACKAGES files for the source repository and each of 
+the binary repositories.
+A PACKAGES file should always be consistent with the contents in the 
+corresponding repository, of course. It must not contain entries for 
+packages that are unavailable in that repo.
+Technically, in order to avoid race conditions in the source repo, the 
+entry in PACKAGES is even removed even before the package (or at least a 
+link to it) is moved  away from the source repository.
+
+For binary repositories: Binaries are not instantly removed from binary 
+repositories if corresponding sources are moved to the archives. So you 
+cannot expect that the source repo is always a superset of packages of a 
+binary repo.
+
+Best,
+Uwe
+
+> 
+> - Peter D.
+> 
+>> On 22 Apr 2026, at 00.35, Herv? Pag?s <hpages.on.github at gmail.com> wrote:
+>>
+>> With R 4.6 >= r89829  we're seeing this install.packages() error on Mac sonoma-arm64 in various places:
+>>
+>>      Error in av.src[pkg.bin, "Version"] : subscript out of bounds
+>>
+>> This happens for example with install.packages("OSTA.data", repos=BiocManager::repositories()).
+>>
+>> Also started to happen in this GitHub action a few days ago: https://github.com/HyrienLab/igblastr/actions/runs/24495733061/job/71590105822
+>>
+>> The error occurs in the new utils:::.available.both() function introduced at r89827 in trunk and r89829 in R-4-6-branch (file src/library/utils/R/packages.R). It can simply be reproduced with:
+>>
+>> utils:::.available.both("https://cran.r-project.org")
+>>
+>>      # Error in av.src[pkg.bin, "Version"] : subscript out of bounds
+>>
+>> It seems that the function should be able to handle the situation where some binary packages in the repo don't have a corresponding source package. Something like this maybe:
+>>
+>> .available.both <- function(repos, method, ...) {
+>>      ## "both" gets complicated as we have to use available.packages twice
+>>      fields <- c(tools:::.get_standard_repository_db_fields(), "File", "Built")
+>>      av.src <- available.packages(contriburl = contrib.url(repos, "source"), method = method, fields = fields, ...)
+>>      av.bin <- available.packages(contriburl = contrib.url(repos, "binary"), method = method, fields = fields, ...)
+>>      ## we keep things simple in that we use source unless there is the same binary version
+>>      ## so that we can get at the Built field. This is more simple than in install.packages
+>>      ## since we only care about determining whether a package is new, but not which type is
+>>      ## preferred - install.packages will sort that out.
+>>      all_src_pkgs <- row.names(av.src)
+>>      all_bin_pkgs <- row.names(av.bin)
+>>      dual_pkgs <- intersect(all_src_pkgs, all_bin_pkgs)
+>>      src_ver <- av.src[dual_pkgs, "Version"]
+>>      bin_ver <- av.bin[dual_pkgs, "Version"]
+>>      use_bin <- as.numeric_version(bin_ver) >= as.numeric_version(src_ver)
+>>      ## If for some reason 'src_ver' or 'bin_ver' contain NAs, they would propagate
+>>      ## to 'use_bin', but can this ever happen?
+>>      use_bin[is.na(use_bin)] <- TRUE
+>>      src_pkgs <- c(setdiff(all_src_pkgs, dual_pkgs), dual_pkgs[!use_bin])
+>>      bin_pkgs <- c(setdiff(all_bin_pkgs, dual_pkgs), dual_pkgs[use_bin])
+>>      ## Returned matrix has 1 row per package in 'union(all_src_pkgs, all_bin_pkgs)'.
+>>      rbind(av.src[src_pkgs, ], av.bin[bin_pkgs, ])
+>> }
+>>
+>> Best,
+>>
+>> H.
+>>
+>> -- 
+>> Herv? Pag?s
+>>
+>> Bioconductor Core Team
+>> hpages.on.github at gmail.com
+>>
+>> _______________________________________________
+>> R-SIG-Mac mailing list
+>> R-SIG-Mac at r-project.org
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+> 
+
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: smime.p7s
+Type: application/pkcs7-signature
+Size: 4355 bytes
+Desc: S/MIME Cryptographic Signature
+URL: <https://stat.ethz.ch/pipermail/r-sig-mac/attachments/20260422/395f1ee6/attachment.p7s>
+
+From hp@ge@@on@g|thub @end|ng |rom gm@||@com  Wed Apr 22 18:18:05 2026
+From: hp@ge@@on@g|thub @end|ng |rom gm@||@com (=?UTF-8?B?SGVydsOpIFBhZ8Oocw==?=)
+Date: Wed, 22 Apr 2026 09:18:05 -0700
+Subject: [R-SIG-Mac] 
+ utils:::.available.both() breaks install.packages() on
+ Mac sonoma-arm64
+In-Reply-To: <1735a4e4-6cb3-4c42-96ca-c0a4ed462737@statistik.tu-dortmund.de>
+References: <5c3413f9-72cc-49cc-8cad-7ea8473ded88@gmail.com>
+ <FA46BDEE-18D3-42C9-8FF1-5B9697C65284@gmail.com>
+ <1735a4e4-6cb3-4c42-96ca-c0a4ed462737@statistik.tu-dortmund.de>
+Message-ID: <48833b09-1b40-4a26-bfb4-605410542bc9@gmail.com>
+
+FWIW more than 17 hrs after my initial report, the CRAN mirrors still 
+have hundreds of sonoma-arm64 packages with no corresponding sources:
+
+bin_pkgs_with_no_src <- function(repos)
+{
+ ? ? av.src <- available.packages(contrib.url(repos, "source"))
+ ? ? bin_types <- c(Windows="win.binary", Mac="mac.binary.sonoma-arm64")
+ ? ? for (i in seq_along(bin_types)) {
+ ? ? ? ? av.bin <- available.packages(contrib.url(repos, bin_types[[i]]))
+ ? ? ? ? bin_pkgs <- setdiff(rownames(av.bin), rownames(av.src))
+ ? ? ? ? cat(names(bin_types)[[i]], "packages with no source:", 
+length(bin_pkgs), "\n")
+ ? ? }
+}
+
+ > bin_pkgs_with_no_src("https://cran.r-project.org")
+Windows packages with no source: 14
+Mac packages with no source: 817
+
+ > bin_pkgs_with_no_src("https://cran.rstudio.com")
+Windows packages with no source: 14
+Mac packages with no source: 817
+
+So assuming that in normal operation the source dir should have a 
+superset of the binary dir doesn't seem realistic.
+
+Best,
+H.
+
+On 22/04/2026 07:09, Uwe Ligges wrote:
+>
+>
+> On 22.04.2026 13:30, Peter Dalgaard wrote:
+>> Thanks for spotting this, Herv?.
+>>
+>> You are probably right that this condition should be checked for in 
+>> the code.
+>>
+>> However, we are in code freeze and the direct cause of the issue is 
+>> that the PACKAGES file in the binaries directory on CRAN is out of 
+>> sync with it contents (AFAICS some Archived pakages had their 
+>> binaries removed, but they remained listed in PACKAGES).
+>>
+>> In normal operation, the source dir should have a superset of the 
+>> binary dir and the PACKAGES file likewise and the problem shouldn't 
+>> appear.
+>
+>
+> Peter,
+>
+> there are separate PACKAGES files for the source repository and each 
+> of the binary repositories.
+> A PACKAGES file should always be consistent with the contents in the 
+> corresponding repository, of course. It must not contain entries for 
+> packages that are unavailable in that repo.
+> Technically, in order to avoid race conditions in the source repo, the 
+> entry in PACKAGES is even removed even before the package (or at least 
+> a link to it) is moved? away from the source repository.
+>
+> For binary repositories: Binaries are not instantly removed from 
+> binary repositories if corresponding sources are moved to the 
+> archives. So you cannot expect that the source repo is always a 
+> superset of packages of a binary repo.
+>
+> Best,
+> Uwe
+>
+>>
+>> - Peter D.
+>>
+>>> On 22 Apr 2026, at 00.35, Herv? Pag?s <hpages.on.github at gmail.com> 
+>>> wrote:
+>>>
+>>> With R 4.6 >= r89829? we're seeing this install.packages() error on 
+>>> Mac sonoma-arm64 in various places:
+>>>
+>>> ???? Error in av.src[pkg.bin, "Version"] : subscript out of bounds
+>>>
+>>> This happens for example with install.packages("OSTA.data", 
+>>> repos=BiocManager::repositories()).
+>>>
+>>> Also started to happen in this GitHub action a few days ago: 
+>>> https://github.com/HyrienLab/igblastr/actions/runs/24495733061/job/71590105822
+>>>
+>>> The error occurs in the new utils:::.available.both() function 
+>>> introduced at r89827 in trunk and r89829 in R-4-6-branch (file 
+>>> src/library/utils/R/packages.R). It can simply be reproduced with:
+>>>
+>>> utils:::.available.both("https://cran.r-project.org")
+>>>
+>>> ???? # Error in av.src[pkg.bin, "Version"] : subscript out of bounds
+>>>
+>>> It seems that the function should be able to handle the situation 
+>>> where some binary packages in the repo don't have a corresponding 
+>>> source package. Something like this maybe:
+>>>
+>>> .available.both <- function(repos, method, ...) {
+>>> ???? ## "both" gets complicated as we have to use available.packages 
+>>> twice
+>>> ???? fields <- c(tools:::.get_standard_repository_db_fields(), 
+>>> "File", "Built")
+>>> ???? av.src <- available.packages(contriburl = contrib.url(repos, 
+>>> "source"), method = method, fields = fields, ...)
+>>> ???? av.bin <- available.packages(contriburl = contrib.url(repos, 
+>>> "binary"), method = method, fields = fields, ...)
+>>> ???? ## we keep things simple in that we use source unless there is 
+>>> the same binary version
+>>> ???? ## so that we can get at the Built field. This is more simple 
+>>> than in install.packages
+>>> ???? ## since we only care about determining whether a package is 
+>>> new, but not which type is
+>>> ???? ## preferred - install.packages will sort that out.
+>>> ???? all_src_pkgs <- row.names(av.src)
+>>> ???? all_bin_pkgs <- row.names(av.bin)
+>>> ???? dual_pkgs <- intersect(all_src_pkgs, all_bin_pkgs)
+>>> ???? src_ver <- av.src[dual_pkgs, "Version"]
+>>> ???? bin_ver <- av.bin[dual_pkgs, "Version"]
+>>> ???? use_bin <- as.numeric_version(bin_ver) >= 
+>>> as.numeric_version(src_ver)
+>>> ???? ## If for some reason 'src_ver' or 'bin_ver' contain NAs, they 
+>>> would propagate
+>>> ???? ## to 'use_bin', but can this ever happen?
+>>> ???? use_bin[is.na(use_bin)] <- TRUE
+>>> ???? src_pkgs <- c(setdiff(all_src_pkgs, dual_pkgs), 
+>>> dual_pkgs[!use_bin])
+>>> ???? bin_pkgs <- c(setdiff(all_bin_pkgs, dual_pkgs), 
+>>> dual_pkgs[use_bin])
+>>> ???? ## Returned matrix has 1 row per package in 
+>>> 'union(all_src_pkgs, all_bin_pkgs)'.
+>>> ???? rbind(av.src[src_pkgs, ], av.bin[bin_pkgs, ])
+>>> }
+>>>
+>>> Best,
+>>>
+>>> H.
+>>>
+>>> -- 
+>>> Herv? Pag?s
+>>>
+>>> Bioconductor Core Team
+>>> hpages.on.github at gmail.com
+>>>
+>>> _______________________________________________
+>>> R-SIG-Mac mailing list
+>>> R-SIG-Mac at r-project.org
+>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>>
+>
+-- 
+Herv? Pag?s
+
+Bioconductor Core Team
+hpages.on.github at gmail.com
+
+
+From pd@|gd @end|ng |rom gm@||@com  Wed Apr 22 22:59:47 2026
+From: pd@|gd @end|ng |rom gm@||@com (peter dalgaard)
+Date: Wed, 22 Apr 2026 22:59:47 +0200
+Subject: [R-SIG-Mac] 
+ utils:::.available.both() breaks install.packages() on
+ Mac sonoma-arm64
+In-Reply-To: <1735a4e4-6cb3-4c42-96ca-c0a4ed462737@statistik.tu-dortmund.de>
+References: <5c3413f9-72cc-49cc-8cad-7ea8473ded88@gmail.com>
+ <FA46BDEE-18D3-42C9-8FF1-5B9697C65284@gmail.com>
+ <1735a4e4-6cb3-4c42-96ca-c0a4ed462737@statistik.tu-dortmund.de>
+Message-ID: <0709286A-84A1-492E-B14A-16BDFC425382@gmail.com>
+
+Looks like Simon thought otherwise. Anyways, not my circus... (Some of the discrepancies seem rather old, though. I woould expect that something or someone would regenerate PACKAGES periodically.)
+
+With my recent change, we basically replace 
+
+   pkg.bin <- intersect(pkg.bin, pkg.src)
+
+and throw a warning if that changes pkg.bin, seems to work ok and allow the bioc installs too complete. 
+
+So check out the next nightly build (for NZ value of "nightly", unless Simon happens to be around to pull a handle).
+
+-pd
+
+> On 22 Apr 2026, at 16.09, Uwe Ligges <ligges at statistik.tu-dortmund.de> wrote:
+> 
+> 
+> 
+> On 22.04.2026 13:30, Peter Dalgaard wrote:
+>> Thanks for spotting this, Herv?.
+>> You are probably right that this condition should be checked for in the code.
+>> However, we are in code freeze and the direct cause of the issue is that the PACKAGES file in the binaries directory on CRAN is out of sync with it contents (AFAICS some Archived pakages had their binaries removed, but they remained listed in PACKAGES).
+>> In normal operation, the source dir should have a superset of the binary dir and the PACKAGES file likewise and the problem shouldn't appear.
+> 
+> 
+> Peter,
+> 
+> there are separate PACKAGES files for the source repository and each of the binary repositories.
+> A PACKAGES file should always be consistent with the contents in the corresponding repository, of course. It must not contain entries for packages that are unavailable in that repo.
+> Technically, in order to avoid race conditions in the source repo, the entry in PACKAGES is even removed even before the package (or at least a link to it) is moved  away from the source repository.
+> 
+> For binary repositories: Binaries are not instantly removed from binary repositories if corresponding sources are moved to the archives. So you cannot expect that the source repo is always a superset of packages of a binary repo.
+> 
+> Best,
+> Uwe
+> 
+>> - Peter D.
+>>> On 22 Apr 2026, at 00.35, Herv? Pag?s <hpages.on.github at gmail.com> wrote:
+>>> 
+>>> With R 4.6 >= r89829  we're seeing this install.packages() error on Mac sonoma-arm64 in various places:
+>>> 
+>>>     Error in av.src[pkg.bin, "Version"] : subscript out of bounds
+>>> 
+>>> This happens for example with install.packages("OSTA.data", repos=BiocManager::repositories()).
+>>> 
+>>> Also started to happen in this GitHub action a few days ago: https://github.com/HyrienLab/igblastr/actions/runs/24495733061/job/71590105822
+>>> 
+>>> The error occurs in the new utils:::.available.both() function introduced at r89827 in trunk and r89829 in R-4-6-branch (file src/library/utils/R/packages.R). It can simply be reproduced with:
+>>> 
+>>> utils:::.available.both("https://cran.r-project.org")
+>>> 
+>>>     # Error in av.src[pkg.bin, "Version"] : subscript out of bounds
+>>> 
+>>> It seems that the function should be able to handle the situation where some binary packages in the repo don't have a corresponding source package. Something like this maybe:
+>>> 
+>>> .available.both <- function(repos, method, ...) {
+>>>     ## "both" gets complicated as we have to use available.packages twice
+>>>     fields <- c(tools:::.get_standard_repository_db_fields(), "File", "Built")
+>>>     av.src <- available.packages(contriburl = contrib.url(repos, "source"), method = method, fields = fields, ...)
+>>>     av.bin <- available.packages(contriburl = contrib.url(repos, "binary"), method = method, fields = fields, ...)
+>>>     ## we keep things simple in that we use source unless there is the same binary version
+>>>     ## so that we can get at the Built field. This is more simple than in install.packages
+>>>     ## since we only care about determining whether a package is new, but not which type is
+>>>     ## preferred - install.packages will sort that out.
+>>>     all_src_pkgs <- row.names(av.src)
+>>>     all_bin_pkgs <- row.names(av.bin)
+>>>     dual_pkgs <- intersect(all_src_pkgs, all_bin_pkgs)
+>>>     src_ver <- av.src[dual_pkgs, "Version"]
+>>>     bin_ver <- av.bin[dual_pkgs, "Version"]
+>>>     use_bin <- as.numeric_version(bin_ver) >= as.numeric_version(src_ver)
+>>>     ## If for some reason 'src_ver' or 'bin_ver' contain NAs, they would propagate
+>>>     ## to 'use_bin', but can this ever happen?
+>>>     use_bin[is.na(use_bin)] <- TRUE
+>>>     src_pkgs <- c(setdiff(all_src_pkgs, dual_pkgs), dual_pkgs[!use_bin])
+>>>     bin_pkgs <- c(setdiff(all_bin_pkgs, dual_pkgs), dual_pkgs[use_bin])
+>>>     ## Returned matrix has 1 row per package in 'union(all_src_pkgs, all_bin_pkgs)'.
+>>>     rbind(av.src[src_pkgs, ], av.bin[bin_pkgs, ])
+>>> }
+>>> 
+>>> Best,
+>>> 
+>>> H.
+>>> 
+>>> -- 
+>>> Herv? Pag?s
+>>> 
+>>> Bioconductor Core Team
+>>> hpages.on.github at gmail.com
+>>> 
+>>> _______________________________________________
+>>> R-SIG-Mac mailing list
+>>> R-SIG-Mac at r-project.org
+>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+
+
+-- 
+Peter Dalgaard, Professor,
+Center for Statistics, Copenhagen Business School
+Solbjerg Plads 3, 2000 Frederiksberg, Denmark
+Phone: (+45)38153501
+Office: A 4.23
+Email: pd.mes at cbs.dk  Priv: PDalgd at gmail.com
+
+
+From @|mon@urb@nek @end|ng |rom R-project@org  Thu Apr 23 01:58:22 2026
+From: @|mon@urb@nek @end|ng |rom R-project@org (Simon Urbanek)
+Date: Thu, 23 Apr 2026 11:58:22 +1200
+Subject: [R-SIG-Mac] 
+ utils:::.available.both() breaks install.packages() on
+ Mac sonoma-arm64
+In-Reply-To: <48833b09-1b40-4a26-bfb4-605410542bc9@gmail.com>
+References: <5c3413f9-72cc-49cc-8cad-7ea8473ded88@gmail.com>
+ <FA46BDEE-18D3-42C9-8FF1-5B9697C65284@gmail.com>
+ <1735a4e4-6cb3-4c42-96ca-c0a4ed462737@statistik.tu-dortmund.de>
+ <48833b09-1b40-4a26-bfb4-605410542bc9@gmail.com>
+Message-ID: <4665D577-ED7D-401B-8312-3EB2255879E7@R-project.org>
+
+Herv?,
+
+"both" has been always based on the (bad) assumption that binaries are a subset of sources. Before the update, it has simply ignored binaries entirely when determining the set of packages (i.e. both old.packages and available.packages were always wrong for "both" as they simply ran on "source"). It causes a lot of problems which is why my preferred solution would be to remove "both" entirely as the concept is fundamentally broken (see PR#18396), but since the horse bolted we have to deal with it for now to make it at least seem like it's working. As you noted, In practice, it is close to impossible to maintain that assumption, because those are two entirely independent processes, so archiving etc. would have to be done in a different way by removing binaries first and waiting for it to propagate - which won't happen anytime soon.
+
+
+> On 23 Apr 2026, at 04:18, Herv? Pag?s <hpages.on.github at gmail.com> wrote:
+> 
+> FWIW more than 17 hrs after my initial report, the CRAN mirrors still have hundreds of sonoma-arm64 packages with no corresponding sources:
+> 
+
+
+Your report was about the code - it was appreciated and fixed by Peter if I see correctly. As noted above, perfect match is not expected. However, the macOS repo issue is entirely different - it turns out the PACKAGES* metadata files were (incorrectly) listing orphans which are not in that directory, that's why there were so many, now fixed:
+
+repos <- "https://cran.r-project.org"
+av.src <- available.packages(contrib.url(repos, "source"))
+bin_types <- c(Windows="win.binary", Mac="mac.binary.sonoma-arm64")
+master <- c(repos, "https://mac.r-project.org")
+for (i in seq_along(bin_types)) {
+    av.bin <- available.packages(contrib.url(master[i], bin_types[[i]]))
+    bin_pkgs <- setdiff(rownames(av.bin), rownames(av.src))
+    cat(names(bin_types)[[i]], "packages with no source:", length(bin_pkgs), "\n")
+}
+
+Windows packages with no source: 14 
+Mac packages with no source: 0 
+
+(and it's only 0 because I just synced after the build run while it's night in Europe and the northern CRAN team is sleeping :P).
+
+Cheers,
+Simon
+
+
+
+> bin_pkgs_with_no_src <- function(repos)
+> {
+>     av.src <- available.packages(contrib.url(repos, "source"))
+>     bin_types <- c(Windows="win.binary", Mac="mac.binary.sonoma-arm64")
+>     for (i in seq_along(bin_types)) {
+>         av.bin <- available.packages(contrib.url(repos, bin_types[[i]]))
+>         bin_pkgs <- setdiff(rownames(av.bin), rownames(av.src))
+>         cat(names(bin_types)[[i]], "packages with no source:", length(bin_pkgs), "\n")
+>     }
+> }
+> 
+> > bin_pkgs_with_no_src("https://cran.r-project.org")
+> Windows packages with no source: 14
+> Mac packages with no source: 817
+> 
+> > bin_pkgs_with_no_src("https://cran.rstudio.com")
+> Windows packages with no source: 14
+> Mac packages with no source: 817
+> 
+> So assuming that in normal operation the source dir should have a superset of the binary dir doesn't seem realistic.
+> 
+> Best,
+> H.
+> 
+> On 22/04/2026 07:09, Uwe Ligges wrote:
+>> 
+>> 
+>> On 22.04.2026 13:30, Peter Dalgaard wrote:
+>>> Thanks for spotting this, Herv?.
+>>> 
+>>> You are probably right that this condition should be checked for in the code.
+>>> 
+>>> However, we are in code freeze and the direct cause of the issue is that the PACKAGES file in the binaries directory on CRAN is out of sync with it contents (AFAICS some Archived pakages had their binaries removed, but they remained listed in PACKAGES).
+>>> 
+>>> In normal operation, the source dir should have a superset of the binary dir and the PACKAGES file likewise and the problem shouldn't appear.
+>> 
+>> 
+>> Peter,
+>> 
+>> there are separate PACKAGES files for the source repository and each of the binary repositories.
+>> A PACKAGES file should always be consistent with the contents in the corresponding repository, of course. It must not contain entries for packages that are unavailable in that repo.
+>> Technically, in order to avoid race conditions in the source repo, the entry in PACKAGES is even removed even before the package (or at least a link to it) is moved  away from the source repository.
+>> 
+>> For binary repositories: Binaries are not instantly removed from binary repositories if corresponding sources are moved to the archives. So you cannot expect that the source repo is always a superset of packages of a binary repo.
+>> 
+>> Best,
+>> Uwe
+>> 
+>>> 
+>>> - Peter D.
+>>> 
+>>>> On 22 Apr 2026, at 00.35, Herv? Pag?s <hpages.on.github at gmail.com> wrote:
+>>>> 
+>>>> With R 4.6 >= r89829  we're seeing this install.packages() error on Mac sonoma-arm64 in various places:
+>>>> 
+>>>>      Error in av.src[pkg.bin, "Version"] : subscript out of bounds
+>>>> 
+>>>> This happens for example with install.packages("OSTA.data", repos=BiocManager::repositories()).
+>>>> 
+>>>> Also started to happen in this GitHub action a few days ago: https://github.com/HyrienLab/igblastr/actions/runs/24495733061/job/71590105822
+>>>> 
+>>>> The error occurs in the new utils:::.available.both() function introduced at r89827 in trunk and r89829 in R-4-6-branch (file src/library/utils/R/packages.R). It can simply be reproduced with:
+>>>> 
+>>>> utils:::.available.both("https://cran.r-project.org")
+>>>> 
+>>>>      # Error in av.src[pkg.bin, "Version"] : subscript out of bounds
+>>>> 
+>>>> It seems that the function should be able to handle the situation where some binary packages in the repo don't have a corresponding source package. Something like this maybe:
+>>>> 
+>>>> .available.both <- function(repos, method, ...) {
+>>>>      ## "both" gets complicated as we have to use available.packages twice
+>>>>      fields <- c(tools:::.get_standard_repository_db_fields(), "File", "Built")
+>>>>      av.src <- available.packages(contriburl = contrib.url(repos, "source"), method = method, fields = fields, ...)
+>>>>      av.bin <- available.packages(contriburl = contrib.url(repos, "binary"), method = method, fields = fields, ...)
+>>>>      ## we keep things simple in that we use source unless there is the same binary version
+>>>>      ## so that we can get at the Built field. This is more simple than in install.packages
+>>>>      ## since we only care about determining whether a package is new, but not which type is
+>>>>      ## preferred - install.packages will sort that out.
+>>>>      all_src_pkgs <- row.names(av.src)
+>>>>      all_bin_pkgs <- row.names(av.bin)
+>>>>      dual_pkgs <- intersect(all_src_pkgs, all_bin_pkgs)
+>>>>      src_ver <- av.src[dual_pkgs, "Version"]
+>>>>      bin_ver <- av.bin[dual_pkgs, "Version"]
+>>>>      use_bin <- as.numeric_version(bin_ver) >= as.numeric_version(src_ver)
+>>>>      ## If for some reason 'src_ver' or 'bin_ver' contain NAs, they would propagate
+>>>>      ## to 'use_bin', but can this ever happen?
+>>>>      use_bin[is.na(use_bin)] <- TRUE
+>>>>      src_pkgs <- c(setdiff(all_src_pkgs, dual_pkgs), dual_pkgs[!use_bin])
+>>>>      bin_pkgs <- c(setdiff(all_bin_pkgs, dual_pkgs), dual_pkgs[use_bin])
+>>>>      ## Returned matrix has 1 row per package in 'union(all_src_pkgs, all_bin_pkgs)'.
+>>>>      rbind(av.src[src_pkgs, ], av.bin[bin_pkgs, ])
+>>>> }
+>>>> 
+>>>> Best,
+>>>> 
+>>>> H.
+>>>> 
+>>>> -- 
+>>>> Herv? Pag?s
+>>>> 
+>>>> Bioconductor Core Team
+>>>> hpages.on.github at gmail.com
+>>>> 
+>>>> _______________________________________________
+>>>> R-SIG-Mac mailing list
+>>>> R-SIG-Mac at r-project.org
+>>>> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+>>> 
+>> 
+> -- 
+> Herv? Pag?s
+> 
+> Bioconductor Core Team
+> hpages.on.github at gmail.com
+> 
+> _______________________________________________
+> R-SIG-Mac mailing list
+> R-SIG-Mac at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mac
+> 
+
+

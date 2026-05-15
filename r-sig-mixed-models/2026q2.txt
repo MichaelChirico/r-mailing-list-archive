@@ -1,0 +1,2128 @@
+From jphughe@ @end|ng |rom uw@edu  Wed Apr 15 00:22:15 2026
+From: jphughe@ @end|ng |rom uw@edu (Jim Hughes)
+Date: Tue, 14 Apr 2026 22:22:15 +0000
+Subject: [R-sig-ME] behavior of ar1() option in model formula in lme2.0
+Message-ID: <LV2PR08MB9729444677B16E87C3390BEDFEBC252@LV2PR08MB972944.namprd08.prod.outlook.com>
+
+An embedded and charset-unspecified text was scrubbed...
+Name: testar.txt
+URL: <https://stat.ethz.ch/pipermail/r-sig-mixed-models/attachments/20260414/8427ac8c/attachment.txt>
+
+From bbo|ker @end|ng |rom gm@||@com  Thu Apr 16 03:22:29 2026
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Wed, 15 Apr 2026 21:22:29 -0400
+Subject: [R-sig-ME] behavior of ar1() option in model formula in lme2.0
+In-Reply-To: <LV2PR08MB9729444677B16E87C3390BEDFEBC252@LV2PR08MB972944.namprd08.prod.outlook.com>
+References: <LV2PR08MB9729444677B16E87C3390BEDFEBC252@LV2PR08MB972944.namprd08.prod.outlook.com>
+Message-ID: <CABghstTSV8wgD4CcxJ2zCWqf-QDpPXdsUwJ3yvZ3o84ihgPYRw@mail.gmail.com>
+
+   Thanks for the question. This question would be easier to answer
+(and thus more  likely to get answered)  if you could
+
+*  give a brief summary of the problem (rather than making us pick
+through the output to figure it out ourselves;
+* do include the full output, but do it in the body of the e-mail
+(rather than as a separate attached file), at the end of the message;
+* give us a reproducible example;
+* make sure you specify which versions of packages you're using (full
+output of sessionInfo() from a session that is as clean as possible,
+or at least the results of packageVersion("glmmTMB") and
+packageVersion("lme4")
+
+I can reproduce what is probably the main problem, which is that the
+fixed effect parameters seem to get set to zero for the lme4 fit.
+However, this seems to happen only  in the binomial case... ??
+
+
+form <- out_bin_1 ~ ftime + trt + ar1(ftime + 0 | id_cluster) +
+  (1 | id_individual)
+
+library(glmmTMB)
+library(lme4)
+set.seed(101)
+sfun <- function(n) factor(sample(1:n, replace=TRUE, size = 1465))
+dd <- data.frame(id_cluster = sfun(7), id_individual = sfun(486),
+                 ftime = sfun(4), trt = sfun(2))
+np <- list(beta = c(0, rep(0.1, 3), 1), theta = rep(0, 3))
+dd$out_bin_1 <- simulate_new(form[-2], newdata = dd,
+             newparams = np,
+             family = binomial)[[1]]
+
+lme4_1 <- glmer(form, data = dd, family = binomial)
+glmmTMB_1 <- glmmTMB(form, data = dd, family = binomial)
+c(logLik(lme4_1) - logLik(glmmTMB_1))
+logLik(lme4_1)
+logLik(glmmTMB_1)
+
+fixef(lme4_1)
+
+dd$out_gauss <- simulate_new(form[-2], newdata = dd,
+             newparams = c(np, list(betadisp=0)),
+             family = gaussian)[[1]]
+
+form2 <- update(form, out_gauss ~ .)
+lme4_2 <- lmer(form2, data = dd, REML = FALSE)
+glmmTMB_2 <- glmmTMB(form2, data = dd, family = gaussian)
+fixef(lme4_2)
+
+On Tue, Apr 14, 2026 at 6:22?PM Jim Hughes <jphughes at uw.edu> wrote:
+
+
+From jphughe@ @end|ng |rom uw@edu  Fri Apr 17 01:07:11 2026
+From: jphughe@ @end|ng |rom uw@edu (Jim Hughes)
+Date: Thu, 16 Apr 2026 23:07:11 +0000
+Subject: [R-sig-ME] behavior of ar1() option in model formula in lme2.0
+Message-ID: <LV2PR08MB972944B0762A8E862BC29756E3BC232@LV2PR08MB972944.namprd08.prod.outlook.com>
+
+Hello
+
+Summary: I am getting unexpected results when fitting a model using lmer/glmer with the ar1 function as part of the random effect specification.  I have previously fit these models using glmmTMB and am trying to replicate those results using lmer/glmer. The specific issues are
+
+
+  1.  The model fit seems to depend on the order of the random effects provided in the model formula ... this happens with both lmer and glmer and is something I haven't encountered before.
+  2.  When I fit a model using glmer with ar1 as part of the random effects, I get estimates of exactly 0 for all the fixed effects. This problem seems to be specific to glmer as it does not occur when I fit a similar model with lmer (in fact, the lmer results agree exactly with glmmTMB results provided the order of the random effects is "correctly" specified in lmer)
+
+Below, I provide details about the model and results of an R session that illustrates these issues.
+
+Details: I have a dataset with a binary outcome measured repeatedly over (discrete) time on individuals who belong to clusters (individuals are numbered uniquely and each individual belongs to only one cluster). The dataset contains the following variables:
+
+> names(dat)
+[1] "id_cluster"    "id_individual" "trt"           "time"          "out_bin_1"        "ftime"
+
+where time is an integer and ftime = factor(time).
+
+I want to fit the model
+
+                                                                                                                logit(p_ijk) = u + B_j + d*X_ij + g_ij + w_ik
+
+where i corresponds to the cluster,  B_j is the effect of time j, X_ij is a 0/1 indicator of treatment (corresponding to the variable trt) for cluster i at time j, g_ij is a random effect for time j in cluster i and w_ik is a random effect for individual k in cluster i. Further, I assume that individuals are independent with Var(w_ik) = s^2 and Cov(g_ij,g_ij') = t^2 * r^|j - j'| and Cov(g_ij,g_i'j) = 0 if i != i'. Thus, I expect a model with three variance parameters - s, t and r.
+
+R Session:
+
+
+library(glmmTMB)
+
+## Warning: package 'glmmTMB' was built under R version 4.4.3
+
+library(lme4)
+
+## Warning: package 'lme4' was built under R version 4.4.3
+
+## Loading required package: Matrix
+
+## Warning: package 'Matrix' was built under R version 4.4.3
+
+sessionInfo()
+
+## R version 4.4.0 (2024-04-24 ucrt)
+## Platform: x86_64-w64-mingw32/x64
+## Running under: Windows 11 x64 (build 26200)
+##
+## Matrix products: default
+##
+##
+## locale:
+## [1] LC_COLLATE=English_United States.utf8
+## [2] LC_CTYPE=English_United States.utf8
+## [3] LC_MONETARY=English_United States.utf8
+## [4] LC_NUMERIC=C
+## [5] LC_TIME=English_United States.utf8
+##
+## time zone: America/Los_Angeles
+## tzcode source: internal
+##
+## attached base packages:
+## [1] stats     graphics  grDevices utils     datasets  methods   base
+##
+## other attached packages:
+## [1] lme4_2.0-1     Matrix_1.7-4   glmmTMB_1.1.14
+##
+## loaded via a namespace (and not attached):
+##  [1] nlme_3.1-168        cli_3.6.5           knitr_1.51
+##  [4] rlang_1.1.7         xfun_0.56           reformulas_0.4.4
+##  [7] otel_0.2.0          minqa_1.2.8         zoo_1.8-15
+## [10] TMB_1.9.19          htmltools_0.5.9     rmarkdown_2.30
+## [13] grid_4.4.0          evaluate_1.0.5      MASS_7.3-65
+## [16] fastmap_1.2.0       numDeriv_2016.8-1.1 yaml_2.3.12
+## [19] compiler_4.4.0      sandwich_3.1-1      Rcpp_1.1.1
+## [22] mgcv_1.9-4          rstudioapi_0.18.0   lattice_0.22-7
+## [25] digest_0.6.39       nloptr_2.2.1        Rdpack_2.6.6
+## [28] splines_4.4.0       rbibutils_2.4.1     tools_4.4.0
+## [31] boot_1.3-32
+
+Get the dataset by going to URL https://app.box.com/s/6nsp865ciu97iewkj88a0l3m43s11zst and downloading "testdata.csv". Then read in the data
+
+dat = read.csv("testdata.csv")
+dat$ftime = factor(dat$time)
+
+glmmTMB gives the expected results with 3 variance components
+
+glmmTMB(out_bin_1 ~ ftime + trt + ar1(ftime + 0|id_cluster) + (1|id_individual),data=dat,family=binomial)
+
+## Formula:          out_bin_1 ~ ftime + trt + ar1(ftime + 0 | id_cluster) + (1 |
+##     id_individual)
+## Data: dat
+##       AIC       BIC    logLik -2*log(L)  df.resid
+## 1789.0333 1831.3009 -886.5167 1773.0333      1448
+## Random-effects (co)variances:
+##
+## Conditional model:
+##  Groups        Name        Std.Dev. Corr
+##  id_cluster    ftime1      0.4526   0.85 (ar1)
+##  id_individual (Intercept) 1.8552
+##
+## Number of obs: 1456 / Conditional model: id_cluster, 7; id_individual, 486
+##
+## Fixed Effects:
+##
+## Conditional model:
+## (Intercept)       ftime2       ftime3       ftime4          trt
+##      1.1522      -0.8868      -1.0518      -1.5880       0.1754
+
+Using the same formula, glmer gives a different model with 11 variance components
+
+glmer(out_bin_1 ~ ftime + trt + ar1(ftime + 0|id_cluster) + (1|id_individual),data=dat,family=binomial)
+
+## Warning in checkConv(attr(opt, "derivs"), opt$par, ctrl = control$checkConv, : Model failed to converge with max|grad| = 0.0867868 (tol = 0.002, component 1)
+##   See ?lme4::convergence and ?lme4::troubleshooting.
+
+## Generalized linear mixed model fit by maximum likelihood (Laplace
+##   Approximation) [glmerMod]
+##  Family: binomial  ( logit )
+## Formula: out_bin_1 ~ ftime + trt + ar1(ftime + 0 | id_cluster) + (1 |
+##     id_individual)
+##    Data: dat
+##       AIC       BIC    logLik -2*log(L)  df.resid
+## 1797.0339 1881.5691 -882.5169 1765.0339      1440
+## Random effects:
+##  Groups        Name        Std.Dev. Corr
+##  id_individual (Intercept) 1.8832   1.00 (ar1)
+##  id_cluster    ftime1      0.3577
+##                ftime2      0.1841   0.91
+##                ftime3      0.7010   0.61       0.88
+##                ftime4      0.6794   0.88       1.00 0.91
+## Number of obs: 1456, groups:  id_individual, 486; id_cluster, 7
+## Fixed Effects:
+## (Intercept)       ftime2       ftime3       ftime4          trt
+##      1.1872      -0.8690      -1.0418      -1.6568       0.1651
+## optimizer (Nelder_Mead) convergence code: 0 (OK) ; 0 optimizer warnings; 1 lme4 warnings
+
+However, reversing the order of the random effects gives the expected model with 3 variance components (that approximately agree with glmmTMB results) but fixed effects estimates are all 0.
+
+glmer(out_bin_1 ~ ftime + trt  + (1|id_individual) + ar1(ftime + 0|id_cluster),data=dat,family=binomial)
+
+## Generalized linear mixed model fit by maximum likelihood (Laplace
+##   Approximation) [glmerMod]
+##  Family: binomial  ( logit )
+## Formula: out_bin_1 ~ ftime + trt + (1 | id_individual) + ar1(ftime + 0 |
+##     id_cluster)
+##    Data: dat
+##       AIC       BIC    logLik -2*log(L)  df.resid
+## 1799.0809 1867.7657 -886.5405 1773.0809      1443
+## Random effects:
+##  Groups        Name        Std.Dev. Corr
+##  id_individual (Intercept) 1.8496
+##  id_cluster    ftime1      0.4539   0.84 (ar1)
+## Number of obs: 1456, groups:  id_individual, 486; id_cluster, 7
+## Fixed Effects:
+## (Intercept)       ftime2       ftime3       ftime4          trt
+##           0            0            0            0            0
+
+Final comments:
+
+  *   Both lmer and glmer are sensitive to the order of the random effects in the model formula. Is this expected behavior? It doesn't happen if I reverse the order of the random effects in the glmmTMB formula
+  *   The issue with getting zero estimates for the fixed effects only occurs with glmer. If I fit the data with lmer (putting the individual random effect first, as in the second glmer call above) I get the same results as in a corresponding call to glmmTMB
+
+
+Jim
+--------------
+Jim Hughes
+Professor Emeritus of Biostatistics
+
+
+
+	[[alternative HTML version deleted]]
+
+
+From th|erry@onke||nx @end|ng |rom |nbo@be  Fri Apr 17 10:35:53 2026
+From: th|erry@onke||nx @end|ng |rom |nbo@be (Thierry Onkelinx)
+Date: Fri, 17 Apr 2026 10:35:53 +0200
+Subject: [R-sig-ME] behavior of ar1() option in model formula in lme2.0
+In-Reply-To: <LV2PR08MB972944B0762A8E862BC29756E3BC232@LV2PR08MB972944.namprd08.prod.outlook.com>
+References: <LV2PR08MB972944B0762A8E862BC29756E3BC232@LV2PR08MB972944.namprd08.prod.outlook.com>
+Message-ID: <CAJuCY5wsHFgqev6ZZE3ZE+bcPX=oZW5_nP6tOtPgcZhwctjaRA@mail.gmail.com>
+
+Dear Jim,
+
+I think that you need to use time as an integer in the ar1 random effect
+rather than as a factor. See the example at
+https://cran.r-project.org/web/packages/glmmTMB/vignettes/covstruct.html#the-ar1-covariance-structure
+
+Best regards,
+
+ir. Thierry Onkelinx
+Statisticus / Statistician
+
+Vlaamse Overheid / Government of Flanders
+INSTITUUT VOOR NATUUR- EN BOSONDERZOEK / RESEARCH INSTITUTE FOR NATURE AND
+FOREST
+Team Biometrie & Kwaliteitszorg / Team Biometrics & Quality Assurance
+thierry.onkelinx at inbo.be
+Havenlaan 88 bus 73, 1000 Brussel
+*Postadres:* Koning Albert II-laan 15 bus 186, 1210 Brussel
+*Poststukken die naar dit adres worden gestuurd, worden ingescand en
+digitaal aan de geadresseerde bezorgd. Zo kan de Vlaamse overheid haar
+dossiers volledig digitaal behandelen. Poststukken met de vermelding
+?vertrouwelijk? worden niet ingescand, maar ongeopend aan de geadresseerde
+bezorgd.*
+www.inbo.be
+
+///////////////////////////////////////////////////////////////////////////////////////////
+To call in the statistician after the experiment is done may be no more
+than asking him to perform a post-mortem examination: he may be able to say
+what the experiment died of. ~ Sir Ronald Aylmer Fisher
+The plural of anecdote is not data. ~ Roger Brinner
+The combination of some data and an aching desire for an answer does not
+ensure that a reasonable answer can be extracted from a given body of data.
+~ John Tukey
+///////////////////////////////////////////////////////////////////////////////////////////
+
+<https://www.inbo.be>
+
+
+Op vr 17 apr 2026 om 01:07 schreef Jim Hughes <jphughes at uw.edu>:
+
+> Hello
+>
+> Summary: I am getting unexpected results when fitting a model using
+> lmer/glmer with the ar1 function as part of the random effect
+> specification.  I have previously fit these models using glmmTMB and am
+> trying to replicate those results using lmer/glmer. The specific issues are
+>
+>
+>   1.  The model fit seems to depend on the order of the random effects
+> provided in the model formula ... this happens with both lmer and glmer and
+> is something I haven't encountered before.
+>   2.  When I fit a model using glmer with ar1 as part of the random
+> effects, I get estimates of exactly 0 for all the fixed effects. This
+> problem seems to be specific to glmer as it does not occur when I fit a
+> similar model with lmer (in fact, the lmer results agree exactly with
+> glmmTMB results provided the order of the random effects is "correctly"
+> specified in lmer)
+>
+> Below, I provide details about the model and results of an R session that
+> illustrates these issues.
+>
+> Details: I have a dataset with a binary outcome measured repeatedly over
+> (discrete) time on individuals who belong to clusters (individuals are
+> numbered uniquely and each individual belongs to only one cluster). The
+> dataset contains the following variables:
+>
+> > names(dat)
+> [1] "id_cluster"    "id_individual" "trt"           "time"
+> "out_bin_1"        "ftime"
+>
+> where time is an integer and ftime = factor(time).
+>
+> I want to fit the model
+>
+>
+>                                       logit(p_ijk) = u + B_j + d*X_ij +
+> g_ij + w_ik
+>
+> where i corresponds to the cluster,  B_j is the effect of time j, X_ij is
+> a 0/1 indicator of treatment (corresponding to the variable trt) for
+> cluster i at time j, g_ij is a random effect for time j in cluster i and
+> w_ik is a random effect for individual k in cluster i. Further, I assume
+> that individuals are independent with Var(w_ik) = s^2 and Cov(g_ij,g_ij') =
+> t^2 * r^|j - j'| and Cov(g_ij,g_i'j) = 0 if i != i'. Thus, I expect a model
+> with three variance parameters - s, t and r.
+>
+> R Session:
+>
+>
+> library(glmmTMB)
+>
+> ## Warning: package 'glmmTMB' was built under R version 4.4.3
+>
+> library(lme4)
+>
+> ## Warning: package 'lme4' was built under R version 4.4.3
+>
+> ## Loading required package: Matrix
+>
+> ## Warning: package 'Matrix' was built under R version 4.4.3
+>
+> sessionInfo()
+>
+> ## R version 4.4.0 (2024-04-24 ucrt)
+> ## Platform: x86_64-w64-mingw32/x64
+> ## Running under: Windows 11 x64 (build 26200)
+> ##
+> ## Matrix products: default
+> ##
+> ##
+> ## locale:
+> ## [1] LC_COLLATE=English_United States.utf8
+> ## [2] LC_CTYPE=English_United States.utf8
+> ## [3] LC_MONETARY=English_United States.utf8
+> ## [4] LC_NUMERIC=C
+> ## [5] LC_TIME=English_United States.utf8
+> ##
+> ## time zone: America/Los_Angeles
+> ## tzcode source: internal
+> ##
+> ## attached base packages:
+> ## [1] stats     graphics  grDevices utils     datasets  methods   base
+> ##
+> ## other attached packages:
+> ## [1] lme4_2.0-1     Matrix_1.7-4   glmmTMB_1.1.14
+> ##
+> ## loaded via a namespace (and not attached):
+> ##  [1] nlme_3.1-168        cli_3.6.5           knitr_1.51
+> ##  [4] rlang_1.1.7         xfun_0.56           reformulas_0.4.4
+> ##  [7] otel_0.2.0          minqa_1.2.8         zoo_1.8-15
+> ## [10] TMB_1.9.19          htmltools_0.5.9     rmarkdown_2.30
+> ## [13] grid_4.4.0          evaluate_1.0.5      MASS_7.3-65
+> ## [16] fastmap_1.2.0       numDeriv_2016.8-1.1 yaml_2.3.12
+> ## [19] compiler_4.4.0      sandwich_3.1-1      Rcpp_1.1.1
+> ## [22] mgcv_1.9-4          rstudioapi_0.18.0   lattice_0.22-7
+> ## [25] digest_0.6.39       nloptr_2.2.1        Rdpack_2.6.6
+> ## [28] splines_4.4.0       rbibutils_2.4.1     tools_4.4.0
+> ## [31] boot_1.3-32
+>
+> Get the dataset by going to URL
+> https://app.box.com/s/6nsp865ciu97iewkj88a0l3m43s11zst and downloading
+> "testdata.csv". Then read in the data
+>
+> dat = read.csv("testdata.csv")
+> dat$ftime = factor(dat$time)
+>
+> glmmTMB gives the expected results with 3 variance components
+>
+> glmmTMB(out_bin_1 ~ ftime + trt + ar1(ftime + 0|id_cluster) +
+> (1|id_individual),data=dat,family=binomial)
+>
+> ## Formula:          out_bin_1 ~ ftime + trt + ar1(ftime + 0 | id_cluster)
+> + (1 |
+> ##     id_individual)
+> ## Data: dat
+> ##       AIC       BIC    logLik -2*log(L)  df.resid
+> ## 1789.0333 1831.3009 -886.5167 1773.0333      1448
+> ## Random-effects (co)variances:
+> ##
+> ## Conditional model:
+> ##  Groups        Name        Std.Dev. Corr
+> ##  id_cluster    ftime1      0.4526   0.85 (ar1)
+> ##  id_individual (Intercept) 1.8552
+> ##
+> ## Number of obs: 1456 / Conditional model: id_cluster, 7; id_individual,
+> 486
+> ##
+> ## Fixed Effects:
+> ##
+> ## Conditional model:
+> ## (Intercept)       ftime2       ftime3       ftime4          trt
+> ##      1.1522      -0.8868      -1.0518      -1.5880       0.1754
+>
+> Using the same formula, glmer gives a different model with 11 variance
+> components
+>
+> glmer(out_bin_1 ~ ftime + trt + ar1(ftime + 0|id_cluster) +
+> (1|id_individual),data=dat,family=binomial)
+>
+> ## Warning in checkConv(attr(opt, "derivs"), opt$par, ctrl =
+> control$checkConv, : Model failed to converge with max|grad| = 0.0867868
+> (tol = 0.002, component 1)
+> ##   See ?lme4::convergence and ?lme4::troubleshooting.
+>
+> ## Generalized linear mixed model fit by maximum likelihood (Laplace
+> ##   Approximation) [glmerMod]
+> ##  Family: binomial  ( logit )
+> ## Formula: out_bin_1 ~ ftime + trt + ar1(ftime + 0 | id_cluster) + (1 |
+> ##     id_individual)
+> ##    Data: dat
+> ##       AIC       BIC    logLik -2*log(L)  df.resid
+> ## 1797.0339 1881.5691 -882.5169 1765.0339      1440
+> ## Random effects:
+> ##  Groups        Name        Std.Dev. Corr
+> ##  id_individual (Intercept) 1.8832   1.00 (ar1)
+> ##  id_cluster    ftime1      0.3577
+> ##                ftime2      0.1841   0.91
+> ##                ftime3      0.7010   0.61       0.88
+> ##                ftime4      0.6794   0.88       1.00 0.91
+> ## Number of obs: 1456, groups:  id_individual, 486; id_cluster, 7
+> ## Fixed Effects:
+> ## (Intercept)       ftime2       ftime3       ftime4          trt
+> ##      1.1872      -0.8690      -1.0418      -1.6568       0.1651
+> ## optimizer (Nelder_Mead) convergence code: 0 (OK) ; 0 optimizer
+> warnings; 1 lme4 warnings
+>
+> However, reversing the order of the random effects gives the expected
+> model with 3 variance components (that approximately agree with glmmTMB
+> results) but fixed effects estimates are all 0.
+>
+> glmer(out_bin_1 ~ ftime + trt  + (1|id_individual) + ar1(ftime +
+> 0|id_cluster),data=dat,family=binomial)
+>
+> ## Generalized linear mixed model fit by maximum likelihood (Laplace
+> ##   Approximation) [glmerMod]
+> ##  Family: binomial  ( logit )
+> ## Formula: out_bin_1 ~ ftime + trt + (1 | id_individual) + ar1(ftime + 0 |
+> ##     id_cluster)
+> ##    Data: dat
+> ##       AIC       BIC    logLik -2*log(L)  df.resid
+> ## 1799.0809 1867.7657 -886.5405 1773.0809      1443
+> ## Random effects:
+> ##  Groups        Name        Std.Dev. Corr
+> ##  id_individual (Intercept) 1.8496
+> ##  id_cluster    ftime1      0.4539   0.84 (ar1)
+> ## Number of obs: 1456, groups:  id_individual, 486; id_cluster, 7
+> ## Fixed Effects:
+> ## (Intercept)       ftime2       ftime3       ftime4          trt
+> ##           0            0            0            0            0
+>
+> Final comments:
+>
+>   *   Both lmer and glmer are sensitive to the order of the random effects
+> in the model formula. Is this expected behavior? It doesn't happen if I
+> reverse the order of the random effects in the glmmTMB formula
+>   *   The issue with getting zero estimates for the fixed effects only
+> occurs with glmer. If I fit the data with lmer (putting the individual
+> random effect first, as in the second glmer call above) I get the same
+> results as in a corresponding call to glmmTMB
+>
+>
+> Jim
+> --------------
+> Jim Hughes
+> Professor Emeritus of Biostatistics
+>
+>
+>
+>         [[alternative HTML version deleted]]
+>
+> _______________________________________________
+> R-sig-mixed-models at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+>
+
+	[[alternative HTML version deleted]]
+
+
+From jphughe@ @end|ng |rom uw@edu  Fri Apr 17 18:46:30 2026
+From: jphughe@ @end|ng |rom uw@edu (Jim Hughes)
+Date: Fri, 17 Apr 2026 16:46:30 +0000
+Subject: [R-sig-ME] behavior of ar1() option in model formula in lme2.0
+In-Reply-To: <CAJuCY5wsHFgqev6ZZE3ZE+bcPX=oZW5_nP6tOtPgcZhwctjaRA@mail.gmail.com>
+References: <LV2PR08MB972944B0762A8E862BC29756E3BC232@LV2PR08MB972944.namprd08.prod.outlook.com>
+ <CAJuCY5wsHFgqev6ZZE3ZE+bcPX=oZW5_nP6tOtPgcZhwctjaRA@mail.gmail.com>
+Message-ID: <LV2PR08MB972944D8F1D910AF245069962CBC202@LV2PR08MB972944.namprd08.prod.outlook.com>
+
+Thierry
+
+Thanks for this suggestion. As noted in the document at the link you sent, glmmTMB requires a factor variable as an argument in ar1(). I?ll admit that always seemed a bit strange to me. I did, however, investigate whether using time as an integer in the lmer/glmer model formula would give the correct results. As shown in the output below, that doesn?t work:
+
+  1.  The results still differ depending on the order of the random effects in the model formula
+  2.  The results from glmer seem suspicious (in the first, the correlation parameter is associated with the individual random effect rather than the time random effect; in the second, the two random effect variance components are exactly equal) and neither agree with the glmmTMB results.
+
+
+glmmTMB(out_bin_1 ~ ftime + trt + ar1(ftime + 0|id_cluster) + (1|id_individual),data=dat,family=binomial)
+
+## Formula:          out_bin_1 ~ ftime + trt + ar1(ftime + 0 | id_cluster) + (1 |
+##     id_individual)
+## Data: dat
+##       AIC       BIC    logLik -2*log(L)  df.resid
+## 1789.0333 1831.3009 -886.5167 1773.0333      1448
+## Random-effects (co)variances:
+##
+## Conditional model:
+##  Groups        Name        Std.Dev. Corr
+##  id_cluster    ftime1      0.4526   0.85 (ar1)
+##  id_individual (Intercept) 1.8552
+##
+## Number of obs: 1456 / Conditional model: id_cluster, 7; id_individual, 486
+##
+## Fixed Effects:
+##
+## Conditional model:
+## (Intercept)       ftime2       ftime3       ftime4          trt
+##      1.1522      -0.8868      -1.0518      -1.5880       0.1754
+
+glmer(out_bin_1 ~ ftime + trt + ar1(time + 0|id_cluster) + (1|id_individual),data=dat,family=binomial)
+
+## Generalized linear mixed model fit by maximum likelihood (Laplace
+##   Approximation) [glmerMod]
+##  Family: binomial  ( logit )
+## Formula:
+## out_bin_1 ~ ftime + trt + ar1(time + 0 | id_cluster) + (1 | id_individual)
+##    Data: dat
+##       AIC       BIC    logLik -2*log(L)  df.resid
+## 1783.5583 1820.5425 -884.7792 1769.5583      1449
+## Random effects:
+##  Groups        Name        Std.Dev. Corr
+##  id_individual (Intercept) 1.8641   1.00 (ar1)
+##  id_cluster    time        0.1747
+## Number of obs: 1456, groups:  id_individual, 486; id_cluster, 7
+## Fixed Effects:
+## (Intercept)       ftime2       ftime3       ftime4          trt
+##      1.2013      -0.9459      -1.1786      -1.7785       0.2562
+
+glmer(out_bin_1 ~ ftime + trt  + (1|id_individual) + ar1(time + 0|id_cluster),data=dat,family=binomial)
+
+## Generalized linear mixed model fit by maximum likelihood (Laplace
+##   Approximation) [glmerMod]
+##  Family: binomial  ( logit )
+## Formula: out_bin_1 ~ ftime + trt + (1 | id_individual) + ar1(time + 0 |
+##     id_cluster)
+##    Data: dat
+##       AIC       BIC    logLik -2*log(L)  df.resid
+## 1783.5583 1820.5425 -884.7792 1769.5583      1449
+## Random effects:
+##  Groups        Name        Std.Dev. Corr
+##  id_individual (Intercept) 1.864
+##  id_cluster    time        1.864    1.00 (ar1)
+## Number of obs: 1456, groups:  id_individual, 486; id_cluster, 7
+## Fixed Effects:
+## (Intercept)       ftime2       ftime3       ftime4          trt
+##      1.2013      -0.9459      -1.1786      -1.7785       0.2562
+
+
+Jim
+--------------
+Jim Hughes
+Professor Emeritus of Biostatistics
+University of Washington           Email: jphughes at uw.edu<mailto:jphughes at uw.edu>
+MS 351617                                     Cell:      206-498-2456
+
+
+From: Thierry Onkelinx <thierry.onkelinx at inbo.be>
+Sent: Friday, April 17, 2026 1:36 AM
+To: Jim Hughes <jphughes at uw.edu>
+Cc: r-sig-mixed-models at r-project.org
+Subject: Re: [R-sig-ME] behavior of ar1() option in model formula in lme2.0
+
+Dear Jim,
+
+I think that you need to use time as an integer in the ar1 random effect rather than as a factor. See the example at https://cran.r-project.org/web/packages/glmmTMB/vignettes/covstruct.html#the-ar1-covariance-structure<https://urldefense.com/v3/__https:/cran.r-project.org/web/packages/glmmTMB/vignettes/covstruct.html*the-ar1-covariance-structure__;Iw!!K-Hz7m0Vt54!kttrNX2Ap2tgw0Gyjww1joun-cvTdktvIJqSUG5yYzMjHl_59-SilfmzIKfVvlT_4FRBY6oJNzUFX3WPRMw7hpIu9xo$>
+
+Best regards,
+
+ir. Thierry Onkelinx
+Statisticus / Statistician
+
+Vlaamse Overheid / Government of Flanders
+INSTITUUT VOOR NATUUR- EN BOSONDERZOEK / RESEARCH INSTITUTE FOR NATURE AND FOREST
+Team Biometrie & Kwaliteitszorg / Team Biometrics & Quality Assurance
+thierry.onkelinx at inbo.be<mailto:thierry.onkelinx at inbo.be>
+Havenlaan 88 bus 73, 1000 Brussel
+Postadres: Koning Albert II-laan 15 bus 186, 1210 Brussel
+Poststukken die naar dit adres worden gestuurd, worden ingescand en digitaal aan de geadresseerde bezorgd. Zo kan de Vlaamse overheid haar dossiers volledig digitaal behandelen. Poststukken met de vermelding ?vertrouwelijk? worden niet ingescand, maar ongeopend aan de geadresseerde bezorgd.
+www.inbo.be<https://urldefense.com/v3/__http:/www.inbo.be__;!!K-Hz7m0Vt54!kttrNX2Ap2tgw0Gyjww1joun-cvTdktvIJqSUG5yYzMjHl_59-SilfmzIKfVvlT_4FRBY6oJNzUFX3WPRMw7uNTN8nc$>
+///////////////////////////////////////////////////////////////////////////////////////////
+To call in the statistician after the experiment is done may be no more than asking him to perform a post-mortem examination: he may be able to say what the experiment died of. ~ Sir Ronald Aylmer Fisher
+The plural of anecdote is not data. ~ Roger Brinner
+The combination of some data and an aching desire for an answer does not ensure that a reasonable answer can be extracted from a given body of data. ~ John Tukey
+///////////////////////////////////////////////////////////////////////////////////////////
+
+[https://inbo-website-prd-532750756126.s3-eu-west-1.amazonaws.com/inbologoleeuw_nl.png]<https://urldefense.com/v3/__https:/www.inbo.be__;!!K-Hz7m0Vt54!kttrNX2Ap2tgw0Gyjww1joun-cvTdktvIJqSUG5yYzMjHl_59-SilfmzIKfVvlT_4FRBY6oJNzUFX3WPRMw7MZUnqLM$>
+
+
+Op vr 17 apr 2026 om 01:07 schreef Jim Hughes <jphughes at uw.edu<mailto:jphughes at uw.edu>>:
+Hello
+
+Summary: I am getting unexpected results when fitting a model using lmer/glmer with the ar1 function as part of the random effect specification.  I have previously fit these models using glmmTMB and am trying to replicate those results using lmer/glmer. The specific issues are
+
+
+  1.  The model fit seems to depend on the order of the random effects provided in the model formula ... this happens with both lmer and glmer and is something I haven't encountered before.
+  2.  When I fit a model using glmer with ar1 as part of the random effects, I get estimates of exactly 0 for all the fixed effects. This problem seems to be specific to glmer as it does not occur when I fit a similar model with lmer (in fact, the lmer results agree exactly with glmmTMB results provided the order of the random effects is "correctly" specified in lmer)
+
+Below, I provide details about the model and results of an R session that illustrates these issues.
+
+Details: I have a dataset with a binary outcome measured repeatedly over (discrete) time on individuals who belong to clusters (individuals are numbered uniquely and each individual belongs to only one cluster). The dataset contains the following variables:
+
+> names(dat)
+[1] "id_cluster"    "id_individual" "trt"           "time"          "out_bin_1"        "ftime"
+
+where time is an integer and ftime = factor(time).
+
+I want to fit the model
+
+                                                                                                                logit(p_ijk) = u + B_j + d*X_ij + g_ij + w_ik
+
+where i corresponds to the cluster,  B_j is the effect of time j, X_ij is a 0/1 indicator of treatment (corresponding to the variable trt) for cluster i at time j, g_ij is a random effect for time j in cluster i and w_ik is a random effect for individual k in cluster i. Further, I assume that individuals are independent with Var(w_ik) = s^2 and Cov(g_ij,g_ij') = t^2 * r^|j - j'| and Cov(g_ij,g_i'j) = 0 if i != i'. Thus, I expect a model with three variance parameters - s, t and r.
+
+R Session:
+
+
+library(glmmTMB)
+
+## Warning: package 'glmmTMB' was built under R version 4.4.3
+
+library(lme4)
+
+## Warning: package 'lme4' was built under R version 4.4.3
+
+## Loading required package: Matrix
+
+## Warning: package 'Matrix' was built under R version 4.4.3
+
+sessionInfo()
+
+## R version 4.4.0 (2024-04-24 ucrt)
+## Platform: x86_64-w64-mingw32/x64
+## Running under: Windows 11 x64 (build 26200)
+##
+## Matrix products: default
+##
+##
+## locale:
+## [1] LC_COLLATE=English_United States.utf8
+## [2] LC_CTYPE=English_United States.utf8
+## [3] LC_MONETARY=English_United States.utf8
+## [4] LC_NUMERIC=C
+## [5] LC_TIME=English_United States.utf8
+##
+## time zone: America/Los_Angeles
+## tzcode source: internal
+##
+## attached base packages:
+## [1] stats     graphics  grDevices utils     datasets  methods   base
+##
+## other attached packages:
+## [1] lme4_2.0-1     Matrix_1.7-4   glmmTMB_1.1.14
+##
+## loaded via a namespace (and not attached):
+##  [1] nlme_3.1-168        cli_3.6.5           knitr_1.51
+##  [4] rlang_1.1.7         xfun_0.56           reformulas_0.4.4
+##  [7] otel_0.2.0          minqa_1.2.8         zoo_1.8-15
+## [10] TMB_1.9.19          htmltools_0.5.9     rmarkdown_2.30
+## [13] grid_4.4.0          evaluate_1.0.5      MASS_7.3-65
+## [16] fastmap_1.2.0       numDeriv_2016.8-1.1 yaml_2.3.12
+## [19] compiler_4.4.0      sandwich_3.1-1      Rcpp_1.1.1
+## [22] mgcv_1.9-4          rstudioapi_0.18.0   lattice_0.22-7
+## [25] digest_0.6.39       nloptr_2.2.1        Rdpack_2.6.6
+## [28] splines_4.4.0       rbibutils_2.4.1     tools_4.4.0
+## [31] boot_1.3-32
+
+Get the dataset by going to URL https://app.box.com/s/6nsp865ciu97iewkj88a0l3m43s11zst<https://urldefense.com/v3/__https:/app.box.com/s/6nsp865ciu97iewkj88a0l3m43s11zst__;!!K-Hz7m0Vt54!kttrNX2Ap2tgw0Gyjww1joun-cvTdktvIJqSUG5yYzMjHl_59-SilfmzIKfVvlT_4FRBY6oJNzUFX3WPRMw7meHgPEQ$> and downloading "testdata.csv". Then read in the data
+
+dat = read.csv("testdata.csv")
+dat$ftime = factor(dat$time)
+
+glmmTMB gives the expected results with 3 variance components
+
+glmmTMB(out_bin_1 ~ ftime + trt + ar1(ftime + 0|id_cluster) + (1|id_individual),data=dat,family=binomial)
+
+## Formula:          out_bin_1 ~ ftime + trt + ar1(ftime + 0 | id_cluster) + (1 |
+##     id_individual)
+## Data: dat
+##       AIC       BIC    logLik -2*log(L)  df.resid
+## 1789.0333 1831.3009 -886.5167 1773.0333      1448
+## Random-effects (co)variances:
+##
+## Conditional model:
+##  Groups        Name        Std.Dev. Corr
+##  id_cluster    ftime1      0.4526   0.85 (ar1)
+##  id_individual (Intercept) 1.8552
+##
+## Number of obs: 1456 / Conditional model: id_cluster, 7; id_individual, 486
+##
+## Fixed Effects:
+##
+## Conditional model:
+## (Intercept)       ftime2       ftime3       ftime4          trt
+##      1.1522      -0.8868      -1.0518      -1.5880       0.1754
+
+Using the same formula, glmer gives a different model with 11 variance components
+
+glmer(out_bin_1 ~ ftime + trt + ar1(ftime + 0|id_cluster) + (1|id_individual),data=dat,family=binomial)
+
+## Warning in checkConv(attr(opt, "derivs"), opt$par, ctrl = control$checkConv, : Model failed to converge with max|grad| = 0.0867868 (tol = 0.002, component 1)
+##   See ?lme4::convergence and ?lme4::troubleshooting.
+
+## Generalized linear mixed model fit by maximum likelihood (Laplace
+##   Approximation) [glmerMod]
+##  Family: binomial  ( logit )
+## Formula: out_bin_1 ~ ftime + trt + ar1(ftime + 0 | id_cluster) + (1 |
+##     id_individual)
+##    Data: dat
+##       AIC       BIC    logLik -2*log(L)  df.resid
+## 1797.0339 1881.5691 -882.5169 1765.0339      1440
+## Random effects:
+##  Groups        Name        Std.Dev. Corr
+##  id_individual (Intercept) 1.8832   1.00 (ar1)
+##  id_cluster    ftime1      0.3577
+##                ftime2      0.1841   0.91
+##                ftime3      0.7010   0.61       0.88
+##                ftime4      0.6794   0.88       1.00 0.91
+## Number of obs: 1456, groups:  id_individual, 486; id_cluster, 7
+## Fixed Effects:
+## (Intercept)       ftime2       ftime3       ftime4          trt
+##      1.1872      -0.8690      -1.0418      -1.6568       0.1651
+## optimizer (Nelder_Mead) convergence code: 0 (OK) ; 0 optimizer warnings; 1 lme4 warnings
+
+However, reversing the order of the random effects gives the expected model with 3 variance components (that approximately agree with glmmTMB results) but fixed effects estimates are all 0.
+
+glmer(out_bin_1 ~ ftime + trt  + (1|id_individual) + ar1(ftime + 0|id_cluster),data=dat,family=binomial)
+
+## Generalized linear mixed model fit by maximum likelihood (Laplace
+##   Approximation) [glmerMod]
+##  Family: binomial  ( logit )
+## Formula: out_bin_1 ~ ftime + trt + (1 | id_individual) + ar1(ftime + 0 |
+##     id_cluster)
+##    Data: dat
+##       AIC       BIC    logLik -2*log(L)  df.resid
+## 1799.0809 1867.7657 -886.5405 1773.0809      1443
+## Random effects:
+##  Groups        Name        Std.Dev. Corr
+##  id_individual (Intercept) 1.8496
+##  id_cluster    ftime1      0.4539   0.84 (ar1)
+## Number of obs: 1456, groups:  id_individual, 486; id_cluster, 7
+## Fixed Effects:
+## (Intercept)       ftime2       ftime3       ftime4          trt
+##           0            0            0            0            0
+
+Final comments:
+
+  *   Both lmer and glmer are sensitive to the order of the random effects in the model formula. Is this expected behavior? It doesn't happen if I reverse the order of the random effects in the glmmTMB formula
+  *   The issue with getting zero estimates for the fixed effects only occurs with glmer. If I fit the data with lmer (putting the individual random effect first, as in the second glmer call above) I get the same results as in a corresponding call to glmmTMB
+
+
+Jim
+--------------
+Jim Hughes
+Professor Emeritus of Biostatistics
+
+
+
+        [[alternative HTML version deleted]]
+
+_______________________________________________
+R-sig-mixed-models at r-project.org<mailto:R-sig-mixed-models at r-project.org> mailing list
+https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models<https://urldefense.com/v3/__https:/stat.ethz.ch/mailman/listinfo/r-sig-mixed-models__;!!K-Hz7m0Vt54!kttrNX2Ap2tgw0Gyjww1joun-cvTdktvIJqSUG5yYzMjHl_59-SilfmzIKfVvlT_4FRBY6oJNzUFX3WPRMw7iwIchSM$>
+
+	[[alternative HTML version deleted]]
+
+
+From bbo|ker @end|ng |rom gm@||@com  Fri Apr 17 22:51:26 2026
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Fri, 17 Apr 2026 16:51:26 -0400
+Subject: [R-sig-ME] behavior of ar1() option in model formula in lme2.0
+In-Reply-To: <LV2PR08MB972944D8F1D910AF245069962CBC202@LV2PR08MB972944.namprd08.prod.outlook.com>
+References: <LV2PR08MB972944B0762A8E862BC29756E3BC232@LV2PR08MB972944.namprd08.prod.outlook.com>
+ <CAJuCY5wsHFgqev6ZZE3ZE+bcPX=oZW5_nP6tOtPgcZhwctjaRA@mail.gmail.com>
+ <LV2PR08MB972944D8F1D910AF245069962CBC202@LV2PR08MB972944.namprd08.prod.outlook.com>
+Message-ID: <CABghstSwdB2ROM4VqGgn63WRJugfNS=9QFsBFd5B2OTkfKnnoA@mail.gmail.com>
+
+   Yeah, I think this is a bug: https://github.com/lme4/lme4/issues/962
+  I hadn't noticed the order problem.
+  It's possible that part of this is related to a bug that has already
+been fixed:
+
+https://github.com/lme4/lme4/blob/master/inst/NEWS.Rd#L17-L22
+
+   \item fixed ordering bug for models with multiple structured
+      covariances of different types (\code{mkReTrms} sorts random effects
+      in decreasing order of number of grouping variable levels, this
+      ordering was not applied consistently) (GH #945, Henrik Singmann)
+      \item fixed the case where \code{lme4::lmList} prints grouping variable
+      as \code{NULL} (see GH #958)
+
+
+... but the "fixed effects set to zero" part looks new/unrelated?
+
+  Ben Bolker
+
+On Fri, Apr 17, 2026 at 12:46?PM Jim Hughes <jphughes at uw.edu> wrote:
+>
+> Thierry
+>
+> Thanks for this suggestion. As noted in the document at the link you sent, glmmTMB requires a factor variable as an argument in ar1(). I?ll admit that always seemed a bit strange to me. I did, however, investigate whether using time as an integer in the lmer/glmer model formula would give the correct results. As shown in the output below, that doesn?t work:
+>
+>   1.  The results still differ depending on the order of the random effects in the model formula
+>   2.  The results from glmer seem suspicious (in the first, the correlation parameter is associated with the individual random effect rather than the time random effect; in the second, the two random effect variance components are exactly equal) and neither agree with the glmmTMB results.
+>
+>
+> glmmTMB(out_bin_1 ~ ftime + trt + ar1(ftime + 0|id_cluster) + (1|id_individual),data=dat,family=binomial)
+>
+> ## Formula:          out_bin_1 ~ ftime + trt + ar1(ftime + 0 | id_cluster) + (1 |
+> ##     id_individual)
+> ## Data: dat
+> ##       AIC       BIC    logLik -2*log(L)  df.resid
+> ## 1789.0333 1831.3009 -886.5167 1773.0333      1448
+> ## Random-effects (co)variances:
+> ##
+> ## Conditional model:
+> ##  Groups        Name        Std.Dev. Corr
+> ##  id_cluster    ftime1      0.4526   0.85 (ar1)
+> ##  id_individual (Intercept) 1.8552
+> ##
+> ## Number of obs: 1456 / Conditional model: id_cluster, 7; id_individual, 486
+> ##
+> ## Fixed Effects:
+> ##
+> ## Conditional model:
+> ## (Intercept)       ftime2       ftime3       ftime4          trt
+> ##      1.1522      -0.8868      -1.0518      -1.5880       0.1754
+>
+> glmer(out_bin_1 ~ ftime + trt + ar1(time + 0|id_cluster) + (1|id_individual),data=dat,family=binomial)
+>
+> ## Generalized linear mixed model fit by maximum likelihood (Laplace
+> ##   Approximation) [glmerMod]
+> ##  Family: binomial  ( logit )
+> ## Formula:
+> ## out_bin_1 ~ ftime + trt + ar1(time + 0 | id_cluster) + (1 | id_individual)
+> ##    Data: dat
+> ##       AIC       BIC    logLik -2*log(L)  df.resid
+> ## 1783.5583 1820.5425 -884.7792 1769.5583      1449
+> ## Random effects:
+> ##  Groups        Name        Std.Dev. Corr
+> ##  id_individual (Intercept) 1.8641   1.00 (ar1)
+> ##  id_cluster    time        0.1747
+> ## Number of obs: 1456, groups:  id_individual, 486; id_cluster, 7
+> ## Fixed Effects:
+> ## (Intercept)       ftime2       ftime3       ftime4          trt
+> ##      1.2013      -0.9459      -1.1786      -1.7785       0.2562
+>
+> glmer(out_bin_1 ~ ftime + trt  + (1|id_individual) + ar1(time + 0|id_cluster),data=dat,family=binomial)
+>
+> ## Generalized linear mixed model fit by maximum likelihood (Laplace
+> ##   Approximation) [glmerMod]
+> ##  Family: binomial  ( logit )
+> ## Formula: out_bin_1 ~ ftime + trt + (1 | id_individual) + ar1(time + 0 |
+> ##     id_cluster)
+> ##    Data: dat
+> ##       AIC       BIC    logLik -2*log(L)  df.resid
+> ## 1783.5583 1820.5425 -884.7792 1769.5583      1449
+> ## Random effects:
+> ##  Groups        Name        Std.Dev. Corr
+> ##  id_individual (Intercept) 1.864
+> ##  id_cluster    time        1.864    1.00 (ar1)
+> ## Number of obs: 1456, groups:  id_individual, 486; id_cluster, 7
+> ## Fixed Effects:
+> ## (Intercept)       ftime2       ftime3       ftime4          trt
+> ##      1.2013      -0.9459      -1.1786      -1.7785       0.2562
+>
+>
+> Jim
+> --------------
+> Jim Hughes
+> Professor Emeritus of Biostatistics
+> University of Washington           Email: jphughes at uw.edu<mailto:jphughes at uw.edu>
+> MS 351617                                     Cell:      206-498-2456
+>
+>
+> From: Thierry Onkelinx <thierry.onkelinx at inbo.be>
+> Sent: Friday, April 17, 2026 1:36 AM
+> To: Jim Hughes <jphughes at uw.edu>
+> Cc: r-sig-mixed-models at r-project.org
+> Subject: Re: [R-sig-ME] behavior of ar1() option in model formula in lme2.0
+>
+> Dear Jim,
+>
+> I think that you need to use time as an integer in the ar1 random effect rather than as a factor. See the example at https://cran.r-project.org/web/packages/glmmTMB/vignettes/covstruct.html#the-ar1-covariance-structure<https://urldefense.com/v3/__https:/cran.r-project.org/web/packages/glmmTMB/vignettes/covstruct.html*the-ar1-covariance-structure__;Iw!!K-Hz7m0Vt54!kttrNX2Ap2tgw0Gyjww1joun-cvTdktvIJqSUG5yYzMjHl_59-SilfmzIKfVvlT_4FRBY6oJNzUFX3WPRMw7hpIu9xo$>
+>
+> Best regards,
+>
+> ir. Thierry Onkelinx
+> Statisticus / Statistician
+>
+> Vlaamse Overheid / Government of Flanders
+> INSTITUUT VOOR NATUUR- EN BOSONDERZOEK / RESEARCH INSTITUTE FOR NATURE AND FOREST
+> Team Biometrie & Kwaliteitszorg / Team Biometrics & Quality Assurance
+> thierry.onkelinx at inbo.be<mailto:thierry.onkelinx at inbo.be>
+> Havenlaan 88 bus 73, 1000 Brussel
+> Postadres: Koning Albert II-laan 15 bus 186, 1210 Brussel
+> Poststukken die naar dit adres worden gestuurd, worden ingescand en digitaal aan de geadresseerde bezorgd. Zo kan de Vlaamse overheid haar dossiers volledig digitaal behandelen. Poststukken met de vermelding ?vertrouwelijk? worden niet ingescand, maar ongeopend aan de geadresseerde bezorgd.
+> www.inbo.be<https://urldefense.com/v3/__http:/www.inbo.be__;!!K-Hz7m0Vt54!kttrNX2Ap2tgw0Gyjww1joun-cvTdktvIJqSUG5yYzMjHl_59-SilfmzIKfVvlT_4FRBY6oJNzUFX3WPRMw7uNTN8nc$>
+> ///////////////////////////////////////////////////////////////////////////////////////////
+> To call in the statistician after the experiment is done may be no more than asking him to perform a post-mortem examination: he may be able to say what the experiment died of. ~ Sir Ronald Aylmer Fisher
+> The plural of anecdote is not data. ~ Roger Brinner
+> The combination of some data and an aching desire for an answer does not ensure that a reasonable answer can be extracted from a given body of data. ~ John Tukey
+> ///////////////////////////////////////////////////////////////////////////////////////////
+>
+> [https://inbo-website-prd-532750756126.s3-eu-west-1.amazonaws.com/inbologoleeuw_nl.png]<https://urldefense.com/v3/__https:/www.inbo.be__;!!K-Hz7m0Vt54!kttrNX2Ap2tgw0Gyjww1joun-cvTdktvIJqSUG5yYzMjHl_59-SilfmzIKfVvlT_4FRBY6oJNzUFX3WPRMw7MZUnqLM$>
+>
+>
+> Op vr 17 apr 2026 om 01:07 schreef Jim Hughes <jphughes at uw.edu<mailto:jphughes at uw.edu>>:
+> Hello
+>
+> Summary: I am getting unexpected results when fitting a model using lmer/glmer with the ar1 function as part of the random effect specification.  I have previously fit these models using glmmTMB and am trying to replicate those results using lmer/glmer. The specific issues are
+>
+>
+>   1.  The model fit seems to depend on the order of the random effects provided in the model formula ... this happens with both lmer and glmer and is something I haven't encountered before.
+>   2.  When I fit a model using glmer with ar1 as part of the random effects, I get estimates of exactly 0 for all the fixed effects. This problem seems to be specific to glmer as it does not occur when I fit a similar model with lmer (in fact, the lmer results agree exactly with glmmTMB results provided the order of the random effects is "correctly" specified in lmer)
+>
+> Below, I provide details about the model and results of an R session that illustrates these issues.
+>
+> Details: I have a dataset with a binary outcome measured repeatedly over (discrete) time on individuals who belong to clusters (individuals are numbered uniquely and each individual belongs to only one cluster). The dataset contains the following variables:
+>
+> > names(dat)
+> [1] "id_cluster"    "id_individual" "trt"           "time"          "out_bin_1"        "ftime"
+>
+> where time is an integer and ftime = factor(time).
+>
+> I want to fit the model
+>
+>                                                                                                                 logit(p_ijk) = u + B_j + d*X_ij + g_ij + w_ik
+>
+> where i corresponds to the cluster,  B_j is the effect of time j, X_ij is a 0/1 indicator of treatment (corresponding to the variable trt) for cluster i at time j, g_ij is a random effect for time j in cluster i and w_ik is a random effect for individual k in cluster i. Further, I assume that individuals are independent with Var(w_ik) = s^2 and Cov(g_ij,g_ij') = t^2 * r^|j - j'| and Cov(g_ij,g_i'j) = 0 if i != i'. Thus, I expect a model with three variance parameters - s, t and r.
+>
+> R Session:
+>
+>
+> library(glmmTMB)
+>
+> ## Warning: package 'glmmTMB' was built under R version 4.4.3
+>
+> library(lme4)
+>
+> ## Warning: package 'lme4' was built under R version 4.4.3
+>
+> ## Loading required package: Matrix
+>
+> ## Warning: package 'Matrix' was built under R version 4.4.3
+>
+> sessionInfo()
+>
+> ## R version 4.4.0 (2024-04-24 ucrt)
+> ## Platform: x86_64-w64-mingw32/x64
+> ## Running under: Windows 11 x64 (build 26200)
+> ##
+> ## Matrix products: default
+> ##
+> ##
+> ## locale:
+> ## [1] LC_COLLATE=English_United States.utf8
+> ## [2] LC_CTYPE=English_United States.utf8
+> ## [3] LC_MONETARY=English_United States.utf8
+> ## [4] LC_NUMERIC=C
+> ## [5] LC_TIME=English_United States.utf8
+> ##
+> ## time zone: America/Los_Angeles
+> ## tzcode source: internal
+> ##
+> ## attached base packages:
+> ## [1] stats     graphics  grDevices utils     datasets  methods   base
+> ##
+> ## other attached packages:
+> ## [1] lme4_2.0-1     Matrix_1.7-4   glmmTMB_1.1.14
+> ##
+> ## loaded via a namespace (and not attached):
+> ##  [1] nlme_3.1-168        cli_3.6.5           knitr_1.51
+> ##  [4] rlang_1.1.7         xfun_0.56           reformulas_0.4.4
+> ##  [7] otel_0.2.0          minqa_1.2.8         zoo_1.8-15
+> ## [10] TMB_1.9.19          htmltools_0.5.9     rmarkdown_2.30
+> ## [13] grid_4.4.0          evaluate_1.0.5      MASS_7.3-65
+> ## [16] fastmap_1.2.0       numDeriv_2016.8-1.1 yaml_2.3.12
+> ## [19] compiler_4.4.0      sandwich_3.1-1      Rcpp_1.1.1
+> ## [22] mgcv_1.9-4          rstudioapi_0.18.0   lattice_0.22-7
+> ## [25] digest_0.6.39       nloptr_2.2.1        Rdpack_2.6.6
+> ## [28] splines_4.4.0       rbibutils_2.4.1     tools_4.4.0
+> ## [31] boot_1.3-32
+>
+> Get the dataset by going to URL https://app.box.com/s/6nsp865ciu97iewkj88a0l3m43s11zst<https://urldefense.com/v3/__https:/app.box.com/s/6nsp865ciu97iewkj88a0l3m43s11zst__;!!K-Hz7m0Vt54!kttrNX2Ap2tgw0Gyjww1joun-cvTdktvIJqSUG5yYzMjHl_59-SilfmzIKfVvlT_4FRBY6oJNzUFX3WPRMw7meHgPEQ$> and downloading "testdata.csv". Then read in the data
+>
+> dat = read.csv("testdata.csv")
+> dat$ftime = factor(dat$time)
+>
+> glmmTMB gives the expected results with 3 variance components
+>
+> glmmTMB(out_bin_1 ~ ftime + trt + ar1(ftime + 0|id_cluster) + (1|id_individual),data=dat,family=binomial)
+>
+> ## Formula:          out_bin_1 ~ ftime + trt + ar1(ftime + 0 | id_cluster) + (1 |
+> ##     id_individual)
+> ## Data: dat
+> ##       AIC       BIC    logLik -2*log(L)  df.resid
+> ## 1789.0333 1831.3009 -886.5167 1773.0333      1448
+> ## Random-effects (co)variances:
+> ##
+> ## Conditional model:
+> ##  Groups        Name        Std.Dev. Corr
+> ##  id_cluster    ftime1      0.4526   0.85 (ar1)
+> ##  id_individual (Intercept) 1.8552
+> ##
+> ## Number of obs: 1456 / Conditional model: id_cluster, 7; id_individual, 486
+> ##
+> ## Fixed Effects:
+> ##
+> ## Conditional model:
+> ## (Intercept)       ftime2       ftime3       ftime4          trt
+> ##      1.1522      -0.8868      -1.0518      -1.5880       0.1754
+>
+> Using the same formula, glmer gives a different model with 11 variance components
+>
+> glmer(out_bin_1 ~ ftime + trt + ar1(ftime + 0|id_cluster) + (1|id_individual),data=dat,family=binomial)
+>
+> ## Warning in checkConv(attr(opt, "derivs"), opt$par, ctrl = control$checkConv, : Model failed to converge with max|grad| = 0.0867868 (tol = 0.002, component 1)
+> ##   See ?lme4::convergence and ?lme4::troubleshooting.
+>
+> ## Generalized linear mixed model fit by maximum likelihood (Laplace
+> ##   Approximation) [glmerMod]
+> ##  Family: binomial  ( logit )
+> ## Formula: out_bin_1 ~ ftime + trt + ar1(ftime + 0 | id_cluster) + (1 |
+> ##     id_individual)
+> ##    Data: dat
+> ##       AIC       BIC    logLik -2*log(L)  df.resid
+> ## 1797.0339 1881.5691 -882.5169 1765.0339      1440
+> ## Random effects:
+> ##  Groups        Name        Std.Dev. Corr
+> ##  id_individual (Intercept) 1.8832   1.00 (ar1)
+> ##  id_cluster    ftime1      0.3577
+> ##                ftime2      0.1841   0.91
+> ##                ftime3      0.7010   0.61       0.88
+> ##                ftime4      0.6794   0.88       1.00 0.91
+> ## Number of obs: 1456, groups:  id_individual, 486; id_cluster, 7
+> ## Fixed Effects:
+> ## (Intercept)       ftime2       ftime3       ftime4          trt
+> ##      1.1872      -0.8690      -1.0418      -1.6568       0.1651
+> ## optimizer (Nelder_Mead) convergence code: 0 (OK) ; 0 optimizer warnings; 1 lme4 warnings
+>
+> However, reversing the order of the random effects gives the expected model with 3 variance components (that approximately agree with glmmTMB results) but fixed effects estimates are all 0.
+>
+> glmer(out_bin_1 ~ ftime + trt  + (1|id_individual) + ar1(ftime + 0|id_cluster),data=dat,family=binomial)
+>
+> ## Generalized linear mixed model fit by maximum likelihood (Laplace
+> ##   Approximation) [glmerMod]
+> ##  Family: binomial  ( logit )
+> ## Formula: out_bin_1 ~ ftime + trt + (1 | id_individual) + ar1(ftime + 0 |
+> ##     id_cluster)
+> ##    Data: dat
+> ##       AIC       BIC    logLik -2*log(L)  df.resid
+> ## 1799.0809 1867.7657 -886.5405 1773.0809      1443
+> ## Random effects:
+> ##  Groups        Name        Std.Dev. Corr
+> ##  id_individual (Intercept) 1.8496
+> ##  id_cluster    ftime1      0.4539   0.84 (ar1)
+> ## Number of obs: 1456, groups:  id_individual, 486; id_cluster, 7
+> ## Fixed Effects:
+> ## (Intercept)       ftime2       ftime3       ftime4          trt
+> ##           0            0            0            0            0
+>
+> Final comments:
+>
+>   *   Both lmer and glmer are sensitive to the order of the random effects in the model formula. Is this expected behavior? It doesn't happen if I reverse the order of the random effects in the glmmTMB formula
+>   *   The issue with getting zero estimates for the fixed effects only occurs with glmer. If I fit the data with lmer (putting the individual random effect first, as in the second glmer call above) I get the same results as in a corresponding call to glmmTMB
+>
+>
+> Jim
+> --------------
+> Jim Hughes
+> Professor Emeritus of Biostatistics
+>
+>
+>
+>         [[alternative HTML version deleted]]
+>
+> _______________________________________________
+> R-sig-mixed-models at r-project.org<mailto:R-sig-mixed-models at r-project.org> mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models<https://urldefense.com/v3/__https:/stat.ethz.ch/mailman/listinfo/r-sig-mixed-models__;!!K-Hz7m0Vt54!kttrNX2Ap2tgw0Gyjww1joun-cvTdktvIJqSUG5yYzMjHl_59-SilfmzIKfVvlT_4FRBY6oJNzUFX3WPRMw7iwIchSM$>
+>
+>         [[alternative HTML version deleted]]
+>
+> _______________________________________________
+> R-sig-mixed-models at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+
+
+From jphughe@ @end|ng |rom uw@edu  Sat Apr 18 00:29:38 2026
+From: jphughe@ @end|ng |rom uw@edu (Jim Hughes)
+Date: Fri, 17 Apr 2026 22:29:38 +0000
+Subject: [R-sig-ME] behavior of ar1() option in model formula in lme2.0
+In-Reply-To: <CABghstSwdB2ROM4VqGgn63WRJugfNS=9QFsBFd5B2OTkfKnnoA@mail.gmail.com>
+References: <LV2PR08MB972944B0762A8E862BC29756E3BC232@LV2PR08MB972944.namprd08.prod.outlook.com>
+ <CAJuCY5wsHFgqev6ZZE3ZE+bcPX=oZW5_nP6tOtPgcZhwctjaRA@mail.gmail.com>
+ <LV2PR08MB972944D8F1D910AF245069962CBC202@LV2PR08MB972944.namprd08.prod.outlook.com>
+ <CABghstSwdB2ROM4VqGgn63WRJugfNS=9QFsBFd5B2OTkfKnnoA@mail.gmail.com>
+Message-ID: <LV2PR08MB972944A4A0C1DF30346732DA02BC202@LV2PR08MB972944.namprd08.prod.outlook.com>
+
+Ben
+
+Thanks for the link to fixes that will come out in lme2.0-2. It does seem possible that the order issue I observed is related to the previously identified bug you cited ... it is true that, in my example at least, the correct model structure was generated when the random effects were sorted in decreasing order of number of grouping variable levels.
+
+I also agree that the zero fixed effects in glmer is likely unrelated to the ordering issue.
+
+Jim
+--------------
+Jim Hughes
+Professor Emeritus of Biostatistics
+
+
+-----Original Message-----
+From: Ben Bolker <bbolker at gmail.com> 
+Sent: Friday, April 17, 2026 1:51 PM
+To: Jim Hughes <jphughes at uw.edu>
+Cc: Thierry Onkelinx <thierry.onkelinx at inbo.be>; r-sig-mixed-models at r-project.org
+Subject: Re: [R-sig-ME] behavior of ar1() option in model formula in lme2.0
+
+   Yeah, I think this is a bug: https://urldefense.com/v3/__https://github.com/lme4/lme4/issues/962__;!!K-Hz7m0Vt54!jGS5j0p6pCND0IniFMTH6TJPPq10rtf52tyGFPufMEcK8_7eaFPPATj7GerzUpNpM_O96grTGyp0BpY$
+  I hadn't noticed the order problem.
+  It's possible that part of this is related to a bug that has already been fixed:
+
+https://urldefense.com/v3/__https://github.com/lme4/lme4/blob/master/inst/NEWS.Rd*L17-L22__;Iw!!K-Hz7m0Vt54!jGS5j0p6pCND0IniFMTH6TJPPq10rtf52tyGFPufMEcK8_7eaFPPATj7GerzUpNpM_O96grTKt3GyAA$ 
+
+   \item fixed ordering bug for models with multiple structured
+      covariances of different types (\code{mkReTrms} sorts random effects
+      in decreasing order of number of grouping variable levels, this
+      ordering was not applied consistently) (GH #945, Henrik Singmann)
+      \item fixed the case where \code{lme4::lmList} prints grouping variable
+      as \code{NULL} (see GH #958)
+
+
+... but the "fixed effects set to zero" part looks new/unrelated?
+
+  Ben Bolker
+
+On Fri, Apr 17, 2026 at 12:46?PM Jim Hughes <jphughes at uw.edu> wrote:
+>
+> Thierry
+>
+> Thanks for this suggestion. As noted in the document at the link you sent, glmmTMB requires a factor variable as an argument in ar1(). I?ll admit that always seemed a bit strange to me. I did, however, investigate whether using time as an integer in the lmer/glmer model formula would give the correct results. As shown in the output below, that doesn?t work:
+>
+>   1.  The results still differ depending on the order of the random effects in the model formula
+>   2.  The results from glmer seem suspicious (in the first, the correlation parameter is associated with the individual random effect rather than the time random effect; in the second, the two random effect variance components are exactly equal) and neither agree with the glmmTMB results.
+>
+>
+> glmmTMB(out_bin_1 ~ ftime + trt + ar1(ftime + 0|id_cluster) + 
+> (1|id_individual),data=dat,family=binomial)
+>
+> ## Formula:          out_bin_1 ~ ftime + trt + ar1(ftime + 0 | id_cluster) + (1 |
+> ##     id_individual)
+> ## Data: dat
+> ##       AIC       BIC    logLik -2*log(L)  df.resid
+> ## 1789.0333 1831.3009 -886.5167 1773.0333      1448
+> ## Random-effects (co)variances:
+> ##
+> ## Conditional model:
+> ##  Groups        Name        Std.Dev. Corr
+> ##  id_cluster    ftime1      0.4526   0.85 (ar1)
+> ##  id_individual (Intercept) 1.8552
+> ##
+> ## Number of obs: 1456 / Conditional model: id_cluster, 7; 
+> id_individual, 486 ## ## Fixed Effects:
+> ##
+> ## Conditional model:
+> ## (Intercept)       ftime2       ftime3       ftime4          trt
+> ##      1.1522      -0.8868      -1.0518      -1.5880       0.1754
+>
+> glmer(out_bin_1 ~ ftime + trt + ar1(time + 0|id_cluster) + 
+> (1|id_individual),data=dat,family=binomial)
+>
+> ## Generalized linear mixed model fit by maximum likelihood (Laplace
+> ##   Approximation) [glmerMod]
+> ##  Family: binomial  ( logit )
+> ## Formula:
+> ## out_bin_1 ~ ftime + trt + ar1(time + 0 | id_cluster) + (1 | id_individual)
+> ##    Data: dat
+> ##       AIC       BIC    logLik -2*log(L)  df.resid
+> ## 1783.5583 1820.5425 -884.7792 1769.5583      1449
+> ## Random effects:
+> ##  Groups        Name        Std.Dev. Corr
+> ##  id_individual (Intercept) 1.8641   1.00 (ar1)
+> ##  id_cluster    time        0.1747
+> ## Number of obs: 1456, groups:  id_individual, 486; id_cluster, 7 ## 
+> Fixed Effects:
+> ## (Intercept)       ftime2       ftime3       ftime4          trt
+> ##      1.2013      -0.9459      -1.1786      -1.7785       0.2562
+>
+> glmer(out_bin_1 ~ ftime + trt  + (1|id_individual) + ar1(time + 
+> 0|id_cluster),data=dat,family=binomial)
+>
+> ## Generalized linear mixed model fit by maximum likelihood (Laplace
+> ##   Approximation) [glmerMod]
+> ##  Family: binomial  ( logit )
+> ## Formula: out_bin_1 ~ ftime + trt + (1 | id_individual) + ar1(time + 0 |
+> ##     id_cluster)
+> ##    Data: dat
+> ##       AIC       BIC    logLik -2*log(L)  df.resid
+> ## 1783.5583 1820.5425 -884.7792 1769.5583      1449
+> ## Random effects:
+> ##  Groups        Name        Std.Dev. Corr
+> ##  id_individual (Intercept) 1.864
+> ##  id_cluster    time        1.864    1.00 (ar1)
+> ## Number of obs: 1456, groups:  id_individual, 486; id_cluster, 7 ## 
+> Fixed Effects:
+> ## (Intercept)       ftime2       ftime3       ftime4          trt
+> ##      1.2013      -0.9459      -1.1786      -1.7785       0.2562
+>
+>
+> Jim
+> --------------
+> Jim Hughes
+> Professor Emeritus of Biostatistics
+> University of Washington           Email: jphughes at uw.edu<mailto:jphughes at uw.edu>
+> MS 351617                                     Cell:      206-498-2456
+>
+>
+> From: Thierry Onkelinx <thierry.onkelinx at inbo.be>
+> Sent: Friday, April 17, 2026 1:36 AM
+> To: Jim Hughes <jphughes at uw.edu>
+> Cc: r-sig-mixed-models at r-project.org
+> Subject: Re: [R-sig-ME] behavior of ar1() option in model formula in 
+> lme2.0
+>
+> Dear Jim,
+>
+> I think that you need to use time as an integer in the ar1 random 
+> effect rather than as a factor. See the example at 
+> https://urldefense.com/v3/__https://cran.r-project.org/web/packages/gl
+> mmTMB/vignettes/covstruct.html*the-ar1-covariance-structure__;Iw!!K-Hz
+> 7m0Vt54!jGS5j0p6pCND0IniFMTH6TJPPq10rtf52tyGFPufMEcK8_7eaFPPATj7GerzUp
+> NpM_O96grTzF_NWGA$ 
+> <https://urldefense.com/v3/__https:/cran.r-project.org/web/packages/gl
+> mmTMB/vignettes/covstruct.html*the-ar1-covariance-structure__;Iw!!K-Hz
+> 7m0Vt54!kttrNX2Ap2tgw0Gyjww1joun-cvTdktvIJqSUG5yYzMjHl_59-SilfmzIKfVvl
+> T_4FRBY6oJNzUFX3WPRMw7hpIu9xo$>
+>
+> Best regards,
+>
+> ir. Thierry Onkelinx
+> Statisticus / Statistician
+>
+> Vlaamse Overheid / Government of Flanders INSTITUUT VOOR NATUUR- EN 
+> BOSONDERZOEK / RESEARCH INSTITUTE FOR NATURE AND FOREST Team Biometrie 
+> & Kwaliteitszorg / Team Biometrics & Quality Assurance 
+> thierry.onkelinx at inbo.be<mailto:thierry.onkelinx at inbo.be>
+> Havenlaan 88 bus 73, 1000 Brussel
+> Postadres: Koning Albert II-laan 15 bus 186, 1210 Brussel Poststukken 
+> die naar dit adres worden gestuurd, worden ingescand en digitaal aan de geadresseerde bezorgd. Zo kan de Vlaamse overheid haar dossiers volledig digitaal behandelen. Poststukken met de vermelding ?vertrouwelijk? worden niet ingescand, maar ongeopend aan de geadresseerde bezorgd.
+> https://urldefense.com/v3/__http://www.inbo.be__;!!K-Hz7m0Vt54!jGS5j0p
+> 6pCND0IniFMTH6TJPPq10rtf52tyGFPufMEcK8_7eaFPPATj7GerzUpNpM_O96grT86DNN
+> 9c$ 
+> <https://urldefense.com/v3/__http:/www.inbo.be__;!!K-Hz7m0Vt54!kttrNX2
+> Ap2tgw0Gyjww1joun-cvTdktvIJqSUG5yYzMjHl_59-SilfmzIKfVvlT_4FRBY6oJNzUFX
+> 3WPRMw7uNTN8nc$> 
+> //////////////////////////////////////////////////////////////////////
+> ///////////////////// To call in the statistician after the experiment 
+> is done may be no more than asking him to perform a post-mortem 
+> examination: he may be able to say what the experiment died of. ~ Sir 
+> Ronald Aylmer Fisher The plural of anecdote is not data. ~ Roger 
+> Brinner The combination of some data and an aching desire for an 
+> answer does not ensure that a reasonable answer can be extracted from 
+> a given body of data. ~ John Tukey 
+> //////////////////////////////////////////////////////////////////////
+> /////////////////////
+>
+> [https://urldefense.com/v3/__https://inbo-website-prd-532750756126.s3-
+> eu-west-1.amazonaws.com/inbologoleeuw_nl.png__;!!K-Hz7m0Vt54!jGS5j0p6p
+> CND0IniFMTH6TJPPq10rtf52tyGFPufMEcK8_7eaFPPATj7GerzUpNpM_O96grTFiTSJ2g
+> $ 
+> ]<https://urldefense.com/v3/__https:/www.inbo.be__;!!K-Hz7m0Vt54!kttrN
+> X2Ap2tgw0Gyjww1joun-cvTdktvIJqSUG5yYzMjHl_59-SilfmzIKfVvlT_4FRBY6oJNzU
+> FX3WPRMw7MZUnqLM$>
+>
+>
+> Op vr 17 apr 2026 om 01:07 schreef Jim Hughes <jphughes at uw.edu<mailto:jphughes at uw.edu>>:
+> Hello
+>
+> Summary: I am getting unexpected results when fitting a model using 
+> lmer/glmer with the ar1 function as part of the random effect 
+> specification.  I have previously fit these models using glmmTMB and 
+> am trying to replicate those results using lmer/glmer. The specific 
+> issues are
+>
+>
+>   1.  The model fit seems to depend on the order of the random effects provided in the model formula ... this happens with both lmer and glmer and is something I haven't encountered before.
+>   2.  When I fit a model using glmer with ar1 as part of the random 
+> effects, I get estimates of exactly 0 for all the fixed effects. This 
+> problem seems to be specific to glmer as it does not occur when I fit 
+> a similar model with lmer (in fact, the lmer results agree exactly 
+> with glmmTMB results provided the order of the random effects is 
+> "correctly" specified in lmer)
+>
+> Below, I provide details about the model and results of an R session that illustrates these issues.
+>
+> Details: I have a dataset with a binary outcome measured repeatedly over (discrete) time on individuals who belong to clusters (individuals are numbered uniquely and each individual belongs to only one cluster). The dataset contains the following variables:
+>
+> > names(dat)
+> [1] "id_cluster"    "id_individual" "trt"           "time"          "out_bin_1"        "ftime"
+>
+> where time is an integer and ftime = factor(time).
+>
+> I want to fit the model
+>
+>                                                                                                                 
+> logit(p_ijk) = u + B_j + d*X_ij + g_ij + w_ik
+>
+> where i corresponds to the cluster,  B_j is the effect of time j, X_ij is a 0/1 indicator of treatment (corresponding to the variable trt) for cluster i at time j, g_ij is a random effect for time j in cluster i and w_ik is a random effect for individual k in cluster i. Further, I assume that individuals are independent with Var(w_ik) = s^2 and Cov(g_ij,g_ij') = t^2 * r^|j - j'| and Cov(g_ij,g_i'j) = 0 if i != i'. Thus, I expect a model with three variance parameters - s, t and r.
+>
+> R Session:
+>
+>
+> library(glmmTMB)
+>
+> ## Warning: package 'glmmTMB' was built under R version 4.4.3
+>
+> library(lme4)
+>
+> ## Warning: package 'lme4' was built under R version 4.4.3
+>
+> ## Loading required package: Matrix
+>
+> ## Warning: package 'Matrix' was built under R version 4.4.3
+>
+> sessionInfo()
+>
+> ## R version 4.4.0 (2024-04-24 ucrt)
+> ## Platform: x86_64-w64-mingw32/x64
+> ## Running under: Windows 11 x64 (build 26200) ## ## Matrix products: 
+> default ## ## ## locale:
+> ## [1] LC_COLLATE=English_United States.utf8 ## [2] 
+> LC_CTYPE=English_United States.utf8 ## [3] LC_MONETARY=English_United 
+> States.utf8 ## [4] LC_NUMERIC=C ## [5] LC_TIME=English_United 
+> States.utf8 ## ## time zone: America/Los_Angeles ## tzcode source: 
+> internal ## ## attached base packages:
+> ## [1] stats     graphics  grDevices utils     datasets  methods   base
+> ##
+> ## other attached packages:
+> ## [1] lme4_2.0-1     Matrix_1.7-4   glmmTMB_1.1.14
+> ##
+> ## loaded via a namespace (and not attached):
+> ##  [1] nlme_3.1-168        cli_3.6.5           knitr_1.51
+> ##  [4] rlang_1.1.7         xfun_0.56           reformulas_0.4.4
+> ##  [7] otel_0.2.0          minqa_1.2.8         zoo_1.8-15
+> ## [10] TMB_1.9.19          htmltools_0.5.9     rmarkdown_2.30
+> ## [13] grid_4.4.0          evaluate_1.0.5      MASS_7.3-65
+> ## [16] fastmap_1.2.0       numDeriv_2016.8-1.1 yaml_2.3.12
+> ## [19] compiler_4.4.0      sandwich_3.1-1      Rcpp_1.1.1
+> ## [22] mgcv_1.9-4          rstudioapi_0.18.0   lattice_0.22-7
+> ## [25] digest_0.6.39       nloptr_2.2.1        Rdpack_2.6.6
+> ## [28] splines_4.4.0       rbibutils_2.4.1     tools_4.4.0
+> ## [31] boot_1.3-32
+>
+> Get the dataset by going to URL 
+> https://urldefense.com/v3/__https://app.box.com/s/6nsp865ciu97iewkj88a
+> 0l3m43s11zst__;!!K-Hz7m0Vt54!jGS5j0p6pCND0IniFMTH6TJPPq10rtf52tyGFPufM
+> EcK8_7eaFPPATj7GerzUpNpM_O96grTaXEApNQ$ 
+> <https://urldefense.com/v3/__https:/app.box.com/s/6nsp865ciu97iewkj88a
+> 0l3m43s11zst__;!!K-Hz7m0Vt54!kttrNX2Ap2tgw0Gyjww1joun-cvTdktvIJqSUG5yY
+> zMjHl_59-SilfmzIKfVvlT_4FRBY6oJNzUFX3WPRMw7meHgPEQ$> and downloading 
+> "testdata.csv". Then read in the data
+>
+> dat = read.csv("testdata.csv")
+> dat$ftime = factor(dat$time)
+>
+> glmmTMB gives the expected results with 3 variance components
+>
+> glmmTMB(out_bin_1 ~ ftime + trt + ar1(ftime + 0|id_cluster) + 
+> (1|id_individual),data=dat,family=binomial)
+>
+> ## Formula:          out_bin_1 ~ ftime + trt + ar1(ftime + 0 | id_cluster) + (1 |
+> ##     id_individual)
+> ## Data: dat
+> ##       AIC       BIC    logLik -2*log(L)  df.resid
+> ## 1789.0333 1831.3009 -886.5167 1773.0333      1448
+> ## Random-effects (co)variances:
+> ##
+> ## Conditional model:
+> ##  Groups        Name        Std.Dev. Corr
+> ##  id_cluster    ftime1      0.4526   0.85 (ar1)
+> ##  id_individual (Intercept) 1.8552
+> ##
+> ## Number of obs: 1456 / Conditional model: id_cluster, 7; 
+> id_individual, 486 ## ## Fixed Effects:
+> ##
+> ## Conditional model:
+> ## (Intercept)       ftime2       ftime3       ftime4          trt
+> ##      1.1522      -0.8868      -1.0518      -1.5880       0.1754
+>
+> Using the same formula, glmer gives a different model with 11 variance 
+> components
+>
+> glmer(out_bin_1 ~ ftime + trt + ar1(ftime + 0|id_cluster) + 
+> (1|id_individual),data=dat,family=binomial)
+>
+> ## Warning in checkConv(attr(opt, "derivs"), opt$par, ctrl = control$checkConv, : Model failed to converge with max|grad| = 0.0867868 (tol = 0.002, component 1)
+> ##   See ?lme4::convergence and ?lme4::troubleshooting.
+>
+> ## Generalized linear mixed model fit by maximum likelihood (Laplace
+> ##   Approximation) [glmerMod]
+> ##  Family: binomial  ( logit )
+> ## Formula: out_bin_1 ~ ftime + trt + ar1(ftime + 0 | id_cluster) + (1 |
+> ##     id_individual)
+> ##    Data: dat
+> ##       AIC       BIC    logLik -2*log(L)  df.resid
+> ## 1797.0339 1881.5691 -882.5169 1765.0339      1440
+> ## Random effects:
+> ##  Groups        Name        Std.Dev. Corr
+> ##  id_individual (Intercept) 1.8832   1.00 (ar1)
+> ##  id_cluster    ftime1      0.3577
+> ##                ftime2      0.1841   0.91
+> ##                ftime3      0.7010   0.61       0.88
+> ##                ftime4      0.6794   0.88       1.00 0.91
+> ## Number of obs: 1456, groups:  id_individual, 486; id_cluster, 7 ## 
+> Fixed Effects:
+> ## (Intercept)       ftime2       ftime3       ftime4          trt
+> ##      1.1872      -0.8690      -1.0418      -1.6568       0.1651
+> ## optimizer (Nelder_Mead) convergence code: 0 (OK) ; 0 optimizer 
+> warnings; 1 lme4 warnings
+>
+> However, reversing the order of the random effects gives the expected model with 3 variance components (that approximately agree with glmmTMB results) but fixed effects estimates are all 0.
+>
+> glmer(out_bin_1 ~ ftime + trt  + (1|id_individual) + ar1(ftime + 
+> 0|id_cluster),data=dat,family=binomial)
+>
+> ## Generalized linear mixed model fit by maximum likelihood (Laplace
+> ##   Approximation) [glmerMod]
+> ##  Family: binomial  ( logit )
+> ## Formula: out_bin_1 ~ ftime + trt + (1 | id_individual) + ar1(ftime + 0 |
+> ##     id_cluster)
+> ##    Data: dat
+> ##       AIC       BIC    logLik -2*log(L)  df.resid
+> ## 1799.0809 1867.7657 -886.5405 1773.0809      1443
+> ## Random effects:
+> ##  Groups        Name        Std.Dev. Corr
+> ##  id_individual (Intercept) 1.8496
+> ##  id_cluster    ftime1      0.4539   0.84 (ar1)
+> ## Number of obs: 1456, groups:  id_individual, 486; id_cluster, 7 ## 
+> Fixed Effects:
+> ## (Intercept)       ftime2       ftime3       ftime4          trt
+> ##           0            0            0            0            0
+>
+> Final comments:
+>
+>   *   Both lmer and glmer are sensitive to the order of the random effects in the model formula. Is this expected behavior? It doesn't happen if I reverse the order of the random effects in the glmmTMB formula
+>   *   The issue with getting zero estimates for the fixed effects only occurs with glmer. If I fit the data with lmer (putting the individual random effect first, as in the second glmer call above) I get the same results as in a corresponding call to glmmTMB
+>
+>
+> Jim
+> --------------
+> Jim Hughes
+> Professor Emeritus of Biostatistics
+>
+>
+>
+>         [[alternative HTML version deleted]]
+>
+> _______________________________________________
+> R-sig-mixed-models at r-project.org<mailto:R-sig-mixed-models at r-project.o
+> rg> mailing list 
+> https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-si
+> g-mixed-models__;!!K-Hz7m0Vt54!jGS5j0p6pCND0IniFMTH6TJPPq10rtf52tyGFPu
+> fMEcK8_7eaFPPATj7GerzUpNpM_O96grTiCAW444$ 
+> <https://urldefense.com/v3/__https:/stat.ethz.ch/mailman/listinfo/r-si
+> g-mixed-models__;!!K-Hz7m0Vt54!kttrNX2Ap2tgw0Gyjww1joun-cvTdktvIJqSUG5
+> yYzMjHl_59-SilfmzIKfVvlT_4FRBY6oJNzUFX3WPRMw7iwIchSM$>
+>
+>         [[alternative HTML version deleted]]
+>
+> _______________________________________________
+> R-sig-mixed-models at r-project.org mailing list 
+> https://urldefense.com/v3/__https://stat.ethz.ch/mailman/listinfo/r-si
+> g-mixed-models__;!!K-Hz7m0Vt54!jGS5j0p6pCND0IniFMTH6TJPPq10rtf52tyGFPu
+> fMEcK8_7eaFPPATj7GerzUpNpM_O96grTiCAW444$
+
+From h@r|@@@@@||@ @end|ng |rom tr@n@m|tt|ng@c|ence@com  Wed Apr 22 06:48:15 2026
+From: h@r|@@@@@||@ @end|ng |rom tr@n@m|tt|ng@c|ence@com (Haris Saslis - Transmitting Science)
+Date: Wed, 22 Apr 2026 06:48:15 +0200
+Subject: [R-sig-ME] Learn how to model space-time correlations with GAMM
+In-Reply-To: <606bc8386d2cc7294d996bad086371e8@transmittingscience.com>
+References: <e8dbaf66e7ddf2024e47ba864e02ef95@transmittingscience.com>
+ <9432d4d7fe9b4296244cd6a8bc90fe02@transmittingscience.com>
+ <b67a2d185ce725a2d5ac91a773da2f67@transmittingscience.com>
+ <cca222a03999723bb11eda8a3dc1cd8f@transmittingscience.com>
+ <716b8f58a7734edea3d252c5722ecc63@transmittingscience.com>
+ <8121615cfb0ec08a619ca34e5f18c8f4@transmittingscience.com>
+ <0d0338c4d8120311e178c65b335fc449@transmittingscience.com>
+ <41ed7dcc95d5e3e0e662d9d965b2c786@transmittingscience.com>
+ <153389b26d925356485cb029a704486f@transmittingscience.com>
+ <1d36ee54a8fbe3884040387139c2ae07@transmittingscience.com>
+ <017a487d529432d0716273b333dc1504@transmittingscience.com>
+ <04d60139eb86bdf85c6d579c1b98dd23@transmittingscience.com>
+ <df60ce719f1928e18bd89b9c7f5dfef0@transmittingscience.com>
+ <4e8559a5443869b749502ae795bd147a@transmittingscience.com>
+ <30a98bfdf7880230ba47bde74378337d@transmittingscience.com>
+ <6bacbb0a606d54d1339f972af3ea92fc@transmittingscience.com>
+ <61a2e3552cd097a92c4c287ea56ef621@transmittingscience.com>
+ <c4adec5d2e87106b0d87a91afcdeb34e@transmittingscience.com>
+ <f98e745f1a4be99203dbc95157129adb@transmittingscience.com>
+ <4be94adc0581bed189479af12b01d246@transmittingscience.com>
+ <933ccb8852ae737fc4cf3d298b22fd31@transmittingscience.com>
+ <b5faf04cb9472a94635e8e73a1d751dc@transmittingscience.com>
+ <1c5f7f2fdfd47dd7ab4c6d55f553e22a@transmittingscience.com>
+ <7288892ae3647fc2feb3e62c6229b23a@transmittingscience.com>
+ <8c92036b7a61c3df116469d04d7ec6b8@transmittingscience.com>
+ <90c1f99aef0808c0f8313f44bd23e5ba@transmittingscience.com>
+ <c0db8c90035a4e1da75f80716e0563bc@transmittingscience.com>
+ <38d46524a7c34f160398ff8582854900@transmittingscience.com>
+ <606bc8386d2cc7294d996bad086371e8@transmittingscience.com>
+Message-ID: <7b1845481ca55e8704072ecbe00ae5f2@transmittingscience.com>
+
+Dear colleagues,
+
+Transmitting Science is offering the live online course "Generalised 
+Additive Mixed Models (GAMM): modelling space-time correlation 
+structures".
+
+Course webpage: 
+https://www.transmittingscience.com/courses/statistics-and-bioinformatics/generalised-additive-mixed-models-modelling-space-time-correlation-structures/
+
+The objective of this course is to teach participants to:
+
+  	* Visualise and perform tests of correlation structures in time and 
+space in their datasets
+  	* Adjust a GAM model
+  	* Adjust a GAM+M model with auto-correlation structure (temporal)
+  	* Adjust a GAM+M model with auto-correlation structure 
+(spatial-temporal)
+
+For any questions, please write to courses at transmittingscience.com
+
+Best regards,
+
+Haris
+
+-- 
+Haris Saslis, PhD
+Course Coordinator
+Transmitting Science
+www.transmittingscience.com [1]
+
+
+
+Links:
+------
+[1] http://www.transmittingscience.com
+	[[alternative HTML version deleted]]
+
+
+From |@br|z|o@|uc|@n| @end|ng |rom |u@@p@v|@@|t  Fri Apr 24 15:04:00 2026
+From: |@br|z|o@|uc|@n| @end|ng |rom |u@@p@v|@@|t (Fabrizio Luciani)
+Date: Fri, 24 Apr 2026 15:04:00 +0200
+Subject: [R-sig-ME] Mixed-effects modeling of ERP data: topographic factors,
+ ROI selection, and circularity concerns
+Message-ID: <CAF6k_mv_jpeoKJAT3ppUAhs0HXA3Mi0eYdUU2EN=CWXZHcYbMQ@mail.gmail.com>
+
+Hi everyone.
+
+I'm analyzing ERP data (128 electrodes) with lmer in R and would appreciate
+your feedback on my modeling strategy. My experiment involves testing the
+interaction between two experimental factors (Factor1 and Factor2). Based
+on previous studies, I?m expecting a frontally distributed effect for
+Factor 1 and a posteriorly distributed effect for Factor 2, and this is
+also clear from the scalp maps. However, I would also justify the selection
+of the ROIs using a full-factorial model with topographical factors
+(Anteriority [AnteriorVsPosterior] and Laterality [LeftVsCentralVsRight]).
+I'm aware of two schools of thought here:
+
+   - *Aggregate electrode* data within each ROI to reduce electrode-level
+   variance
+   - *Keep individual electrodes* and model electrode-level variance via
+   random effects, to preserve statistical power
+
+The topographic factor is a ?nuisance variable?. In other terms is
+something that influences the outcome of the model but is not of direct
+interest to me: I have to include it in the random structure, not because
+it is part of my hypothesis, but because omitting it would lead to
+unexpected variability, inflating my p-values, and distorting my estimates.
+Basically, I ran into two main problems:
+
+   - *Without* topographic factors, degrees of freedom were *inflated*,
+   matching the number of observations, ~300k (the same happened with
+   aggregated data)
+   - *With* topographic factors in the random structure, however, the
+model *failed
+   to converge* At this stage, since my main goal is to understand the
+   spatial distribution of effects rather than test all interactions
+   simultaneously, I considered including a nested formula in the fixed
+   effects:
+
+EEG ~ Anteriority * Laterality / Factor1 * Factor2 + (1 + Factor1 * Factor2
+| Subject) + (1 + Factor1 * Factor2 | Item) + (1 | Channel)
+
+By doing this, df seems to be under control: 60~80 df (also for 3-way
+interactions). The idea behind this approach is not to treat the
+topographic analysis as a confirmatory test of the main effects of Factor1
+and Factor2. This model serves as a descriptive and exploratory step whose
+sole purpose is to characterize the spatial distribution of the effects
+across the scalp and to empirically justify the selection of ROIs. Is the
+nested formula the right tool for this exploratory stage? Since I?m using
+the data to guide ROI selection and then testing the same effects within
+those ROIs, should I be sensitive to the issue of circularity (Kriegeskorte
+et al., 2009)?
+
+
+Thanks in advance for any thoughts!
+
+-- 
+*Fabrizio Luciani*
+PhD Student in Theoretical and Experimental Linguistics (TEL),
+University School for Advanced Studies IUSS Pavia,
+Palazzo del Broletto, Piazza della Vittoria n.15 - 27100 Pavia.
+
+	[[alternative HTML version deleted]]
+
+
+From i@io m@iii@g oii phys@ii@-courses@org  Fri Apr 24 15:04:37 2026
+From: i@io m@iii@g oii phys@ii@-courses@org (i@io m@iii@g oii phys@ii@-courses@org)
+Date: Fri, 24 Apr 2026 15:04:37 +0200 (CEST)
+Subject: [R-sig-ME] =?utf-8?q?Upcoming_courses=3A_GLMs_and_GLMMs_in_R_=28?=
+ =?utf-8?q?May_=26_September=29?=
+Message-ID: <1777035877.686910962@webmail.jimdo.com>
+
+
+Dear all,
+ 
+We are pleased to announce two upcoming online courses in statistical modelling in R, focused on one of the most widely used frameworks in applied data analysis: generalised linear models and mixed models.
+1 - Generalised Linear Models in R
+Dates: 25?29 May (online)
+ 
+This course introduces GLMs as a unified framework for statistical analysis, showing how many classical methods (t-tests, ANOVA, regression) are special cases of the same model family.
+Participants will learn how to:
+Fit GLMs for Gaussian, binary, and count data
+Choose appropriate link functions and distributions
+Interpret model parameters and categorical predictors
+Perform model selection and validation
+Visualise and communicate model results in R
+Course website: https://www.physalia-courses.org/courses-workshops/glm-in-r-1/
+2 - Generalized Linear Mixed Models (GLMMs) in R
+Dates: 21?24 September (online)
+ 
+This course extends GLMs to the mixed-effects framework, now a standard approach for analysing complex experimental and observational data.
+ 
+Participants will learn how to:
+Specify and fit GLMMs using lme4 and glmmTMB
+Include random effects and model hierarchical data structures
+Account for heteroscedasticity and correlation structures
+Model spatial, temporal, and grouped data
+Validate and interpret fitted models using diagnostic tools (e.g. DHARMa)
+ 
+Course website: [ https://www.physalia-courses.org/courses-workshops/glmms-in-r/ ]( https://www.physalia-courses.org/courses-workshops/glmms-in-r/ ) 
+ 
+ 
+Best regards,
+Carlo
+
+--------------------
+
+Carlo Pecoraro, Ph.D
+
+
+Physalia-courses DIRECTOR
+
+info at physalia-courses.org
+
+mobile: +49 17645230846
+
+[ Bluesky ]( https://bsky.app/profile/physaliacourses.bsky.social ) [ Linkedin ]( https://www.linkedin.com/in/physalia-courses-a64418127/ )
+
+
+	[[alternative HTML version deleted]]
+
+
+From jorgemmtte|xe|r@ @end|ng |rom gm@||@com  Thu May  7 19:12:20 2026
+From: jorgemmtte|xe|r@ @end|ng |rom gm@||@com (Jorge Teixeira)
+Date: Thu, 7 May 2026 18:12:20 +0100
+Subject: [R-sig-ME] Fit CS and Ar1 in lme4
+Message-ID: <CAOYO_yCF3EhwNkBGkUCgFCPQPQhyW-TV6tuN6HqHwchdrHkieg@mail.gmail.com>
+
+Not sure why, but I have always imagined that lme4 standard notation was
+using CS, not US correlation.
+
+
+
+Can someone please tell me how to fit these models using *cs*, and *ar1*? This
+was a n-of-1 trial (single subject) consisting of four cycles. Each cycle
+included two 2-week treatment periods (aka, "order" variable), totaling 4
+weeks per cycle. Data for the outcomes were collected during the final five
+days of each 2-week period.
+
+
+
+m1 <- lmer(pain_global ~ treat + (1 | cycle), data = dat)
+
+m2 <- lmer(pain_global ~ treat + (1 | cycle/order), data = dat)
+
+
+
+I got the idea that it was not as simple as just adding cs or ar1.
+
+
+
+If necessary, the ordering variable is *day*.   dat <- dat[order(dat$cycle,
+dat$day), ]
+
+
+
+Df below. Thank you
+
+
+
+
+
+# Download the file from GitHub (use raw download URL)
+
+url <- "
+https://github.com/jorgemmteixeira/databases/raw/main/n1_lyrica_v2.xlsx"
+
+temp <- tempfile(fileext = ".xlsx")
+
+download.file(url, temp, mode = "wb")
+
+
+
+# Read into R
+
+dat <- read_excel(temp)
+
+
+
+dat <- dat %>%
+
+  mutate(
+
+    date    = as.Date(date),
+
+
+
+    # treat: 0 = Off Lyrica (reference), 1 = On Lyrica
+
+    treat   = factor(treat, levels = c(0, 1),
+
+                     labels = c("Nothing", "Lyrica")),
+
+
+
+    # cycle and order as factors (for fixed-effect use later) AND as
+integers
+
+    cycle   = factor(cycle),
+
+    order   = factor(order)
+
+  )
+
+
+
+
+
+library(lme4)
+
+m1 <- lmer(pain_global ~ treat + (1 | cycle), data = dat)
+
+
+m2 <- lmer(pain_global ~ treat + (1 | cycle/order), data = dat)
+
+	[[alternative HTML version deleted]]
+
+
+From bbo|ker @end|ng |rom gm@||@com  Thu May  7 19:55:24 2026
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Thu, 7 May 2026 13:55:24 -0400
+Subject: [R-sig-ME] Fit CS and Ar1 in lme4
+In-Reply-To: <CAOYO_yCF3EhwNkBGkUCgFCPQPQhyW-TV6tuN6HqHwchdrHkieg@mail.gmail.com>
+References: <CAOYO_yCF3EhwNkBGkUCgFCPQPQhyW-TV6tuN6HqHwchdrHkieg@mail.gmail.com>
+Message-ID: <CABghstSd8Ri12BwmZviNTBU0RF6U4NajgMi8jjkKNbWozUmSSA@mail.gmail.com>
+
+ This might get you started. PLEASE INSTALL THE DEVELOPMENT VERSION OF
+lme4 (`remotes::install_github("lme4/lme4")`), there are some relevant
+bug fixes ...
+
+library(lme4)
+m1 <- lmer(pain_global ~ treat + (1 | cycle), data = dat)
+m2 <- lmer(pain_global ~ treat + (1 | cycle/order), data = dat)
+m3 <- lmer(pain_global ~ treat + cs(0+order | cycle),
+           data = dat)
+summary(select(dat, c(cycle, order, day)))
+
+m4 <- lmer(pain_global ~ treat + ar1(0+factor(day) | cycle,
+                                     hom = TRUE),
+           data = dat)
+m5 <- lmer(pain_global ~ treat + cs(0+factor(day) | cycle,
+                                    hom = TRUE),
+           data = dat, verbose = TRUE)
+
+with(dat, table(day, cycle))
+library(bbmle)
+mlist <- list(int_only = m1, "cycle/order" = m2, "cs(order|cycle)" =
+m3, "cs()"  = m4, "ar1()" = m5)
+AICtab(mlist,
+       logLik = TRUE)
+
+## AICtab is *too* aggressive in rounding log-likelihoods, we want to
+see the differences ...
+nll <- sapply(mlist, logLik)
+round(nll - min(nll), 3)
+
+On Thu, May 7, 2026 at 1:13?PM Jorge Teixeira
+<jorgemmtteixeira at gmail.com> wrote:
+>
+> Not sure why, but I have always imagined that lme4 standard notation was
+> using CS, not US correlation.
+>
+>
+>
+> Can someone please tell me how to fit these models using *cs*, and *ar1*? This
+> was a n-of-1 trial (single subject) consisting of four cycles. Each cycle
+> included two 2-week treatment periods (aka, "order" variable), totaling 4
+> weeks per cycle. Data for the outcomes were collected during the final five
+> days of each 2-week period.
+>
+>
+>
+> m1 <- lmer(pain_global ~ treat + (1 | cycle), data = dat)
+>
+> m2 <- lmer(pain_global ~ treat + (1 | cycle/order), data = dat)
+>
+>
+>
+> I got the idea that it was not as simple as just adding cs or ar1.
+>
+>
+>
+> If necessary, the ordering variable is *day*.   dat <- dat[order(dat$cycle,
+> dat$day), ]
+>
+>
+>
+> Df below. Thank you
+>
+>
+>
+>
+>
+> # Download the file from GitHub (use raw download URL)
+>
+> url <- "
+> https://github.com/jorgemmteixeira/databases/raw/main/n1_lyrica_v2.xlsx"
+>
+> temp <- tempfile(fileext = ".xlsx")
+>
+> download.file(url, temp, mode = "wb")
+>
+>
+>
+> # Read into R
+>
+> dat <- read_excel(temp)
+>
+>
+>
+> dat <- dat %>%
+>
+>   mutate(
+>
+>     date    = as.Date(date),
+>
+>
+>
+>     # treat: 0 = Off Lyrica (reference), 1 = On Lyrica
+>
+>     treat   = factor(treat, levels = c(0, 1),
+>
+>                      labels = c("Nothing", "Lyrica")),
+>
+>
+>
+>     # cycle and order as factors (for fixed-effect use later) AND as
+> integers
+>
+>     cycle   = factor(cycle),
+>
+>     order   = factor(order)
+>
+>   )
+>
+>
+>
+>
+>
+> library(lme4)
+>
+> m1 <- lmer(pain_global ~ treat + (1 | cycle), data = dat)
+>
+>
+> m2 <- lmer(pain_global ~ treat + (1 | cycle/order), data = dat)
+>
+>         [[alternative HTML version deleted]]
+>
+> _______________________________________________
+> R-sig-mixed-models at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+
+
+From jorgemmtte|xe|r@ @end|ng |rom gm@||@com  Mon May 11 09:00:00 2026
+From: jorgemmtte|xe|r@ @end|ng |rom gm@||@com (Jorge Teixeira)
+Date: Mon, 11 May 2026 08:00:00 +0100
+Subject: [R-sig-ME] Fit CS and Ar1 in lme4
+In-Reply-To: <CABghstSd8Ri12BwmZviNTBU0RF6U4NajgMi8jjkKNbWozUmSSA@mail.gmail.com>
+References: <CAOYO_yCF3EhwNkBGkUCgFCPQPQhyW-TV6tuN6HqHwchdrHkieg@mail.gmail.com>
+ <CABghstSd8Ri12BwmZviNTBU0RF6U4NajgMi8jjkKNbWozUmSSA@mail.gmail.com>
+Message-ID: <CAOYO_yCVRWo4g1h7xXLAvuP1z-2GsH2OOb7_U0J1x5Qhi4jmzw@mail.gmail.com>
+
+Thank you.
+
+
+I added two new variables:  *obs_order_cycle* (1:10) and  *obs_order_period
+* (1:5).  From my reading, they are more appropriate than *day* here.  *Q1:*
+Is that correct?
+
+
+If so,
+
+m1 <- lmer(pain_global ~ treat + (1 | cycle), data = dat)
+
+                                        becomes
+
+m1cs  <- lmer(pain_global ~ treat + cs(as.factor(obs_order_cycle) + 0 |
+cycle),            data = dat)
+
+*Q2:*  Is that correct?
+
+
+and
+
+
+m2 <- lmer(pain_global ~ treat + (1 | cycle/period), data = dat)
+
+                                        becomes
+
+m2 <- lmer(pain_global ~ treat + cs(as.factor(obs_order_period) + 0 |
+period:cycle),            data = dat)
+
+
+*Q3:*  Is that correct?  Here we use interactions, not nesting notation?
+
+
+*Q4:* For ar1, things would be pretty much the same,  right?
+
+
+Thank you.
+
+
+On Thu, 7 May 2026 at 18:55, Ben Bolker <bbolker at gmail.com> wrote:
+
+>  This might get you started. PLEASE INSTALL THE DEVELOPMENT VERSION OF
+> lme4 (`remotes::install_github("lme4/lme4")`), there are some relevant
+> bug fixes ...
+>
+> library(lme4)
+> m1 <- lmer(pain_global ~ treat + (1 | cycle), data = dat)
+> m2 <- lmer(pain_global ~ treat + (1 | cycle/order), data = dat)
+> m3 <- lmer(pain_global ~ treat + cs(0+order | cycle),
+>            data = dat)
+> summary(select(dat, c(cycle, order, day)))
+>
+> m4 <- lmer(pain_global ~ treat + ar1(0+factor(day) | cycle,
+>                                      hom = TRUE),
+>            data = dat)
+> m5 <- lmer(pain_global ~ treat + cs(0+factor(day) | cycle,
+>                                     hom = TRUE),
+>            data = dat, verbose = TRUE)
+>
+> with(dat, table(day, cycle))
+> library(bbmle)
+> mlist <- list(int_only = m1, "cycle/order" = m2, "cs(order|cycle)" =
+> m3, "cs()"  = m4, "ar1()" = m5)
+> AICtab(mlist,
+>        logLik = TRUE)
+>
+> ## AICtab is *too* aggressive in rounding log-likelihoods, we want to
+> see the differences ...
+> nll <- sapply(mlist, logLik)
+> round(nll - min(nll), 3)
+>
+> On Thu, May 7, 2026 at 1:13?PM Jorge Teixeira
+> <jorgemmtteixeira at gmail.com> wrote:
+> >
+> > Not sure why, but I have always imagined that lme4 standard notation was
+> > using CS, not US correlation.
+> >
+> >
+> >
+> > Can someone please tell me how to fit these models using *cs*, and
+> *ar1*? This
+> > was a n-of-1 trial (single subject) consisting of four cycles. Each cycle
+> > included two 2-week treatment periods (aka, "order" variable), totaling 4
+> > weeks per cycle. Data for the outcomes were collected during the final
+> five
+> > days of each 2-week period.
+> >
+> >
+> >
+> > m1 <- lmer(pain_global ~ treat + (1 | cycle), data = dat)
+> >
+> > m2 <- lmer(pain_global ~ treat + (1 | cycle/order), data = dat)
+> >
+> >
+> >
+> > I got the idea that it was not as simple as just adding cs or ar1.
+> >
+> >
+> >
+> > If necessary, the ordering variable is *day*.   dat <-
+> dat[order(dat$cycle,
+> > dat$day), ]
+> >
+> >
+> >
+> > Df below. Thank you
+> >
+> >
+> >
+> >
+> >
+> > # Download the file from GitHub (use raw download URL)
+> >
+> > url <- "
+> > https://github.com/jorgemmteixeira/databases/raw/main/n1_lyrica_v2.xlsx"
+> >
+> > temp <- tempfile(fileext = ".xlsx")
+> >
+> > download.file(url, temp, mode = "wb")
+> >
+> >
+> >
+> > # Read into R
+> >
+> > dat <- read_excel(temp)
+> >
+> >
+> >
+> > dat <- dat %>%
+> >
+> >   mutate(
+> >
+> >     date    = as.Date(date),
+> >
+> >
+> >
+> >     # treat: 0 = Off Lyrica (reference), 1 = On Lyrica
+> >
+> >     treat   = factor(treat, levels = c(0, 1),
+> >
+> >                      labels = c("Nothing", "Lyrica")),
+> >
+> >
+> >
+> >     # cycle and order as factors (for fixed-effect use later) AND as
+> > integers
+> >
+> >     cycle   = factor(cycle),
+> >
+> >     order   = factor(order)
+> >
+> >   )
+> >
+> >
+> >
+> >
+> >
+> > library(lme4)
+> >
+> > m1 <- lmer(pain_global ~ treat + (1 | cycle), data = dat)
+> >
+> >
+> > m2 <- lmer(pain_global ~ treat + (1 | cycle/order), data = dat)
+> >
+> >         [[alternative HTML version deleted]]
+> >
+> > _______________________________________________
+> > R-sig-mixed-models at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-sig-mixed-models
+>
+
+	[[alternative HTML version deleted]]
+
+
