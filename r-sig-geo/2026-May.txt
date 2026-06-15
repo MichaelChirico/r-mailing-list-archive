@@ -1,0 +1,220 @@
+From r@|@e|@wuee@t @end|ng |rom gm@||@com  Tue May 12 12:56:01 2026
+From: r@|@e|@wuee@t @end|ng |rom gm@||@com (=?UTF-8?Q?Rafael_W=C3=BCest?=)
+Date: Tue, 12 May 2026 12:56:01 +0200
+Subject: [R-sig-Geo] unexpected st_read behaviour with PostgreSQL database
+Message-ID: <CABx4fKqRtzDX_=-cMi+_K0OON1zXb=XY5RMr6o=6KmfY0FrDpA@mail.gmail.com>
+
+Hello experts
+
+I fail to provide a reproducible example but try to outline the
+observed behavior as good as I can...
+
+I should read spatial data from a PostgreSQL database. I manage to set
+up a connection using the DBI and RPostgres packages:
+
+con <- DBI::dbConnect(
+      RPostgres::Postgres(),
+      host = 'my.host.net',
+      dbname = 'dbname',
+      user = 'myusername,
+      password = 'mypassword'
+    )
+
+The spatial data ('mylayer') that I am interested in is stored as a
+table in a schema ('thatschema') on the database. I can download the
+data with:
+
+dat <- st_read(con, layer = DBI::Id("thatschema", "mylayer"))
+
+I can also access the data with:
+
+dat <- st_read(con, query = "select * from thatschema.mylayer")
+
+Given this, I did expect that the following would also work:
+
+dat <- st_read(con, layer = "thatschema.mylayer")
+
+But it throws an error:
+
+ERROR: Failed to prepare query : ERROR: relation "from
+thatschema.mylayer" does not exist
+LINE 1: SELECT * FROM "from thatschema.mylayer"
+
+Inspecting the traceback and involved functions plus a short test on
+my usecase suggest that this could be dealt with inside
+sf:::st_read.DBIObject by adding a single line before calling
+DBI::dbReadTable (line 48 in the function). Something like:
+
+layer <- Id(unlist(strsplit(layer, "\\.")))
+
+I'm not enough of an expert to judge if this causes unwanted effects
+in other use-cases, but I think that sf::st_read would gain
+user-friendliness if it allowed specification of layers in the form
+"thatschema.mylayer" for PostgreSQL databases, as I would think I am
+not alone with coming across spatial databases with schemata involved.
+
+Feedback appreciated...
+
+Best, Rafael
+
+PS: my sessionInfo() below
+
+R version 4.5.1 (2025-06-13 ucrt)
+Platform: x86_64-w64-mingw32/x64
+Running under: Windows 11 x64 (build 26200)
+
+Matrix products: default
+LAPACK version 3.12.1
+
+locale:
+  [1] LC_COLLATE=German_Switzerland.utf8
+LC_CTYPE=German_Switzerland.utf8
+LC_MONETARY=German_Switzerland.utf8
+[4] LC_NUMERIC=C                        LC_TIME=German_Switzerland.utf8
+
+time zone: Europe/Zurich
+tzcode source: internal
+
+attached base packages:
+  [1] stats     graphics  grDevices utils     datasets  methods   base
+
+other attached packages:
+  [1] sf_1.0-24
+
+loaded via a namespace (and not attached):
+  [1] RPostgres_1.4.8    lubridate_1.9.4    bit_4.6.0
+magrittr_2.0.5     e1071_1.7-16       blob_1.2.4
+[7] KernSmooth_2.23-26 pkgconfig_2.0.3    timechange_0.3.0
+generics_0.1.4     bit64_4.6.0-1      lifecycle_1.0.5
+[13] classInt_0.4-11    cli_3.6.5          grid_4.5.1
+vctrs_0.7.3        DBI_1.2.3          proxy_0.4-27
+[19] class_7.3-23       compiler_4.5.1     rstudioapi_0.17.1
+tools_4.5.1        hms_1.1.4          Rcpp_1.1.1
+[25] rlang_1.1.7        units_1.0-0
+
+
+From jctoney @end|ng |rom gm@||@com  Tue May 12 22:22:37 2026
+From: jctoney @end|ng |rom gm@||@com (Chris Toney)
+Date: Tue, 12 May 2026 14:22:37 -0600
+Subject: [R-sig-Geo] 
+ unexpected st_read behaviour with PostgreSQL database
+In-Reply-To: <CABx4fKqRtzDX_=-cMi+_K0OON1zXb=XY5RMr6o=6KmfY0FrDpA@mail.gmail.com>
+References: <CABx4fKqRtzDX_=-cMi+_K0OON1zXb=XY5RMr6o=6KmfY0FrDpA@mail.gmail.com>
+Message-ID: <CALRbqOSn=Q_OdKK1wm=jLAM9c5tQURumQu8Euo+VEoFBx6N-cQ@mail.gmail.com>
+
+Rafael,
+You should be able to give a GDAL connection string for PostgreSQL as
+the dsn argument to st_read(), which has format:
+
+dsn <- "PG:host='addr' port='5432' dbname='databasename' user='x' password='y'"
+
+See https://gdal.org/en/stable/drivers/vector/pg.html
+
+You can override the active schema ('public' being the default) by
+also specifying 'active_schema=schema_name' within that connection
+string. Then you should be able to use st_read(dsn, layer =
+"mylayer").
+
+Note that it is also possible to configure a schema search path on the
+Postgres server (i.e., by adding "thatschema" in your case), in which
+case the client should not have to specify it.
+
+Chris
+
+
+On Tue, May 12, 2026 at 4:56?AM Rafael W?est <rafael.wueest at gmail.com> wrote:
+>
+> Hello experts
+>
+> I fail to provide a reproducible example but try to outline the
+> observed behavior as good as I can...
+>
+> I should read spatial data from a PostgreSQL database. I manage to set
+> up a connection using the DBI and RPostgres packages:
+>
+> con <- DBI::dbConnect(
+>       RPostgres::Postgres(),
+>       host = 'my.host.net',
+>       dbname = 'dbname',
+>       user = 'myusername,
+>       password = 'mypassword'
+>     )
+>
+> The spatial data ('mylayer') that I am interested in is stored as a
+> table in a schema ('thatschema') on the database. I can download the
+> data with:
+>
+> dat <- st_read(con, layer = DBI::Id("thatschema", "mylayer"))
+>
+> I can also access the data with:
+>
+> dat <- st_read(con, query = "select * from thatschema.mylayer")
+>
+> Given this, I did expect that the following would also work:
+>
+> dat <- st_read(con, layer = "thatschema.mylayer")
+>
+> But it throws an error:
+>
+> ERROR: Failed to prepare query : ERROR: relation "from
+> thatschema.mylayer" does not exist
+> LINE 1: SELECT * FROM "from thatschema.mylayer"
+>
+> Inspecting the traceback and involved functions plus a short test on
+> my usecase suggest that this could be dealt with inside
+> sf:::st_read.DBIObject by adding a single line before calling
+> DBI::dbReadTable (line 48 in the function). Something like:
+>
+> layer <- Id(unlist(strsplit(layer, "\\.")))
+>
+> I'm not enough of an expert to judge if this causes unwanted effects
+> in other use-cases, but I think that sf::st_read would gain
+> user-friendliness if it allowed specification of layers in the form
+> "thatschema.mylayer" for PostgreSQL databases, as I would think I am
+> not alone with coming across spatial databases with schemata involved.
+>
+> Feedback appreciated...
+>
+> Best, Rafael
+>
+> PS: my sessionInfo() below
+>
+> R version 4.5.1 (2025-06-13 ucrt)
+> Platform: x86_64-w64-mingw32/x64
+> Running under: Windows 11 x64 (build 26200)
+>
+> Matrix products: default
+> LAPACK version 3.12.1
+>
+> locale:
+>   [1] LC_COLLATE=German_Switzerland.utf8
+> LC_CTYPE=German_Switzerland.utf8
+> LC_MONETARY=German_Switzerland.utf8
+> [4] LC_NUMERIC=C                        LC_TIME=German_Switzerland.utf8
+>
+> time zone: Europe/Zurich
+> tzcode source: internal
+>
+> attached base packages:
+>   [1] stats     graphics  grDevices utils     datasets  methods   base
+>
+> other attached packages:
+>   [1] sf_1.0-24
+>
+> loaded via a namespace (and not attached):
+>   [1] RPostgres_1.4.8    lubridate_1.9.4    bit_4.6.0
+> magrittr_2.0.5     e1071_1.7-16       blob_1.2.4
+> [7] KernSmooth_2.23-26 pkgconfig_2.0.3    timechange_0.3.0
+> generics_0.1.4     bit64_4.6.0-1      lifecycle_1.0.5
+> [13] classInt_0.4-11    cli_3.6.5          grid_4.5.1
+> vctrs_0.7.3        DBI_1.2.3          proxy_0.4-27
+> [19] class_7.3-23       compiler_4.5.1     rstudioapi_0.17.1
+> tools_4.5.1        hms_1.1.4          Rcpp_1.1.1
+> [25] rlang_1.1.7        units_1.0-0
+>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+
+
