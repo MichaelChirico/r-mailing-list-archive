@@ -1,0 +1,670 @@
+From n|ko@@tz|ok@@ @end|ng |rom gm@||@com  Sun Jul  5 22:12:36 2026
+From: n|ko@@tz|ok@@ @end|ng |rom gm@||@com (Nikolaos Tziokas)
+Date: Sun, 5 Jul 2026 22:12:36 +0200
+Subject: [R-sig-Geo] Implementing a spatially-varying anisotropic kernel in
+ GWR using a pre-computed distance matrix
+Message-ID: <CAGg5H0b5LoOh1Ze9yQ21+fGa5CQxUPb5LofUP1neJWE9g6ViPw@mail.gmail.com>
+
+I am fitting a Geographically Weighted Regression (GWR) using the *GWmodel*.
+The model is fitted at a coarse spatial scale and used to predict at a
+finer spatial scale. My data are in a projected coordinate system (metres).
+The formula is simple: one response variable, one predictor.
+
+Instead of the standard isotropic kernel, I want a kernel whose shape
+reflects the geometry of a satellite sensor's point spread function (PSF).
+Specifically:
+
+- The sensor has a cross-track viewing angle *?* that varies spatially
+across the scene. I have this as a raster at the same resolution as my
+response variable.
+- The PSF expands in the cross-track direction as 1/cos?(*?*). At nadir (*?*
+= 0) the kernel is symmetric. As *?* increases toward the swath edge, the
+kernel becomes increasingly elongated in the cross-track direction.
+- The cross-track direction is not axis-aligned ? it runs roughly
+bottom-left to top-right in my scene.
+
+Rather than modifying GWmodel's internal distance function, I pre-compute a
+custom distance matrix and pass it via the *dMat* argument, which GWmodel
+supports in *bw.gwr*(), *gwr.basic*(), and *gwr.predict*(). The distance
+between any two points is computed as follows:
+
+1. Estimate the cross-track orientation angle *?* from the spatial gradient
+of the viewing angle raster.
+2. For each regression point *i*, rotate the coordinate frame by ?*?* so
+that the x-axis aligns with the cross-track direction.
+3. Scale the cross-track component of each distance vector by 1/cos?(*??*),
+where *??* is the viewing angle at point *i* extracted from the raster.
+4. Compute Euclidean distance in this rotated and scaled space.
+
+This produces an n ? n distance matrix for fitting (calibration points vs
+calibration points) and an m ? n matrix for prediction (prediction points
+vs calibration points), both passed as *dMat*/*dMat1*/*dMat2* to the
+relevant GWmodel functions.
+
+Is injecting a pre-computed anisotropic distance matrix via dMat
+mathematically equivalent to modifying the kernel function itself, and is
+this therefore a valid way to implement a spatially-varying anisotropic
+kernel in GWmodel?
+
+pacman::p_load(terra, sf, GWmodel, ggplot2, tidyterra)
+
+# 1. Load built-in data
+data(LondonHP)
+proj4string(londonhp) <- CRS("+init=epsg:27700")
+sp_fit     <- londonhp[, c("PURCHASE", "FLOORSZ")]
+fit_coords <- coordinates(sp_fit)
+
+# 2. Synthetic VA raster
+# Values increase linearly BL->TR (30-35 deg). Alpha is known analytically:
+# BL->TR diagonal = 45 deg from East, so alpha = pi/4.
+bb  <- bbox(sp_fit)
+buf <- 2000
+
+va_ext <- ext(bb[1,1] - buf, bb[1,2] + buf,
+              bb[2,1] - buf, bb[2,2] + buf)
+
+va  <- rast(va_ext, resolution = 500, crs = "EPSG:27700")
+xy  <- crds(va)
+va_vals <- 30 + 5 * ((xy[,1] - bb[1,1]) / diff(bb[1,]) +
+                       (xy[,2] - bb[2,1]) / diff(bb[2,])) / 2
+values(va) <- va_vals
+
+alpha <- pi / 4   # BL->TR diagonal, known analytically
+
+# 3. Anisotropic distance matrix function
+make_aniso_dmat <- function(data_coords, reg_coords, va_reg, alpha) {
+  n_d   <- nrow(data_coords)
+  n_r   <- nrow(reg_coords)
+  D     <- matrix(NA_real_, nrow = n_r, ncol = n_d)
+  cos_a <- cos(-alpha)
+  sin_a <- sin(-alpha)
+  for (i in seq_len(n_r)) {
+    dx      <- data_coords[, 1] - reg_coords[i, 1]
+    dy      <- data_coords[, 2] - reg_coords[i, 2]
+    u       <-  cos_a * dx - sin_a * dy
+    v       <-  sin_a * dx + cos_a * dy
+    scale_i <- 1 / cos(va_reg[i] * pi / 180)^2
+    D[i, ]  <- sqrt((u * scale_i)^2 + v^2)
+  }
+  D
+}
+
+# 4. Extract VA at calibration points
+va_fit                <- extract(va, fit_coords)[, 1]
+va_fit[is.na(va_fit)] <- mean(va_fit, na.rm = TRUE)
+
+# 5. Calibration distance matrix
+dMat_fit <- make_aniso_dmat(fit_coords, fit_coords, va_fit, alpha)
+
+# 6. Bandwidth selection
+bw <- bw.gwr(
+  formula  = PURCHASE ~ FLOORSZ,
+  data     = sp_fit,
+  approach = "AIC",
+  kernel   = "gaussian",
+  adaptive = TRUE,
+  dMat     = dMat_fit,
+  parallel.method = "omp",
+  parallel.arg = 4
+)
+
+# 7. Fit GWR
+gwr_fit <- gwr.basic(
+  formula  = PURCHASE ~ FLOORSZ,
+  data     = sp_fit,
+  bw       = bw,
+  kernel   = "gaussian",
+  adaptive = TRUE,
+  dMat     = dMat_fit,
+  parallel.method = "omp",
+  parallel.arg = 4
+)
+
+print(gwr_fit)
+
+# 8. Prediction grid (500 m, FLOORSZ = mean of calibration data)
+pred_rast         <- rast(va_ext, resolution = 500, crs = "EPSG:27700")
+values(pred_rast) <- mean(sp_fit$FLOORSZ, na.rm = TRUE)
+names(pred_rast)  <- "FLOORSZ"
+
+pred_xy             <- as.data.frame(pred_rast, xy = TRUE, na.rm = TRUE)
+names(pred_xy)[1:2] <- c("x", "y")
+pred_coords         <- as.matrix(pred_xy[, c("x", "y")])
+
+va_pred                 <- extract(va, pred_coords)[, 1]
+va_pred[is.na(va_pred)] <- mean(va_pred, na.rm = TRUE)
+
+# 9. Prediction distance matrix
+dMat_pred <- make_aniso_dmat(fit_coords, pred_coords, va_pred, alpha)
+
+# 10. Predict at fine scale
+sp_pred              <- pred_xy
+coordinates(sp_pred) <- ~ x + y
+proj4string(sp_pred) <- CRS("+init=epsg:27700")
+
+gwr_pred <- gwr.predict(
+  formula     = PURCHASE ~ FLOORSZ,
+  data        = sp_fit,
+  predictdata = sp_pred,
+  bw          = bw,
+  kernel      = "gaussian",
+  adaptive    = TRUE,
+  dMat1       = t(dMat_pred),
+  dMat2       = dMat_fit
+)
+
+pred_df              <- as.data.frame(gwr_pred$SDF)
+pred_xy$purchase_hat <- pred_df$prediction
+
+# 11. Residuals raster
+sf_resid <- st_as_sf(gwr_fit$SDF)
+r_resid  <- rast(pred_rast); values(r_resid) <- NA
+r_resid[cellFromXY(r_resid, fit_coords)] <- sf_resid$residual
+
+# 12. Predicted raster
+r_pred <- rast(pred_rast); values(r_pred) <- NA
+r_pred[cellFromXY(r_pred, pred_coords)]  <- pred_xy$purchase_hat
+
+# 13. Plots
+theme_night <- function() {
+  theme_minimal(base_size = 12) +
+    theme(
+      panel.background  = element_rect(fill = "grey12", colour = NA),
+      plot.background   = element_rect(fill = "grey12", colour = NA),
+      legend.background = element_rect(fill = "grey12", colour = NA),
+      panel.grid        = element_blank(),
+      plot.title        = element_text(colour = "grey95", face = "bold"),
+      plot.subtitle     = element_text(colour = "grey75"),
+      text              = element_text(colour = "grey90"),
+      axis.text         = element_text(colour = "grey70")
+    )
+}
+
+p_va <- ggplot() +
+  geom_spatraster(data = va) +
+  scale_fill_viridis_c(option = "plasma", name = "VA (deg)") +
+  coord_sf(expand = FALSE) +
+  labs(title = "Synthetic viewing angle raster",
+       subtitle = "30 deg (BL) -> 35 deg (TR)", x = NULL, y = NULL) +
+  theme_night()
+
+p_pred <- ggplot() +
+  geom_spatraster(data = r_pred) +
+  scale_fill_viridis_c(option = "inferno", na.value = "grey20",
+                       name = "predicted\nprice (\u00a3)") +
+  coord_sf(expand = FALSE) +
+  labs(title    = "Anisotropic GWR ? predicted purchase price",
+       subtitle = sprintf("PURCHASE ~ FLOORSZ  |  bisquare, adaptive BW =
+%g", bw),
+       x = NULL, y = NULL) +
+  theme_night()
+
+p_resid <- ggplot() +
+  geom_spatraster(data = r_resid) +
+  scale_fill_distiller(palette = "RdBu", na.value = "grey20",
+                       name = "residual",
+                       limits = c(-1,1) * max(abs(minmax(r_resid)), na.rm =
+TRUE)) +
+  coord_sf(expand = FALSE) +
+  labs(title = "Anisotropic GWR ? residuals", x = NULL, y = NULL) +
+  theme_night()
+
+print(p_va)
+print(p_pred)
+print(p_resid)
+
+
+
+The residuals look like that because londonhp is point data ? ~370 house
+price observations scattered across London so when I assign them to a 500 m
+raster using *cellFromXY()*, only the cells that happen to contain a data
+point get a value, producing that sparse dotted pattern. With my actual
+dataset, I don't have this issue.
+
+
+> sessionInfo()
+R version 4.6.0 (2026-04-24 ucrt)
+Platform: x86_64-w64-mingw32/x64
+Running under: Windows 11 x64 (build 26200)
+
+Matrix products: default
+  LAPACK version 3.12.1
+
+locale:
+[1] LC_COLLATE=English_United States.utf8  LC_CTYPE=English_United
+States.utf8    LC_MONETARY=English_United States.utf8
+[4] LC_NUMERIC=C                           LC_TIME=English_United
+States.utf8
+
+time zone: Europe/Paris
+tzcode source: internal
+
+attached base packages:
+[1] stats     graphics  grDevices utils     datasets  methods   base
+
+other attached packages:
+[1] tidyterra_1.2.0   ggplot2_4.0.3     GWmodel_2.4-1     Rcpp_1.1.2
+ sp_2.2-1          robustbase_0.99-7 sf_1.1-1
+[8] terra_1.9-34
+
+loaded via a namespace (and not attached):
+ [1] tidyselect_1.2.1       viridisLite_0.4.3      dplyr_1.2.1
+ farver_2.1.2           S7_0.2.2
+ [6] TH.data_1.1-5          pacman_0.5.1           digest_0.6.39
+ lifecycle_1.0.5        LearnBayes_2.15.2
+[11] survival_3.8-6         magrittr_2.0.5         compiler_4.6.0
+rlang_1.3.0            tools_4.6.0
+[16] data.table_1.18.4      FNN_1.1.4.1            labeling_0.4.3
+classInt_0.4-11        RColorBrewer_1.1-3
+[21] multcomp_1.4-30        KernSmooth_2.23-26     withr_3.0.3
+ purrr_1.2.2            grid_4.6.0
+[26] rcartocolor_2.1.2      xts_0.14.2             e1071_1.7-17
+paletteer_1.7.0        scales_1.4.0
+[31] MASS_7.3-65            dichromat_2.0-0.1      cli_3.6.6
+ mvtnorm_1.4-1          intervals_0.15.5
+[36] ragg_1.5.2             generics_0.1.4         otel_0.2.0
+rstudioapi_0.19.0      spdep_1.4-2
+[41] DBI_1.3.0              proxy_0.4-29           splines_4.6.0
+ spatialreg_1.4-3       parallel_4.6.0
+[46] ggplotify_0.1.3        s2_1.1.11              marginaleffects_0.32.0
+yulab.utils_0.2.4      vctrs_0.7.3
+[51] boot_1.3-32            Matrix_1.7-5           sandwich_3.1-1
+spData_2.3.5           gridGraphics_0.5-1
+[56] systemfonts_1.3.2      tidyr_1.3.2            units_1.0-1
+ glue_1.8.1             rematch2_2.1.2
+[61] DEoptimR_1.2-0         codetools_0.2-20       cowplot_1.2.0
+ gtable_0.3.6           deldir_2.0-4
+[66] tibble_3.3.1           pillar_1.11.1          rappdirs_0.3.4
+R6_2.6.1               wk_0.9.5
+[71] textshaping_1.0.5      lattice_0.22-9         backports_1.5.1
+ class_7.3-23           coda_0.19-4.1
+[76] nlme_3.1-169           spacetime_1.3-3        fs_2.1.0
+zoo_1.8-15             pkgconfig_2.0.3
+-- 
+Tziokas Nikolaos
+Post-doctoral Researcher at Luxembourg Institute of Science and Technology
+
+	[[alternative HTML version deleted]]
+
+
+From bi@bi@iu m@iii@g oii whu@edu@c@  Mon Jul  6 10:09:29 2026
+From: bi@bi@iu m@iii@g oii whu@edu@c@ (bi@bi@iu m@iii@g oii whu@edu@c@)
+Date: Mon, 6 Jul 2026 16:09:29 +0800
+Subject: [R-sig-Geo] 
+ Implementing a spatially-varying anisotropic kernel in
+ GWR using a pre-computed distance matrix
+References: <CAGg5H0b5LoOh1Ze9yQ21+fGa5CQxUPb5LofUP1neJWE9g6ViPw@mail.gmail.com>
+Message-ID: <2026070616092677279718@whu.edu.cn>
+
+Thank you for your detailed description. I will answer the question in red font.
+From: Nikolaos Tziokas
+Date: 2026-07-06 04:12
+To: r-sig-geo
+Subject: [R-sig-Geo] Implementing a spatially-varying anisotropic kernel in GWR using a pre-computed distance matrix
+I am fitting a Geographically Weighted Regression (GWR) using the *GWmodel*.
+The model is fitted at a coarse spatial scale and used to predict at a
+finer spatial scale. My data are in a projected coordinate system (metres).
+The formula is simple: one response variable, one predictor.
+ 
+Instead of the standard isotropic kernel, I want a kernel whose shape
+reflects the geometry of a satellite sensor's point spread function (PSF).
+Specifically:
+ 
+- The sensor has a cross-track viewing angle *?* that varies spatially
+across the scene. I have this as a raster at the same resolution as my
+response variable.
+- The PSF expands in the cross-track direction as 1/cos?(*?*). At nadir (*?*
+= 0) the kernel is symmetric. As *?* increases toward the swath edge, the
+kernel becomes increasingly elongated in the cross-track direction.
+- The cross-track direction is not axis-aligned ? it runs roughly
+bottom-left to top-right in my scene.
+ 
+Rather than modifying GWmodel's internal distance function, I pre-compute a
+custom distance matrix and pass it via the *dMat* argument, which GWmodel
+supports in *bw.gwr*(), *gwr.basic*(), and *gwr.predict*(). The distance
+between any two points is computed as follows:
+ 
+1. Estimate the cross-track orientation angle *?* from the spatial gradient
+of the viewing angle raster.
+2. For each regression point *i*, rotate the coordinate frame by ?*?* so
+that the x-axis aligns with the cross-track direction.
+3. Scale the cross-track component of each distance vector by 1/cos?(*??*),
+where *??* is the viewing angle at point *i* extracted from the raster.
+4. Compute Euclidean distance in this rotated and scaled space.
+ 
+This produces an n ? n distance matrix for fitting (calibration points vs
+calibration points) and an m ? n matrix for prediction (prediction points
+vs calibration points), both passed as *dMat*/*dMat1*/*dMat2* to the
+relevant GWmodel functions.
+ 
+Is injecting a pre-computed anisotropic distance matrix via dMat
+mathematically equivalent to modifying the kernel function itself, and is
+this therefore a valid way to implement a spatially-varying anisotropic
+kernel in GWmodel?
+
+Using a pre-computed distance matrix through the dMat argument is indeed a reasonable way to introduce anisotropic effects into a GWR model. However, I noticed that the Euclidean distance is finally calculated with coordinates rotated and scaled. It could be problemetirc to represent the actually anisotropic features in the spatially varying relationships.
+
+I would suggest redefining the kernel function itself by defining the parameter kernel="kernelfun" (write a new kernel funciton namely kernelfun), or even you can replace the input weight matrix by modifying the function gwr.basic, e.g.:
+ W.i<-gw.weight(dist.vi,bw,kernel,adaptive)
+      W[,i] <- W.i
+
+
+Hope it helps.
+
+ 
+pacman::p_load(terra, sf, GWmodel, ggplot2, tidyterra)
+ 
+# 1. Load built-in data
+data(LondonHP)
+proj4string(londonhp) <- CRS("+init=epsg:27700")
+sp_fit     <- londonhp[, c("PURCHASE", "FLOORSZ")]
+fit_coords <- coordinates(sp_fit)
+ 
+# 2. Synthetic VA raster
+# Values increase linearly BL->TR (30-35 deg). Alpha is known analytically:
+# BL->TR diagonal = 45 deg from East, so alpha = pi/4.
+bb  <- bbox(sp_fit)
+buf <- 2000
+ 
+va_ext <- ext(bb[1,1] - buf, bb[1,2] + buf,
+              bb[2,1] - buf, bb[2,2] + buf)
+ 
+va  <- rast(va_ext, resolution = 500, crs = "EPSG:27700")
+xy  <- crds(va)
+va_vals <- 30 + 5 * ((xy[,1] - bb[1,1]) / diff(bb[1,]) +
+                       (xy[,2] - bb[2,1]) / diff(bb[2,])) / 2
+values(va) <- va_vals
+ 
+alpha <- pi / 4   # BL->TR diagonal, known analytically
+ 
+# 3. Anisotropic distance matrix function
+make_aniso_dmat <- function(data_coords, reg_coords, va_reg, alpha) {
+  n_d   <- nrow(data_coords)
+  n_r   <- nrow(reg_coords)
+  D     <- matrix(NA_real_, nrow = n_r, ncol = n_d)
+  cos_a <- cos(-alpha)
+  sin_a <- sin(-alpha)
+  for (i in seq_len(n_r)) {
+    dx      <- data_coords[, 1] - reg_coords[i, 1]
+    dy      <- data_coords[, 2] - reg_coords[i, 2]
+    u       <-  cos_a * dx - sin_a * dy
+    v       <-  sin_a * dx + cos_a * dy
+    scale_i <- 1 / cos(va_reg[i] * pi / 180)^2
+    D[i, ]  <- sqrt((u * scale_i)^2 + v^2)
+  }
+  D
+}
+ 
+# 4. Extract VA at calibration points
+va_fit                <- extract(va, fit_coords)[, 1]
+va_fit[is.na(va_fit)] <- mean(va_fit, na.rm = TRUE)
+ 
+# 5. Calibration distance matrix
+dMat_fit <- make_aniso_dmat(fit_coords, fit_coords, va_fit, alpha)
+ 
+# 6. Bandwidth selection
+bw <- bw.gwr(
+  formula  = PURCHASE ~ FLOORSZ,
+  data     = sp_fit,
+  approach = "AIC",
+  kernel   = "gaussian",
+  adaptive = TRUE,
+  dMat     = dMat_fit,
+  parallel.method = "omp",
+  parallel.arg = 4
+)
+ 
+# 7. Fit GWR
+gwr_fit <- gwr.basic(
+  formula  = PURCHASE ~ FLOORSZ,
+  data     = sp_fit,
+  bw       = bw,
+  kernel   = "gaussian",
+  adaptive = TRUE,
+  dMat     = dMat_fit,
+  parallel.method = "omp",
+  parallel.arg = 4
+)
+ 
+print(gwr_fit)
+ 
+# 8. Prediction grid (500 m, FLOORSZ = mean of calibration data)
+pred_rast         <- rast(va_ext, resolution = 500, crs = "EPSG:27700")
+values(pred_rast) <- mean(sp_fit$FLOORSZ, na.rm = TRUE)
+names(pred_rast)  <- "FLOORSZ"
+ 
+pred_xy             <- as.data.frame(pred_rast, xy = TRUE, na.rm = TRUE)
+names(pred_xy)[1:2] <- c("x", "y")
+pred_coords         <- as.matrix(pred_xy[, c("x", "y")])
+ 
+va_pred                 <- extract(va, pred_coords)[, 1]
+va_pred[is.na(va_pred)] <- mean(va_pred, na.rm = TRUE)
+ 
+# 9. Prediction distance matrix
+dMat_pred <- make_aniso_dmat(fit_coords, pred_coords, va_pred, alpha)
+ 
+# 10. Predict at fine scale
+sp_pred              <- pred_xy
+coordinates(sp_pred) <- ~ x + y
+proj4string(sp_pred) <- CRS("+init=epsg:27700")
+ 
+gwr_pred <- gwr.predict(
+  formula     = PURCHASE ~ FLOORSZ,
+  data        = sp_fit,
+  predictdata = sp_pred,
+  bw          = bw,
+  kernel      = "gaussian",
+  adaptive    = TRUE,
+  dMat1       = t(dMat_pred),
+  dMat2       = dMat_fit
+)
+ 
+pred_df              <- as.data.frame(gwr_pred$SDF)
+pred_xy$purchase_hat <- pred_df$prediction
+ 
+# 11. Residuals raster
+sf_resid <- st_as_sf(gwr_fit$SDF)
+r_resid  <- rast(pred_rast); values(r_resid) <- NA
+r_resid[cellFromXY(r_resid, fit_coords)] <- sf_resid$residual
+ 
+# 12. Predicted raster
+r_pred <- rast(pred_rast); values(r_pred) <- NA
+r_pred[cellFromXY(r_pred, pred_coords)]  <- pred_xy$purchase_hat
+ 
+# 13. Plots
+theme_night <- function() {
+  theme_minimal(base_size = 12) +
+    theme(
+      panel.background  = element_rect(fill = "grey12", colour = NA),
+      plot.background   = element_rect(fill = "grey12", colour = NA),
+      legend.background = element_rect(fill = "grey12", colour = NA),
+      panel.grid        = element_blank(),
+      plot.title        = element_text(colour = "grey95", face = "bold"),
+      plot.subtitle     = element_text(colour = "grey75"),
+      text              = element_text(colour = "grey90"),
+      axis.text         = element_text(colour = "grey70")
+    )
+}
+ 
+p_va <- ggplot() +
+  geom_spatraster(data = va) +
+  scale_fill_viridis_c(option = "plasma", name = "VA (deg)") +
+  coord_sf(expand = FALSE) +
+  labs(title = "Synthetic viewing angle raster",
+       subtitle = "30 deg (BL) -> 35 deg (TR)", x = NULL, y = NULL) +
+  theme_night()
+ 
+p_pred <- ggplot() +
+  geom_spatraster(data = r_pred) +
+  scale_fill_viridis_c(option = "inferno", na.value = "grey20",
+                       name = "predicted\nprice (\u00a3)") +
+  coord_sf(expand = FALSE) +
+  labs(title    = "Anisotropic GWR ? predicted purchase price",
+       subtitle = sprintf("PURCHASE ~ FLOORSZ  |  bisquare, adaptive BW =
+%g", bw),
+       x = NULL, y = NULL) +
+  theme_night()
+ 
+p_resid <- ggplot() +
+  geom_spatraster(data = r_resid) +
+  scale_fill_distiller(palette = "RdBu", na.value = "grey20",
+                       name = "residual",
+                       limits = c(-1,1) * max(abs(minmax(r_resid)), na.rm =
+TRUE)) +
+  coord_sf(expand = FALSE) +
+  labs(title = "Anisotropic GWR ? residuals", x = NULL, y = NULL) +
+  theme_night()
+ 
+print(p_va)
+print(p_pred)
+print(p_resid)
+ 
+ 
+ 
+The residuals look like that because londonhp is point data ? ~370 house
+price observations scattered across London so when I assign them to a 500 m
+raster using *cellFromXY()*, only the cells that happen to contain a data
+point get a value, producing that sparse dotted pattern. With my actual
+dataset, I don't have this issue.
+ 
+ 
+> sessionInfo()
+R version 4.6.0 (2026-04-24 ucrt)
+Platform: x86_64-w64-mingw32/x64
+Running under: Windows 11 x64 (build 26200)
+ 
+Matrix products: default
+  LAPACK version 3.12.1
+ 
+locale:
+[1] LC_COLLATE=English_United States.utf8  LC_CTYPE=English_United
+States.utf8    LC_MONETARY=English_United States.utf8
+[4] LC_NUMERIC=C                           LC_TIME=English_United
+States.utf8
+ 
+time zone: Europe/Paris
+tzcode source: internal
+ 
+attached base packages:
+[1] stats     graphics  grDevices utils     datasets  methods   base
+ 
+other attached packages:
+[1] tidyterra_1.2.0   ggplot2_4.0.3     GWmodel_2.4-1     Rcpp_1.1.2
+sp_2.2-1          robustbase_0.99-7 sf_1.1-1
+[8] terra_1.9-34
+ 
+loaded via a namespace (and not attached):
+[1] tidyselect_1.2.1       viridisLite_0.4.3      dplyr_1.2.1
+farver_2.1.2           S7_0.2.2
+[6] TH.data_1.1-5          pacman_0.5.1           digest_0.6.39
+lifecycle_1.0.5        LearnBayes_2.15.2
+[11] survival_3.8-6         magrittr_2.0.5         compiler_4.6.0
+rlang_1.3.0            tools_4.6.0
+[16] data.table_1.18.4      FNN_1.1.4.1            labeling_0.4.3
+classInt_0.4-11        RColorBrewer_1.1-3
+[21] multcomp_1.4-30        KernSmooth_2.23-26     withr_3.0.3
+purrr_1.2.2            grid_4.6.0
+[26] rcartocolor_2.1.2      xts_0.14.2             e1071_1.7-17
+paletteer_1.7.0        scales_1.4.0
+[31] MASS_7.3-65            dichromat_2.0-0.1      cli_3.6.6
+mvtnorm_1.4-1          intervals_0.15.5
+[36] ragg_1.5.2             generics_0.1.4         otel_0.2.0
+rstudioapi_0.19.0      spdep_1.4-2
+[41] DBI_1.3.0              proxy_0.4-29           splines_4.6.0
+spatialreg_1.4-3       parallel_4.6.0
+[46] ggplotify_0.1.3        s2_1.1.11              marginaleffects_0.32.0
+yulab.utils_0.2.4      vctrs_0.7.3
+[51] boot_1.3-32            Matrix_1.7-5           sandwich_3.1-1
+spData_2.3.5           gridGraphics_0.5-1
+[56] systemfonts_1.3.2      tidyr_1.3.2            units_1.0-1
+glue_1.8.1             rematch2_2.1.2
+[61] DEoptimR_1.2-0         codetools_0.2-20       cowplot_1.2.0
+gtable_0.3.6           deldir_2.0-4
+[66] tibble_3.3.1           pillar_1.11.1          rappdirs_0.3.4
+R6_2.6.1               wk_0.9.5
+[71] textshaping_1.0.5      lattice_0.22-9         backports_1.5.1
+class_7.3-23           coda_0.19-4.1
+[76] nlme_3.1-169           spacetime_1.3-3        fs_2.1.0
+zoo_1.8-15             pkgconfig_2.0.3
+-- 
+Tziokas Nikolaos
+Post-doctoral Researcher at Luxembourg Institute of Science and Technology
+ 
+[[alternative HTML version deleted]]
+ 
+_______________________________________________
+R-sig-Geo mailing list
+R-sig-Geo at r-project.org
+https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+
+	[[alternative HTML version deleted]]
+
+
+From g|u@eppe@@m@tu||| @end|ng |rom gm@||@com  Mon Jul  6 12:33:59 2026
+From: g|u@eppe@@m@tu||| @end|ng |rom gm@||@com (Giuseppe Amatulli)
+Date: Mon, 6 Jul 2026 12:33:59 +0200
+Subject: [R-sig-Geo] Course: Geocomputation and Machine Learning for
+ Environmental Applications
+Message-ID: <CAKoiDHKieoAEtpLRh8_+2aym4AuMbYJW2FCCLB-12ZT5314nag@mail.gmail.com>
+
+Dear Colleagues,
+
+The registration for the below course is still open. Apply if you
+wanna improve your geo-processing capability.
+
+Best
+Giuseppe
+
+#####################
+
+Dear Colleagues,
+
+In view of enhancing computation skills in the geographic domain,
+https://www.spatial-ecology.net is organising:
+
+a Fall 2026 training Course: *Geocomputation and Machine Learning for
+Environmental Applications* (intermediate level)
+
+(https://www.spatial-ecology.net/pages/courses/2026/open_call_fall2026)
+
+The course will be offered *online* with a supplementary *5-day
+in-person* segment at the University of Basilicata, in the magnificent
+town of Matera, Italy.
+This is a wonderful opportunity for PhD students, Post-Docs and
+professionals to acquire advanced computational skills with a Linux
+computer.
+
+
+Please forward to announce these opportunities within your network.
+
+Sincerely,
+
+Giuseppe Amatulli  & the Spatial Ecology Team
+
+Geocomputation and Machine Learning for Environmental Applications
+(intermediate level;  September, October, November, 2026)
+(https://www.spatial-ecology.net/pages/courses/2026/open_call_fall2026)
+On this course, students will be introduced to an array of powerful
+open-source geocomputation tools and machine learning methodologies in
+the Linux environment. Students who have never been exposed to
+programming in Linux will acquire confidence in using advanced open
+source data processing routines. Those with a programming background
+will find the course beneficial in improving their programming and
+modelling skills. We aim to equip attendees with powerful programming
+tools, as well as hone their abilities for independent development.
+This will be valuable not only for GIS related applications but also
+for general data processing and applied statistical computing in a
+number of fields. We strive to provide the best grounding for career
+development as a geographic data scientist.
+
+More information and registration: www.spatial-ecology.net
+
+
+-- 
+___________
+Dr. Giuseppe Amatulli,
+Director of Spatial Ecologyg.amatulli at spatial-ecology.net
+
+	[[alternative HTML version deleted]]
+
+

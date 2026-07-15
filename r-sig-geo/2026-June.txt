@@ -1,0 +1,1006 @@
+From n|ko@@tz|ok@@ @end|ng |rom gm@||@com  Tue Jun  2 11:42:02 2026
+From: n|ko@@tz|ok@@ @end|ng |rom gm@||@com (Nikolaos Tziokas)
+Date: Tue, 2 Jun 2026 11:42:02 +0200
+Subject: [R-sig-Geo] 
+	=?utf-8?q?How_to_apply_a_geometric_anisotropic_filte?=
+	=?utf-8?q?r_1/cos=C2=B2=28theta=29_to_a_raster=3F?=
+In-Reply-To: <CAGg5H0auRT8Z59Y7v1U9pHbAXdY7dJij0VOkuAGPyMezGRk1rg@mail.gmail.com>
+References: <CAGg5H0auRT8Z59Y7v1U9pHbAXdY7dJij0VOkuAGPyMezGRk1rg@mail.gmail.com>
+Message-ID: <CAGg5H0aK9pFY9FmZqsh_pkPX_rSEW4owFg=atf_G5UOr2V2aFg@mail.gmail.com>
+
+Anyone has any idea(s) on how to move forward with the issue?
+
+Many thanks.
+
+???? ??? 26 ??? 2026 ???? 1:59??.?., ?/? Nikolaos Tziokas <
+nikos.tziokas at gmail.com> ??????:
+
+> I am downscaling (i.e., increasing the spatial resolution) VIIRS nighttime
+> lights imagery. The transfer function between the coarse and fine
+> resolution is approximated by a Gaussian filter whose width
+>
+> In the cross?track direction (left?right), the sigma scales as
+>
+> ?(?) = ?_0/cos(^2)?
+>
+> where *?* is the per?pixel viewing angle. The filter should act only
+> horizontally (along x), pooling all y?values within the column uniformly.
+> My earlier attempt simply multiplied the raster values by 1/cos(^2)? but I
+> now realise the operation is a *convolution* with a 1?D Gaussian kernel
+> whose width depends on the column?s *?*.
+>
+> Given a value raster x and an angle raster theta with identical
+> dimensions, what is the correct and efficient way in R (using terra) to
+> apply a 1?D Gaussian blur on each row, where the kernel?s standard
+> deviation is determined by theta at the central pixel?s column?
+>
+> *Current (incomplete) attempt:*
+>
+> library(terra)
+> # ---- 1. Create example rasters ----
+> set.seed(42)
+> nrows <- 5
+> ncols <- 200
+>
+> x <- rast(nrows = nrows, ncols = ncols, vals = runif(nrows * ncols))
+> theta_vals <- rep(seq(20, 26, length.out = ncols), each = nrows)
+> theta <- rast(nrows = nrows, ncols = ncols, vals = theta_vals)
+> # ---- 2. Spatially varying Gaussian blur function ----# sigma0 = standard deviation of Gaussian at nadir (in pixel units)# theta: raster of angles in degrees (same dimensions as x)
+> anisotropic_blur <- function(x, theta, sigma0 = 10) {
+>   # Convert to matrix (rows = y, cols = x)
+>   mat_x <- as.matrix(x, wide = TRUE)
+>   mat_angle <- as.matrix(theta, wide = TRUE)  # same dimensions
+>   nr <- nrow(mat_x)
+>   nc <- ncol(mat_x)
+>   mat_out <- matrix(NA_real_, nr, nc)
+>
+>   # For each row, apply convolution with column-dependent sigma
+>   for (r in 1:nr) {
+>     row_vals <- mat_x[r, ]
+>     for (c in 1:nc) {
+>       theta_c <- mat_angle[r, c]               # angle at this pixel (degrees)
+>       sigma <- sigma0 / (cos(theta_c * pi/180)^2)
+>       halfwin <- ceiling(3 * sigma)            # kernel half?width
+>       col_idx <- max(1, c - halfwin) : min(nc, c + halfwin)
+>       dist <- abs(col_idx - c)
+>       w <- exp(-0.5 * (dist / sigma)^2)
+>       w <- w / sum(w)
+>       mat_out[r, c] <- sum(w * row_vals[col_idx])
+>     }
+>   }
+>   # Return as raster with same properties
+>   rast(mat_out, crs = crs(x), ext = ext(x))}
+> # ---- 3. Apply the filter ----
+> x_blurred <- anisotropic_blur(x, theta, sigma0 = 10)
+> # ---- 4. Plot side?by?side ----
+> par(mfrow = c(1, 2))
+> plot(x, main = "Original predictor")
+> plot(x_blurred, main = expression("Filtered: Gaussian "*sigma*" = "*sigma[0]/cos^2*theta))
+>
+>  I need to actually perform a 1?D Gaussian convolution along rows with a
+> column?varying (\sigma). What is an idiomatic way to do this in terra?
+>
+>
+
+-- 
+Tziokas Nikolaos
+Post-doctoral Researcher at Luxembourg Institute of Science and Technology
+
+Tel:(+30)6974365780
+LinkedIn <http://linkedin.com/in/nikolaos-tziokas-896081130>
+
+	[[alternative HTML version deleted]]
+
+
+From rodr|gue@@m@ch@do@hugo @end|ng |rom gm@||@com  Tue Jun  2 13:12:02 2026
+From: rodr|gue@@m@ch@do@hugo @end|ng |rom gm@||@com (Hugo Rodrigues)
+Date: Tue, 2 Jun 2026 07:12:02 -0400
+Subject: [R-sig-Geo] 
+ =?utf-8?q?How_to_apply_a_geometric_anisotropic_filte?=
+ =?utf-8?q?r_1/cos=C2=B2=28theta=29_to_a_raster=3F?=
+In-Reply-To: <CAGg5H0aK9pFY9FmZqsh_pkPX_rSEW4owFg=atf_G5UOr2V2aFg@mail.gmail.com>
+References: <CAGg5H0auRT8Z59Y7v1U9pHbAXdY7dJij0VOkuAGPyMezGRk1rg@mail.gmail.com>
+ <CAGg5H0aK9pFY9FmZqsh_pkPX_rSEW4owFg=atf_G5UOr2V2aFg@mail.gmail.com>
+Message-ID: <BBC6E2AC-167C-4291-9939-73F128F2A4FE@gmail.com>
+
+?
+
+Hello Nikos.
+
+I?ve prepared this small example to illustrate the issue.
+
+I hope it helps!
+
+Hugo Rodrigues
+Postdoctoral Associate
+Range Cattle Research and Education Center
+Institute of Food and Agricultural Sciences
+Ph.D. Soil Science | M.Sc. Soil Science | M.Sc. Applied Statistics | B.Sc. Geography
++1 (352) 2464617?- mobile <tel://+13522464617>
++1 (352) 21943123?- office <tel://135221943123>
+rodrigues.h at ufl.edu <mailto:rodrigues.h at ufl.edu>
+Google Scholar <https://scholar.google.com/citations?hl=en&user=vu-Ka7wAAAAJ&view_op=list_works&sortby=pubdate>
+ResearchGate <https://www.researchgate.net/profile/Hugo-Rodrigues-12?ev=hdr_xprf>
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20260602/1dd741d3/attachment.html>
+
+-------------- next part --------------
+A non-text attachment was scrubbed...
+Name: Anisotropic_blur.R
+Type: application/octet-stream
+Size: 19976 bytes
+Desc: not available
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20260602/1dd741d3/attachment.obj>
+
+-------------- next part --------------
+An HTML attachment was scrubbed...
+URL: <https://stat.ethz.ch/pipermail/r-sig-geo/attachments/20260602/1dd741d3/attachment-0001.html>
+
+From h@r|@@@@@||@ @end|ng |rom tr@n@m|tt|ng@c|ence@com  Thu Jun 25 12:17:46 2026
+From: h@r|@@@@@||@ @end|ng |rom tr@n@m|tt|ng@c|ence@com (Haris Saslis - Transmitting Science)
+Date: Thu, 25 Jun 2026 12:17:46 +0200
+Subject: [R-sig-Geo] Fee waivers for courses
+Message-ID: <76b464059c80bf7a0c522dbc31b82a25@transmittingscience.com>
+
+Dear colleagues,
+
+Transmitting Science is offering fee waivers for the following courses 
+that are open for registration:
+
+	* QGIS: An Introduction to Geographic Information Systems (GIS)
+https://www.transmittingscience.com/courses/ecology/qgis-an-introduction-to-geographic-information-systems/
+
+	* Species occurrence data download and cleaning with R
+https://www.transmittingscience.com/courses/ecology/species-occurrence-data-download-and-cleaning-with-r
+
+	* Environmental variables: how to download and process them with R
+https://www.transmittingscience.com/courses/ecology/environmental-variables-how-to-obtain-and-process-them-with-r/
+	* Mapas y operaciones espaciales (SIG) con R
+https://www.transmittingscience.com/courses/ecology/mapas-y-analisis-espacial-sig-con-r/
+
+To apply for a fee waiver, please visit 
+https://www.transmittingscience.com/funding/fee-waiver/
+
+Best wishes,
+
+Haris
+
+-- 
+Haris Saslis, PhD
+Course Coordinator
+Transmitting Science
+www.transmittingscience.com [1]
+
+
+
+Links:
+------
+[1] http://www.transmittingscience.com
+	[[alternative HTML version deleted]]
+
+
+From Roger@B|v@nd @end|ng |rom nhh@no  Thu Jun 25 16:33:18 2026
+From: Roger@B|v@nd @end|ng |rom nhh@no (Roger Bivand)
+Date: Thu, 25 Jun 2026 16:33:18 +0200 (CEST)
+Subject: [R-sig-Geo] useR! submissions - request for comment
+In-Reply-To: <SV0P279MB0475A875D232DFDF59E49CB9EE45A@SV0P279MB0475.NORP279.PROD.OUTLOOK.COM>
+References: <SV0P279MB0475A875D232DFDF59E49CB9EE45A@SV0P279MB0475.NORP279.PROD.OUTLOOK.COM>
+Message-ID: <3a85327-ac60-68db-9adb-0fcafa27eeb@reclus2.nhh.no>
+
+On Fri, 13 Mar 2026, Roger Bivand via R-sig-Geo wrote:
+
+> Tomorrow is the extended deadline for useR! 2026 submissions. I'd like to encourage those with ideas that could benefit from discussion in Warsaw in early July at useR! to join in.
+>
+> Specifically, I am considering submitting a talk/lightning talk/poster 
+> on the imminent confusion that will hit us when NAD83 is replaced by 
+> modernized NSRS (see ia. 
+> https://www.ngs.noaa.gov/datums/newdatums/index.shtml, 
+> https://www.esri.com/about/newsroom/arcuser/moving-from-static-spatial-reference-systems-in-2022) 
+> in North America, and the ETRS89 standard being considered as a datum 
+> ensemble in Europe (see ia. 
+> https://evrs.bkg.bund.de/Subsites/EVRS/EN/Results_and_Products/NationalRealizationsETRS89/national_realization.html). 
+> This hit PROJ with the updated EPSG database released with PROJ 9.8.0 
+> (thread starting 
+> https://lists.osgeo.org/pipermail/proj/2026-March/012026.html).
+>
+> The changes are going to affect all geospatial software relying on 
+> position whether we like it ot not, even if the changes are single-digit 
+> metres or less. So affecting anything linking to GDAL/PROJ, and packages 
+> using terra, sf, gdalraster, vapour, gdalcubes.
+>
+> I would like to ask for help in submitting (by tomorrow evening 14 
+> March) and for some input to a "task force" to try to prepare for 
+> oncoming changes. Please rely on-list or directly by email - I have set 
+> up a github repo 
+> https://rsbivand.github.io/new_ref_systems/, 
+> so issues can also be used by github users. Please tell me not to worry 
+> and drop this concern, or consider helping to see how to move forward, 
+> including talking about this at useR!.
+>
+
+Draft presentation at 
+https://events.digital-research.academy/event/109/timetable/?view=standard#216-is-here-still-where-it-was
+https://events.digital-research.academy/event/109/contributions/545/attachments/49/158/bivand_useR26_pres1.pdf
+and in the github repo.
+
+Comments welcome (but not that 80 slides are too many for 15 minutes)!
+
+Roger
+
+> Hoping for contributions,
+>
+> Roger
+>
+> --
+> Roger Bivand
+> Emeritus Professor
+> Norwegian School of Economics
+> Postboks 3490 Ytre Sandviken, 5045 Bergen, Norway
+> Roger.Bivand at nhh.no
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+>
+
+-- 
+Roger Bivand
+Emeritus Professor
+Department of Economics, Norwegian School of Economics,
+Postboks 3490 Ytre Sandviken, 5045 Bergen, Norway.
+e-mail: Roger.Bivand at nhh.no
+
+
+From Roger@B|v@nd @end|ng |rom nhh@no  Thu Jun 25 18:49:21 2026
+From: Roger@B|v@nd @end|ng |rom nhh@no (Roger Bivand)
+Date: Thu, 25 Jun 2026 16:49:21 +0000
+Subject: [R-sig-Geo] useR! submissions - request for comment
+In-Reply-To: <3a85327-ac60-68db-9adb-0fcafa27eeb@reclus2.nhh.no>
+References: <SV0P279MB0475A875D232DFDF59E49CB9EE45A@SV0P279MB0475.NORP279.PROD.OUTLOOK.COM>
+ <3a85327-ac60-68db-9adb-0fcafa27eeb@reclus2.nhh.no>
+Message-ID: <SV0P279MB0475193F8F7809BAC4BBF859EEEC2@SV0P279MB0475.NORP279.PROD.OUTLOOK.COM>
+
+A revised version will be posted soon thanks to helpful input and clarifications.
+
+Roger
+
+---
+Roger Bivand
+Emeritus Professor
+Department of Economics
+Norwegian School of Economics, Bergen, Norway
+
+________________________________
+Fra: R-sig-Geo <r-sig-geo-bounces at r-project.org> p? vegne av Roger Bivand via R-sig-Geo <r-sig-geo at r-project.org>
+Sendt: torsdag, juni 25, 2026 4:35:11 p.m.
+Til: r-sig-geo <r-sig-geo at r-project.org>
+Emne: Re: [R-sig-Geo] useR! submissions - request for comment
+
+On Fri, 13 Mar 2026, Roger Bivand via R-sig-Geo wrote:
+
+> Tomorrow is the extended deadline for useR! 2026 submissions. I'd like to encourage those with ideas that could benefit from discussion in Warsaw in early July at useR! to join in.
+>
+> Specifically, I am considering submitting a talk/lightning talk/poster
+> on the imminent confusion that will hit us when NAD83 is replaced by
+> modernized NSRS (see ia.
+> https://www.ngs.noaa.gov/datums/newdatums/index.shtml<https://www.ngs.noaa.gov/datums/newdatums/index.shtml>,
+> https://www.esri.com/about/newsroom/arcuser/moving-from-static-spatial-reference-systems-in-2022)<https://www.esri.com/about/newsroom/arcuser/moving-from-static-spatial-reference-systems-in-2022>
+> in North America, and the ETRS89 standard being considered as a datum
+> ensemble in Europe (see ia.
+> https://evrs.bkg.bund.de/Subsites/EVRS/EN/Results_and_Products/NationalRealizationsETRS89/national_realization.html)<https://evrs.bkg.bund.de/Subsites/EVRS/EN/Results_and_Products/NationalRealizationsETRS89/national_realization.html>.
+> This hit PROJ with the updated EPSG database released with PROJ 9.8.0
+> (thread starting
+> https://lists.osgeo.org/pipermail/proj/2026-March/012026.html)<https://lists.osgeo.org/pipermail/proj/2026-March/012026.html>.
+>
+> The changes are going to affect all geospatial software relying on
+> position whether we like it ot not, even if the changes are single-digit
+> metres or less. So affecting anything linking to GDAL/PROJ, and packages
+> using terra, sf, gdalraster, vapour, gdalcubes.
+>
+> I would like to ask for help in submitting (by tomorrow evening 14
+> March) and for some input to a "task force" to try to prepare for
+> oncoming changes. Please rely on-list or directly by email - I have set
+> up a github repo
+> https://rsbivand.github.io/new_ref_systems/<https://rsbivand.github.io/new_ref_systems/>,
+> so issues can also be used by github users. Please tell me not to worry
+> and drop this concern, or consider helping to see how to move forward,
+> including talking about this at useR!.
+>
+
+Draft presentation at
+https://events.digital-research.academy/event/109/timetable/?view=standard#216-is-here-still-where-it-was<https://events.digital-research.academy/event/109/timetable/?view=standard#216-is-here-still-where-it-was>
+https://events.digital-research.academy/event/109/contributions/545/attachments/49/158/bivand_useR26_pres1.pdf<https://events.digital-research.academy/event/109/contributions/545/attachments/49/158/bivand_useR26_pres1.pdf>
+and in the github repo.
+
+Comments welcome (but not that 80 slides are too many for 15 minutes)!
+
+Roger
+
+> Hoping for contributions,
+>
+> Roger
+>
+> --
+> Roger Bivand
+> Emeritus Professor
+> Norwegian School of Economics
+> Postboks 3490 Ytre Sandviken, 5045 Bergen, Norway
+> Roger.Bivand at nhh.no
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo<https://stat.ethz.ch/mailman/listinfo/r-sig-geo>
+>
+
+--
+Roger Bivand
+Emeritus Professor
+Department of Economics, Norwegian School of Economics,
+Postboks 3490 Ytre Sandviken, 5045 Bergen, Norway.
+e-mail: Roger.Bivand at nhh.no
+
+_______________________________________________
+R-sig-Geo mailing list
+R-sig-Geo at r-project.org
+https://stat.ethz.ch/mailman/listinfo/r-sig-geo<https://stat.ethz.ch/mailman/listinfo/r-sig-geo>
+
+
+	[[alternative HTML version deleted]]
+
+
+From md@umner @end|ng |rom gm@||@com  Fri Jun 26 12:16:49 2026
+From: md@umner @end|ng |rom gm@||@com (Michael Sumner)
+Date: Fri, 26 Jun 2026 20:16:49 +1000
+Subject: [R-sig-Geo] Icechunk is coming - blog post
+Message-ID: <CAAcGz9-ScEu6LMYNd7wqdbd41Gn1FQ5W0PTfJDgy++7g+iHVEQ@mail.gmail.com>
+
+Icechunk is coming - versioned cloud-native Zarr, GDAL, and R
+
+https://www.hypertidy.org/posts/2026-06-26_icechunk-is-coming/
+
+TLDR:
+
+GDAL 3.14 (milestoned for ~November 2026) adds a read-only Icechunk driver
+and '/vsiicechunk/' virtual filesystem, giving R users access to versioned
+cloud-native Zarr stores through GDAL supported packages. The post walks
+through reading a 14TB ECMWF AIFS forecast store via gdal mdim info and its
+R equivalents,  unpacks GDAL's VSI path model (auth, addressing, endpoints,
+and chained prefixes like '/vsizip//vsicurl/') as an alternative to
+Icechunk-Python.  It concludes with a brief look at a GDAL xarray backend
+and some cross-language questions, with a nod to the growing R Zarr
+landscape (pizzarr, Rarr, zarr, CopernicusMarine).
+
+Cheers, Mike
+
+-- 
+Michael Sumner
+Research Software Engineer
+Australian Antarctic Division
+Hobart, Australia
+0438489030
+e-mail: mdsumner at gmail.com
+
+	[[alternative HTML version deleted]]
+
+
+From Roger@B|v@nd @end|ng |rom nhh@no  Sat Jun 27 16:46:25 2026
+From: Roger@B|v@nd @end|ng |rom nhh@no (Roger Bivand)
+Date: Sat, 27 Jun 2026 14:46:25 +0000
+Subject: [R-sig-Geo] useR! submissions - request for comment
+In-Reply-To: <SV0P279MB0475193F8F7809BAC4BBF859EEEC2@SV0P279MB0475.NORP279.PROD.OUTLOOK.COM>
+References: <SV0P279MB0475A875D232DFDF59E49CB9EE45A@SV0P279MB0475.NORP279.PROD.OUTLOOK.COM>
+ <3a85327-ac60-68db-9adb-0fcafa27eeb@reclus2.nhh.no>
+ <SV0P279MB0475193F8F7809BAC4BBF859EEEC2@SV0P279MB0475.NORP279.PROD.OUTLOOK.COM>
+Message-ID: <SV0P279MB0475ECA496B1A3CF5705DFDFEEEA2@SV0P279MB0475.NORP279.PROD.OUTLOOK.COM>
+
+New version online now.
+
+Further comments still very welcome! And maybe forward to Python/Julia PROJ-interface maintainers?
+
+Roger
+
+--
+Roger Bivand
+Emeritus Professor
+Norwegian School of Economics
+Postboks 3490 Ytre Sandviken, 5045 Bergen, Norway
+Roger.Bivand at nhh.no
+
+
+________________________________________
+From: Roger Bivand <Roger.Bivand at nhh.no>
+Sent: 25 June 2026 18:49
+To: r-sig-geo; Roger Bivand
+Subject: Re: [R-sig-Geo] useR! submissions - request for comment
+
+A revised version will be posted soon thanks to helpful input and clarifications.
+
+Roger
+
+---
+Roger Bivand
+Emeritus Professor
+Department of Economics
+Norwegian School of Economics, Bergen, Norway
+
+________________________________
+Fra: R-sig-Geo <r-sig-geo-bounces at r-project.org> p? vegne av Roger Bivand via R-sig-Geo <r-sig-geo at r-project.org>
+Sendt: torsdag, juni 25, 2026 4:35:11 p.m.
+Til: r-sig-geo <r-sig-geo at r-project.org>
+Emne: Re: [R-sig-Geo] useR! submissions - request for comment
+
+On Fri, 13 Mar 2026, Roger Bivand via R-sig-Geo wrote:
+
+> Tomorrow is the extended deadline for useR! 2026 submissions. I'd like to encourage those with ideas that could benefit from discussion in Warsaw in early July at useR! to join in.
+>
+> Specifically, I am considering submitting a talk/lightning talk/poster
+> on the imminent confusion that will hit us when NAD83 is replaced by
+> modernized NSRS (see ia.
+> https://www.ngs.noaa.gov/datums/newdatums/index.shtml<https://www.ngs.noaa.gov/datums/newdatums/index.shtml>,
+> https://www.esri.com/about/newsroom/arcuser/moving-from-static-spatial-reference-systems-in-2022)<https://www.esri.com/about/newsroom/arcuser/moving-from-static-spatial-reference-systems-in-2022>
+> in North America, and the ETRS89 standard being considered as a datum
+> ensemble in Europe (see ia.
+> https://evrs.bkg.bund.de/Subsites/EVRS/EN/Results_and_Products/NationalRealizationsETRS89/national_realization.html)<https://evrs.bkg.bund.de/Subsites/EVRS/EN/Results_and_Products/NationalRealizationsETRS89/national_realization.html>.
+> This hit PROJ with the updated EPSG database released with PROJ 9.8.0
+> (thread starting
+> https://lists.osgeo.org/pipermail/proj/2026-March/012026.html)<https://lists.osgeo.org/pipermail/proj/2026-March/012026.html>.
+>
+> The changes are going to affect all geospatial software relying on
+> position whether we like it ot not, even if the changes are single-digit
+> metres or less. So affecting anything linking to GDAL/PROJ, and packages
+> using terra, sf, gdalraster, vapour, gdalcubes.
+>
+> I would like to ask for help in submitting (by tomorrow evening 14
+> March) and for some input to a "task force" to try to prepare for
+> oncoming changes. Please rely on-list or directly by email - I have set
+> up a github repo
+> https://rsbivand.github.io/new_ref_systems/<https://rsbivand.github.io/new_ref_systems/>,
+> so issues can also be used by github users. Please tell me not to worry
+> and drop this concern, or consider helping to see how to move forward,
+> including talking about this at useR!.
+>
+
+Draft presentation at
+https://events.digital-research.academy/event/109/timetable/?view=standard#216-is-here-still-where-it-was<https://events.digital-research.academy/event/109/timetable/?view=standard#216-is-here-still-where-it-was>
+https://events.digital-research.academy/event/109/contributions/545/attachments/49/158/bivand_useR26_pres1.pdf<https://events.digital-research.academy/event/109/contributions/545/attachments/49/158/bivand_useR26_pres1.pdf>
+and in the github repo.
+
+Comments welcome (but not that 80 slides are too many for 15 minutes)!
+
+Roger
+
+> Hoping for contributions,
+>
+> Roger
+>
+> --
+> Roger Bivand
+> Emeritus Professor
+> Norwegian School of Economics
+> Postboks 3490 Ytre Sandviken, 5045 Bergen, Norway
+> Roger.Bivand at nhh.no
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo<https://stat.ethz.ch/mailman/listinfo/r-sig-geo>
+>
+
+--
+Roger Bivand
+Emeritus Professor
+Department of Economics, Norwegian School of Economics,
+Postboks 3490 Ytre Sandviken, 5045 Bergen, Norway.
+e-mail: Roger.Bivand at nhh.no
+
+_______________________________________________
+R-sig-Geo mailing list
+R-sig-Geo at r-project.org
+https://stat.ethz.ch/mailman/listinfo/r-sig-geo<https://stat.ethz.ch/mailman/listinfo/r-sig-geo>
+
+
+From g||berto@c@m@r@ @end|ng |rom |npe@br  Sat Jun 27 17:06:36 2026
+From: g||berto@c@m@r@ @end|ng |rom |npe@br (Gilberto Camara)
+Date: Sat, 27 Jun 2026 12:06:36 -0300
+Subject: [R-sig-Geo] useR! submissions - request for comment
+In-Reply-To: <SV0P279MB0475ECA496B1A3CF5705DFDFEEEA2@SV0P279MB0475.NORP279.PROD.OUTLOOK.COM>
+References: <SV0P279MB0475A875D232DFDF59E49CB9EE45A@SV0P279MB0475.NORP279.PROD.OUTLOOK.COM>
+ <3a85327-ac60-68db-9adb-0fcafa27eeb@reclus2.nhh.no>
+ <SV0P279MB0475193F8F7809BAC4BBF859EEEC2@SV0P279MB0475.NORP279.PROD.OUTLOOK.COM>
+ <SV0P279MB0475ECA496B1A3CF5705DFDFEEEA2@SV0P279MB0475.NORP279.PROD.OUTLOOK.COM>
+Message-ID: <DE44F378-2C9E-481F-A4A6-94C94EDF37A9@inpe.br>
+
+Dear Roger
+
+Thanks for sharing the slides. I learned a lot from the information provided. Given the importance of the issue, I hope you find the time to transform the slides into a full-fledged text that could be published online and/or in a journal. I surmise that the non-profit ?Journal of Spatial Information Science? could be a suitable venue. 
+
+By way of suggestion, I feel the tone of the take-home points could maybe be more direct. What I take to be your main message ("The EPSG database is where much of the coordination of these adaptations has to take
+place, and EPSG/PROJ cooperation can provide both with useful experience of what works in practice?) should perhaps be placed on its own slide. The other considerations in the same slide are more generic; mixing them together dilutes the main message. 
+
+Wonderful work!
+
+Best regards
+Gilberto
+
+============================
+Prof Dr Gilberto Camara
+Senior Researcher
+Getulio Vargas Foundation (FGV)
+National Institute for Space Research (INPE), Brazil
+https://gilbertocamara.org/
+=============================
+
+
+
+
+
+> On 27 Jun 2026, at 11:46, Roger Bivand via R-sig-Geo <r-sig-geo at r-project.org> wrote:
+> 
+> New version online now.
+> 
+> Further comments still very welcome! And maybe forward to Python/Julia PROJ-interface maintainers?
+> 
+> Roger
+> 
+> --
+> Roger Bivand
+> Emeritus Professor
+> Norwegian School of Economics
+> Postboks 3490 Ytre Sandviken, 5045 Bergen, Norway
+> Roger.Bivand at nhh.no
+> 
+> 
+> ________________________________________
+> From: Roger Bivand <Roger.Bivand at nhh.no>
+> Sent: 25 June 2026 18:49
+> To: r-sig-geo; Roger Bivand
+> Subject: Re: [R-sig-Geo] useR! submissions - request for comment
+> 
+> A revised version will be posted soon thanks to helpful input and clarifications.
+> 
+> Roger
+> 
+> ---
+> Roger Bivand
+> Emeritus Professor
+> Department of Economics
+> Norwegian School of Economics, Bergen, Norway
+> 
+> ________________________________
+> Fra: R-sig-Geo <r-sig-geo-bounces at r-project.org> p? vegne av Roger Bivand via R-sig-Geo <r-sig-geo at r-project.org>
+> Sendt: torsdag, juni 25, 2026 4:35:11 p.m.
+> Til: r-sig-geo <r-sig-geo at r-project.org>
+> Emne: Re: [R-sig-Geo] useR! submissions - request for comment
+> 
+> On Fri, 13 Mar 2026, Roger Bivand via R-sig-Geo wrote:
+> 
+>> Tomorrow is the extended deadline for useR! 2026 submissions. I'd like to encourage those with ideas that could benefit from discussion in Warsaw in early July at useR! to join in.
+>> 
+>> Specifically, I am considering submitting a talk/lightning talk/poster
+>> on the imminent confusion that will hit us when NAD83 is replaced by
+>> modernized NSRS (see ia.
+>> https://www.ngs.noaa.gov/datums/newdatums/index.shtml<https://www.ngs.noaa.gov/datums/newdatums/index.shtml>,
+>> https://www.esri.com/about/newsroom/arcuser/moving-from-static-spatial-reference-systems-in-2022)<https://www.esri.com/about/newsroom/arcuser/moving-from-static-spatial-reference-systems-in-2022>
+>> in North America, and the ETRS89 standard being considered as a datum
+>> ensemble in Europe (see ia.
+>> https://evrs.bkg.bund.de/Subsites/EVRS/EN/Results_and_Products/NationalRealizationsETRS89/national_realization.html)<https://evrs.bkg.bund.de/Subsites/EVRS/EN/Results_and_Products/NationalRealizationsETRS89/national_realization.html>.
+>> This hit PROJ with the updated EPSG database released with PROJ 9.8.0
+>> (thread starting
+>> https://lists.osgeo.org/pipermail/proj/2026-March/012026.html)<https://lists.osgeo.org/pipermail/proj/2026-March/012026.html>.
+>> 
+>> The changes are going to affect all geospatial software relying on
+>> position whether we like it ot not, even if the changes are single-digit
+>> metres or less. So affecting anything linking to GDAL/PROJ, and packages
+>> using terra, sf, gdalraster, vapour, gdalcubes.
+>> 
+>> I would like to ask for help in submitting (by tomorrow evening 14
+>> March) and for some input to a "task force" to try to prepare for
+>> oncoming changes. Please rely on-list or directly by email - I have set
+>> up a github repo
+>> https://rsbivand.github.io/new_ref_systems/<https://rsbivand.github.io/new_ref_systems/>,
+>> so issues can also be used by github users. Please tell me not to worry
+>> and drop this concern, or consider helping to see how to move forward,
+>> including talking about this at useR!.
+>> 
+> 
+> Draft presentation at
+> https://events.digital-research.academy/event/109/timetable/?view=standard#216-is-here-still-where-it-was<https://events.digital-research.academy/event/109/timetable/?view=standard#216-is-here-still-where-it-was>
+> https://events.digital-research.academy/event/109/contributions/545/attachments/49/158/bivand_useR26_pres1.pdf<https://events.digital-research.academy/event/109/contributions/545/attachments/49/158/bivand_useR26_pres1.pdf>
+> and in the github repo.
+> 
+> Comments welcome (but not that 80 slides are too many for 15 minutes)!
+> 
+> Roger
+> 
+>> Hoping for contributions,
+>> 
+>> Roger
+>> 
+>> --
+>> Roger Bivand
+>> Emeritus Professor
+>> Norwegian School of Economics
+>> Postboks 3490 Ytre Sandviken, 5045 Bergen, Norway
+>> Roger.Bivand at nhh.no
+>> _______________________________________________
+>> R-sig-Geo mailing list
+>> R-sig-Geo at r-project.org
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-geo<https://stat.ethz.ch/mailman/listinfo/r-sig-geo>
+>> 
+> 
+> --
+> Roger Bivand
+> Emeritus Professor
+> Department of Economics, Norwegian School of Economics,
+> Postboks 3490 Ytre Sandviken, 5045 Bergen, Norway.
+> e-mail: Roger.Bivand at nhh.no
+> 
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo<https://stat.ethz.ch/mailman/listinfo/r-sig-geo>
+> 
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+
+
+From Roger@B|v@nd @end|ng |rom nhh@no  Sat Jun 27 18:10:45 2026
+From: Roger@B|v@nd @end|ng |rom nhh@no (Roger Bivand)
+Date: Sat, 27 Jun 2026 16:10:45 +0000
+Subject: [R-sig-Geo] useR! submissions - request for comment
+In-Reply-To: <DE44F378-2C9E-481F-A4A6-94C94EDF37A9@inpe.br>
+References: <SV0P279MB0475A875D232DFDF59E49CB9EE45A@SV0P279MB0475.NORP279.PROD.OUTLOOK.COM>
+ <3a85327-ac60-68db-9adb-0fcafa27eeb@reclus2.nhh.no>
+ <SV0P279MB0475193F8F7809BAC4BBF859EEEC2@SV0P279MB0475.NORP279.PROD.OUTLOOK.COM>
+ <SV0P279MB0475ECA496B1A3CF5705DFDFEEEA2@SV0P279MB0475.NORP279.PROD.OUTLOOK.COM>
+ <DE44F378-2C9E-481F-A4A6-94C94EDF37A9@inpe.br>
+Message-ID: <SV0P279MB0475EE870FC69CC80130485EEEEA2@SV0P279MB0475.NORP279.PROD.OUTLOOK.COM>
+
+Thanks! I'll take care to stress that point in presenting. And thanks for pointing to JoSIS! Are you aware of the current status in Brasil? I haven't looked at all carefully where issues have not yet surfaced in PROJ.
+
+Roger
+
+---
+Roger Bivand
+Emeritus Professor
+Department of Economics
+Norwegian School of Economics, Bergen, Norway
+
+________________________________
+Fra: Gilberto Camara <gilberto.camara at inpe.br>
+Sendt: l?rdag, juni 27, 2026 5:07:10 p.m.
+Til: Roger Bivand <Roger.Bivand at nhh.no>
+Kopi: r-sig-geo <r-sig-geo at r-project.org>
+Emne: Re: [R-sig-Geo] useR! submissions - request for comment
+
+Dear Roger
+
+Thanks for sharing the slides. I learned a lot from the information provided. Given the importance of the issue, I hope you find the time to transform the slides into a full-fledged text that could be published online and/or in a journal. I surmise that the non-profit ?Journal of Spatial Information Science? could be a suitable venue.
+
+By way of suggestion, I feel the tone of the take-home points could maybe be more direct. What I take to be your main message ("The EPSG database is where much of the coordination of these adaptations has to take
+place, and EPSG/PROJ cooperation can provide both with useful experience of what works in practice?) should perhaps be placed on its own slide. The other considerations in the same slide are more generic; mixing them together dilutes the main message.
+
+Wonderful work!
+
+Best regards
+Gilberto
+
+============================
+Prof Dr Gilberto Camara
+Senior Researcher
+Getulio Vargas Foundation (FGV)
+National Institute for Space Research (INPE), Brazil
+https://gilbertocamara.org/<https://gilbertocamara.org/>
+=============================
+
+
+
+
+
+> On 27 Jun 2026, at 11:46, Roger Bivand via R-sig-Geo <r-sig-geo at r-project.org> wrote:
+>
+> New version online now.
+>
+> Further comments still very welcome! And maybe forward to Python/Julia PROJ-interface maintainers?
+>
+> Roger
+>
+> --
+> Roger Bivand
+> Emeritus Professor
+> Norwegian School of Economics
+> Postboks 3490 Ytre Sandviken, 5045 Bergen, Norway
+> Roger.Bivand at nhh.no
+>
+>
+> ________________________________________
+> From: Roger Bivand <Roger.Bivand at nhh.no>
+> Sent: 25 June 2026 18:49
+> To: r-sig-geo; Roger Bivand
+> Subject: Re: [R-sig-Geo] useR! submissions - request for comment
+>
+> A revised version will be posted soon thanks to helpful input and clarifications.
+>
+> Roger
+>
+> ---
+> Roger Bivand
+> Emeritus Professor
+> Department of Economics
+> Norwegian School of Economics, Bergen, Norway
+>
+> ________________________________
+> Fra: R-sig-Geo <r-sig-geo-bounces at r-project.org> p? vegne av Roger Bivand via R-sig-Geo <r-sig-geo at r-project.org>
+> Sendt: torsdag, juni 25, 2026 4:35:11 p.m.
+> Til: r-sig-geo <r-sig-geo at r-project.org>
+> Emne: Re: [R-sig-Geo] useR! submissions - request for comment
+>
+> On Fri, 13 Mar 2026, Roger Bivand via R-sig-Geo wrote:
+>
+>> Tomorrow is the extended deadline for useR! 2026 submissions. I'd like to encourage those with ideas that could benefit from discussion in Warsaw in early July at useR! to join in.
+>>
+>> Specifically, I am considering submitting a talk/lightning talk/poster
+>> on the imminent confusion that will hit us when NAD83 is replaced by
+>> modernized NSRS (see ia.
+>> https://www.ngs.noaa.gov/datums/newdatums/index.shtml<https://www.ngs.noaa.gov/datums/newdatums/index.shtml><https://www.ngs.noaa.gov/datums/newdatums/index.shtml>,
+>> https://www.esri.com/about/newsroom/arcuser/moving-from-static-spatial-reference-systems-in-2022)<https://www.esri.com/about/newsroom/arcuser/moving-from-static-spatial-reference-systems-in-2022><https://www.esri.com/about/newsroom/arcuser/moving-from-static-spatial-reference-systems-in-2022>
+>> in North America, and the ETRS89 standard being considered as a datum
+>> ensemble in Europe (see ia.
+>> https://evrs.bkg.bund.de/Subsites/EVRS/EN/Results_and_Products/NationalRealizationsETRS89/national_realization.html)<https://evrs.bkg.bund.de/Subsites/EVRS/EN/Results_and_Products/NationalRealizationsETRS89/national_realization.html><https://evrs.bkg.bund.de/Subsites/EVRS/EN/Results_and_Products/NationalRealizationsETRS89/national_realization.html>.
+>> This hit PROJ with the updated EPSG database released with PROJ 9.8.0
+>> (thread starting
+>> https://lists.osgeo.org/pipermail/proj/2026-March/012026.html)<https://lists.osgeo.org/pipermail/proj/2026-March/012026.html><https://lists.osgeo.org/pipermail/proj/2026-March/012026.html>.
+>>
+>> The changes are going to affect all geospatial software relying on
+>> position whether we like it ot not, even if the changes are single-digit
+>> metres or less. So affecting anything linking to GDAL/PROJ, and packages
+>> using terra, sf, gdalraster, vapour, gdalcubes.
+>>
+>> I would like to ask for help in submitting (by tomorrow evening 14
+>> March) and for some input to a "task force" to try to prepare for
+>> oncoming changes. Please rely on-list or directly by email - I have set
+>> up a github repo
+>> https://rsbivand.github.io/new_ref_systems/<https://rsbivand.github.io/new_ref_systems/><https://rsbivand.github.io/new_ref_systems/>,
+>> so issues can also be used by github users. Please tell me not to worry
+>> and drop this concern, or consider helping to see how to move forward,
+>> including talking about this at useR!.
+>>
+>
+> Draft presentation at
+> https://events.digital-research.academy/event/109/timetable/?view=standard#216-is-here-still-where-it-was<https://events.digital-research.academy/event/109/timetable/?view=standard#216-is-here-still-where-it-was><https://events.digital-research.academy/event/109/timetable/?view=standard#216-is-here-still-where-it-was>
+> https://events.digital-research.academy/event/109/contributions/545/attachments/49/158/bivand_useR26_pres1.pdf<https://events.digital-research.academy/event/109/contributions/545/attachments/49/158/bivand_useR26_pres1.pdf><https://events.digital-research.academy/event/109/contributions/545/attachments/49/158/bivand_useR26_pres1.pdf>
+> and in the github repo.
+>
+> Comments welcome (but not that 80 slides are too many for 15 minutes)!
+>
+> Roger
+>
+>> Hoping for contributions,
+>>
+>> Roger
+>>
+>> --
+>> Roger Bivand
+>> Emeritus Professor
+>> Norwegian School of Economics
+>> Postboks 3490 Ytre Sandviken, 5045 Bergen, Norway
+>> Roger.Bivand at nhh.no
+>> _______________________________________________
+>> R-sig-Geo mailing list
+>> R-sig-Geo at r-project.org
+>> https://stat.ethz.ch/mailman/listinfo/r-sig-geo<https://stat.ethz.ch/mailman/listinfo/r-sig-geo><https://stat.ethz.ch/mailman/listinfo/r-sig-geo>
+>>
+>
+> --
+> Roger Bivand
+> Emeritus Professor
+> Department of Economics, Norwegian School of Economics,
+> Postboks 3490 Ytre Sandviken, 5045 Bergen, Norway.
+> e-mail: Roger.Bivand at nhh.no
+>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo<https://stat.ethz.ch/mailman/listinfo/r-sig-geo><https://stat.ethz.ch/mailman/listinfo/r-sig-geo>
+>
+> _______________________________________________
+> R-sig-Geo mailing list
+> R-sig-Geo at r-project.org
+> https://stat.ethz.ch/mailman/listinfo/r-sig-geo<https://stat.ethz.ch/mailman/listinfo/r-sig-geo>
+
+
+
+	[[alternative HTML version deleted]]
+
+
+From g||berto@c@m@r@ @end|ng |rom |npe@br  Sat Jun 27 20:51:09 2026
+From: g||berto@c@m@r@ @end|ng |rom |npe@br (Gilberto Camara)
+Date: Sat, 27 Jun 2026 15:51:09 -0300
+Subject: [R-sig-Geo] useR! submissions - request for comment
+In-Reply-To: <SV0P279MB0475EE870FC69CC80130485EEEEA2@SV0P279MB0475.NORP279.PROD.OUTLOOK.COM>
+References: <SV0P279MB0475A875D232DFDF59E49CB9EE45A@SV0P279MB0475.NORP279.PROD.OUTLOOK.COM>
+ <3a85327-ac60-68db-9adb-0fcafa27eeb@reclus2.nhh.no>
+ <SV0P279MB0475193F8F7809BAC4BBF859EEEC2@SV0P279MB0475.NORP279.PROD.OUTLOOK.COM>
+ <SV0P279MB0475ECA496B1A3CF5705DFDFEEEA2@SV0P279MB0475.NORP279.PROD.OUTLOOK.COM>
+ <DE44F378-2C9E-481F-A4A6-94C94EDF37A9@inpe.br>
+ <SV0P279MB0475EE870FC69CC80130485EEEEA2@SV0P279MB0475.NORP279.PROD.OUTLOOK.COM>
+Message-ID: <BC20BFEF-5484-400B-9294-82C613DE6015@inpe.br>
+
+Dear Roger
+
+I am not familiar with the plans of IBGE, which is responsible for geodesics standards in Brazil, beyond the fact that it has adopted the SIRGAS2000 reference system, as have other countries in Latin America. You will find more information about SIRGAS at https://www.sirgas.org/en/. 
+
+
+Best regards
+Gilberto
+
+============================
+Prof Dr Gilberto Camara
+Senior Researcher
+Getulio Vargas Foundation (FGV)
+National Institute for Space Research (INPE), Brazil
+https://gilbertocamara.org/
+=============================
+
+
+
+
+
+> On 27 Jun 2026, at 13:10, Roger Bivand <Roger.Bivand at nhh.no> wrote:
+> 
+> Thanks! I'll take care to stress that point in presenting. And thanks for pointing to JoSIS! Are you aware of the current status in Brasil? I haven't looked at all carefully where issues have not yet surfaced in PROJ.
+> 
+> Roger
+> 
+> ---
+> Roger Bivand
+> Emeritus Professor
+> Department of Economics
+> Norwegian School of Economics, Bergen, Norway
+> 
+> Fra: Gilberto Camara <gilberto.camara at inpe.br>
+> Sendt: l?rdag, juni 27, 2026 5:07:10 p.m.
+> Til: Roger Bivand <Roger.Bivand at nhh.no>
+> Kopi: r-sig-geo <r-sig-geo at r-project.org>
+> Emne: Re: [R-sig-Geo] useR! submissions - request for comment
+> 
+> Dear Roger
+> 
+> Thanks for sharing the slides. I learned a lot from the information provided. Given the importance of the issue, I hope you find the time to transform the slides into a full-fledged text that could be published online and/or in a journal. I surmise that the non-profit ?Journal of Spatial Information Science? could be a suitable venue. 
+> 
+> By way of suggestion, I feel the tone of the take-home points could maybe be more direct. What I take to be your main message ("The EPSG database is where much of the coordination of these adaptations has to take
+> place, and EPSG/PROJ cooperation can provide both with useful experience of what works in practice?) should perhaps be placed on its own slide. The other considerations in the same slide are more generic; mixing them together dilutes the main message. 
+> 
+> Wonderful work!
+> 
+> Best regards
+> Gilberto
+> 
+> ============================
+> Prof Dr Gilberto Camara
+> Senior Researcher
+> Getulio Vargas Foundation (FGV)
+> National Institute for Space Research (INPE), Brazil
+> https://gilbertocamara.org/
+> =============================
+> 
+> 
+> 
+> 
+> 
+> > On 27 Jun 2026, at 11:46, Roger Bivand via R-sig-Geo <r-sig-geo at r-project.org> wrote:
+> > 
+> > New version online now.
+> > 
+> > Further comments still very welcome! And maybe forward to Python/Julia PROJ-interface maintainers?
+> > 
+> > Roger
+> > 
+> > --
+> > Roger Bivand
+> > Emeritus Professor
+> > Norwegian School of Economics
+> > Postboks 3490 Ytre Sandviken, 5045 Bergen, Norway
+> > Roger.Bivand at nhh.no
+> > 
+> > 
+> > ________________________________________
+> > From: Roger Bivand <Roger.Bivand at nhh.no>
+> > Sent: 25 June 2026 18:49
+> > To: r-sig-geo; Roger Bivand
+> > Subject: Re: [R-sig-Geo] useR! submissions - request for comment
+> > 
+> > A revised version will be posted soon thanks to helpful input and clarifications.
+> > 
+> > Roger
+> > 
+> > ---
+> > Roger Bivand
+> > Emeritus Professor
+> > Department of Economics
+> > Norwegian School of Economics, Bergen, Norway
+> > 
+> > ________________________________
+> > Fra: R-sig-Geo <r-sig-geo-bounces at r-project.org> p? vegne av Roger Bivand via R-sig-Geo <r-sig-geo at r-project.org>
+> > Sendt: torsdag, juni 25, 2026 4:35:11 p.m.
+> > Til: r-sig-geo <r-sig-geo at r-project.org>
+> > Emne: Re: [R-sig-Geo] useR! submissions - request for comment
+> > 
+> > On Fri, 13 Mar 2026, Roger Bivand via R-sig-Geo wrote:
+> > 
+> >> Tomorrow is the extended deadline for useR! 2026 submissions. I'd like to encourage those with ideas that could benefit from discussion in Warsaw in early July at useR! to join in.
+> >> 
+> >> Specifically, I am considering submitting a talk/lightning talk/poster
+> >> on the imminent confusion that will hit us when NAD83 is replaced by
+> >> modernized NSRS (see ia.
+> >> https://www.ngs.noaa.gov/datums/newdatums/index.shtml<https://www.ngs.noaa.gov/datums/newdatums/index.shtml>,
+> >> https://www.esri.com/about/newsroom/arcuser/moving-from-static-spatial-reference-systems-in-2022)<https://www.esri.com/about/newsroom/arcuser/moving-from-static-spatial-reference-systems-in-2022>
+> >> in North America, and the ETRS89 standard being considered as a datum
+> >> ensemble in Europe (see ia.
+> >> https://evrs.bkg.bund.de/Subsites/EVRS/EN/Results_and_Products/NationalRealizationsETRS89/national_realization.html)<https://evrs.bkg.bund.de/Subsites/EVRS/EN/Results_and_Products/NationalRealizationsETRS89/national_realization.html>.
+> >> This hit PROJ with the updated EPSG database released with PROJ 9.8.0
+> >> (thread starting
+> >> https://lists.osgeo.org/pipermail/proj/2026-March/012026.html)<https://lists.osgeo.org/pipermail/proj/2026-March/012026.html>.
+> >> 
+> >> The changes are going to affect all geospatial software relying on
+> >> position whether we like it ot not, even if the changes are single-digit
+> >> metres or less. So affecting anything linking to GDAL/PROJ, and packages
+> >> using terra, sf, gdalraster, vapour, gdalcubes.
+> >> 
+> >> I would like to ask for help in submitting (by tomorrow evening 14
+> >> March) and for some input to a "task force" to try to prepare for
+> >> oncoming changes. Please rely on-list or directly by email - I have set
+> >> up a github repo
+> >> https://rsbivand.github.io/new_ref_systems/<https://rsbivand.github.io/new_ref_systems/>,
+> >> so issues can also be used by github users. Please tell me not to worry
+> >> and drop this concern, or consider helping to see how to move forward,
+> >> including talking about this at useR!.
+> >> 
+> > 
+> > Draft presentation at
+> > https://events.digital-research.academy/event/109/timetable/?view=standard#216-is-here-still-where-it-was<https://events.digital-research.academy/event/109/timetable/?view=standard#216-is-here-still-where-it-was>
+> > https://events.digital-research.academy/event/109/contributions/545/attachments/49/158/bivand_useR26_pres1.pdf<https://events.digital-research.academy/event/109/contributions/545/attachments/49/158/bivand_useR26_pres1.pdf>
+> > and in the github repo.
+> > 
+> > Comments welcome (but not that 80 slides are too many for 15 minutes)!
+> > 
+> > Roger
+> > 
+> >> Hoping for contributions,
+> >> 
+> >> Roger
+> >> 
+> >> --
+> >> Roger Bivand
+> >> Emeritus Professor
+> >> Norwegian School of Economics
+> >> Postboks 3490 Ytre Sandviken, 5045 Bergen, Norway
+> >> Roger.Bivand at nhh.no
+> >> _______________________________________________
+> >> R-sig-Geo mailing list
+> >> R-sig-Geo at r-project.org
+> >> https://stat.ethz.ch/mailman/listinfo/r-sig-geo<https://stat.ethz.ch/mailman/listinfo/r-sig-geo>
+> >> 
+> > 
+> > --
+> > Roger Bivand
+> > Emeritus Professor
+> > Department of Economics, Norwegian School of Economics,
+> > Postboks 3490 Ytre Sandviken, 5045 Bergen, Norway.
+> > e-mail: Roger.Bivand at nhh.no
+> > 
+> > _______________________________________________
+> > R-sig-Geo mailing list
+> > R-sig-Geo at r-project.org
+> > https://stat.ethz.ch/mailman/listinfo/r-sig-geo<https://stat.ethz.ch/mailman/listinfo/r-sig-geo>
+> > 
+> > _______________________________________________
+> > R-sig-Geo mailing list
+> > R-sig-Geo at r-project.org
+> > https://stat.ethz.ch/mailman/listinfo/r-sig-geo
+> 
+> 
+
+

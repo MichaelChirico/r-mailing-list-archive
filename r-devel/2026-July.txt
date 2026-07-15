@@ -1,0 +1,338 @@
+From j|nghu@zh@o @end|ng |rom hotm@||@com  Thu Jul  2 12:30:57 2026
+From: j|nghu@zh@o @end|ng |rom hotm@||@com (jinghua zhao)
+Date: Thu, 2 Jul 2026 10:30:57 +0000
+Subject: [Rd] Help on mapping memory
+In-Reply-To: <DB8P189MB07163CE1FEDC5888FE959606A5E90@DB8P189MB0716.EURP189.PROD.OUTLOOK.COM>
+References: <DB8P189MB07163CE1FEDC5888FE959606A5E90@DB8P189MB0716.EURP189.PROD.OUTLOOK.COM>
+Message-ID: <PA1P189MB365214640B776A8AA125002CA5F52@PA1P189MB3652.EURP189.PROD.OUTLOOK.COM>
+
+Dear R-developers,
+
+I posted a query a while ago and can update that I am able to track down the issue: it happens since the Fortran routine istfin() accepts data sorted by subject/occasion Ids which can cause crash otherwise esp. during simulations; it seems rather obvious really but only after a deeper dig into the compiler options.
+
+Best regards,
+
+
+Jing Hua
+
+________________________________
+From: jing hua zhao <jinghuazhao at hotmail.com>
+Sent: Tuesday, November 10, 2020 10:39
+To: r-devel at r-project.org <r-devel at r-project.org>
+Subject: Help on mapping memory
+
+Dear everyone,
+
+I have maintained JL Schafer's package 'pan' for a while and recently been contacted for the possibility to fix a crash but it turned to be elusive -- I am wondering what is the best to resolve this.
+
+First, the error message is as follows,
+
+*** caught segfault ***
+address 0x1b0000001b3, cause 'memory not mapped'
+Traceback:
+1: pan(test$Y1, test$ID, X, 1:4, 4, prior, seed = m, iter = 100)
+An irrecoverable exception occurred. R is aborting now ...
+
+and I gather this is to do with R/fortran mismatch nevertheless the tricky thing is that it works fine with the documentation data and even with this data there were times it could be tweaked to work (therefore PAN.txt, test.rda and test.log were as intended there). I have extracted the pan.f, pan.R from the package and leave the Bash/R scripts all here, https://github.com/jinghuazhao/R/tree/master/tests, short of adding a driver program to pan.f and debug without R but before doing that any idea/insight would be greatly appreciated.
+
+Thank you so much,
+
+
+Jing Hua Zhao
+
+
+
+	[[alternative HTML version deleted]]
+
+
+From e|w @end|ng |rom @tderr@org  Mon Jul  6 16:30:06 2026
+From: e|w @end|ng |rom @tderr@org (elijah wright)
+Date: Mon, 06 Jul 2026 14:30:06 +0000
+Subject: [Rd] ongoing work: tracing support for R; Dtrace and eBPF
+Message-ID: <qYJyf-usp1qAY5EBx6B1cnbcifUihJpuZ_dTt9_CnllFe6z5rZU4TxatMFIbqQKhyZ-u4F2L4nTRGrSjEJ8eLjJz-xYZWptw0XiLDX_yvUA=@stderr.org>
+
+Hi folks - I've put together some recent work to add support for Dtrace and eBPF profiling of the core R interpreter - it's pretty experimental but it DOES work. Side project, but hopefully becoming more useful in the long run.
+
+There's a patch here - not terribly big, actually - showing the minimal changes required to add the pragmas into the core to make it traceable.
+
+patch-diff.githubusercontent.com/raw/wch/r-source/pull/25.patch
+
+My thinking is that this sort of works in concert / cooperation with the profiling work that Brian Ripley did to the core, 20-some years ago now. ;-)
+
+If you're not terribly familiar with the two technologies involved here - Dtrace is a technology that came from the Solaris world - essentially you're measuring the impact and occurrence rate of syscalls as the eval() loop in the center of the R core runs. It's also supported natively on macOS. eBPF, similarly, is a technology on the Linux side of the world - a derivative of the good old Berkeley Packet Filter, it allows for adding custom fragments to a running kernel and measuring performance (and other...) as a system runs.
+
+Included is a harness to allow you to use lima to test the Linux-y eBPF bits on a relatively current macOS install, inside of a VM - it's as small as I could reasonably make it,
+
+The demo here - is to actually run the standard demo() loop, on top of an instrumented R engine. The included harness script does that, and outputs PDFs showing you the (minimal) impact of trace probes, as well as how much time various parts of the system are spending on their tasks.
+
+There is future work to be done, some of which is already in progress - for example, I've been working on a patch to the Matrix package to allow some of the same techniques to be applied there, sort of bubbling the same technology and techniques to places where they can be maximally useful. (Matrix, as a part of r-recommended, has a TON of other packages that are dependent upon it - enough to make it a prime target for improvements of any sort.)
+
+I hope this lands nicely for folks doing related work - I was quite surprised by how straightforward the patch appears, given how much work it's setting up.
+
+best, and thanks for all the previous contributions you've made to R and the larger performance tooling ecosystem...
+
+--e
+	[[alternative HTML version deleted]]
+
+
+From |kry|ov @end|ng |rom d|@root@org  Mon Jul  6 23:29:44 2026
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Tue, 7 Jul 2026 00:29:44 +0300
+Subject: [Rd] Data pointer caching vs ALTREP
+Message-ID: <20260707002944.1d8cc0ae@parabola>
+
+Hello R-devel,
+
+Here's a simplification of the problem that currently plagues lme4:
+
+x <- local({
+  # y[[1]] is large enough to have its own mmap() allocation
+  y <- list(rep(1, 1e7))
+  # y[[1]] is also large enough (>=64 elements) so structure() will
+  # create a wrapper instead of duplicating
+  structure(y[[1]], foo = 'bar')
+  # y[[1]] now has a reference count of >=2
+})
+# now x has the only reference to the original vector
+
+writeLines('
+#include <Rinternals.h>
+
+static double run_arbitrary_R_code(SEXP x) {
+  const double * xd = REAL(x); // oops, forgot REAL_RO
+  // since the underlying vector is MAYBE_SHARED, the
+  // wrapper in x duplicated the underlying vector and
+  // returned a different data pointer
+  Rprintf("REAL(x) = %p\\n", xd);
+
+  double sum = 0;
+  for (R_xlen_t i = 0; i < XLENGTH(x); ++i) sum += xd[i];
+
+  R_gc();
+  // the original vector is now freed, memory unmapped
+
+  return sum;
+}
+
+SEXP foo(SEXP x) {
+  // cache a read-only pointer to the data of x
+  const double *xd = REAL_RO(x);
+  Rprintf("REAL_RO(x) = %p\\n", xd);
+
+  double ret1 = run_arbitrary_R_code(x);
+  // xd is now invalid
+
+  double ret2 = 0;
+  for (R_xlen_t i = 0; i < XLENGTH(x); ++i) ret2 += xd[i]; // <-- crash
+  return ScalarLogical(ret1 == ret2);
+}
+', 'foo.c')
+stopifnot(tools::Rcmd('SHLIB foo.c') == 0)
+dyn.load(paste0('foo', .Platform$dynlib.ext))
+.Call('foo', x)
+# REAL_RO(x) = 0x7f11527b4040
+# REAL(x) = 0x7f114db68040
+# 
+#  *** caught segfault ***
+# address 0x7f11527b4040, cause 'memory not mapped'
+
+In the original lme4 code the data pointers are cached inside Eigen
+objects courtesy of RcppEigen (shared with the R session, ensuring that
+the R objects underlying the data pointers stay protected), and the role
+of run_arbitrary_R_code() is played by a %*% operation (which uses
+REAL() to read a vector).
+
+Is there a nice way to solve this problem of a protected object's data
+pointer suddenly becoming invalid? (Where is the best place to solve
+it? lme4, Rcpp, R itself?) Would it be safe for lme4 to cache writable
+data pointers (e.g. REAL() instead of DATAPTR_RO()), assuming that the
+former will stay the same as long as the object exists? Or does it need
+an extensive rewrite to always refresh cached data pointers?
+
+-- 
+Best regards,
+Ivan
+
+
+From m@ech|er @end|ng |rom @t@t@m@th@ethz@ch  Thu Jul  9 16:16:27 2026
+From: m@ech|er @end|ng |rom @t@t@m@th@ethz@ch (Martin Maechler)
+Date: Thu, 9 Jul 2026 16:16:27 +0200
+Subject: [Rd] Integer overflow in rhyper.c
+In-Reply-To: <fake-VM-id.8a4e1bad5fb7d10a9d296120b9d14cbb@talos.iv>
+References: <CAMzdVvvwOb5mdPyj-p-iyJGBiyULAPc0P-Gf-uhBHAVS7Ao1ew@mail.gmail.com>
+Message-ID: <27215.44347.844814.999763@stat.math.ethz.ch>
+
+>>>>> Jonathan Blood 
+>>>>>     on Fri, 24 Apr 2026 08:21:03 -0400 writes:
+
+    > Hello R-Devel,
+    > I have identified an integer overflow bug in rhyper that occurs when the
+    > total population (`m + n`) exceeds `.Machine$integer.max`, provided that
+    > the parameters themselves are still 32-bit integers and the number of draws
+    > (`k`) is small.
+
+    > The Issue:
+
+    > In src/nmath/rhyper.c, internal calculations involving the total population
+    > size appear to cast to 32-bit signed integers. This causes a wrap-around to
+    > negative values when `m + n >= 2^31`, triggering a "SHOULD NOT HAPPEN"
+    > warning in the `afc()` factorial helper and causing the function to always
+    > return 0.
+
+    > Interestingly, the bug is sensitive to the value of `k`, suggesting it only
+    > affects one specific algorithmic branch (likely the H2PE algorithm setup).
+
+    > Minimal Reproducible Example:
+
+    > ```r
+    > set.seed(1)
+
+    > # 1. Sum of population is exactly 2^31, k < 19
+    > # This triggers warnings and incorrectly returns 0
+    > rhyper(1, 2^30, 2^30, 18)
+    > #> Warning in rhyper(1, 2^30, 2^30, 18): rhyper.c: afc(i), i=-2147483648 <
+    > 0 --
+    > #> SHOULD NOT HAPPEN!
+    > #> [1] 0
+
+    > # 2. Subsequent calls with identical parameters no longer trigger the
+    > warning,
+    > # but consistently return 0
+    > sum(rhyper(1e5, 2^30, 2^30, 18))
+    > #> [1] 0
+
+    > # 3. Same population, but k >= 19 behaves correctly (likely different branch)
+    > rhyper(1, 2^30, 2^30, 19)
+    > #> [1] 12
+
+    > # 4. Reducing population sum below 2^31 behaves correctly
+    > rhyper(1, 2^30 - 1, 2^30 - 1, 18)
+    > #> [1] 9
+
+    > # 5. Parameters large enough to be treated as doubles behave correctly
+    > rhyper(1, 2^31, 2^31, 18)
+    > #> [1] 7
+
+    > sessionInfo()
+    > #> R version 4.5.3 (2026-03-11 ucrt)
+    > #> Platform: x86_64-w64-mingw32/x64
+    > #> Running under: Windows 11 x64 (build 22631)
+
+....
+
+    > Regards,
+    > Jon Blood
+
+
+Thank you, Jon.
+
+I've finally addressed this and fixed it;  the internal check
+needed    n+m > MAX_INT  instead of only checking the n and m.
+
+  --> Fixed in svn rev 90223
+
+I'm sorry this was not addressed earlier.
+
+Best regards,
+Martin
+
+
+From iuke-tier@ey m@iii@g oii uiow@@edu  Thu Jul  9 16:16:28 2026
+From: iuke-tier@ey m@iii@g oii uiow@@edu (iuke-tier@ey m@iii@g oii uiow@@edu)
+Date: Thu, 9 Jul 2026 09:16:28 -0500 (CDT)
+Subject: [Rd] [External]  Data pointer caching vs ALTREP
+In-Reply-To: <20260707002944.1d8cc0ae@parabola>
+References: <20260707002944.1d8cc0ae@parabola>
+Message-ID: <bc3f2619-a892-8f73-6a7f-d71cb1a21844@uiowa.edu>
+
+Thanks for the report and the careful analysis. This looks like a bug
+in the wrapper implementation. I'll look more carefully and patch
+R-devel/R-patched next week when I am back from useR. For caching it
+should be sufficient for now to cache the writable pointer.
+
+Best,
+
+luke
+
+On Mon, 6 Jul 2026, Ivan Krylov via R-devel wrote:
+
+> Hello R-devel,
+>
+> Here's a simplification of the problem that currently plagues lme4:
+>
+> x <- local({
+>  # y[[1]] is large enough to have its own mmap() allocation
+>  y <- list(rep(1, 1e7))
+>  # y[[1]] is also large enough (>=64 elements) so structure() will
+>  # create a wrapper instead of duplicating
+>  structure(y[[1]], foo = 'bar')
+>  # y[[1]] now has a reference count of >=2
+> })
+> # now x has the only reference to the original vector
+>
+> writeLines('
+> #include <Rinternals.h>
+>
+> static double run_arbitrary_R_code(SEXP x) {
+>  const double * xd = REAL(x); // oops, forgot REAL_RO
+>  // since the underlying vector is MAYBE_SHARED, the
+>  // wrapper in x duplicated the underlying vector and
+>  // returned a different data pointer
+>  Rprintf("REAL(x) = %p\\n", xd);
+>
+>  double sum = 0;
+>  for (R_xlen_t i = 0; i < XLENGTH(x); ++i) sum += xd[i];
+>
+>  R_gc();
+>  // the original vector is now freed, memory unmapped
+>
+>  return sum;
+> }
+>
+> SEXP foo(SEXP x) {
+>  // cache a read-only pointer to the data of x
+>  const double *xd = REAL_RO(x);
+>  Rprintf("REAL_RO(x) = %p\\n", xd);
+>
+>  double ret1 = run_arbitrary_R_code(x);
+>  // xd is now invalid
+>
+>  double ret2 = 0;
+>  for (R_xlen_t i = 0; i < XLENGTH(x); ++i) ret2 += xd[i]; // <-- crash
+>  return ScalarLogical(ret1 == ret2);
+> }
+> ', 'foo.c')
+> stopifnot(tools::Rcmd('SHLIB foo.c') == 0)
+> dyn.load(paste0('foo', .Platform$dynlib.ext))
+> .Call('foo', x)
+> # REAL_RO(x) = 0x7f11527b4040
+> # REAL(x) = 0x7f114db68040
+> #
+> #  *** caught segfault ***
+> # address 0x7f11527b4040, cause 'memory not mapped'
+>
+> In the original lme4 code the data pointers are cached inside Eigen
+> objects courtesy of RcppEigen (shared with the R session, ensuring that
+> the R objects underlying the data pointers stay protected), and the role
+> of run_arbitrary_R_code() is played by a %*% operation (which uses
+> REAL() to read a vector).
+>
+> Is there a nice way to solve this problem of a protected object's data
+> pointer suddenly becoming invalid? (Where is the best place to solve
+> it? lme4, Rcpp, R itself?) Would it be safe for lme4 to cache writable
+> data pointers (e.g. REAL() instead of DATAPTR_RO()), assuming that the
+> former will stay the same as long as the object exists? Or does it need
+> an extensive rewrite to always refresh cached data pointers?
+>
+>
+
+-- 
+Luke Tierney
+Professor Emeritus
+Department of Statistics and
+    Actuarial Science
+University of Iowa
+241 Schaeffer Hall                  email:   luke-tierney at uiowa.edu
+Iowa City, IA 52242                 WWW:  http://stat.uiowa.edu
+
+

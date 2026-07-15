@@ -1,0 +1,2663 @@
+From K@r||ne@Soet@ert @end|ng |rom n|oz@n|  Wed Jul  1 08:46:34 2026
+From: K@r||ne@Soet@ert @end|ng |rom n|oz@n| (Karline Soetaert)
+Date: Wed, 1 Jul 2026 06:46:34 +0000
+Subject: [R-pkg-devel] 
+ Assumed-size arrays in fortran and memory sanitizer
+Message-ID: <AS8P192MB17023BF62C0E49FE2161A17193F62@AS8P192MB1702.EURP192.PROD.OUTLOOK.COM>
+
+Hi all,
+
+Thank you all so much for your useful answers!
+
+
+I managed to solve the issue, by replacing the calls to xDCOPY that led to the overlapping memory by two new subroutines, XDMOVE (for vectors) and XDMOVE2D (for matrices).
+(The explanation below is a bit technical.)
+
+
+*The problem was:*
+
+The original xDCOPY is defined as:
+      SUBROUTINE XDCOPY(N, DX,INCX, DY,INCY)
+
+where DX is the vector to copy *from* and DY is the vector to copy *to*, and INCX and INCY are the increments for DX and DY respectively in the DO loop.
+
+An error could be triggered if xDCOPY was used, for instance, as:
+
+           CALL xDCOPY (N, X(J+1), 1, X(J), 1)
+
+as it was called with two overlapping subsections from the same vector (X)
+
+*The solution*
+
+For such cases, a new subroutine, called xDMOVE is now used,
+that is defined as:
+
+        SUBROUTINE XDMOVE(N, DX, Ifrom, INCfrom,   Ito, INCto)
+
+where vector DX is passed only once, and
+*Ifrom* and *Ito* are the *index* of the first position to copy *from* and to parts of DX.
+
+
+For instance, the original call:
+           CALL xDCOPY (N, X(J+1), 1, X(J), 1)
+becomes:
+           CALL xDMOVE (N, X, J+1,1,    J,1)
+
+and:
+          CALL xDCOPY(N, X,   0, X,  1)
+becomes
+          CALL xDMOVE(N, X, 1,0,   1,1)
+
+
+
+
+When the input array is a *matrix*, xDCOPY is replaced by xDMOVE2D that is defined as follows:
+
+        SUBROUTINE XDMOVE2D(N, MDX, DX, Ifrom,Jfrom,INCfrom, Ito,Jto,INCto)
+
+where MDX is the leading dimension of the assumed-size matrix DX(MDX,*),
+and Ifrom,Jfrom and Ito,Jto are the indices to the first position to copy from and to in DX(I,J).
+
+
+In practice, XDMOVE2D calls XDMOVE, with the indices to the vector that corresponds to DX:
+
+      ...
+      IXvec = (Jfrom - 1)*MDX + Ifrom
+      IYvec = (Jto       - 1)*MDX + Ito
+
+      CALL XDMOVE(N, DX, IXvec,INCfrom, IYvec,INCto)
+
+
+
+As an example of a call, the original call :
+          CALL xDCOPY   (M-ME,    W(ME+1,J), 1, W(KRANKE+1,J), 1)
+becomes:
+          CALL xDMOVE2D (M-ME, MDW, W, ME+1,J,1, KRANKE+1,J,1)
+
+where W is an assumed-size matrix defined as W(MDW, *)
+
+
+
+So, it was not as difficult to fix as I originally feared!
+Thanks again for all the valuable suggestions.
+
+
+karline
+
+
+	[[alternative HTML version deleted]]
+
+
+From bbo|ker @end|ng |rom gm@||@com  Fri Jul  3 23:30:13 2026
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Fri, 3 Jul 2026 17:30:13 -0400
+Subject: [R-pkg-devel] cryptic cran check failure on Windows/testthat
+Message-ID: <9d777cd4-1b70-4479-80ad-eacc0b849c3b@gmail.com>
+
+   Just submitted a package to CRAN; passed Debian incoming checks, 
+failed on Windows for a cryptic reason.  I know `testthat` tests are 
+often harder to diagnose from CRAN check runs, but ...
+
+    The *current* CRAN version of the package is failing checks on 
+Windows-oldrel and the error log gives me useful information about where 
+and why the test failed; this makes me think I should get the same level 
+of info from a failed incoming check.
+
+https://www.r-project.org/nosvn/R.check/r-oldrel-windows-x86_64/lme4-00check.html
+
+   In contrast, the check log for the CRAN test, and the corresponding 
+test log, don't tell me anything useful (complete contents of the test 
+failure log are attached below).
+
+https://win-builder.r-project.org/incoming_pretest/lme4_2.0-2_20260703_223201/Windows/examples_and_tests/tests/AAAtest-all.Rout.fail
+
+   (I'm aware that there's a second, vignette-building error in the 
+check log; I'm working on fixing that one.)
+
+https://win-builder.r-project.org/incoming_pretest/lme4_2.0-2_20260703_223201/Windows/00check.log
+
+   Any suggestions/diagnoses?
+
+   (I will also try it on win-builder; at the moment either win-builder 
+is working on a big package or the queue is stuck -- nothing has left 
+the queue for about 2 hours.)
+
+   cheers
+    Ben Bolker
+
+====
+R Under development (unstable) (2026-07-02 r90204 ucrt) -- "Unsuffered 
+Consequences"
+Copyright (C) 2026 The R Foundation for Statistical Computing
+Platform: x86_64-w64-mingw32/x64
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+ > if (base::require("testthat", quietly = TRUE)) {
++     pkg   <- "lme4"
++     require(pkg, character.only=TRUE, quietly=TRUE)
++     if(getRversion() < "3.5.0") { withAutoprint <- identity ; prt <- 
+print } else { prt <- identity }
++     if(Sys.getenv("USER") %in% c("maechler", "bbolker")) withAutoprint({
++         ## for developers' sake:
++         lP <- .libPaths() # ---- .libPaths() : ----
++         prt(lP)
++         ## ---- Entries in .libPaths()[1] : ----
++         prt(list.files(lP[1], include.dirs=TRUE))
++         prt(sessionInfo())
++         prt(packageDescription("Matrix"))
++         ## 'lme4' from packageDescription "file" :
++         prt(attr(packageDescription("lme4"), "file"))
++     })
++     test_check(pkg)
++     ##======== ^^^
++     print(warnings()) # TODO? catch most of these by expect_warning(..)
++ } else {
++     cat( "package 'testthat' not available, cannot run unit tests\n" )
++ }
+
+
+From m|ch@e|ch|r|co4 @end|ng |rom gm@||@com  Fri Jul  3 23:36:40 2026
+From: m|ch@e|ch|r|co4 @end|ng |rom gm@||@com (Michael Chirico)
+Date: Fri, 3 Jul 2026 14:36:40 -0700
+Subject: [R-pkg-devel] cryptic cran check failure on Windows/testthat
+In-Reply-To: <9d777cd4-1b70-4479-80ad-eacc0b849c3b@gmail.com>
+References: <9d777cd4-1b70-4479-80ad-eacc0b849c3b@gmail.com>
+Message-ID: <CAPRVBcwvO1xq5ugYhxokh-_YgpZnoER2STLPeyeTqTdFs9Deig@mail.gmail.com>
+
+one quick thing to do: rearrange the test to get more info on where the
+error hits by removing the if statement:
+
+if (!require namespace("test that")) {
+  cat("can't test")
+  q("no")
+}
+...
+
+On Fri, Jul 3, 2026, 2:30?PM Ben Bolker <bbolker at gmail.com> wrote:
+
+>    Just submitted a package to CRAN; passed Debian incoming checks,
+> failed on Windows for a cryptic reason.  I know `testthat` tests are
+> often harder to diagnose from CRAN check runs, but ...
+>
+>     The *current* CRAN version of the package is failing checks on
+> Windows-oldrel and the error log gives me useful information about where
+> and why the test failed; this makes me think I should get the same level
+> of info from a failed incoming check.
+>
+>
+> https://www.r-project.org/nosvn/R.check/r-oldrel-windows-x86_64/lme4-00check.html
+>
+>    In contrast, the check log for the CRAN test, and the corresponding
+> test log, don't tell me anything useful (complete contents of the test
+> failure log are attached below).
+>
+>
+> https://win-builder.r-project.org/incoming_pretest/lme4_2.0-2_20260703_223201/Windows/examples_and_tests/tests/AAAtest-all.Rout.fail
+>
+>    (I'm aware that there's a second, vignette-building error in the
+> check log; I'm working on fixing that one.)
+>
+>
+> https://win-builder.r-project.org/incoming_pretest/lme4_2.0-2_20260703_223201/Windows/00check.log
+>
+>    Any suggestions/diagnoses?
+>
+>    (I will also try it on win-builder; at the moment either win-builder
+> is working on a big package or the queue is stuck -- nothing has left
+> the queue for about 2 hours.)
+>
+>    cheers
+>     Ben Bolker
+>
+> ====
+> R Under development (unstable) (2026-07-02 r90204 ucrt) -- "Unsuffered
+> Consequences"
+> Copyright (C) 2026 The R Foundation for Statistical Computing
+> Platform: x86_64-w64-mingw32/x64
+>
+> R is free software and comes with ABSOLUTELY NO WARRANTY.
+> You are welcome to redistribute it under certain conditions.
+> Type 'license()' or 'licence()' for distribution details.
+>
+> R is a collaborative project with many contributors.
+> Type 'contributors()' for more information and
+> 'citation()' on how to cite R or R packages in publications.
+>
+> Type 'demo()' for some demos, 'help()' for on-line help, or
+> 'help.start()' for an HTML browser interface to help.
+> Type 'q()' to quit R.
+>
+>  > if (base::require("testthat", quietly = TRUE)) {
+> +     pkg   <- "lme4"
+> +     require(pkg, character.only=TRUE, quietly=TRUE)
+> +     if(getRversion() < "3.5.0") { withAutoprint <- identity ; prt <-
+> print } else { prt <- identity }
+> +     if(Sys.getenv("USER") %in% c("maechler", "bbolker")) withAutoprint({
+> +         ## for developers' sake:
+> +         lP <- .libPaths() # ---- .libPaths() : ----
+> +         prt(lP)
+> +         ## ---- Entries in .libPaths()[1] : ----
+> +         prt(list.files(lP[1], include.dirs=TRUE))
+> +         prt(sessionInfo())
+> +         prt(packageDescription("Matrix"))
+> +         ## 'lme4' from packageDescription "file" :
+> +         prt(attr(packageDescription("lme4"), "file"))
+> +     })
+> +     test_check(pkg)
+> +     ##======== ^^^
+> +     print(warnings()) # TODO? catch most of these by expect_warning(..)
+> + } else {
+> +     cat( "package 'testthat' not available, cannot run unit tests\n" )
+> + }
+>
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+
+	[[alternative HTML version deleted]]
+
+
+From bbo|ker @end|ng |rom gm@||@com  Fri Jul  3 23:38:57 2026
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Fri, 3 Jul 2026 17:38:57 -0400
+Subject: [R-pkg-devel] cryptic cran check failure on Windows/testthat
+In-Reply-To: <CAPRVBcwvO1xq5ugYhxokh-_YgpZnoER2STLPeyeTqTdFs9Deig@mail.gmail.com>
+References: <9d777cd4-1b70-4479-80ad-eacc0b849c3b@gmail.com>
+ <CAPRVBcwvO1xq5ugYhxokh-_YgpZnoER2STLPeyeTqTdFs9Deig@mail.gmail.com>
+Message-ID: <CABghstRcBjCnMNtAZxXrMsi68fgEQo0+J3ehNVaFYsWb03NfEQ@mail.gmail.com>
+
+   Thanks for the quick reply!
+   I will work on this when it looks like win-builder is processing
+again ... (or spin up a Windows check on GitHub actions ...)
+
+On Fri, Jul 3, 2026 at 5:36?PM Michael Chirico
+<michaelchirico4 at gmail.com> wrote:
+>
+> one quick thing to do: rearrange the test to get more info on where the error hits by removing the if statement:
+>
+> if (!require namespace("test that")) {
+>   cat("can't test")
+>   q("no")
+> }
+> ...
+>
+> On Fri, Jul 3, 2026, 2:30?PM Ben Bolker <bbolker at gmail.com> wrote:
+>>
+>>    Just submitted a package to CRAN; passed Debian incoming checks,
+>> failed on Windows for a cryptic reason.  I know `testthat` tests are
+>> often harder to diagnose from CRAN check runs, but ...
+>>
+>>     The *current* CRAN version of the package is failing checks on
+>> Windows-oldrel and the error log gives me useful information about where
+>> and why the test failed; this makes me think I should get the same level
+>> of info from a failed incoming check.
+>>
+>> https://www.r-project.org/nosvn/R.check/r-oldrel-windows-x86_64/lme4-00check.html
+>>
+>>    In contrast, the check log for the CRAN test, and the corresponding
+>> test log, don't tell me anything useful (complete contents of the test
+>> failure log are attached below).
+>>
+>> https://win-builder.r-project.org/incoming_pretest/lme4_2.0-2_20260703_223201/Windows/examples_and_tests/tests/AAAtest-all.Rout.fail
+>>
+>>    (I'm aware that there's a second, vignette-building error in the
+>> check log; I'm working on fixing that one.)
+>>
+>> https://win-builder.r-project.org/incoming_pretest/lme4_2.0-2_20260703_223201/Windows/00check.log
+>>
+>>    Any suggestions/diagnoses?
+>>
+>>    (I will also try it on win-builder; at the moment either win-builder
+>> is working on a big package or the queue is stuck -- nothing has left
+>> the queue for about 2 hours.)
+>>
+>>    cheers
+>>     Ben Bolker
+>>
+>> ====
+>> R Under development (unstable) (2026-07-02 r90204 ucrt) -- "Unsuffered
+>> Consequences"
+>> Copyright (C) 2026 The R Foundation for Statistical Computing
+>> Platform: x86_64-w64-mingw32/x64
+>>
+>> R is free software and comes with ABSOLUTELY NO WARRANTY.
+>> You are welcome to redistribute it under certain conditions.
+>> Type 'license()' or 'licence()' for distribution details.
+>>
+>> R is a collaborative project with many contributors.
+>> Type 'contributors()' for more information and
+>> 'citation()' on how to cite R or R packages in publications.
+>>
+>> Type 'demo()' for some demos, 'help()' for on-line help, or
+>> 'help.start()' for an HTML browser interface to help.
+>> Type 'q()' to quit R.
+>>
+>>  > if (base::require("testthat", quietly = TRUE)) {
+>> +     pkg   <- "lme4"
+>> +     require(pkg, character.only=TRUE, quietly=TRUE)
+>> +     if(getRversion() < "3.5.0") { withAutoprint <- identity ; prt <-
+>> print } else { prt <- identity }
+>> +     if(Sys.getenv("USER") %in% c("maechler", "bbolker")) withAutoprint({
+>> +         ## for developers' sake:
+>> +         lP <- .libPaths() # ---- .libPaths() : ----
+>> +         prt(lP)
+>> +         ## ---- Entries in .libPaths()[1] : ----
+>> +         prt(list.files(lP[1], include.dirs=TRUE))
+>> +         prt(sessionInfo())
+>> +         prt(packageDescription("Matrix"))
+>> +         ## 'lme4' from packageDescription "file" :
+>> +         prt(attr(packageDescription("lme4"), "file"))
+>> +     })
+>> +     test_check(pkg)
+>> +     ##======== ^^^
+>> +     print(warnings()) # TODO? catch most of these by expect_warning(..)
+>> + } else {
+>> +     cat( "package 'testthat' not available, cannot run unit tests\n" )
+>> + }
+>>
+>> ______________________________________________
+>> R-package-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+
+From bbo|ker @end|ng |rom gm@||@com  Sat Jul  4 23:04:12 2026
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Sat, 4 Jul 2026 17:04:12 -0400
+Subject: [R-pkg-devel] cryptic cran check failure on Windows/testthat
+In-Reply-To: <CABghstRcBjCnMNtAZxXrMsi68fgEQo0+J3ehNVaFYsWb03NfEQ@mail.gmail.com>
+References: <9d777cd4-1b70-4479-80ad-eacc0b849c3b@gmail.com>
+ <CAPRVBcwvO1xq5ugYhxokh-_YgpZnoER2STLPeyeTqTdFs9Deig@mail.gmail.com>
+ <CABghstRcBjCnMNtAZxXrMsi68fgEQo0+J3ehNVaFYsWb03NfEQ@mail.gmail.com>
+Message-ID: <CABghstSZhBzZzfoPbhPojdkgiS7-KU3z3q_JrkwwkW3UAmo=aw@mail.gmail.com>
+
+  OK, further confusion.
+
+  I fixed one thing and got a clean result on win-builder:
+https://win-builder.r-project.org/8I73NPYsiKc3
+
+* using R Under development (unstable) (2026-07-03 r90206 ucrt)
+* using platform: x86_64-w64-mingw32
+* R was compiled by
+    gcc.exe (GCC) 14.3.0
+    GNU Fortran (GCC) 14.3.0
+* running under: Windows Server 2022 x64 (build 20348)
+
+  Then I submitted a version (the same except for a bumped version
+number) to CRAN and again failed the pre-test:
+
+https://win-builder.r-project.org/incoming_pretest/lme4_2.0-3_20260704_223040/Windows/00check.log
+
+* using R Under development (unstable) (2026-07-03 r90206 ucrt)
+* using platform: x86_64-w64-mingw32
+* R was compiled by
+    gcc.exe (GCC) 14.3.0
+    GNU Fortran (GCC) 14.3.0
+* running under: Windows Server 2022 x64 (build 20348)
+
+  These platform reports look identical to me, so I'm having a hard
+time figuring out what could be making the difference ... ?? (As far
+as I know win-builder uses the **same** setup as the CRAN check
+platforms ... ?)
+
+
+On Fri, Jul 3, 2026 at 5:38?PM Ben Bolker <bbolker at gmail.com> wrote:
+>
+>    Thanks for the quick reply!
+>    I will work on this when it looks like win-builder is processing
+> again ... (or spin up a Windows check on GitHub actions ...)
+>
+> On Fri, Jul 3, 2026 at 5:36?PM Michael Chirico
+> <michaelchirico4 at gmail.com> wrote:
+> >
+> > one quick thing to do: rearrange the test to get more info on where the error hits by removing the if statement:
+> >
+> > if (!require namespace("test that")) {
+> >   cat("can't test")
+> >   q("no")
+> > }
+> > ...
+> >
+> > On Fri, Jul 3, 2026, 2:30?PM Ben Bolker <bbolker at gmail.com> wrote:
+> >>
+> >>    Just submitted a package to CRAN; passed Debian incoming checks,
+> >> failed on Windows for a cryptic reason.  I know `testthat` tests are
+> >> often harder to diagnose from CRAN check runs, but ...
+> >>
+> >>     The *current* CRAN version of the package is failing checks on
+> >> Windows-oldrel and the error log gives me useful information about where
+> >> and why the test failed; this makes me think I should get the same level
+> >> of info from a failed incoming check.
+> >>
+> >> https://www.r-project.org/nosvn/R.check/r-oldrel-windows-x86_64/lme4-00check.html
+> >>
+> >>    In contrast, the check log for the CRAN test, and the corresponding
+> >> test log, don't tell me anything useful (complete contents of the test
+> >> failure log are attached below).
+> >>
+> >> https://win-builder.r-project.org/incoming_pretest/lme4_2.0-2_20260703_223201/Windows/examples_and_tests/tests/AAAtest-all.Rout.fail
+> >>
+> >>    (I'm aware that there's a second, vignette-building error in the
+> >> check log; I'm working on fixing that one.)
+> >>
+> >> https://win-builder.r-project.org/incoming_pretest/lme4_2.0-2_20260703_223201/Windows/00check.log
+> >>
+> >>    Any suggestions/diagnoses?
+> >>
+> >>    (I will also try it on win-builder; at the moment either win-builder
+> >> is working on a big package or the queue is stuck -- nothing has left
+> >> the queue for about 2 hours.)
+> >>
+> >>    cheers
+> >>     Ben Bolker
+> >>
+> >> ====
+> >> R Under development (unstable) (2026-07-02 r90204 ucrt) -- "Unsuffered
+> >> Consequences"
+> >> Copyright (C) 2026 The R Foundation for Statistical Computing
+> >> Platform: x86_64-w64-mingw32/x64
+> >>
+> >> R is free software and comes with ABSOLUTELY NO WARRANTY.
+> >> You are welcome to redistribute it under certain conditions.
+> >> Type 'license()' or 'licence()' for distribution details.
+> >>
+> >> R is a collaborative project with many contributors.
+> >> Type 'contributors()' for more information and
+> >> 'citation()' on how to cite R or R packages in publications.
+> >>
+> >> Type 'demo()' for some demos, 'help()' for on-line help, or
+> >> 'help.start()' for an HTML browser interface to help.
+> >> Type 'q()' to quit R.
+> >>
+> >>  > if (base::require("testthat", quietly = TRUE)) {
+> >> +     pkg   <- "lme4"
+> >> +     require(pkg, character.only=TRUE, quietly=TRUE)
+> >> +     if(getRversion() < "3.5.0") { withAutoprint <- identity ; prt <-
+> >> print } else { prt <- identity }
+> >> +     if(Sys.getenv("USER") %in% c("maechler", "bbolker")) withAutoprint({
+> >> +         ## for developers' sake:
+> >> +         lP <- .libPaths() # ---- .libPaths() : ----
+> >> +         prt(lP)
+> >> +         ## ---- Entries in .libPaths()[1] : ----
+> >> +         prt(list.files(lP[1], include.dirs=TRUE))
+> >> +         prt(sessionInfo())
+> >> +         prt(packageDescription("Matrix"))
+> >> +         ## 'lme4' from packageDescription "file" :
+> >> +         prt(attr(packageDescription("lme4"), "file"))
+> >> +     })
+> >> +     test_check(pkg)
+> >> +     ##======== ^^^
+> >> +     print(warnings()) # TODO? catch most of these by expect_warning(..)
+> >> + } else {
+> >> +     cat( "package 'testthat' not available, cannot run unit tests\n" )
+> >> + }
+> >>
+> >> ______________________________________________
+> >> R-package-devel at r-project.org mailing list
+> >> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+
+From |kry|ov @end|ng |rom d|@root@org  Sun Jul  5 09:58:36 2026
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Sun, 5 Jul 2026 10:58:36 +0300
+Subject: [R-pkg-devel] cryptic cran check failure on Windows/testthat
+In-Reply-To: <CABghstSZhBzZzfoPbhPojdkgiS7-KU3z3q_JrkwwkW3UAmo=aw@mail.gmail.com>
+References: <9d777cd4-1b70-4479-80ad-eacc0b849c3b@gmail.com>
+ <CAPRVBcwvO1xq5ugYhxokh-_YgpZnoER2STLPeyeTqTdFs9Deig@mail.gmail.com>
+ <CABghstRcBjCnMNtAZxXrMsi68fgEQo0+J3ehNVaFYsWb03NfEQ@mail.gmail.com>
+ <CABghstSZhBzZzfoPbhPojdkgiS7-KU3z3q_JrkwwkW3UAmo=aw@mail.gmail.com>
+Message-ID: <20260705105836.659068c2@Tarkus>
+
+On Sat, 4 Jul 2026 17:04:12 -0400
+Ben Bolker <bbolker at gmail.com> wrote:
+
+> These platform reports look identical to me, so I'm having a hard
+> time figuring out what could be making the difference ... ??
+
+The library paths must be different. Win-Builder installs the packages
+it tests (making it possible to test packages with dependencies not on
+CRAN/BioC), but that shouldn't normally cause problems during incoming
+CRAN checks like you're currently having. This looks like a crash some
+time after the "glmer works for Gamma with small shape parameter" test.
+There's no obvious reason for a crash or resource starvation.
+
+A package that was checked soon after lme4 failed to install due to
+'rlang' failing to load:
+https://win-builder.r-project.org/incoming_pretest/rotations_1.6.7_20260705_010208/Windows/00install.out
+Maybe this was Uwe reinstalling rlang to fix the problem?
+
+Otherwise you might have to switch to a more verbose reporter for your
+next CRAN submission in order to locate the place of the crash more
+precisely:
+
+LogReporter <- R6::R6Class('LogReporter',
+ inherit = testthat::Reporter,
+ public = list(
+  file = '', failures = list(),
+  initialize = function(...)
+   super$initialize(...),
+  start_file = function(filename)
+   self$cat_tight("File: ", self$file <- filename, "\n"),
+  start_context = function(context)
+   self$cat_tight(" Context: ", context, "\n"),
+  start_test = function(context, test)
+   self$cat_tight("  Test: ", test),
+  add_result = function(context, test, result)
+   if (inherits(result, c('expectation_success', 'expectation_skip'))) {
+    self$cat_tight("."); flush(stdout())
+   } else {
+    self$failures <- c(self$failures, list(
+     list(self$file, context, test, result)
+    ))
+   self$cat_tight("\n   ", format(result), "\n")
+  },
+  end_test = function(context, test)
+   self$cat_tight("\n"),
+  end_context = function(context)
+   self$cat_tight("\n"),
+  end_file = function()
+   self$cat_tight("\n"),
+  end_reporter = function() {
+   if (!length(self$failures)) return()
+   self$cat_tight("\nFailures:\n")
+   for (f in self$failures) self$cat_tight(
+    " File: ", f[[1]],
+    " Context: ", f[[2]],
+    " Test: ", f[[3]],
+    " Result: ", format(f[[4]]),
+    "\n"
+   )
+  }
+ )
+)
+test_check(pkg, LogReporter)
+
+(This will require adding Suggests: R6, which is no stricter than
+Suggests: testthat. ProgressReporter comes close, but it's not as
+convenient when running tests from R CMD check with output redirected
+into a file.)
+
+-- 
+Best regards,
+Ivan
+
+
+From roy@mende|@@ohn @end|ng |rom no@@@gov  Mon Jul  6 18:38:30 2026
+From: roy@mende|@@ohn @end|ng |rom no@@@gov (Roy Mendelssohn - NOAA Federal)
+Date: Mon, 6 Jul 2026 09:38:30 -0700
+Subject: [R-pkg-devel] Agentic Skills
+Message-ID: <80B1BF51-2FCC-4782-8904-B2A8FCB4F69E@noaa.gov>
+
+I have been wondering if there has been any thought or discussion about having a standardized way to include agentic skills in an R package that a user could then copy to the appropriate place,  or fi this is even desirable.  One problem I see is that since skills can be in natural language it would be harder to catch malicious content,  but I know I have some skills I have developed for my own use that in my last go-rounds on my packages I thought it would be neat to generalize and make available.
+
+Thanks,
+
+-Roy
+
+From m|ch@e|ch|r|co4 @end|ng |rom gm@||@com  Mon Jul  6 18:48:30 2026
+From: m|ch@e|ch|r|co4 @end|ng |rom gm@||@com (Michael Chirico)
+Date: Mon, 6 Jul 2026 09:48:30 -0700
+Subject: [R-pkg-devel] Agentic Skills
+In-Reply-To: <80B1BF51-2FCC-4782-8904-B2A8FCB4F69E@noaa.gov>
+References: <80B1BF51-2FCC-4782-8904-B2A8FCB4F69E@noaa.gov>
+Message-ID: <CAPRVBcwLpEf6h7V3DuHESHK0zE3CEw0F1SXb4rpsaH3g11z4VQ@mail.gmail.com>
+
+inst/ is the right answer; how to organize it in inst/ will be hashed
+out by the 'invisible hand'.
+
+For now, I see two CRAN packages bundling skills:
+
+ - golem uses inst/agent-skills:
+https://github.com/cran/golem/tree/2a6b7d54b6e8c9600ac64493f3cbd908a7df491d/inst/agent-skills
+ - mirai uses inst/skills:
+https://github.com/cran/mirai/tree/060c400833c6b7d37826a9f50cd44ce14f3d6fb1/inst/skills
+
+I've also started tracking repo-level LLM metadata, though I probably
+need to take a pass at better organizing this project:
+
+https://github.com/MichaelChirico/r-ci-samples
+
+Mike C
+
+On Mon, Jul 6, 2026 at 9:38?AM Roy Mendelssohn - NOAA Federal via
+R-package-devel <r-package-devel at r-project.org> wrote:
+>
+> I have been wondering if there has been any thought or discussion about having a standardized way to include agentic skills in an R package that a user could then copy to the appropriate place,  or fi this is even desirable.  One problem I see is that since skills can be in natural language it would be harder to catch malicious content,  but I know I have some skills I have developed for my own use that in my last go-rounds on my packages I thought it would be neat to generalize and make available.
+>
+> Thanks,
+>
+> -Roy
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+
+From roy@mende|@@ohn @end|ng |rom no@@@gov  Mon Jul  6 18:51:59 2026
+From: roy@mende|@@ohn @end|ng |rom no@@@gov (Roy Mendelssohn - NOAA Federal)
+Date: Mon, 6 Jul 2026 09:51:59 -0700
+Subject: [R-pkg-devel] Agentic Skills
+In-Reply-To: <CAPRVBcwLpEf6h7V3DuHESHK0zE3CEw0F1SXb4rpsaH3g11z4VQ@mail.gmail.com>
+References: <80B1BF51-2FCC-4782-8904-B2A8FCB4F69E@noaa.gov>
+ <CAPRVBcwLpEf6h7V3DuHESHK0zE3CEw0F1SXb4rpsaH3g11z4VQ@mail.gmail.com>
+Message-ID: <A7D97659-7703-45BE-8894-15A166A95F69@noaa.gov>
+
+Hi Michael:
+
+Thanks.  That is the type of thing I was interested in,  I am still concerned about how easy it would be to include malicious instructions in skills,  but it is good to see others thinking along the same lines.
+
+-Roy
+
+
+> On Jul 6, 2026, at 9:48?AM, Michael Chirico <michaelchirico4 at gmail.com> wrote:
+> 
+> inst/ is the right answer; how to organize it in inst/ will be hashed
+> out by the 'invisible hand'.
+> 
+> For now, I see two CRAN packages bundling skills:
+> 
+> - golem uses inst/agent-skills:
+> https://github.com/cran/golem/tree/2a6b7d54b6e8c9600ac64493f3cbd908a7df491d/inst/agent-skills
+> - mirai uses inst/skills:
+> https://github.com/cran/mirai/tree/060c400833c6b7d37826a9f50cd44ce14f3d6fb1/inst/skills
+> 
+> I've also started tracking repo-level LLM metadata, though I probably
+> need to take a pass at better organizing this project:
+> 
+> https://github.com/MichaelChirico/r-ci-samples
+> 
+> Mike C
+> 
+> On Mon, Jul 6, 2026 at 9:38?AM Roy Mendelssohn - NOAA Federal via
+> R-package-devel <r-package-devel at r-project.org> wrote:
+>> 
+>> I have been wondering if there has been any thought or discussion about having a standardized way to include agentic skills in an R package that a user could then copy to the appropriate place,  or fi this is even desirable.  One problem I see is that since skills can be in natural language it would be harder to catch malicious content,  but I know I have some skills I have developed for my own use that in my last go-rounds on my packages I thought it would be neat to generalize and make available.
+>> 
+>> Thanks,
+>> 
+>> -Roy
+>> ______________________________________________
+>> R-package-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+
+From pg| @end|ng |rom port@m@n@@org  Tue Jul  7 17:04:42 2026
+From: pg| @end|ng |rom port@m@n@@org (PierGianLuca Porta Mana)
+Date: Tue, 7 Jul 2026 17:04:42 +0200
+Subject: [R-pkg-devel] Questions and advice about restoring user's par()
+Message-ID: <a99b31ab-57d2-46b9-9967-8e3899a0a5c9@portamana.org>
+
+Hi everyone,
+
+I have some wondering about the restoration of the user's par() in a package's functions. There are several discussions on this list and elsewhere about the general problem, but I haven't found any advice regarding the following specific point. Very thankful to anyone who can give me insight.
+
+Let's say your package has a function that produces a plot by calling core-R functions like graphics::matplot(). These core-R functions are called with specific parameters, owing to the nature of the plots and of what needs to be emphasized. Here's a silly example:
+
+```
+pkgfun <- function(){
+   graphics::matplot(x = 1:2, y = 1:2, type = 'l')
+}
+```
+
+The function above creates a plot on some graphic device and, *while the device is open*, the user's par() is actually modified. For example we have
+
+original par():
+$xaxp
+[1] 0 1 5
+
+modified par() while graphic device is open:
+$xaxp
+[1] 1 2 5
+
+This modification occurs simply because we have called matplot(), even if we didn't directly call par(... = ...). Note that the original par is restored once we close the graphics device, say with dev.off() or closing its window.
+
+Here I have a first question:
+
+? Does CRAN mean that the user's par() should be restored *once the graphics device is closed*? or right *when the function has finished executing*, even if the graphics device is still open?
+
+I wasn't unable to understand which is meant, from the documentation.
+
+If the answer is "only once the graphics device is closed", then the function pkgfun() is OK and I don't need to worry further (and you don't need to read further).
+
+
+Let's now assume that CRAN wants the par() restored immediately after the function finishes executing instead. Then pkgfun() above is *not* acceptable in a package (destined to CRAN). One should save the old par() and restore it with on.exit(), as follows:
+
+```
+pkgfun2 <- function(){
+   oldpar <- par(no.readonly = TRUE)
+   on.exit(par(oldpar))
+
+   graphics::matplot(x = 1:2, y = 1:2, type = 'l')
+}
+```
+
+This new function version restores the original par() right after its execution.
+
+However, I now see a problem with this. Imagine that the user wants to add some annotation or similar to the plot. Let's say they want to add a vertical red line at x?=?1.2. With the original function, the user could simply achieve this with
+
+```
+> pkgfun() # produces the plot
+> abline(v = 1.2, col = 'red') # user wants to emphasize this x-value
+```
+
+then saving the plot somehow, maybe sandwiching the two commands above between a pdf() and a dev.off().
+
+With the "correct" function pkgfun2(), however, this is not possible. No vertical red line will appear, because the graphics parameters in par() no longer reflect that particular graphics window. How to deal with such a case?
+
+Sorry for the long email, hope it's of interest to others!
+Kind regards,
+Luca
+
+
+From @|mon@urb@nek @end|ng |rom R-project@org  Thu Jul  9 11:11:32 2026
+From: @|mon@urb@nek @end|ng |rom R-project@org (Simon Urbanek)
+Date: Thu, 9 Jul 2026 11:11:32 +0200
+Subject: [R-pkg-devel] Questions and advice about restoring user's par()
+In-Reply-To: <a99b31ab-57d2-46b9-9967-8e3899a0a5c9@portamana.org>
+References: <a99b31ab-57d2-46b9-9967-8e3899a0a5c9@portamana.org>
+Message-ID: <7363314C-76C9-442E-B298-FB781F68516F@R-project.org>
+
+Luca,
+
+I think you misunderstand the rule: the purpose is to not modify *your* customisation in par() that overrides *graphical* parameters (like line types, colors etc.), it is not about plot coordinate setup which you clearly are supposed to keep if the purpose of the function is to setup a new plot. Also, yes, you have to restore it at the end of the function.
+
+To take your example (slightly expanded):
+
+> a=par(no.readonly = TRUE)
+> graphics::matplot(x = 1:2, y = 1:2, type = 'l', lwd=2, col=2)
+> b=par(no.readonly = TRUE)
+> all.equal(a,b)
+[1] "Component ?usr?: Mean relative difference: 2"
+[2] "Component ?xaxp?: Mean relative difference: 2"
+[3] "Component ?yaxp?: Mean relative difference: 2"
+
+
+The key here is that matplot makes sure that parameters it changed (like lwd or col) are then restored before the function exits, so the only remaining changes are in parameters that setup the coordinates, but nothing else.
+
+This also means that your pkgfun doesn't need to mess with par() at all. The whole point of the rule is that, if everyone follows it, then you only need to restore par() if you modified it directly using par() - all other functions should restore things correctly.
+
+In addition, you typically don't want to save everything - you only need to save what you changed, so the typical idiom you should use is more like:
+
+f = function() {
+ p = par(family="Times")
+ on.exit(par(p))
+ graphics::matplot(x = 1:2, y = 1:2, type = 'l')
+}
+
+
+> a=par(no.readonly = TRUE)
+> f()
+> b=par(no.readonly = TRUE)
+> all.equal(a,b)
+[1] "Component ?usr?: Mean relative difference: 2"  [2] "Component ?xaxp?: Mean relative difference: 2"
+[3] "Component ?yaxp?: Mean relative difference: 2"
+
+Cheers,
+Simon
+
+
+> On Jul 7, 2026, at 17:04, PierGianLuca Porta Mana via R-package-devel <r-package-devel at r-project.org> wrote:
+> 
+> Hi everyone,
+> 
+> I have some wondering about the restoration of the user's par() in a package's functions. There are several discussions on this list and elsewhere about the general problem, but I haven't found any advice regarding the following specific point. Very thankful to anyone who can give me insight.
+> 
+> Let's say your package has a function that produces a plot by calling core-R functions like graphics::matplot(). These core-R functions are called with specific parameters, owing to the nature of the plots and of what needs to be emphasized. Here's a silly example:
+> 
+> ```
+> pkgfun <- function(){
+>  graphics::matplot(x = 1:2, y = 1:2, type = 'l')
+> }
+> ```
+> 
+> The function above creates a plot on some graphic device and, *while the device is open*, the user's par() is actually modified. For example we have
+> 
+> original par():
+> $xaxp
+> [1] 0 1 5
+> 
+> modified par() while graphic device is open:
+> $xaxp
+> [1] 1 2 5
+> 
+> This modification occurs simply because we have called matplot(), even if we didn't directly call par(... = ...). Note that the original par is restored once we close the graphics device, say with dev.off() or closing its window.
+> 
+> Here I have a first question:
+> 
+> ? Does CRAN mean that the user's par() should be restored *once the graphics device is closed*? or right *when the function has finished executing*, even if the graphics device is still open?
+> 
+> I wasn't unable to understand which is meant, from the documentation.
+> 
+> If the answer is "only once the graphics device is closed", then the function pkgfun() is OK and I don't need to worry further (and you don't need to read further).
+> 
+> 
+> Let's now assume that CRAN wants the par() restored immediately after the function finishes executing instead. Then pkgfun() above is *not* acceptable in a package (destined to CRAN). One should save the old par() and restore it with on.exit(), as follows:
+> 
+> ```
+> pkgfun2 <- function(){
+>  oldpar <- par(no.readonly = TRUE)
+>  on.exit(par(oldpar))
+> 
+>  graphics::matplot(x = 1:2, y = 1:2, type = 'l')
+> }
+> ```
+> 
+> This new function version restores the original par() right after its execution.
+> 
+> However, I now see a problem with this. Imagine that the user wants to add some annotation or similar to the plot. Let's say they want to add a vertical red line at x = 1.2. With the original function, the user could simply achieve this with
+> 
+> ```
+>> pkgfun() # produces the plot
+>> abline(v = 1.2, col = 'red') # user wants to emphasize this x-value
+> ```
+> 
+> then saving the plot somehow, maybe sandwiching the two commands above between a pdf() and a dev.off().
+> 
+> With the "correct" function pkgfun2(), however, this is not possible. No vertical red line will appear, because the graphics parameters in par() no longer reflect that particular graphics window. How to deal with such a case?
+> 
+> Sorry for the long email, hope it's of interest to others!
+> Kind regards,
+> Luca
+> 
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+> 
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Thu Jul  9 11:50:40 2026
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Thu, 9 Jul 2026 05:50:40 -0400
+Subject: [R-pkg-devel] Questions and advice about restoring user's par()
+In-Reply-To: <7363314C-76C9-442E-B298-FB781F68516F@R-project.org>
+References: <a99b31ab-57d2-46b9-9967-8e3899a0a5c9@portamana.org>
+ <7363314C-76C9-442E-B298-FB781F68516F@R-project.org>
+Message-ID: <7312677c-1f9b-4f2d-8d6a-3a9cf0d3a2b3@gmail.com>
+
+Simon, I agree that the three parameters below are fine to modify, but 
+some that are more problematic are the outer margin and multiple plot 
+settings, e.g. oma and mfrow.
+
+Changing those will affect later plots, so they should be reset.  But if 
+they are reset, it becomes difficult to add to the plots.  Perhaps the 
+community docs should discuss this issue?
+
+I think the best approach is to reset them, but return the required 
+settings so a later function can temporarily restore them for long 
+enough to modify the plot, i.e. the sort of thing persp() does.
+
+Duncan Murdoch
+
+
+On 2026-07-09 5:11 a.m., Simon Urbanek wrote:
+> Luca,
+> 
+> I think you misunderstand the rule: the purpose is to not modify *your* customisation in par() that overrides *graphical* parameters (like line types, colors etc.), it is not about plot coordinate setup which you clearly are supposed to keep if the purpose of the function is to setup a new plot. Also, yes, you have to restore it at the end of the function.
+> 
+> To take your example (slightly expanded):
+> 
+>> a=par(no.readonly = TRUE)
+>> graphics::matplot(x = 1:2, y = 1:2, type = 'l', lwd=2, col=2)
+>> b=par(no.readonly = TRUE)
+>> all.equal(a,b)
+> [1] "Component ?usr?: Mean relative difference: 2"
+> [2] "Component ?xaxp?: Mean relative difference: 2"
+> [3] "Component ?yaxp?: Mean relative difference: 2"
+> 
+> 
+> The key here is that matplot makes sure that parameters it changed (like lwd or col) are then restored before the function exits, so the only remaining changes are in parameters that setup the coordinates, but nothing else.
+> 
+> This also means that your pkgfun doesn't need to mess with par() at all. The whole point of the rule is that, if everyone follows it, then you only need to restore par() if you modified it directly using par() - all other functions should restore things correctly.
+> 
+> In addition, you typically don't want to save everything - you only need to save what you changed, so the typical idiom you should use is more like:
+> 
+> f = function() {
+>   p = par(family="Times")
+>   on.exit(par(p))
+>   graphics::matplot(x = 1:2, y = 1:2, type = 'l')
+> }
+> 
+> 
+>> a=par(no.readonly = TRUE)
+>> f()
+>> b=par(no.readonly = TRUE)
+>> all.equal(a,b)
+> [1] "Component ?usr?: Mean relative difference: 2"  [2] "Component ?xaxp?: Mean relative difference: 2"
+> [3] "Component ?yaxp?: Mean relative difference: 2"
+> 
+> Cheers,
+> Simon
+> 
+> 
+>> On Jul 7, 2026, at 17:04, PierGianLuca Porta Mana via R-package-devel <r-package-devel at r-project.org> wrote:
+>>
+>> Hi everyone,
+>>
+>> I have some wondering about the restoration of the user's par() in a package's functions. There are several discussions on this list and elsewhere about the general problem, but I haven't found any advice regarding the following specific point. Very thankful to anyone who can give me insight.
+>>
+>> Let's say your package has a function that produces a plot by calling core-R functions like graphics::matplot(). These core-R functions are called with specific parameters, owing to the nature of the plots and of what needs to be emphasized. Here's a silly example:
+>>
+>> ```
+>> pkgfun <- function(){
+>>   graphics::matplot(x = 1:2, y = 1:2, type = 'l')
+>> }
+>> ```
+>>
+>> The function above creates a plot on some graphic device and, *while the device is open*, the user's par() is actually modified. For example we have
+>>
+>> original par():
+>> $xaxp
+>> [1] 0 1 5
+>>
+>> modified par() while graphic device is open:
+>> $xaxp
+>> [1] 1 2 5
+>>
+>> This modification occurs simply because we have called matplot(), even if we didn't directly call par(... = ...). Note that the original par is restored once we close the graphics device, say with dev.off() or closing its window.
+>>
+>> Here I have a first question:
+>>
+>> ? Does CRAN mean that the user's par() should be restored *once the graphics device is closed*? or right *when the function has finished executing*, even if the graphics device is still open?
+>>
+>> I wasn't unable to understand which is meant, from the documentation.
+>>
+>> If the answer is "only once the graphics device is closed", then the function pkgfun() is OK and I don't need to worry further (and you don't need to read further).
+>>
+>>
+>> Let's now assume that CRAN wants the par() restored immediately after the function finishes executing instead. Then pkgfun() above is *not* acceptable in a package (destined to CRAN). One should save the old par() and restore it with on.exit(), as follows:
+>>
+>> ```
+>> pkgfun2 <- function(){
+>>   oldpar <- par(no.readonly = TRUE)
+>>   on.exit(par(oldpar))
+>>
+>>   graphics::matplot(x = 1:2, y = 1:2, type = 'l')
+>> }
+>> ```
+>>
+>> This new function version restores the original par() right after its execution.
+>>
+>> However, I now see a problem with this. Imagine that the user wants to add some annotation or similar to the plot. Let's say they want to add a vertical red line at x = 1.2. With the original function, the user could simply achieve this with
+>>
+>> ```
+>>> pkgfun() # produces the plot
+>>> abline(v = 1.2, col = 'red') # user wants to emphasize this x-value
+>> ```
+>>
+>> then saving the plot somehow, maybe sandwiching the two commands above between a pdf() and a dev.off().
+>>
+>> With the "correct" function pkgfun2(), however, this is not possible. No vertical red line will appear, because the graphics parameters in par() no longer reflect that particular graphics window. How to deal with such a case?
+>>
+>> Sorry for the long email, hope it's of interest to others!
+>> Kind regards,
+>> Luca
+>>
+>> ______________________________________________
+>> R-package-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>>
+> 
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+
+From @|mon@urb@nek @end|ng |rom r-project@org  Thu Jul  9 15:10:47 2026
+From: @|mon@urb@nek @end|ng |rom r-project@org (Simon Urbanek)
+Date: Thu, 9 Jul 2026 15:10:47 +0200
+Subject: [R-pkg-devel] Questions and advice about restoring user's par()
+In-Reply-To: <7312677c-1f9b-4f2d-8d6a-3a9cf0d3a2b3@gmail.com>
+References: <7312677c-1f9b-4f2d-8d6a-3a9cf0d3a2b3@gmail.com>
+Message-ID: <00027AE3-DF61-4D20-9F80-25F161A321E3@r-project.org>
+
+Duncan,
+
+Sorry, maybe I wasn?t explicit enough: you have to restore any parameters you set explicitly, which does include mfrow and similar as well.
+
+What I was illustrating with the code was just that they are all restored - those that were not are those that are defined by plot.window which is required by design if the function creates a new plot.
+
+Any suggestions for improvements of the community documentation are welcome.
+
+Cheers,
+Simon 
+
+
+> On Jul 9, 2026, at 11:51, Duncan Murdoch <murdoch.duncan at gmail.com> wrote:
+> 
+> ?Simon, I agree that the three parameters below are fine to modify, but some that are more problematic are the outer margin and multiple plot settings, e.g. oma and mfrow.
+> 
+> Changing those will affect later plots, so they should be reset.  But if they are reset, it becomes difficult to add to the plots.  Perhaps the community docs should discuss this issue?
+> 
+> I think the best approach is to reset them, but return the required settings so a later function can temporarily restore them for long enough to modify the plot, i.e. the sort of thing persp() does.
+> 
+> Duncan Murdoch
+> 
+> 
+>> On 2026-07-09 5:11 a.m., Simon Urbanek wrote:
+>> Luca,
+>> I think you misunderstand the rule: the purpose is to not modify *your* customisation in par() that overrides *graphical* parameters (like line types, colors etc.), it is not about plot coordinate setup which you clearly are supposed to keep if the purpose of the function is to setup a new plot. Also, yes, you have to restore it at the end of the function.
+>> To take your example (slightly expanded):
+>>> a=par(no.readonly = TRUE)
+>>> graphics::matplot(x = 1:2, y = 1:2, type = 'l', lwd=2, col=2)
+>>> b=par(no.readonly = TRUE)
+>>> all.equal(a,b)
+>> [1] "Component ?usr?: Mean relative difference: 2"
+>> [2] "Component ?xaxp?: Mean relative difference: 2"
+>> [3] "Component ?yaxp?: Mean relative difference: 2"
+>> The key here is that matplot makes sure that parameters it changed (like lwd or col) are then restored before the function exits, so the only remaining changes are in parameters that setup the coordinates, but nothing else.
+>> This also means that your pkgfun doesn't need to mess with par() at all. The whole point of the rule is that, if everyone follows it, then you only need to restore par() if you modified it directly using par() - all other functions should restore things correctly.
+>> In addition, you typically don't want to save everything - you only need to save what you changed, so the typical idiom you should use is more like:
+>> f = function() {
+>>  p = par(family="Times")
+>>  on.exit(par(p))
+>>  graphics::matplot(x = 1:2, y = 1:2, type = 'l')
+>> }
+>>> a=par(no.readonly = TRUE)
+>>> f()
+>>> b=par(no.readonly = TRUE)
+>>> all.equal(a,b)
+>> [1] "Component ?usr?: Mean relative difference: 2"  [2] "Component ?xaxp?: Mean relative difference: 2"
+>> [3] "Component ?yaxp?: Mean relative difference: 2"
+>> Cheers,
+>> Simon
+>>>> On Jul 7, 2026, at 17:04, PierGianLuca Porta Mana via R-package-devel <r-package-devel at r-project.org> wrote:
+>>> 
+>>> Hi everyone,
+>>> 
+>>> I have some wondering about the restoration of the user's par() in a package's functions. There are several discussions on this list and elsewhere about the general problem, but I haven't found any advice regarding the following specific point. Very thankful to anyone who can give me insight.
+>>> 
+>>> Let's say your package has a function that produces a plot by calling core-R functions like graphics::matplot(). These core-R functions are called with specific parameters, owing to the nature of the plots and of what needs to be emphasized. Here's a silly example:
+>>> 
+>>> ```
+>>> pkgfun <- function(){
+>>>  graphics::matplot(x = 1:2, y = 1:2, type = 'l')
+>>> }
+>>> ```
+>>> 
+>>> The function above creates a plot on some graphic device and, *while the device is open*, the user's par() is actually modified. For example we have
+>>> 
+>>> original par():
+>>> $xaxp
+>>> [1] 0 1 5
+>>> 
+>>> modified par() while graphic device is open:
+>>> $xaxp
+>>> [1] 1 2 5
+>>> 
+>>> This modification occurs simply because we have called matplot(), even if we didn't directly call par(... = ...). Note that the original par is restored once we close the graphics device, say with dev.off() or closing its window.
+>>> 
+>>> Here I have a first question:
+>>> 
+>>> ? Does CRAN mean that the user's par() should be restored *once the graphics device is closed*? or right *when the function has finished executing*, even if the graphics device is still open?
+>>> 
+>>> I wasn't unable to understand which is meant, from the documentation.
+>>> 
+>>> If the answer is "only once the graphics device is closed", then the function pkgfun() is OK and I don't need to worry further (and you don't need to read further).
+>>> 
+>>> 
+>>> Let's now assume that CRAN wants the par() restored immediately after the function finishes executing instead. Then pkgfun() above is *not* acceptable in a package (destined to CRAN). One should save the old par() and restore it with on.exit(), as follows:
+>>> 
+>>> ```
+>>> pkgfun2 <- function(){
+>>>  oldpar <- par(no.readonly = TRUE)
+>>>  on.exit(par(oldpar))
+>>> 
+>>>  graphics::matplot(x = 1:2, y = 1:2, type = 'l')
+>>> }
+>>> ```
+>>> 
+>>> This new function version restores the original par() right after its execution.
+>>> 
+>>> However, I now see a problem with this. Imagine that the user wants to add some annotation or similar to the plot. Let's say they want to add a vertical red line at x = 1.2. With the original function, the user could simply achieve this with
+>>> 
+>>> ```
+>>>> pkgfun() # produces the plot
+>>>> abline(v = 1.2, col = 'red') # user wants to emphasize this x-value
+>>> ```
+>>> 
+>>> then saving the plot somehow, maybe sandwiching the two commands above between a pdf() and a dev.off().
+>>> 
+>>> With the "correct" function pkgfun2(), however, this is not possible. No vertical red line will appear, because the graphics parameters in par() no longer reflect that particular graphics window. How to deal with such a case?
+>>> 
+>>> Sorry for the long email, hope it's of interest to others!
+>>> Kind regards,
+>>> Luca
+>>> 
+>>> ______________________________________________
+>>> R-package-devel at r-project.org mailing list
+>>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>>> 
+>> ______________________________________________
+>> R-package-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+> 
+
+
+From ||gge@ @end|ng |rom @t@t|@t|k@tu-dortmund@de  Thu Jul  9 15:48:10 2026
+From: ||gge@ @end|ng |rom @t@t|@t|k@tu-dortmund@de (Uwe Ligges)
+Date: Thu, 9 Jul 2026 15:48:10 +0200
+Subject: [R-pkg-devel] Questions and advice about restoring user's par()
+In-Reply-To: <00027AE3-DF61-4D20-9F80-25F161A321E3@r-project.org>
+References: <7312677c-1f9b-4f2d-8d6a-3a9cf0d3a2b3@gmail.com>
+ <00027AE3-DF61-4D20-9F80-25F161A321E3@r-project.org>
+Message-ID: <90c8c5f7-5834-4de4-8f4f-44836ea5a9de@statistik.tu-dortmund.de>
+
+I think Duncan explained i correctly, reset everything but return a list 
+of parameters that need to be set again if you want to, e.g., add to the 
+plot generated with modified parameters
+
+Best,
+Uwe
+
+On 09.07.2026 15:10, Simon Urbanek wrote:
+> Duncan,
+> 
+> Sorry, maybe I wasn?t explicit enough: you have to restore any parameters you set explicitly, which does include mfrow and similar as well.
+> 
+> What I was illustrating with the code was just that they are all restored - those that were not are those that are defined by plot.window which is required by design if the function creates a new plot.
+> 
+> Any suggestions for improvements of the community documentation are welcome.
+> 
+> Cheers,
+> Simon
+> 
+> 
+>> On Jul 9, 2026, at 11:51, Duncan Murdoch <murdoch.duncan at gmail.com> wrote:
+>>
+>> ?Simon, I agree that the three parameters below are fine to modify, but some that are more problematic are the outer margin and multiple plot settings, e.g. oma and mfrow.
+>>
+>> Changing those will affect later plots, so they should be reset.  But if they are reset, it becomes difficult to add to the plots.  Perhaps the community docs should discuss this issue?
+>>
+>> I think the best approach is to reset them, but return the required settings so a later function can temporarily restore them for long enough to modify the plot, i.e. the sort of thing persp() does.
+>>
+>> Duncan Murdoch
+>>
+>>
+>>> On 2026-07-09 5:11 a.m., Simon Urbanek wrote:
+>>> Luca,
+>>> I think you misunderstand the rule: the purpose is to not modify *your* customisation in par() that overrides *graphical* parameters (like line types, colors etc.), it is not about plot coordinate setup which you clearly are supposed to keep if the purpose of the function is to setup a new plot. Also, yes, you have to restore it at the end of the function.
+>>> To take your example (slightly expanded):
+>>>> a=par(no.readonly = TRUE)
+>>>> graphics::matplot(x = 1:2, y = 1:2, type = 'l', lwd=2, col=2)
+>>>> b=par(no.readonly = TRUE)
+>>>> all.equal(a,b)
+>>> [1] "Component ?usr?: Mean relative difference: 2"
+>>> [2] "Component ?xaxp?: Mean relative difference: 2"
+>>> [3] "Component ?yaxp?: Mean relative difference: 2"
+>>> The key here is that matplot makes sure that parameters it changed (like lwd or col) are then restored before the function exits, so the only remaining changes are in parameters that setup the coordinates, but nothing else.
+>>> This also means that your pkgfun doesn't need to mess with par() at all. The whole point of the rule is that, if everyone follows it, then you only need to restore par() if you modified it directly using par() - all other functions should restore things correctly.
+>>> In addition, you typically don't want to save everything - you only need to save what you changed, so the typical idiom you should use is more like:
+>>> f = function() {
+>>>   p = par(family="Times")
+>>>   on.exit(par(p))
+>>>   graphics::matplot(x = 1:2, y = 1:2, type = 'l')
+>>> }
+>>>> a=par(no.readonly = TRUE)
+>>>> f()
+>>>> b=par(no.readonly = TRUE)
+>>>> all.equal(a,b)
+>>> [1] "Component ?usr?: Mean relative difference: 2"  [2] "Component ?xaxp?: Mean relative difference: 2"
+>>> [3] "Component ?yaxp?: Mean relative difference: 2"
+>>> Cheers,
+>>> Simon
+>>>>> On Jul 7, 2026, at 17:04, PierGianLuca Porta Mana via R-package-devel <r-package-devel at r-project.org> wrote:
+>>>>
+>>>> Hi everyone,
+>>>>
+>>>> I have some wondering about the restoration of the user's par() in a package's functions. There are several discussions on this list and elsewhere about the general problem, but I haven't found any advice regarding the following specific point. Very thankful to anyone who can give me insight.
+>>>>
+>>>> Let's say your package has a function that produces a plot by calling core-R functions like graphics::matplot(). These core-R functions are called with specific parameters, owing to the nature of the plots and of what needs to be emphasized. Here's a silly example:
+>>>>
+>>>> ```
+>>>> pkgfun <- function(){
+>>>>   graphics::matplot(x = 1:2, y = 1:2, type = 'l')
+>>>> }
+>>>> ```
+>>>>
+>>>> The function above creates a plot on some graphic device and, *while the device is open*, the user's par() is actually modified. For example we have
+>>>>
+>>>> original par():
+>>>> $xaxp
+>>>> [1] 0 1 5
+>>>>
+>>>> modified par() while graphic device is open:
+>>>> $xaxp
+>>>> [1] 1 2 5
+>>>>
+>>>> This modification occurs simply because we have called matplot(), even if we didn't directly call par(... = ...). Note that the original par is restored once we close the graphics device, say with dev.off() or closing its window.
+>>>>
+>>>> Here I have a first question:
+>>>>
+>>>> ? Does CRAN mean that the user's par() should be restored *once the graphics device is closed*? or right *when the function has finished executing*, even if the graphics device is still open?
+>>>>
+>>>> I wasn't unable to understand which is meant, from the documentation.
+>>>>
+>>>> If the answer is "only once the graphics device is closed", then the function pkgfun() is OK and I don't need to worry further (and you don't need to read further).
+>>>>
+>>>>
+>>>> Let's now assume that CRAN wants the par() restored immediately after the function finishes executing instead. Then pkgfun() above is *not* acceptable in a package (destined to CRAN). One should save the old par() and restore it with on.exit(), as follows:
+>>>>
+>>>> ```
+>>>> pkgfun2 <- function(){
+>>>>   oldpar <- par(no.readonly = TRUE)
+>>>>   on.exit(par(oldpar))
+>>>>
+>>>>   graphics::matplot(x = 1:2, y = 1:2, type = 'l')
+>>>> }
+>>>> ```
+>>>>
+>>>> This new function version restores the original par() right after its execution.
+>>>>
+>>>> However, I now see a problem with this. Imagine that the user wants to add some annotation or similar to the plot. Let's say they want to add a vertical red line at x = 1.2. With the original function, the user could simply achieve this with
+>>>>
+>>>> ```
+>>>>> pkgfun() # produces the plot
+>>>>> abline(v = 1.2, col = 'red') # user wants to emphasize this x-value
+>>>> ```
+>>>>
+>>>> then saving the plot somehow, maybe sandwiching the two commands above between a pdf() and a dev.off().
+>>>>
+>>>> With the "correct" function pkgfun2(), however, this is not possible. No vertical red line will appear, because the graphics parameters in par() no longer reflect that particular graphics window. How to deal with such a case?
+>>>>
+>>>> Sorry for the long email, hope it's of interest to others!
+>>>> Kind regards,
+>>>> Luca
+>>>>
+>>>> ______________________________________________
+>>>> R-package-devel at r-project.org mailing list
+>>>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>>>>
+>>> ______________________________________________
+>>> R-package-devel at r-project.org mailing list
+>>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>>
+> 
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+
+From pg| @end|ng |rom port@m@n@@org  Thu Jul  9 17:35:34 2026
+From: pg| @end|ng |rom port@m@n@@org (PierGianLuca Porta Mana)
+Date: Thu, 9 Jul 2026 17:35:34 +0200
+Subject: [R-pkg-devel] Questions and advice about restoring user's par()
+In-Reply-To: <90c8c5f7-5834-4de4-8f4f-44836ea5a9de@statistik.tu-dortmund.de>
+References: <7312677c-1f9b-4f2d-8d6a-3a9cf0d3a2b3@gmail.com>
+ <00027AE3-DF61-4D20-9F80-25F161A321E3@r-project.org>
+ <90c8c5f7-5834-4de4-8f4f-44836ea5a9de@statistik.tu-dortmund.de>
+Message-ID: <d99ea947-b81b-4918-af16-ebd17d0e3d1e@portamana.org>
+
+Dear Duncan, Simon, Uwe,
+
+Thank you all very much for the explanations and examples. It's much clearer to me now. The simple rule "you have to restore any parameters you set explicitly" seems indeed the intended meaning of unofficial and official documentation (for instance <https://contributor.r-project.org/cran-cookbook/code_issues.html#change-of-options-graphical-parameters-and-working-directory> and <https://cran.r-project.org/web/packages/policies.html>). I just wanted to be sure.
+
+Great advice, Simon, about saving and restoring the parameters I modify with `oldpar <- par(...=...)`. "par()" has always overwhelmed me, as it handles so many interesting and important parameters.
+
+Thank Duncan and Uwe about the idea of returning parameters that need to be set again. I was checking how packages like 'tinyplot' handle this kind of need. Luckily in my case the usual `oldpar <- par(...=...)` immediately followed by `on.exit(par(oldpar))` (with `add=TRUE` if needed) works well.
+
+Cheers!
+Luca
+
+On 260709 15:48, Uwe Ligges wrote:
+> I think Duncan explained i correctly, reset everything but return a list of parameters that need to be set again if you want to, e.g., add to the plot generated with modified parameters
+> 
+> Best,
+> Uwe
+> 
+> On 09.07.2026 15:10, Simon Urbanek wrote:
+>> Duncan,
+>>
+>> Sorry, maybe I wasn?t explicit enough: you have to restore any parameters you set explicitly, which does include mfrow and similar as well.
+>>
+>> What I was illustrating with the code was just that they are all restored - those that were not are those that are defined by plot.window which is required by design if the function creates a new plot.
+>>
+>> Any suggestions for improvements of the community documentation are welcome.
+>>
+>> Cheers,
+>> Simon
+>>
+>>
+>>> On Jul 9, 2026, at 11:51, Duncan Murdoch <murdoch.duncan at gmail.com> wrote:
+>>>
+>>> ?Simon, I agree that the three parameters below are fine to modify, but some that are more problematic are the outer margin and multiple plot settings, e.g. oma and mfrow.
+>>>
+>>> Changing those will affect later plots, so they should be reset.? But if they are reset, it becomes difficult to add to the plots.? Perhaps the community docs should discuss this issue?
+>>>
+>>> I think the best approach is to reset them, but return the required settings so a later function can temporarily restore them for long enough to modify the plot, i.e. the sort of thing persp() does.
+>>>
+>>> Duncan Murdoch
+>>>
+>>>
+>>>> On 2026-07-09 5:11 a.m., Simon Urbanek wrote:
+>>>> Luca,
+>>>> I think you misunderstand the rule: the purpose is to not modify *your* customisation in par() that overrides *graphical* parameters (like line types, colors etc.), it is not about plot coordinate setup which you clearly are supposed to keep if the purpose of the function is to setup a new plot. Also, yes, you have to restore it at the end of the function.
+>>>> To take your example (slightly expanded):
+>>>>> a=par(no.readonly = TRUE)
+>>>>> graphics::matplot(x = 1:2, y = 1:2, type = 'l', lwd=2, col=2)
+>>>>> b=par(no.readonly = TRUE)
+>>>>> all.equal(a,b)
+>>>> [1] "Component ?usr?: Mean relative difference: 2"
+>>>> [2] "Component ?xaxp?: Mean relative difference: 2"
+>>>> [3] "Component ?yaxp?: Mean relative difference: 2"
+>>>> The key here is that matplot makes sure that parameters it changed (like lwd or col) are then restored before the function exits, so the only remaining changes are in parameters that setup the coordinates, but nothing else.
+>>>> This also means that your pkgfun doesn't need to mess with par() at all. The whole point of the rule is that, if everyone follows it, then you only need to restore par() if you modified it directly using par() - all other functions should restore things correctly.
+>>>> In addition, you typically don't want to save everything - you only need to save what you changed, so the typical idiom you should use is more like:
+>>>> f = function() {
+>>>> ? p = par(family="Times")
+>>>> ? on.exit(par(p))
+>>>> ? graphics::matplot(x = 1:2, y = 1:2, type = 'l')
+>>>> }
+>>>>> a=par(no.readonly = TRUE)
+>>>>> f()
+>>>>> b=par(no.readonly = TRUE)
+>>>>> all.equal(a,b)
+>>>> [1] "Component ?usr?: Mean relative difference: 2"? [2] "Component ?xaxp?: Mean relative difference: 2"
+>>>> [3] "Component ?yaxp?: Mean relative difference: 2"
+>>>> Cheers,
+>>>> Simon
+>>>>>> On Jul 7, 2026, at 17:04, PierGianLuca Porta Mana via R-package-devel <r-package-devel at r-project.org> wrote:
+>>>>>
+>>>>> Hi everyone,
+>>>>>
+>>>>> I have some wondering about the restoration of the user's par() in a package's functions. There are several discussions on this list and elsewhere about the general problem, but I haven't found any advice regarding the following specific point. Very thankful to anyone who can give me insight.
+>>>>>
+>>>>> Let's say your package has a function that produces a plot by calling core-R functions like graphics::matplot(). These core-R functions are called with specific parameters, owing to the nature of the plots and of what needs to be emphasized. Here's a silly example:
+>>>>>
+>>>>> ```
+>>>>> pkgfun <- function(){
+>>>>> ? graphics::matplot(x = 1:2, y = 1:2, type = 'l')
+>>>>> }
+>>>>> ```
+>>>>>
+>>>>> The function above creates a plot on some graphic device and, *while the device is open*, the user's par() is actually modified. For example we have
+>>>>>
+>>>>> original par():
+>>>>> $xaxp
+>>>>> [1] 0 1 5
+>>>>>
+>>>>> modified par() while graphic device is open:
+>>>>> $xaxp
+>>>>> [1] 1 2 5
+>>>>>
+>>>>> This modification occurs simply because we have called matplot(), even if we didn't directly call par(... = ...). Note that the original par is restored once we close the graphics device, say with dev.off() or closing its window.
+>>>>>
+>>>>> Here I have a first question:
+>>>>>
+>>>>> ? Does CRAN mean that the user's par() should be restored *once the graphics device is closed*? or right *when the function has finished executing*, even if the graphics device is still open?
+>>>>>
+>>>>> I wasn't unable to understand which is meant, from the documentation.
+>>>>>
+>>>>> If the answer is "only once the graphics device is closed", then the function pkgfun() is OK and I don't need to worry further (and you don't need to read further).
+>>>>>
+>>>>>
+>>>>> Let's now assume that CRAN wants the par() restored immediately after the function finishes executing instead. Then pkgfun() above is *not* acceptable in a package (destined to CRAN). One should save the old par() and restore it with on.exit(), as follows:
+>>>>>
+>>>>> ```
+>>>>> pkgfun2 <- function(){
+>>>>> ? oldpar <- par(no.readonly = TRUE)
+>>>>> ? on.exit(par(oldpar))
+>>>>>
+>>>>> ? graphics::matplot(x = 1:2, y = 1:2, type = 'l')
+>>>>> }
+>>>>> ```
+>>>>>
+>>>>> This new function version restores the original par() right after its execution.
+>>>>>
+>>>>> However, I now see a problem with this. Imagine that the user wants to add some annotation or similar to the plot. Let's say they want to add a vertical red line at x = 1.2. With the original function, the user could simply achieve this with
+>>>>>
+>>>>> ```
+>>>>>> pkgfun() # produces the plot
+>>>>>> abline(v = 1.2, col = 'red') # user wants to emphasize this x-value
+>>>>> ```
+>>>>>
+>>>>> then saving the plot somehow, maybe sandwiching the two commands above between a pdf() and a dev.off().
+>>>>>
+>>>>> With the "correct" function pkgfun2(), however, this is not possible. No vertical red line will appear, because the graphics parameters in par() no longer reflect that particular graphics window. How to deal with such a case?
+>>>>>
+>>>>> Sorry for the long email, hope it's of interest to others!
+>>>>> Kind regards,
+>>>>> Luca
+>>>>>
+>>>>> ______________________________________________
+>>>>> R-package-devel at r-project.org mailing list
+>>>>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>>>>>
+>>>> ______________________________________________
+>>>> R-package-devel at r-project.org mailing list
+>>>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>>>
+>>
+>> ______________________________________________
+>> R-package-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+
+
+From 538280 @end|ng |rom gm@||@com  Thu Jul  9 17:57:44 2026
+From: 538280 @end|ng |rom gm@||@com (Greg Snow)
+Date: Thu, 9 Jul 2026 09:57:44 -0600
+Subject: [R-pkg-devel] Questions and advice about restoring user's par()
+In-Reply-To: <d99ea947-b81b-4918-af16-ebd17d0e3d1e@portamana.org>
+References: <7312677c-1f9b-4f2d-8d6a-3a9cf0d3a2b3@gmail.com>
+ <00027AE3-DF61-4D20-9F80-25F161A321E3@r-project.org>
+ <90c8c5f7-5834-4de4-8f4f-44836ea5a9de@statistik.tu-dortmund.de>
+ <d99ea947-b81b-4918-af16-ebd17d0e3d1e@portamana.org>
+Message-ID: <CAFEqCdzzgDmz7EDE+Qwgg6tjUV-kyaCg2bZ2G64J0cNy2Kk5Jg@mail.gmail.com>
+
+One additional option for allowing the user of your function to add to
+a plot, but still properly reset graphical parameters, is to include
+an optional argument to your function that can be a function that will
+be run inside of your function, before graphical parameters are reset.
+One advantage of doing this is that you can have your function run the
+user supplied function after the coordinate system is set up, but
+before the main data is plotted, this means that the data will be "on
+top" of the user additions instead of underneath.  The panel.first
+argument to the hist function is an example of this (though it expects
+an expression rather than a function to be passed in, the function
+option is probably safer).
+
+
+
+On Thu, Jul 9, 2026 at 9:36?AM PierGianLuca Porta Mana via
+R-package-devel <r-package-devel at r-project.org> wrote:
+>
+> Dear Duncan, Simon, Uwe,
+>
+> Thank you all very much for the explanations and examples. It's much clearer to me now. The simple rule "you have to restore any parameters you set explicitly" seems indeed the intended meaning of unofficial and official documentation (for instance <https://contributor.r-project.org/cran-cookbook/code_issues.html#change-of-options-graphical-parameters-and-working-directory> and <https://cran.r-project.org/web/packages/policies.html>). I just wanted to be sure.
+>
+> Great advice, Simon, about saving and restoring the parameters I modify with `oldpar <- par(...=...)`. "par()" has always overwhelmed me, as it handles so many interesting and important parameters.
+>
+> Thank Duncan and Uwe about the idea of returning parameters that need to be set again. I was checking how packages like 'tinyplot' handle this kind of need. Luckily in my case the usual `oldpar <- par(...=...)` immediately followed by `on.exit(par(oldpar))` (with `add=TRUE` if needed) works well.
+>
+> Cheers!
+> Luca
+>
+> On 260709 15:48, Uwe Ligges wrote:
+> > I think Duncan explained i correctly, reset everything but return a list of parameters that need to be set again if you want to, e.g., add to the plot generated with modified parameters
+> >
+> > Best,
+> > Uwe
+> >
+> > On 09.07.2026 15:10, Simon Urbanek wrote:
+> >> Duncan,
+> >>
+> >> Sorry, maybe I wasn?t explicit enough: you have to restore any parameters you set explicitly, which does include mfrow and similar as well.
+> >>
+> >> What I was illustrating with the code was just that they are all restored - those that were not are those that are defined by plot.window which is required by design if the function creates a new plot.
+> >>
+> >> Any suggestions for improvements of the community documentation are welcome.
+> >>
+> >> Cheers,
+> >> Simon
+> >>
+> >>
+> >>> On Jul 9, 2026, at 11:51, Duncan Murdoch <murdoch.duncan at gmail.com> wrote:
+> >>>
+> >>> ?Simon, I agree that the three parameters below are fine to modify, but some that are more problematic are the outer margin and multiple plot settings, e.g. oma and mfrow.
+> >>>
+> >>> Changing those will affect later plots, so they should be reset.  But if they are reset, it becomes difficult to add to the plots.  Perhaps the community docs should discuss this issue?
+> >>>
+> >>> I think the best approach is to reset them, but return the required settings so a later function can temporarily restore them for long enough to modify the plot, i.e. the sort of thing persp() does.
+> >>>
+> >>> Duncan Murdoch
+> >>>
+> >>>
+> >>>> On 2026-07-09 5:11 a.m., Simon Urbanek wrote:
+> >>>> Luca,
+> >>>> I think you misunderstand the rule: the purpose is to not modify *your* customisation in par() that overrides *graphical* parameters (like line types, colors etc.), it is not about plot coordinate setup which you clearly are supposed to keep if the purpose of the function is to setup a new plot. Also, yes, you have to restore it at the end of the function.
+> >>>> To take your example (slightly expanded):
+> >>>>> a=par(no.readonly = TRUE)
+> >>>>> graphics::matplot(x = 1:2, y = 1:2, type = 'l', lwd=2, col=2)
+> >>>>> b=par(no.readonly = TRUE)
+> >>>>> all.equal(a,b)
+> >>>> [1] "Component ?usr?: Mean relative difference: 2"
+> >>>> [2] "Component ?xaxp?: Mean relative difference: 2"
+> >>>> [3] "Component ?yaxp?: Mean relative difference: 2"
+> >>>> The key here is that matplot makes sure that parameters it changed (like lwd or col) are then restored before the function exits, so the only remaining changes are in parameters that setup the coordinates, but nothing else.
+> >>>> This also means that your pkgfun doesn't need to mess with par() at all. The whole point of the rule is that, if everyone follows it, then you only need to restore par() if you modified it directly using par() - all other functions should restore things correctly.
+> >>>> In addition, you typically don't want to save everything - you only need to save what you changed, so the typical idiom you should use is more like:
+> >>>> f = function() {
+> >>>>   p = par(family="Times")
+> >>>>   on.exit(par(p))
+> >>>>   graphics::matplot(x = 1:2, y = 1:2, type = 'l')
+> >>>> }
+> >>>>> a=par(no.readonly = TRUE)
+> >>>>> f()
+> >>>>> b=par(no.readonly = TRUE)
+> >>>>> all.equal(a,b)
+> >>>> [1] "Component ?usr?: Mean relative difference: 2"  [2] "Component ?xaxp?: Mean relative difference: 2"
+> >>>> [3] "Component ?yaxp?: Mean relative difference: 2"
+> >>>> Cheers,
+> >>>> Simon
+> >>>>>> On Jul 7, 2026, at 17:04, PierGianLuca Porta Mana via R-package-devel <r-package-devel at r-project.org> wrote:
+> >>>>>
+> >>>>> Hi everyone,
+> >>>>>
+> >>>>> I have some wondering about the restoration of the user's par() in a package's functions. There are several discussions on this list and elsewhere about the general problem, but I haven't found any advice regarding the following specific point. Very thankful to anyone who can give me insight.
+> >>>>>
+> >>>>> Let's say your package has a function that produces a plot by calling core-R functions like graphics::matplot(). These core-R functions are called with specific parameters, owing to the nature of the plots and of what needs to be emphasized. Here's a silly example:
+> >>>>>
+> >>>>> ```
+> >>>>> pkgfun <- function(){
+> >>>>>   graphics::matplot(x = 1:2, y = 1:2, type = 'l')
+> >>>>> }
+> >>>>> ```
+> >>>>>
+> >>>>> The function above creates a plot on some graphic device and, *while the device is open*, the user's par() is actually modified. For example we have
+> >>>>>
+> >>>>> original par():
+> >>>>> $xaxp
+> >>>>> [1] 0 1 5
+> >>>>>
+> >>>>> modified par() while graphic device is open:
+> >>>>> $xaxp
+> >>>>> [1] 1 2 5
+> >>>>>
+> >>>>> This modification occurs simply because we have called matplot(), even if we didn't directly call par(... = ...). Note that the original par is restored once we close the graphics device, say with dev.off() or closing its window.
+> >>>>>
+> >>>>> Here I have a first question:
+> >>>>>
+> >>>>> ? Does CRAN mean that the user's par() should be restored *once the graphics device is closed*? or right *when the function has finished executing*, even if the graphics device is still open?
+> >>>>>
+> >>>>> I wasn't unable to understand which is meant, from the documentation.
+> >>>>>
+> >>>>> If the answer is "only once the graphics device is closed", then the function pkgfun() is OK and I don't need to worry further (and you don't need to read further).
+> >>>>>
+> >>>>>
+> >>>>> Let's now assume that CRAN wants the par() restored immediately after the function finishes executing instead. Then pkgfun() above is *not* acceptable in a package (destined to CRAN). One should save the old par() and restore it with on.exit(), as follows:
+> >>>>>
+> >>>>> ```
+> >>>>> pkgfun2 <- function(){
+> >>>>>   oldpar <- par(no.readonly = TRUE)
+> >>>>>   on.exit(par(oldpar))
+> >>>>>
+> >>>>>   graphics::matplot(x = 1:2, y = 1:2, type = 'l')
+> >>>>> }
+> >>>>> ```
+> >>>>>
+> >>>>> This new function version restores the original par() right after its execution.
+> >>>>>
+> >>>>> However, I now see a problem with this. Imagine that the user wants to add some annotation or similar to the plot. Let's say they want to add a vertical red line at x = 1.2. With the original function, the user could simply achieve this with
+> >>>>>
+> >>>>> ```
+> >>>>>> pkgfun() # produces the plot
+> >>>>>> abline(v = 1.2, col = 'red') # user wants to emphasize this x-value
+> >>>>> ```
+> >>>>>
+> >>>>> then saving the plot somehow, maybe sandwiching the two commands above between a pdf() and a dev.off().
+> >>>>>
+> >>>>> With the "correct" function pkgfun2(), however, this is not possible. No vertical red line will appear, because the graphics parameters in par() no longer reflect that particular graphics window. How to deal with such a case?
+> >>>>>
+> >>>>> Sorry for the long email, hope it's of interest to others!
+> >>>>> Kind regards,
+> >>>>> Luca
+> >>>>>
+> >>>>> ______________________________________________
+> >>>>> R-package-devel at r-project.org mailing list
+> >>>>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+> >>>>>
+> >>>> ______________________________________________
+> >>>> R-package-devel at r-project.org mailing list
+> >>>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+> >>>
+> >>
+> >> ______________________________________________
+> >> R-package-devel at r-project.org mailing list
+> >> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+> >
+>
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+
+
+-- 
+Gregory (Greg) L. Snow Ph.D.
+538280 at gmail.com
+
+
+From ||gge@ @end|ng |rom @t@t|@t|k@tu-dortmund@de  Thu Jul  9 17:59:40 2026
+From: ||gge@ @end|ng |rom @t@t|@t|k@tu-dortmund@de (Uwe Ligges)
+Date: Thu, 9 Jul 2026 17:59:40 +0200
+Subject: [R-pkg-devel] Questions and advice about restoring user's par()
+In-Reply-To: <d99ea947-b81b-4918-af16-ebd17d0e3d1e@portamana.org>
+References: <7312677c-1f9b-4f2d-8d6a-3a9cf0d3a2b3@gmail.com>
+ <00027AE3-DF61-4D20-9F80-25F161A321E3@r-project.org>
+ <90c8c5f7-5834-4de4-8f4f-44836ea5a9de@statistik.tu-dortmund.de>
+ <d99ea947-b81b-4918-af16-ebd17d0e3d1e@portamana.org>
+Message-ID: <0ee3fd57-fedc-44a3-bef8-df534082407e@statistik.tu-dortmund.de>
+
+For example, scatterplot3d solved this by returning a function (closure, 
+actually) with an environment that contains all the parameters. But that 
+may not be the optimal solution in your case.
+
+Best,
+Uwe Ligges
+
+
+
+On 09.07.2026 17:35, PierGianLuca Porta Mana wrote:
+> Dear Duncan, Simon, Uwe,
+> 
+> Thank you all very much for the explanations and examples. It's much 
+> clearer to me now. The simple rule "you have to restore any parameters 
+> you set explicitly" seems indeed the intended meaning of unofficial and 
+> official documentation (for instance <https://contributor.r-project.org/ 
+> cran-cookbook/code_issues.html#change-of-options-graphical-parameters- 
+> and-working-directory> and <https://cran.r-project.org/web/packages/ 
+> policies.html>). I just wanted to be sure.
+> 
+> Great advice, Simon, about saving and restoring the parameters I modify 
+> with `oldpar <- par(...=...)`. "par()" has always overwhelmed me, as it 
+> handles so many interesting and important parameters.
+> 
+> Thank Duncan and Uwe about the idea of returning parameters that need to 
+> be set again. I was checking how packages like 'tinyplot' handle this 
+> kind of need. Luckily in my case the usual `oldpar <- par(...=...)` 
+> immediately followed by `on.exit(par(oldpar))` (with `add=TRUE` if 
+> needed) works well.
+> 
+> Cheers!
+> Luca
+> 
+> On 260709 15:48, Uwe Ligges wrote:
+>> I think Duncan explained i correctly, reset everything but return a 
+>> list of parameters that need to be set again if you want to, e.g., add 
+>> to the plot generated with modified parameters
+>>
+>> Best,
+>> Uwe
+>>
+>> On 09.07.2026 15:10, Simon Urbanek wrote:
+>>> Duncan,
+>>>
+>>> Sorry, maybe I wasn?t explicit enough: you have to restore any 
+>>> parameters you set explicitly, which does include mfrow and similar 
+>>> as well.
+>>>
+>>> What I was illustrating with the code was just that they are all 
+>>> restored - those that were not are those that are defined by 
+>>> plot.window which is required by design if the function creates a new 
+>>> plot.
+>>>
+>>> Any suggestions for improvements of the community documentation are 
+>>> welcome.
+>>>
+>>> Cheers,
+>>> Simon
+>>>
+>>>
+>>>> On Jul 9, 2026, at 11:51, Duncan Murdoch <murdoch.duncan at gmail.com> 
+>>>> wrote:
+>>>>
+>>>> ?Simon, I agree that the three parameters below are fine to modify, 
+>>>> but some that are more problematic are the outer margin and multiple 
+>>>> plot settings, e.g. oma and mfrow.
+>>>>
+>>>> Changing those will affect later plots, so they should be reset.  
+>>>> But if they are reset, it becomes difficult to add to the plots.  
+>>>> Perhaps the community docs should discuss this issue?
+>>>>
+>>>> I think the best approach is to reset them, but return the required 
+>>>> settings so a later function can temporarily restore them for long 
+>>>> enough to modify the plot, i.e. the sort of thing persp() does.
+>>>>
+>>>> Duncan Murdoch
+>>>>
+>>>>
+>>>>> On 2026-07-09 5:11 a.m., Simon Urbanek wrote:
+>>>>> Luca,
+>>>>> I think you misunderstand the rule: the purpose is to not modify 
+>>>>> *your* customisation in par() that overrides *graphical* parameters 
+>>>>> (like line types, colors etc.), it is not about plot coordinate 
+>>>>> setup which you clearly are supposed to keep if the purpose of the 
+>>>>> function is to setup a new plot. Also, yes, you have to restore it 
+>>>>> at the end of the function.
+>>>>> To take your example (slightly expanded):
+>>>>>> a=par(no.readonly = TRUE)
+>>>>>> graphics::matplot(x = 1:2, y = 1:2, type = 'l', lwd=2, col=2)
+>>>>>> b=par(no.readonly = TRUE)
+>>>>>> all.equal(a,b)
+>>>>> [1] "Component ?usr?: Mean relative difference: 2"
+>>>>> [2] "Component ?xaxp?: Mean relative difference: 2"
+>>>>> [3] "Component ?yaxp?: Mean relative difference: 2"
+>>>>> The key here is that matplot makes sure that parameters it changed 
+>>>>> (like lwd or col) are then restored before the function exits, so 
+>>>>> the only remaining changes are in parameters that setup the 
+>>>>> coordinates, but nothing else.
+>>>>> This also means that your pkgfun doesn't need to mess with par() at 
+>>>>> all. The whole point of the rule is that, if everyone follows it, 
+>>>>> then you only need to restore par() if you modified it directly 
+>>>>> using par() - all other functions should restore things correctly.
+>>>>> In addition, you typically don't want to save everything - you only 
+>>>>> need to save what you changed, so the typical idiom you should use 
+>>>>> is more like:
+>>>>> f = function() {
+>>>>> ? p = par(family="Times")
+>>>>> ? on.exit(par(p))
+>>>>> ? graphics::matplot(x = 1:2, y = 1:2, type = 'l')
+>>>>> }
+>>>>>> a=par(no.readonly = TRUE)
+>>>>>> f()
+>>>>>> b=par(no.readonly = TRUE)
+>>>>>> all.equal(a,b)
+>>>>> [1] "Component ?usr?: Mean relative difference: 2"? [2] "Component 
+>>>>> ?xaxp?: Mean relative difference: 2"
+>>>>> [3] "Component ?yaxp?: Mean relative difference: 2"
+>>>>> Cheers,
+>>>>> Simon
+>>>>>>> On Jul 7, 2026, at 17:04, PierGianLuca Porta Mana via R-package- 
+>>>>>>> devel <r-package-devel at r-project.org> wrote:
+>>>>>>
+>>>>>> Hi everyone,
+>>>>>>
+>>>>>> I have some wondering about the restoration of the user's par() in 
+>>>>>> a package's functions. There are several discussions on this list 
+>>>>>> and elsewhere about the general problem, but I haven't found any 
+>>>>>> advice regarding the following specific point. Very thankful to 
+>>>>>> anyone who can give me insight.
+>>>>>>
+>>>>>> Let's say your package has a function that produces a plot by 
+>>>>>> calling core-R functions like graphics::matplot(). These core-R 
+>>>>>> functions are called with specific parameters, owing to the nature 
+>>>>>> of the plots and of what needs to be emphasized. Here's a silly 
+>>>>>> example:
+>>>>>>
+>>>>>> ```
+>>>>>> pkgfun <- function(){
+>>>>>> ? graphics::matplot(x = 1:2, y = 1:2, type = 'l')
+>>>>>> }
+>>>>>> ```
+>>>>>>
+>>>>>> The function above creates a plot on some graphic device and, 
+>>>>>> *while the device is open*, the user's par() is actually modified. 
+>>>>>> For example we have
+>>>>>>
+>>>>>> original par():
+>>>>>> $xaxp
+>>>>>> [1] 0 1 5
+>>>>>>
+>>>>>> modified par() while graphic device is open:
+>>>>>> $xaxp
+>>>>>> [1] 1 2 5
+>>>>>>
+>>>>>> This modification occurs simply because we have called matplot(), 
+>>>>>> even if we didn't directly call par(... = ...). Note that the 
+>>>>>> original par is restored once we close the graphics device, say 
+>>>>>> with dev.off() or closing its window.
+>>>>>>
+>>>>>> Here I have a first question:
+>>>>>>
+>>>>>> ? Does CRAN mean that the user's par() should be restored *once 
+>>>>>> the graphics device is closed*? or right *when the function has 
+>>>>>> finished executing*, even if the graphics device is still open?
+>>>>>>
+>>>>>> I wasn't unable to understand which is meant, from the documentation.
+>>>>>>
+>>>>>> If the answer is "only once the graphics device is closed", then 
+>>>>>> the function pkgfun() is OK and I don't need to worry further (and 
+>>>>>> you don't need to read further).
+>>>>>>
+>>>>>>
+>>>>>> Let's now assume that CRAN wants the par() restored immediately 
+>>>>>> after the function finishes executing instead. Then pkgfun() above 
+>>>>>> is *not* acceptable in a package (destined to CRAN). One should 
+>>>>>> save the old par() and restore it with on.exit(), as follows:
+>>>>>>
+>>>>>> ```
+>>>>>> pkgfun2 <- function(){
+>>>>>> ? oldpar <- par(no.readonly = TRUE)
+>>>>>> ? on.exit(par(oldpar))
+>>>>>>
+>>>>>> ? graphics::matplot(x = 1:2, y = 1:2, type = 'l')
+>>>>>> }
+>>>>>> ```
+>>>>>>
+>>>>>> This new function version restores the original par() right after 
+>>>>>> its execution.
+>>>>>>
+>>>>>> However, I now see a problem with this. Imagine that the user 
+>>>>>> wants to add some annotation or similar to the plot. Let's say 
+>>>>>> they want to add a vertical red line at x = 1.2. With the original 
+>>>>>> function, the user could simply achieve this with
+>>>>>>
+>>>>>> ```
+>>>>>>> pkgfun() # produces the plot
+>>>>>>> abline(v = 1.2, col = 'red') # user wants to emphasize this x-value
+>>>>>> ```
+>>>>>>
+>>>>>> then saving the plot somehow, maybe sandwiching the two commands 
+>>>>>> above between a pdf() and a dev.off().
+>>>>>>
+>>>>>> With the "correct" function pkgfun2(), however, this is not 
+>>>>>> possible. No vertical red line will appear, because the graphics 
+>>>>>> parameters in par() no longer reflect that particular graphics 
+>>>>>> window. How to deal with such a case?
+>>>>>>
+>>>>>> Sorry for the long email, hope it's of interest to others!
+>>>>>> Kind regards,
+>>>>>> Luca
+>>>>>>
+>>>>>> ______________________________________________
+>>>>>> R-package-devel at r-project.org mailing list
+>>>>>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>>>>>>
+>>>>> ______________________________________________
+>>>>> R-package-devel at r-project.org mailing list
+>>>>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>>>>
+>>>
+>>> ______________________________________________
+>>> R-package-devel at r-project.org mailing list
+>>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>>
+> 
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Fri Jul 10 13:24:37 2026
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Fri, 10 Jul 2026 07:24:37 -0400
+Subject: [R-pkg-devel] Questions and advice about restoring user's par()
+In-Reply-To: <00027AE3-DF61-4D20-9F80-25F161A321E3@r-project.org>
+References: <7312677c-1f9b-4f2d-8d6a-3a9cf0d3a2b3@gmail.com>
+ <00027AE3-DF61-4D20-9F80-25F161A321E3@r-project.org>
+Message-ID: <7a28d400-e478-42bd-99e9-ca545b2bc173@gmail.com>
+
+On 2026-07-09 9:10 a.m., Simon Urbanek wrote:
+> Duncan,
+> 
+> Sorry, maybe I wasn?t explicit enough: you have to restore any parameters you set explicitly, which does include mfrow and similar as well.
+> 
+> What I was illustrating with the code was just that they are all restored - those that were not are those that are defined by plot.window which is required by design if the function creates a new plot.
+> 
+> Any suggestions for improvements of the community documentation are welcome.
+
+I've submitted a PR:  https://github.com/r-devel/cran-cookbook/pull/90
+
+Duncan Murdoch
+
+> 
+> Cheers,
+> Simon
+> 
+> 
+>> On Jul 9, 2026, at 11:51, Duncan Murdoch <murdoch.duncan at gmail.com> wrote:
+>>
+>> ?Simon, I agree that the three parameters below are fine to modify, but some that are more problematic are the outer margin and multiple plot settings, e.g. oma and mfrow.
+>>
+>> Changing those will affect later plots, so they should be reset.  But if they are reset, it becomes difficult to add to the plots.  Perhaps the community docs should discuss this issue?
+>>
+>> I think the best approach is to reset them, but return the required settings so a later function can temporarily restore them for long enough to modify the plot, i.e. the sort of thing persp() does.
+>>
+>> Duncan Murdoch
+>>
+>>
+>>> On 2026-07-09 5:11 a.m., Simon Urbanek wrote:
+>>> Luca,
+>>> I think you misunderstand the rule: the purpose is to not modify *your* customisation in par() that overrides *graphical* parameters (like line types, colors etc.), it is not about plot coordinate setup which you clearly are supposed to keep if the purpose of the function is to setup a new plot. Also, yes, you have to restore it at the end of the function.
+>>> To take your example (slightly expanded):
+>>>> a=par(no.readonly = TRUE)
+>>>> graphics::matplot(x = 1:2, y = 1:2, type = 'l', lwd=2, col=2)
+>>>> b=par(no.readonly = TRUE)
+>>>> all.equal(a,b)
+>>> [1] "Component ?usr?: Mean relative difference: 2"
+>>> [2] "Component ?xaxp?: Mean relative difference: 2"
+>>> [3] "Component ?yaxp?: Mean relative difference: 2"
+>>> The key here is that matplot makes sure that parameters it changed (like lwd or col) are then restored before the function exits, so the only remaining changes are in parameters that setup the coordinates, but nothing else.
+>>> This also means that your pkgfun doesn't need to mess with par() at all. The whole point of the rule is that, if everyone follows it, then you only need to restore par() if you modified it directly using par() - all other functions should restore things correctly.
+>>> In addition, you typically don't want to save everything - you only need to save what you changed, so the typical idiom you should use is more like:
+>>> f = function() {
+>>>   p = par(family="Times")
+>>>   on.exit(par(p))
+>>>   graphics::matplot(x = 1:2, y = 1:2, type = 'l')
+>>> }
+>>>> a=par(no.readonly = TRUE)
+>>>> f()
+>>>> b=par(no.readonly = TRUE)
+>>>> all.equal(a,b)
+>>> [1] "Component ?usr?: Mean relative difference: 2"  [2] "Component ?xaxp?: Mean relative difference: 2"
+>>> [3] "Component ?yaxp?: Mean relative difference: 2"
+>>> Cheers,
+>>> Simon
+>>>>> On Jul 7, 2026, at 17:04, PierGianLuca Porta Mana via R-package-devel <r-package-devel at r-project.org> wrote:
+>>>>
+>>>> Hi everyone,
+>>>>
+>>>> I have some wondering about the restoration of the user's par() in a package's functions. There are several discussions on this list and elsewhere about the general problem, but I haven't found any advice regarding the following specific point. Very thankful to anyone who can give me insight.
+>>>>
+>>>> Let's say your package has a function that produces a plot by calling core-R functions like graphics::matplot(). These core-R functions are called with specific parameters, owing to the nature of the plots and of what needs to be emphasized. Here's a silly example:
+>>>>
+>>>> ```
+>>>> pkgfun <- function(){
+>>>>   graphics::matplot(x = 1:2, y = 1:2, type = 'l')
+>>>> }
+>>>> ```
+>>>>
+>>>> The function above creates a plot on some graphic device and, *while the device is open*, the user's par() is actually modified. For example we have
+>>>>
+>>>> original par():
+>>>> $xaxp
+>>>> [1] 0 1 5
+>>>>
+>>>> modified par() while graphic device is open:
+>>>> $xaxp
+>>>> [1] 1 2 5
+>>>>
+>>>> This modification occurs simply because we have called matplot(), even if we didn't directly call par(... = ...). Note that the original par is restored once we close the graphics device, say with dev.off() or closing its window.
+>>>>
+>>>> Here I have a first question:
+>>>>
+>>>> ? Does CRAN mean that the user's par() should be restored *once the graphics device is closed*? or right *when the function has finished executing*, even if the graphics device is still open?
+>>>>
+>>>> I wasn't unable to understand which is meant, from the documentation.
+>>>>
+>>>> If the answer is "only once the graphics device is closed", then the function pkgfun() is OK and I don't need to worry further (and you don't need to read further).
+>>>>
+>>>>
+>>>> Let's now assume that CRAN wants the par() restored immediately after the function finishes executing instead. Then pkgfun() above is *not* acceptable in a package (destined to CRAN). One should save the old par() and restore it with on.exit(), as follows:
+>>>>
+>>>> ```
+>>>> pkgfun2 <- function(){
+>>>>   oldpar <- par(no.readonly = TRUE)
+>>>>   on.exit(par(oldpar))
+>>>>
+>>>>   graphics::matplot(x = 1:2, y = 1:2, type = 'l')
+>>>> }
+>>>> ```
+>>>>
+>>>> This new function version restores the original par() right after its execution.
+>>>>
+>>>> However, I now see a problem with this. Imagine that the user wants to add some annotation or similar to the plot. Let's say they want to add a vertical red line at x = 1.2. With the original function, the user could simply achieve this with
+>>>>
+>>>> ```
+>>>>> pkgfun() # produces the plot
+>>>>> abline(v = 1.2, col = 'red') # user wants to emphasize this x-value
+>>>> ```
+>>>>
+>>>> then saving the plot somehow, maybe sandwiching the two commands above between a pdf() and a dev.off().
+>>>>
+>>>> With the "correct" function pkgfun2(), however, this is not possible. No vertical red line will appear, because the graphics parameters in par() no longer reflect that particular graphics window. How to deal with such a case?
+>>>>
+>>>> Sorry for the long email, hope it's of interest to others!
+>>>> Kind regards,
+>>>> Luca
+>>>>
+>>>> ______________________________________________
+>>>> R-package-devel at r-project.org mailing list
+>>>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>>>>
+>>> ______________________________________________
+>>> R-package-devel at r-project.org mailing list
+>>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>>
+
+
+From edd @end|ng |rom deb|@n@org  Sat Jul 11 19:29:58 2026
+From: edd @end|ng |rom deb|@n@org (Dirk Eddelbuettel)
+Date: Sat, 11 Jul 2026 12:29:58 -0500
+Subject: [R-pkg-devel] Schroedinger's OS
+Message-ID: <27218.32150.468862.913286@paul.eddelbuettel.com>
+
+
+I have a package, updated yesterday for essentially a one-line change, now
+failing on macOS on Simon's CRAN setup yet passing on four macOS setups (from
+two R versions times two architecture) in r-universe.
+
+And I can't debug on the otherwise quite helpful macbuilder as it tells me
+
+   MacBuilder
+
+   The macOS package build services are currently not responding. Please try
+   again later.
+
+which has apparently been the case for a few days (as a collaborator on
+another project told me about it around mid-week).
+
+Any suggestions on how to determine whether the OS is alive or dead, and
+whether I do or do not have access to a system where it fails in order to
+test a potential fix?
+
+Dirk
+
+-- 
+dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From ||gge@ @end|ng |rom @t@t|@t|k@tu-dortmund@de  Sat Jul 11 19:40:17 2026
+From: ||gge@ @end|ng |rom @t@t|@t|k@tu-dortmund@de (Uwe Ligges)
+Date: Sat, 11 Jul 2026 19:40:17 +0200
+Subject: [R-pkg-devel] Schroedinger's OS
+In-Reply-To: <27218.32150.468862.913286@paul.eddelbuettel.com>
+References: <27218.32150.468862.913286@paul.eddelbuettel.com>
+Message-ID: <895d7433-f7b2-4f10-85ad-b8ad345cedaa@statistik.tu-dortmund.de>
+
+Have you asked Simon? He is travelling (he was at useR this week), so 
+may be slow to respond.
+
+Best,
+Uwe
+
+
+
+On 11.07.2026 19:29, Dirk Eddelbuettel wrote:
+> 
+> I have a package, updated yesterday for essentially a one-line change, now
+> failing on macOS on Simon's CRAN setup yet passing on four macOS setups (from
+> two R versions times two architecture) in r-universe.
+> 
+> And I can't debug on the otherwise quite helpful macbuilder as it tells me
+> 
+>     MacBuilder
+> 
+>     The macOS package build services are currently not responding. Please try
+>     again later.
+> 
+> which has apparently been the case for a few days (as a collaborator on
+> another project told me about it around mid-week).
+> 
+> Any suggestions on how to determine whether the OS is alive or dead, and
+> whether I do or do not have access to a system where it fails in order to
+> test a potential fix?
+> 
+> Dirk
+> 
+
+
+From ke||ey @end|ng |rom d@|@c@  Mon Jul 13 21:52:02 2026
+From: ke||ey @end|ng |rom d@|@c@ (Daniel Kelley)
+Date: Mon, 13 Jul 2026 19:52:02 +0000
+Subject: [R-pkg-devel] what to do if package takes over 10min to build?
+Message-ID: <53A345F6-FE27-45FD-AFFB-C56A0FE63F64@dal.ca>
+
+On June 30th, I used devtools:release() to submit to CRAN an update to the "oce" package. It was rejected on the same day because the build time exceeded 10 minutes.  (That time has exceeded 10 minutes for years now, but exceptions have been made to the rule.  It is a big package.)
+
+I emailed CRAN to ask what I ought to do.  Also, I asked on this email group for advice and was told I ought to wait because members of the CRAN team are very busy.
+
+As of today, it has been 2 weeks since I wrote to CRAN, and I've not received a reply.  That's not a real concern for me, as I understand completely how busy the summer can be.
+
+Ideally, I'd like to know by September whether CRAN has permanently rejected the "oce" package so I can tell my students how to install updates from another source.
+
+I wonder, do folks on this list think that 2 weeks is long enough to indicate that perhaps my email (or a reply to it) got lost in an email storm?  Or should I just wait a few more weeks?  I'm happy either way.
+
+Thanks.
+
+Dan E. Kelley
+Department of Oceanography
+Dalhousie University
+Halifax, NS, CanadaB3H 4R2
+Dan.Kelley at Dal.CA
+
+
+From jdnewm|| @end|ng |rom dcn@d@v|@@c@@u@  Mon Jul 13 22:13:54 2026
+From: jdnewm|| @end|ng |rom dcn@d@v|@@c@@u@ (Jeff Newmiller)
+Date: Mon, 13 Jul 2026 13:13:54 -0700
+Subject: [R-pkg-devel] what to do if package takes over 10min to build?
+In-Reply-To: <53A345F6-FE27-45FD-AFFB-C56A0FE63F64@dal.ca>
+References: <53A345F6-FE27-45FD-AFFB-C56A0FE63F64@dal.ca>
+Message-ID: <92C6241C-0C76-46B8-8EFC-8F66C9811140@dcn.davis.ca.us>
+
+They are ignoring you because this is your job to figure out. I recommend using a web search engine to get hints for how to solve such issues. Don't try to use more cpus in parallel (that is not allowed on CRAN machines), rather reduce your testing and examples and only do more thorough testing on your own. Avoid accessing the web during package build time. Read archives of this mailing list. Good luck!
+
+On July 13, 2026 12:52:02 PM PDT, Daniel Kelley <kelley at dal.ca> wrote:
+>On June 30th, I used devtools:release() to submit to CRAN an update to the "oce" package. It was rejected on the same day because the build time exceeded 10 minutes.  (That time has exceeded 10 minutes for years now, but exceptions have been made to the rule.  It is a big package.)
+>
+>I emailed CRAN to ask what I ought to do.  Also, I asked on this email group for advice and was told I ought to wait because members of the CRAN team are very busy.
+>
+>As of today, it has been 2 weeks since I wrote to CRAN, and I've not received a reply.  That's not a real concern for me, as I understand completely how busy the summer can be.
+>
+>Ideally, I'd like to know by September whether CRAN has permanently rejected the "oce" package so I can tell my students how to install updates from another source.
+>
+>I wonder, do folks on this list think that 2 weeks is long enough to indicate that perhaps my email (or a reply to it) got lost in an email storm?  Or should I just wait a few more weeks?  I'm happy either way.
+>
+>Thanks.
+>
+>Dan E. Kelley
+>Department of Oceanography
+>Dalhousie University
+>Halifax, NS, CanadaB3H 4R2
+>Dan.Kelley at Dal.CA
+>
+>______________________________________________
+>R-package-devel at r-project.org mailing list
+>https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+--
+Sent from my phone. Please excuse my brevity.
+	[[alternative HTML version deleted]]
+
+
+From ||u|@@rev|||@ @end|ng |rom gm@||@com  Mon Jul 13 23:12:59 2026
+From: ||u|@@rev|||@ @end|ng |rom gm@||@com (=?UTF-8?Q?Llu=C3=ADs_Revilla?=)
+Date: Mon, 13 Jul 2026 23:12:59 +0200
+Subject: [R-pkg-devel] what to do if package takes over 10min to build?
+In-Reply-To: <53A345F6-FE27-45FD-AFFB-C56A0FE63F64@dal.ca>
+References: <53A345F6-FE27-45FD-AFFB-C56A0FE63F64@dal.ca>
+Message-ID: <CAN+W6_u4FUu9HGY__Bd8O4mGo5YkgA6EZG_GvUu8DqgW=212hA@mail.gmail.com>
+
+Hi Dan,
+
+There are several ways to check the CRAN submission queue, I usually use
+{cransays}, https://r-hub.github.io/cransays/index.html, which doesn't
+report {oce} in the queue.
+
+I would recommend submitting again, simplifying or optimizing a bit more
+the package for CRAN: even if previous allowances were made it is better
+for the reviewers and maintainers if packages comply with CRAN's policies.
+
+Last, note that "CRAN submission will be closed from Aug 5, 2026 to Aug 19,
+2026 (CRAN team vacation and maintenance work)".
+
+Cheers,
+
+Llu?s
+
+
+
+
+
+Missatge de Daniel Kelley <kelley at dal.ca> del dia dl., 13 de jul. 2026 a
+les 21:52:
+
+> On June 30th, I used devtools:release() to submit to CRAN an update to the
+> "oce" package. It was rejected on the same day because the build time
+> exceeded 10 minutes.  (That time has exceeded 10 minutes for years now, but
+> exceptions have been made to the rule.  It is a big package.)
+>
+> I emailed CRAN to ask what I ought to do.  Also, I asked on this email
+> group for advice and was told I ought to wait because members of the CRAN
+> team are very busy.
+>
+> As of today, it has been 2 weeks since I wrote to CRAN, and I've not
+> received a reply.  That's not a real concern for me, as I understand
+> completely how busy the summer can be.
+>
+> Ideally, I'd like to know by September whether CRAN has permanently
+> rejected the "oce" package so I can tell my students how to install updates
+> from another source.
+>
+> I wonder, do folks on this list think that 2 weeks is long enough to
+> indicate that perhaps my email (or a reply to it) got lost in an email
+> storm?  Or should I just wait a few more weeks?  I'm happy either way.
+>
+> Thanks.
+>
+> Dan E. Kelley
+> Department of Oceanography
+> Dalhousie University
+> Halifax, NS, CanadaB3H 4R2
+> Dan.Kelley at Dal.CA
+>
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+
+	[[alternative HTML version deleted]]
+
+
+From bbo|ker @end|ng |rom gm@||@com  Mon Jul 13 23:31:14 2026
+From: bbo|ker @end|ng |rom gm@||@com (Ben Bolker)
+Date: Mon, 13 Jul 2026 17:31:14 -0400
+Subject: [R-pkg-devel] what to do if package takes over 10min to build?
+In-Reply-To: <CAN+W6_u4FUu9HGY__Bd8O4mGo5YkgA6EZG_GvUu8DqgW=212hA@mail.gmail.com>
+References: <53A345F6-FE27-45FD-AFFB-C56A0FE63F64@dal.ca>
+ <CAN+W6_u4FUu9HGY__Bd8O4mGo5YkgA6EZG_GvUu8DqgW=212hA@mail.gmail.com>
+Message-ID: <CABghstQB-zo29ZF74c==_9fJFgmFpqiAKuNx3MPNytEsOEjoNw@mail.gmail.com>
+
+  To other commenters: the earlier thread makes it pretty clear that
+Dan already knows what the issues are, that they've been grandfathered
+by CRAN in the past, and that he wants to know if that status can
+continue.
+
+   I asked Claude for a fine-grained report on timing. This is on
+Linux, so the total check time is only 471 seconds, and there's no
+guarantee of perfect proportionality when moving from Linux to Windows
+(i.e., some components could change their proportional contribution
+significantly ...) -- but it does suggest that there's really not much
+low-hanging fruit here.  If the CRAN check is very close to 10 minutes
+it might be worth trying to trim some stuff, but otherwise I would say
+you should repeat your query to CRAN.
+
+R CMD check --as-cran on oce_1.8-3
+===================================
+
+WHERE THE TIME WENT
+--------------------------------------------------------------------
+Phase                                              Elapsed    % total
+--------------------------------------------------------------------
+Installing package (compile C/Fortran,               94s       20.0%
+  45 source files, 13 MB installed libs)
+checking R code for possible problems                 63s       13.4%
+  (codetools static analysis, 63 R files)
+Examples, --run-donttest pass                          52s       11.0%
+Examples, normal pass                                  46s        9.8%
+HTML manual (592 man pages)                            43s        9.1%
+PDF manual (Rd -> LaTeX -> PDF, 592 pages)              40s        8.5%
+Tests (testthat, 3098 assertions)                       29s        6.2%
+CRAN incoming feasibility (network check)               23s        4.9%
+Re-building vignette outputs (7 .Rmd vignettes)         18s        3.8%
+--------------------------------------------------------------------
+Subtotal, top 9 phases                                 408s       86.6%
+Everything else (~250 fast structural/                  63s       13.4%
+  metadata/Rd-syntax checks)
+--------------------------------------------------------------------
+TOTAL                                                  471s      100.0%
+
+DIAGNOSIS
+---------
+No single pathological bottleneck -- time is spread across genuinely
+large-package overhead, not one runaway step.
+
+- Compilation (94s) is the single biggest cost, driven by the compiled
+  C/Fortran extensions (13 MB of installed libs/).
+- Examples run twice (normal + --run-donttest, as --as-cran mandates):
+  combined 98s (~21%), more than installation. Individual examples are
+  all fast (none over 1.2s per oce-Ex.timings; per-example self-times
+  sum to only 27.7s, so the rest is per-run R startup/package-load
+  overhead x2).
+- Manual generation (PDF+HTML, 83s combined, ~18%) is proportional to
+  the 592 .Rd pages -- pure documentation volume, not a specific slow
+  page.
+- codetools (63s) scales with R source size/complexity; not unusual
+  for 63 source files with S4 methods.
+- Tests and vignette rebuilding are comparatively cheap (29s and 18s)
+  despite 60 test files and 7 vignettes.
+
+Bottom line: this is what a large, compiled, richly-documented package
+check looks like -- cost is distributed roughly evenly across install/
+examples/manual/codetools, with no outlier worth specifically
+optimizing unless trimming compiled-code size or \donttest example
+runtime.
+
+On Mon, Jul 13, 2026 at 5:14?PM Llu?s Revilla <lluis.revilla at gmail.com> wrote:
+>
+> Hi Dan,
+>
+> There are several ways to check the CRAN submission queue, I usually use
+> {cransays}, https://r-hub.github.io/cransays/index.html, which doesn't
+> report {oce} in the queue.
+>
+> I would recommend submitting again, simplifying or optimizing a bit more
+> the package for CRAN: even if previous allowances were made it is better
+> for the reviewers and maintainers if packages comply with CRAN's policies.
+>
+> Last, note that "CRAN submission will be closed from Aug 5, 2026 to Aug 19,
+> 2026 (CRAN team vacation and maintenance work)".
+>
+> Cheers,
+>
+> Llu?s
+>
+>
+>
+>
+>
+> Missatge de Daniel Kelley <kelley at dal.ca> del dia dl., 13 de jul. 2026 a
+> les 21:52:
+>
+> > On June 30th, I used devtools:release() to submit to CRAN an update to the
+> > "oce" package. It was rejected on the same day because the build time
+> > exceeded 10 minutes.  (That time has exceeded 10 minutes for years now, but
+> > exceptions have been made to the rule.  It is a big package.)
+> >
+> > I emailed CRAN to ask what I ought to do.  Also, I asked on this email
+> > group for advice and was told I ought to wait because members of the CRAN
+> > team are very busy.
+> >
+> > As of today, it has been 2 weeks since I wrote to CRAN, and I've not
+> > received a reply.  That's not a real concern for me, as I understand
+> > completely how busy the summer can be.
+> >
+> > Ideally, I'd like to know by September whether CRAN has permanently
+> > rejected the "oce" package so I can tell my students how to install updates
+> > from another source.
+> >
+> > I wonder, do folks on this list think that 2 weeks is long enough to
+> > indicate that perhaps my email (or a reply to it) got lost in an email
+> > storm?  Or should I just wait a few more weeks?  I'm happy either way.
+> >
+> > Thanks.
+> >
+> > Dan E. Kelley
+> > Department of Oceanography
+> > Dalhousie University
+> > Halifax, NS, CanadaB3H 4R2
+> > Dan.Kelley at Dal.CA
+> >
+> > ______________________________________________
+> > R-package-devel at r-project.org mailing list
+> > https://stat.ethz.ch/mailman/listinfo/r-package-devel
+> >
+>
+>         [[alternative HTML version deleted]]
+>
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+
+From jdnewm|| @end|ng |rom dcn@d@v|@@c@@u@  Tue Jul 14 02:05:42 2026
+From: jdnewm|| @end|ng |rom dcn@d@v|@@c@@u@ (Jeff Newmiller)
+Date: Mon, 13 Jul 2026 17:05:42 -0700
+Subject: [R-pkg-devel] what to do if package takes over 10min to build?
+In-Reply-To: <CABghstQB-zo29ZF74c==_9fJFgmFpqiAKuNx3MPNytEsOEjoNw@mail.gmail.com>
+References: <53A345F6-FE27-45FD-AFFB-C56A0FE63F64@dal.ca>
+ <CAN+W6_u4FUu9HGY__Bd8O4mGo5YkgA6EZG_GvUu8DqgW=212hA@mail.gmail.com>
+ <CABghstQB-zo29ZF74c==_9fJFgmFpqiAKuNx3MPNytEsOEjoNw@mail.gmail.com>
+Message-ID: <A7AE9564-377C-4E28-BB27-E7A7B7446553@dcn.davis.ca.us>
+
+My apologies.. I missed the grandfathered status.
+
+That said, this package desperately exhibits the main downside of the OOP deep inheritance design philosophy... tight coupling of a large code base. If a more functional approach with OO composition instead of inheritance had been used then it would be relatively easy to split the package up for different use cases with only shared code package dependencies to couple them. Having been burned by the promises of inheritance early in my career I empathize with Dan's plight but would also point out the sunk-cost fallacy will only get worse with time... eventually you have to re-design or die of excess code linkage.
+
+If the package could be split, the relevant documentation could also be split and users would not be saddled with loading code they won't be using. But splitting an S4 inheritance tree is trouble-prone and this migration will almost certainly break existing user code so it would probably need a switch away from S4 and it won't happen quickly. A new package name would probably be least confusing.
+
+On July 13, 2026 2:31:14 PM PDT, Ben Bolker <bbolker at gmail.com> wrote:
+>  To other commenters: the earlier thread makes it pretty clear that
+>Dan already knows what the issues are, that they've been grandfathered
+>by CRAN in the past, and that he wants to know if that status can
+>continue.
+>
+>   I asked Claude for a fine-grained report on timing. This is on
+>Linux, so the total check time is only 471 seconds, and there's no
+>guarantee of perfect proportionality when moving from Linux to Windows
+>(i.e., some components could change their proportional contribution
+>significantly ...) -- but it does suggest that there's really not much
+>low-hanging fruit here.  If the CRAN check is very close to 10 minutes
+>it might be worth trying to trim some stuff, but otherwise I would say
+>you should repeat your query to CRAN.
+>
+>R CMD check --as-cran on oce_1.8-3
+>===================================
+>
+>WHERE THE TIME WENT
+>--------------------------------------------------------------------
+>Phase                                              Elapsed    % total
+>--------------------------------------------------------------------
+>Installing package (compile C/Fortran,               94s       20.0%
+>  45 source files, 13 MB installed libs)
+>checking R code for possible problems                 63s       13.4%
+>  (codetools static analysis, 63 R files)
+>Examples, --run-donttest pass                          52s       11.0%
+>Examples, normal pass                                  46s        9.8%
+>HTML manual (592 man pages)                            43s        9.1%
+>PDF manual (Rd -> LaTeX -> PDF, 592 pages)              40s        8.5%
+>Tests (testthat, 3098 assertions)                       29s        6.2%
+>CRAN incoming feasibility (network check)               23s        4.9%
+>Re-building vignette outputs (7 .Rmd vignettes)         18s        3.8%
+>--------------------------------------------------------------------
+>Subtotal, top 9 phases                                 408s       86.6%
+>Everything else (~250 fast structural/                  63s       13.4%
+>  metadata/Rd-syntax checks)
+>--------------------------------------------------------------------
+>TOTAL                                                  471s      100.0%
+>
+>DIAGNOSIS
+>---------
+>No single pathological bottleneck -- time is spread across genuinely
+>large-package overhead, not one runaway step.
+>
+>- Compilation (94s) is the single biggest cost, driven by the compiled
+>  C/Fortran extensions (13 MB of installed libs/).
+>- Examples run twice (normal + --run-donttest, as --as-cran mandates):
+>  combined 98s (~21%), more than installation. Individual examples are
+>  all fast (none over 1.2s per oce-Ex.timings; per-example self-times
+>  sum to only 27.7s, so the rest is per-run R startup/package-load
+>  overhead x2).
+>- Manual generation (PDF+HTML, 83s combined, ~18%) is proportional to
+>  the 592 .Rd pages -- pure documentation volume, not a specific slow
+>  page.
+>- codetools (63s) scales with R source size/complexity; not unusual
+>  for 63 source files with S4 methods.
+>- Tests and vignette rebuilding are comparatively cheap (29s and 18s)
+>  despite 60 test files and 7 vignettes.
+>
+>Bottom line: this is what a large, compiled, richly-documented package
+>check looks like -- cost is distributed roughly evenly across install/
+>examples/manual/codetools, with no outlier worth specifically
+>optimizing unless trimming compiled-code size or \donttest example
+>runtime.
+>
+>On Mon, Jul 13, 2026 at 5:14?PM Llu?s Revilla <lluis.revilla at gmail.com> wrote:
+>>
+>> Hi Dan,
+>>
+>> There are several ways to check the CRAN submission queue, I usually use
+>> {cransays}, https://r-hub.github.io/cransays/index.html, which doesn't
+>> report {oce} in the queue.
+>>
+>> I would recommend submitting again, simplifying or optimizing a bit more
+>> the package for CRAN: even if previous allowances were made it is better
+>> for the reviewers and maintainers if packages comply with CRAN's policies.
+>>
+>> Last, note that "CRAN submission will be closed from Aug 5, 2026 to Aug 19,
+>> 2026 (CRAN team vacation and maintenance work)".
+>>
+>> Cheers,
+>>
+>> Llu?s
+>>
+>>
+>>
+>>
+>>
+>> Missatge de Daniel Kelley <kelley at dal.ca> del dia dl., 13 de jul. 2026 a
+>> les 21:52:
+>>
+>> > On June 30th, I used devtools:release() to submit to CRAN an update to the
+>> > "oce" package. It was rejected on the same day because the build time
+>> > exceeded 10 minutes.  (That time has exceeded 10 minutes for years now, but
+>> > exceptions have been made to the rule.  It is a big package.)
+>> >
+>> > I emailed CRAN to ask what I ought to do.  Also, I asked on this email
+>> > group for advice and was told I ought to wait because members of the CRAN
+>> > team are very busy.
+>> >
+>> > As of today, it has been 2 weeks since I wrote to CRAN, and I've not
+>> > received a reply.  That's not a real concern for me, as I understand
+>> > completely how busy the summer can be.
+>> >
+>> > Ideally, I'd like to know by September whether CRAN has permanently
+>> > rejected the "oce" package so I can tell my students how to install updates
+>> > from another source.
+>> >
+>> > I wonder, do folks on this list think that 2 weeks is long enough to
+>> > indicate that perhaps my email (or a reply to it) got lost in an email
+>> > storm?  Or should I just wait a few more weeks?  I'm happy either way.
+>> >
+>> > Thanks.
+>> >
+>> > Dan E. Kelley
+>> > Department of Oceanography
+>> > Dalhousie University
+>> > Halifax, NS, CanadaB3H 4R2
+>> > Dan.Kelley at Dal.CA
+>> >
+>> > ______________________________________________
+>> > R-package-devel at r-project.org mailing list
+>> > https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>> >
+>>
+>>         [[alternative HTML version deleted]]
+>>
+>> ______________________________________________
+>> R-package-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>
+>______________________________________________
+>R-package-devel at r-project.org mailing list
+>https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+--
+Sent from my phone. Please excuse my brevity.
+	[[alternative HTML version deleted]]
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Tue Jul 14 02:42:02 2026
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Mon, 13 Jul 2026 20:42:02 -0400
+Subject: [R-pkg-devel] what to do if package takes over 10min to build?
+In-Reply-To: <CABghstQB-zo29ZF74c==_9fJFgmFpqiAKuNx3MPNytEsOEjoNw@mail.gmail.com>
+References: <53A345F6-FE27-45FD-AFFB-C56A0FE63F64@dal.ca>
+ <CAN+W6_u4FUu9HGY__Bd8O4mGo5YkgA6EZG_GvUu8DqgW=212hA@mail.gmail.com>
+ <CABghstQB-zo29ZF74c==_9fJFgmFpqiAKuNx3MPNytEsOEjoNw@mail.gmail.com>
+Message-ID: <eedbaf90-618e-4853-8334-7ad25047e803@gmail.com>
+
+It was build time, not check time, that CRAN was complaining about.
+
+I don't know what would make build time take so long, when install time 
+is only 94 seconds.  Building the vignettes, maybe?
+
+I tried to build it myself, but it failed.  (I'm apparently missing some 
+Fortran library).
+
+Duncan Murdoch
+
+On 2026-07-13 5:31 p.m., Ben Bolker wrote:
+>    To other commenters: the earlier thread makes it pretty clear that
+> Dan already knows what the issues are, that they've been grandfathered
+> by CRAN in the past, and that he wants to know if that status can
+> continue.
+> 
+>     I asked Claude for a fine-grained report on timing. This is on
+> Linux, so the total check time is only 471 seconds, and there's no
+> guarantee of perfect proportionality when moving from Linux to Windows
+> (i.e., some components could change their proportional contribution
+> significantly ...) -- but it does suggest that there's really not much
+> low-hanging fruit here.  If the CRAN check is very close to 10 minutes
+> it might be worth trying to trim some stuff, but otherwise I would say
+> you should repeat your query to CRAN.
+> 
+> R CMD check --as-cran on oce_1.8-3
+> ===================================
+> 
+> WHERE THE TIME WENT
+> --------------------------------------------------------------------
+> Phase                                              Elapsed    % total
+> --------------------------------------------------------------------
+> Installing package (compile C/Fortran,               94s       20.0%
+>    45 source files, 13 MB installed libs)
+> checking R code for possible problems                 63s       13.4%
+>    (codetools static analysis, 63 R files)
+> Examples, --run-donttest pass                          52s       11.0%
+> Examples, normal pass                                  46s        9.8%
+> HTML manual (592 man pages)                            43s        9.1%
+> PDF manual (Rd -> LaTeX -> PDF, 592 pages)              40s        8.5%
+> Tests (testthat, 3098 assertions)                       29s        6.2%
+> CRAN incoming feasibility (network check)               23s        4.9%
+> Re-building vignette outputs (7 .Rmd vignettes)         18s        3.8%
+> --------------------------------------------------------------------
+> Subtotal, top 9 phases                                 408s       86.6%
+> Everything else (~250 fast structural/                  63s       13.4%
+>    metadata/Rd-syntax checks)
+> --------------------------------------------------------------------
+> TOTAL                                                  471s      100.0%
+> 
+> DIAGNOSIS
+> ---------
+> No single pathological bottleneck -- time is spread across genuinely
+> large-package overhead, not one runaway step.
+> 
+> - Compilation (94s) is the single biggest cost, driven by the compiled
+>    C/Fortran extensions (13 MB of installed libs/).
+> - Examples run twice (normal + --run-donttest, as --as-cran mandates):
+>    combined 98s (~21%), more than installation. Individual examples are
+>    all fast (none over 1.2s per oce-Ex.timings; per-example self-times
+>    sum to only 27.7s, so the rest is per-run R startup/package-load
+>    overhead x2).
+> - Manual generation (PDF+HTML, 83s combined, ~18%) is proportional to
+>    the 592 .Rd pages -- pure documentation volume, not a specific slow
+>    page.
+> - codetools (63s) scales with R source size/complexity; not unusual
+>    for 63 source files with S4 methods.
+> - Tests and vignette rebuilding are comparatively cheap (29s and 18s)
+>    despite 60 test files and 7 vignettes.
+> 
+> Bottom line: this is what a large, compiled, richly-documented package
+> check looks like -- cost is distributed roughly evenly across install/
+> examples/manual/codetools, with no outlier worth specifically
+> optimizing unless trimming compiled-code size or \donttest example
+> runtime.
+> 
+> On Mon, Jul 13, 2026 at 5:14?PM Llu?s Revilla <lluis.revilla at gmail.com> wrote:
+>>
+>> Hi Dan,
+>>
+>> There are several ways to check the CRAN submission queue, I usually use
+>> {cransays}, https://r-hub.github.io/cransays/index.html, which doesn't
+>> report {oce} in the queue.
+>>
+>> I would recommend submitting again, simplifying or optimizing a bit more
+>> the package for CRAN: even if previous allowances were made it is better
+>> for the reviewers and maintainers if packages comply with CRAN's policies.
+>>
+>> Last, note that "CRAN submission will be closed from Aug 5, 2026 to Aug 19,
+>> 2026 (CRAN team vacation and maintenance work)".
+>>
+>> Cheers,
+>>
+>> Llu?s
+>>
+>>
+>>
+>>
+>>
+>> Missatge de Daniel Kelley <kelley at dal.ca> del dia dl., 13 de jul. 2026 a
+>> les 21:52:
+>>
+>>> On June 30th, I used devtools:release() to submit to CRAN an update to the
+>>> "oce" package. It was rejected on the same day because the build time
+>>> exceeded 10 minutes.  (That time has exceeded 10 minutes for years now, but
+>>> exceptions have been made to the rule.  It is a big package.)
+>>>
+>>> I emailed CRAN to ask what I ought to do.  Also, I asked on this email
+>>> group for advice and was told I ought to wait because members of the CRAN
+>>> team are very busy.
+>>>
+>>> As of today, it has been 2 weeks since I wrote to CRAN, and I've not
+>>> received a reply.  That's not a real concern for me, as I understand
+>>> completely how busy the summer can be.
+>>>
+>>> Ideally, I'd like to know by September whether CRAN has permanently
+>>> rejected the "oce" package so I can tell my students how to install updates
+>>> from another source.
+>>>
+>>> I wonder, do folks on this list think that 2 weeks is long enough to
+>>> indicate that perhaps my email (or a reply to it) got lost in an email
+>>> storm?  Or should I just wait a few more weeks?  I'm happy either way.
+>>>
+>>> Thanks.
+>>>
+>>> Dan E. Kelley
+>>> Department of Oceanography
+>>> Dalhousie University
+>>> Halifax, NS, CanadaB3H 4R2
+>>> Dan.Kelley at Dal.CA
+>>>
+>>> ______________________________________________
+>>> R-package-devel at r-project.org mailing list
+>>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+>>>
+>>
+>>          [[alternative HTML version deleted]]
+>>
+>> ______________________________________________
+>> R-package-devel at r-project.org mailing list
+>> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+> 
+> ______________________________________________
+> R-package-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-package-devel
+
+
