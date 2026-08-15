@@ -1,0 +1,789 @@
+From @te|@no@@o||@ @end|ng |rom reg|one@m@rche@|t  Mon Aug 10 12:07:17 2026
+From: @te|@no@@o||@ @end|ng |rom reg|one@m@rche@|t (Stefano Sofia)
+Date: Mon, 10 Aug 2026 10:07:17 +0000
+Subject: [R] Problems with the function aggregate
+Message-ID: <469c3b88d7af4ddeb3f09242b451329f@regione.marche.it>
+
+Dear R-list users,
+
+I've got problems to use the function aggregate.
+
+
+Here there is an example:
+
+
+mydf <- data.frame(Data=seq(as.POSIXct("2003-01-01", format = "%Y-%m-%d", tz="Etc/GMT-1"), as.POSIXct("2023-12-31", format = "%Y-%m-%d", tz="Etc/GMT-1"), by="1 day"), daily_mean = round(runif(7670, 0, 2), digits=2))
+
+mydf$yearly_sum <- unlist(aggregate(daily_mean~as.integer(format(mydf$Data, "%Y")), data=mydf, cumsum)[2], use.names = FALSE)
+
+
+The column "yearly_sum" is the sum of the column "daily_mean" with a reset at the beginning of each year.
+
+If for my analysis I want to remove the 29th of February, "yearly_sum" does not work anymore:
+
+
+mydf1 <- data.frame(Data=seq(as.POSIXct("2003-01-01", format = "%Y-%m-%d", tz="Etc/GMT-1"), as.POSIXct("2023-12-31", format = "%Y-%m-%d", tz="Etc/GMT-1"), by="1 day"), daily_mean = round(runif(7670, 0, 2), digits=2))
+
+mydf1 <- mydf1[format(mydf1$Data, "%m-%d") != "02-29", ]
+
+mydf1$yearly_sum <- unlist(aggregate(daily_mean~as.integer(format(mydf1$Data, "%Y")), data=mydf1, cumsum)[2], use.names = FALSE)
+
+
+In this case the column "yearly_sum" does not sum the values, and honestly I do not understand what is happening. Why?
+
+Could somebody help me? I already spent a big amount of hours with no success.
+
+
+Thank you for your attention and you help
+
+Stefano
+
+
+
+
+         (oo)
+--oOO--( )--OOo--------------------------------------
+Stefano Sofia MSc, PhD
+Civil Protection Department - Marche Region - Italy
+Meteo Section
+Snow Section
+Via Colle Ameno 5
+60126 Torrette di Ancona, Ancona (AN)
+Uff: +39 071 806 7743
+E-mail: stefano.sofia at regione.marche.it
+---Oo---------oO----------------------------------------
+
+________________________________
+
+AVVISO IMPORTANTE: Questo messaggio di posta elettronica pu? contenere informazioni confidenziali, pertanto ? destinato solo a persone autorizzate alla ricezione. I messaggi di posta elettronica per i client di Regione Marche possono contenere informazioni confidenziali e con privilegi legali. Se non si ? il destinatario specificato, non leggere, copiare, inoltrare o archiviare questo messaggio. Se si ? ricevuto questo messaggio per errore, inoltrarlo al mittente ed eliminarlo completamente dal sistema del proprio computer. Ai sensi dell'art. Ai sensi dell'art. 2.4 dell'allegato 1 alla DGR n. 74/2021, si segnala che, in caso di necessit? ed urgenza, la risposta al presente messaggio di posta elettronica pu? essere visionata da persone estranee al destinatario.
+IMPORTANT NOTICE: This e-mail message is intended to be received only by persons entitled to receive the confidential information it may contain. E-mail messages to clients of Regione Marche may contain information that is confidential and legally privileged. Please do not read, copy, forward, or store this message unless you are an intended recipient of it. If you have received this message in error, please forward it to the sender and delete it completely from your computer system.
+
+	[[alternative HTML version deleted]]
+
+
+From er|cjberger @end|ng |rom gm@||@com  Mon Aug 10 12:42:34 2026
+From: er|cjberger @end|ng |rom gm@||@com (Eric Berger)
+Date: Mon, 10 Aug 2026 13:42:34 +0300
+Subject: [R] Problems with the function aggregate
+In-Reply-To: <469c3b88d7af4ddeb3f09242b451329f@regione.marche.it>
+References: <469c3b88d7af4ddeb3f09242b451329f@regione.marche.it>
+Message-ID: <CAGgJW75ML=uED=RQ4Kv+6G9ev7ckJFNhMLcgPm9XXv1NDuVm_Q@mail.gmail.com>
+
+I asked ChatGPT (5.5 Medium). Here is its analysis
+
+The problem is not Feb. 29 itself. The problem is that aggregate()
+changes its return structure depending on whether all groups have the
+same length.
+In your first version, years have different numbers of days: most have
+365, leap years have 366. So aggregate(...)
+returns a grouped result where each year?s cumsum() is kept as a list element.
+Then this works by accident:
+unlist(...[2], use.names = FALSE)
+because it flattens the list year by year.
+But after you remove Feb. 29, every year has exactly 365 rows. Now
+aggregate() sees that every cumsum() result has the same length, so it
+?simplifies? the result into a matrix-like structure. When you then
+unlist() it, the values are no longer flattened in the chronological
+order you expect.
+The clean fix is: do not use aggregate() for this. Use ave().
+
+mydf1 <- data.frame(
+  Data = seq(
+    as.POSIXct("2003-01-01", format = "%Y-%m-%d", tz = "Etc/GMT-1"),
+    as.POSIXct("2023-12-31", format = "%Y-%m-%d", tz = "Etc/GMT-1"),
+    by = "1 day"
+  ),
+  daily_mean = round(runif(7670, 0, 2), digits = 2)
+)
+
+mydf1 <- mydf1[format(mydf1$Data, "%m-%d") != "02-29", ]
+
+mydf1$yearly_sum <- ave(
+  mydf1$daily_mean,
+  as.integer(format(mydf1$Data, "%Y")),
+  FUN = cumsum
+)
+
+You can also force your original aggregate() approach to behave more
+consistently by adding simplify = FALSE:
+
+tmp <- aggregate(
+  daily_mean ~ as.integer(format(mydf1$Data, "%Y")),
+  data = mydf1,
+  FUN = cumsum,
+  simplify = FALSE
+)
+
+mydf1$yearly_sum <- unlist(tmp$daily_mean, use.names = FALSE)
+
+
+
+
+
+
+
+On Mon, Aug 10, 2026 at 1:07?PM Stefano Sofia via R-help
+<r-help at r-project.org> wrote:
+>
+> Dear R-list users,
+>
+> I've got problems to use the function aggregate.
+>
+>
+> Here there is an example:
+>
+>
+> mydf <- data.frame(Data=seq(as.POSIXct("2003-01-01", format = "%Y-%m-%d", tz="Etc/GMT-1"), as.POSIXct("2023-12-31", format = "%Y-%m-%d", tz="Etc/GMT-1"), by="1 day"), daily_mean = round(runif(7670, 0, 2), digits=2))
+>
+> mydf$yearly_sum <- unlist(aggregate(daily_mean~as.integer(format(mydf$Data, "%Y")), data=mydf, cumsum)[2], use.names = FALSE)
+>
+>
+> The column "yearly_sum" is the sum of the column "daily_mean" with a reset at the beginning of each year.
+>
+> If for my analysis I want to remove the 29th of February, "yearly_sum" does not work anymore:
+>
+>
+> mydf1 <- data.frame(Data=seq(as.POSIXct("2003-01-01", format = "%Y-%m-%d", tz="Etc/GMT-1"), as.POSIXct("2023-12-31", format = "%Y-%m-%d", tz="Etc/GMT-1"), by="1 day"), daily_mean = round(runif(7670, 0, 2), digits=2))
+>
+> mydf1 <- mydf1[format(mydf1$Data, "%m-%d") != "02-29", ]
+>
+> mydf1$yearly_sum <- unlist(aggregate(daily_mean~as.integer(format(mydf1$Data, "%Y")), data=mydf1, cumsum)[2], use.names = FALSE)
+>
+>
+> In this case the column "yearly_sum" does not sum the values, and honestly I do not understand what is happening. Why?
+>
+> Could somebody help me? I already spent a big amount of hours with no success.
+>
+>
+> Thank you for your attention and you help
+>
+> Stefano
+>
+>
+>
+>
+>          (oo)
+> --oOO--( )--OOo--------------------------------------
+> Stefano Sofia MSc, PhD
+> Civil Protection Department - Marche Region - Italy
+> Meteo Section
+> Snow Section
+> Via Colle Ameno 5
+> 60126 Torrette di Ancona, Ancona (AN)
+> Uff: +39 071 806 7743
+> E-mail: stefano.sofia at regione.marche.it
+> ---Oo---------oO----------------------------------------
+>
+> ________________________________
+>
+> AVVISO IMPORTANTE: Questo messaggio di posta elettronica pu? contenere informazioni confidenziali, pertanto ? destinato solo a persone autorizzate alla ricezione. I messaggi di posta elettronica per i client di Regione Marche possono contenere informazioni confidenziali e con privilegi legali. Se non si ? il destinatario specificato, non leggere, copiare, inoltrare o archiviare questo messaggio. Se si ? ricevuto questo messaggio per errore, inoltrarlo al mittente ed eliminarlo completamente dal sistema del proprio computer. Ai sensi dell'art. Ai sensi dell'art. 2.4 dell'allegato 1 alla DGR n. 74/2021, si segnala che, in caso di necessit? ed urgenza, la risposta al presente messaggio di posta elettronica pu? essere visionata da persone estranee al destinatario.
+> IMPORTANT NOTICE: This e-mail message is intended to be received only by persons entitled to receive the confidential information it may contain. E-mail messages to clients of Regione Marche may contain information that is confidential and legally privileged. Please do not read, copy, forward, or store this message unless you are an intended recipient of it. If you have received this message in error, please forward it to the sender and delete it completely from your computer system.
+>
+>         [[alternative HTML version deleted]]
+>
+> ______________________________________________
+> R-help at r-project.org mailing list -- To UNSUBSCRIBE and more, see
+> https://stat.ethz.ch/mailman/listinfo/r-help
+> PLEASE do read the posting guide https://www.R-project.org/posting-guide.html
+> and provide commented, minimal, self-contained, reproducible code.
+
+
+From ru|pb@rr@d@@463 @end|ng |rom gm@||@com  Mon Aug 10 12:51:32 2026
+From: ru|pb@rr@d@@463 @end|ng |rom gm@||@com (Rui Barradas)
+Date: Mon, 10 Aug 2026 11:51:32 +0100
+Subject: [R] Problems with the function aggregate
+In-Reply-To: <469c3b88d7af4ddeb3f09242b451329f@regione.marche.it>
+References: <469c3b88d7af4ddeb3f09242b451329f@regione.marche.it>
+Message-ID: <CAG1OV1QexsoQwVxn3R2N7q3e+SfXuGZyRR+1X0oDjGNv9hKPqA@mail.gmail.com>
+
+Hello,
+
+The problem is that the first aggregate's second column is a list and
+the second aggregate's second column is a matrix.
+In the code below I have complicated it a bit so that the intermediate
+results are created and examined.
+
+mydf <- data.frame(
+  Data=seq(as.POSIXct("2003-01-01", format = "%Y-%m-%d",
+tz="Etc/GMT-1"), as.POSIXct("2023-12-31", format = "%Y-%m-%d",
+tz="Etc/GMT-1"), by="1 day"),
+  daily_mean = round(runif(7670, 0, 2), digits=2))
+
+agg <- aggregate(daily_mean ~ as.integer(format(mydf$Data, "%Y")),
+                 data=mydf, cumsum)
+
+mydf$yearly_sum <- unlist(agg[2], use.names = FALSE)
+
+
+mydf1 <- data.frame(
+  Data=seq(as.POSIXct("2003-01-01", format = "%Y-%m-%d",
+tz="Etc/GMT-1"), as.POSIXct("2023-12-31", format = "%Y-%m-%d",
+tz="Etc/GMT-1"), by="1 day"),
+  daily_mean = round(runif(7670, 0, 2), digits=2))
+dim(mydf1)
+#> [1] 7670    2
+
+# this removes 5 rows from mydf1
+i <- format(mydf1$Data, "%m-%d") != "02-29"
+mydf1 <- mydf1[i, ]
+dim(mydf1)
+#> [1] 7665    2
+
+agg2 <- aggregate(daily_mean ~ as.integer(format(mydf1$Data, "%Y")),
+                  data=mydf1, cumsum)
+mydf1$yearly_sum <- unlist(agg2[2], use.names = FALSE)
+
+
+
+Now see what is in agg and in agg2.
+
+
+class(agg$daily_mean)
+#> [1] "list"
+# returns FALSE, 5 list members have length 366
+all(lengths(agg$daily_mean) == 365)
+#> [1] FALSE
+lengths(agg$daily_mean)
+#>  [1] 365 366 365 365 365 366 365 365 365 366 365 365 365 366 365
+365 365 366 365
+#> [20] 365 365
+
+class(agg2$daily_mean)
+#> [1] "matrix" "array"
+ncol(agg2$daily_mean) == 365
+#> [1] TRUE
+
+
+agg2's second column is a matrix where each row represents the year's
+cumulative sums. R stores matrices in column-first order so you have
+to transpose the matrix and then remove the dim attribute (for
+instance, with `c`), not `unlist` it.
+
+
+# after running the agg2 <- aggregate(...) above, run
+mydf1$yearly_sum <- c(t(agg2$daily_mean))
+
+
+Hope this helps,
+
+Rui Barradas
+
+
+Stefano Sofia via R-help <r-help at r-project.org> escreveu (segunda,
+10/08/2026 ?(s) 11:07):
+>
+> Dear R-list users,
+>
+> I've got problems to use the function aggregate.
+>
+>
+> Here there is an example:
+>
+>
+> mydf <- data.frame(Data=seq(as.POSIXct("2003-01-01", format = "%Y-%m-%d", tz="Etc/GMT-1"), as.POSIXct("2023-12-31", format = "%Y-%m-%d", tz="Etc/GMT-1"), by="1 day"), daily_mean = round(runif(7670, 0, 2), digits=2))
+>
+> mydf$yearly_sum <- unlist(aggregate(daily_mean~as.integer(format(mydf$Data, "%Y")), data=mydf, cumsum)[2], use.names = FALSE)
+>
+>
+> The column "yearly_sum" is the sum of the column "daily_mean" with a reset at the beginning of each year.
+>
+> If for my analysis I want to remove the 29th of February, "yearly_sum" does not work anymore:
+>
+>
+> mydf1 <- data.frame(Data=seq(as.POSIXct("2003-01-01", format = "%Y-%m-%d", tz="Etc/GMT-1"), as.POSIXct("2023-12-31", format = "%Y-%m-%d", tz="Etc/GMT-1"), by="1 day"), daily_mean = round(runif(7670, 0, 2), digits=2))
+>
+> mydf1 <- mydf1[format(mydf1$Data, "%m-%d") != "02-29", ]
+>
+> mydf1$yearly_sum <- unlist(aggregate(daily_mean~as.integer(format(mydf1$Data, "%Y")), data=mydf1, cumsum)[2], use.names = FALSE)
+>
+>
+> In this case the column "yearly_sum" does not sum the values, and honestly I do not understand what is happening. Why?
+>
+> Could somebody help me? I already spent a big amount of hours with no success.
+>
+>
+> Thank you for your attention and you help
+>
+> Stefano
+>
+>
+>
+>
+>          (oo)
+> --oOO--( )--OOo--------------------------------------
+> Stefano Sofia MSc, PhD
+> Civil Protection Department - Marche Region - Italy
+> Meteo Section
+> Snow Section
+> Via Colle Ameno 5
+> 60126 Torrette di Ancona, Ancona (AN)
+> Uff: +39 071 806 7743
+> E-mail: stefano.sofia at regione.marche.it
+> ---Oo---------oO----------------------------------------
+>
+> ________________________________
+>
+> AVVISO IMPORTANTE: Questo messaggio di posta elettronica pu? contenere informazioni confidenziali, pertanto ? destinato solo a persone autorizzate alla ricezione. I messaggi di posta elettronica per i client di Regione Marche possono contenere informazioni confidenziali e con privilegi legali. Se non si ? il destinatario specificato, non leggere, copiare, inoltrare o archiviare questo messaggio. Se si ? ricevuto questo messaggio per errore, inoltrarlo al mittente ed eliminarlo completamente dal sistema del proprio computer. Ai sensi dell'art. Ai sensi dell'art. 2.4 dell'allegato 1 alla DGR n. 74/2021, si segnala che, in caso di necessit? ed urgenza, la risposta al presente messaggio di posta elettronica pu? essere visionata da persone estranee al destinatario.
+> IMPORTANT NOTICE: This e-mail message is intended to be received only by persons entitled to receive the confidential information it may contain. E-mail messages to clients of Regione Marche may contain information that is confidential and legally privileged. Please do not read, copy, forward, or store this message unless you are an intended recipient of it. If you have received this message in error, please forward it to the sender and delete it completely from your computer system.
+>
+>         [[alternative HTML version deleted]]
+>
+> ______________________________________________
+> R-help at r-project.org mailing list -- To UNSUBSCRIBE and more, see
+> https://stat.ethz.ch/mailman/listinfo/r-help
+> PLEASE do read the posting guide https://www.R-project.org/posting-guide.html
+> and provide commented, minimal, self-contained, reproducible code.
+
+
+From ru|pb@rr@d@@463 @end|ng |rom gm@||@com  Mon Aug 10 13:01:20 2026
+From: ru|pb@rr@d@@463 @end|ng |rom gm@||@com (Rui Barradas)
+Date: Mon, 10 Aug 2026 12:01:20 +0100
+Subject: [R] Problems with the function aggregate
+In-Reply-To: <CAG1OV1QexsoQwVxn3R2N7q3e+SfXuGZyRR+1X0oDjGNv9hKPqA@mail.gmail.com>
+References: <469c3b88d7af4ddeb3f09242b451329f@regione.marche.it>
+ <CAG1OV1QexsoQwVxn3R2N7q3e+SfXuGZyRR+1X0oDjGNv9hKPqA@mail.gmail.com>
+Message-ID: <CAG1OV1RYYbWFxz1t=eYaOWLuneZ91i=oPd6PEXAZUDuCVEbb9A@mail.gmail.com>
+
+Hello,
+
+I forgot to add that I don't find your
+
+
+unlist(agg[2], use.names = FALSE)
+
+
+the best way, `[` extracts a sub-data.frame, use `[[` instead.
+
+
+unlist(agg[[2]], use.names = FALSE)
+
+
+It may not make a difference, followed by unlist the results might be
+the same but it is conceptually better to extract the column, to use
+`[[`. See the difference between the two:
+
+
+str(agg[2])
+str(agg[[2]])
+
+
+Hope this helps,
+Rui Barradas
+
+Rui Barradas <ruipbarradas463 at gmail.com> escreveu (segunda, 10/08/2026
+?(s) 11:51):
+>
+> Hello,
+>
+> The problem is that the first aggregate's second column is a list and
+> the second aggregate's second column is a matrix.
+> In the code below I have complicated it a bit so that the intermediate
+> results are created and examined.
+>
+> mydf <- data.frame(
+>   Data=seq(as.POSIXct("2003-01-01", format = "%Y-%m-%d",
+> tz="Etc/GMT-1"), as.POSIXct("2023-12-31", format = "%Y-%m-%d",
+> tz="Etc/GMT-1"), by="1 day"),
+>   daily_mean = round(runif(7670, 0, 2), digits=2))
+>
+> agg <- aggregate(daily_mean ~ as.integer(format(mydf$Data, "%Y")),
+>                  data=mydf, cumsum)
+>
+> mydf$yearly_sum <- unlist(agg[2], use.names = FALSE)
+>
+>
+> mydf1 <- data.frame(
+>   Data=seq(as.POSIXct("2003-01-01", format = "%Y-%m-%d",
+> tz="Etc/GMT-1"), as.POSIXct("2023-12-31", format = "%Y-%m-%d",
+> tz="Etc/GMT-1"), by="1 day"),
+>   daily_mean = round(runif(7670, 0, 2), digits=2))
+> dim(mydf1)
+> #> [1] 7670    2
+>
+> # this removes 5 rows from mydf1
+> i <- format(mydf1$Data, "%m-%d") != "02-29"
+> mydf1 <- mydf1[i, ]
+> dim(mydf1)
+> #> [1] 7665    2
+>
+> agg2 <- aggregate(daily_mean ~ as.integer(format(mydf1$Data, "%Y")),
+>                   data=mydf1, cumsum)
+> mydf1$yearly_sum <- unlist(agg2[2], use.names = FALSE)
+>
+>
+>
+> Now see what is in agg and in agg2.
+>
+>
+> class(agg$daily_mean)
+> #> [1] "list"
+> # returns FALSE, 5 list members have length 366
+> all(lengths(agg$daily_mean) == 365)
+> #> [1] FALSE
+> lengths(agg$daily_mean)
+> #>  [1] 365 366 365 365 365 366 365 365 365 366 365 365 365 366 365
+> 365 365 366 365
+> #> [20] 365 365
+>
+> class(agg2$daily_mean)
+> #> [1] "matrix" "array"
+> ncol(agg2$daily_mean) == 365
+> #> [1] TRUE
+>
+>
+> agg2's second column is a matrix where each row represents the year's
+> cumulative sums. R stores matrices in column-first order so you have
+> to transpose the matrix and then remove the dim attribute (for
+> instance, with `c`), not `unlist` it.
+>
+>
+> # after running the agg2 <- aggregate(...) above, run
+> mydf1$yearly_sum <- c(t(agg2$daily_mean))
+>
+>
+> Hope this helps,
+>
+> Rui Barradas
+>
+>
+> Stefano Sofia via R-help <r-help at r-project.org> escreveu (segunda,
+> 10/08/2026 ?(s) 11:07):
+> >
+> > Dear R-list users,
+> >
+> > I've got problems to use the function aggregate.
+> >
+> >
+> > Here there is an example:
+> >
+> >
+> > mydf <- data.frame(Data=seq(as.POSIXct("2003-01-01", format = "%Y-%m-%d", tz="Etc/GMT-1"), as.POSIXct("2023-12-31", format = "%Y-%m-%d", tz="Etc/GMT-1"), by="1 day"), daily_mean = round(runif(7670, 0, 2), digits=2))
+> >
+> > mydf$yearly_sum <- unlist(aggregate(daily_mean~as.integer(format(mydf$Data, "%Y")), data=mydf, cumsum)[2], use.names = FALSE)
+> >
+> >
+> > The column "yearly_sum" is the sum of the column "daily_mean" with a reset at the beginning of each year.
+> >
+> > If for my analysis I want to remove the 29th of February, "yearly_sum" does not work anymore:
+> >
+> >
+> > mydf1 <- data.frame(Data=seq(as.POSIXct("2003-01-01", format = "%Y-%m-%d", tz="Etc/GMT-1"), as.POSIXct("2023-12-31", format = "%Y-%m-%d", tz="Etc/GMT-1"), by="1 day"), daily_mean = round(runif(7670, 0, 2), digits=2))
+> >
+> > mydf1 <- mydf1[format(mydf1$Data, "%m-%d") != "02-29", ]
+> >
+> > mydf1$yearly_sum <- unlist(aggregate(daily_mean~as.integer(format(mydf1$Data, "%Y")), data=mydf1, cumsum)[2], use.names = FALSE)
+> >
+> >
+> > In this case the column "yearly_sum" does not sum the values, and honestly I do not understand what is happening. Why?
+> >
+> > Could somebody help me? I already spent a big amount of hours with no success.
+> >
+> >
+> > Thank you for your attention and you help
+> >
+> > Stefano
+> >
+> >
+> >
+> >
+> >          (oo)
+> > --oOO--( )--OOo--------------------------------------
+> > Stefano Sofia MSc, PhD
+> > Civil Protection Department - Marche Region - Italy
+> > Meteo Section
+> > Snow Section
+> > Via Colle Ameno 5
+> > 60126 Torrette di Ancona, Ancona (AN)
+> > Uff: +39 071 806 7743
+> > E-mail: stefano.sofia at regione.marche.it
+> > ---Oo---------oO----------------------------------------
+> >
+> > ________________________________
+> >
+> > AVVISO IMPORTANTE: Questo messaggio di posta elettronica pu? contenere informazioni confidenziali, pertanto ? destinato solo a persone autorizzate alla ricezione. I messaggi di posta elettronica per i client di Regione Marche possono contenere informazioni confidenziali e con privilegi legali. Se non si ? il destinatario specificato, non leggere, copiare, inoltrare o archiviare questo messaggio. Se si ? ricevuto questo messaggio per errore, inoltrarlo al mittente ed eliminarlo completamente dal sistema del proprio computer. Ai sensi dell'art. Ai sensi dell'art. 2.4 dell'allegato 1 alla DGR n. 74/2021, si segnala che, in caso di necessit? ed urgenza, la risposta al presente messaggio di posta elettronica pu? essere visionata da persone estranee al destinatario.
+> > IMPORTANT NOTICE: This e-mail message is intended to be received only by persons entitled to receive the confidential information it may contain. E-mail messages to clients of Regione Marche may contain information that is confidential and legally privileged. Please do not read, copy, forward, or store this message unless you are an intended recipient of it. If you have received this message in error, please forward it to the sender and delete it completely from your computer system.
+> >
+> >         [[alternative HTML version deleted]]
+> >
+> > ______________________________________________
+> > R-help at r-project.org mailing list -- To UNSUBSCRIBE and more, see
+> > https://stat.ethz.ch/mailman/listinfo/r-help
+> > PLEASE do read the posting guide https://www.R-project.org/posting-guide.html
+> > and provide commented, minimal, self-contained, reproducible code.
+
+
+From ggrothend|eck @end|ng |rom gm@||@com  Mon Aug 10 14:25:20 2026
+From: ggrothend|eck @end|ng |rom gm@||@com (Gabor Grothendieck)
+Date: Mon, 10 Aug 2026 08:25:20 -0400
+Subject: [R] Problems with the function aggregate
+In-Reply-To: <CAGgJW75ML=uED=RQ4Kv+6G9ev7ckJFNhMLcgPm9XXv1NDuVm_Q@mail.gmail.com>
+References: <469c3b88d7af4ddeb3f09242b451329f@regione.marche.it>
+ <CAGgJW75ML=uED=RQ4Kv+6G9ev7ckJFNhMLcgPm9XXv1NDuVm_Q@mail.gmail.com>
+Message-ID: <CAP01uRksuHAOj8Td+-L75O3N4fZjUWhM9RFKt6qp_i4soa0btA@mail.gmail.com>
+
+The ave solution could be written as:
+
+transform(mydf1, yearly_sum = ave(daily_mean, cut(Data, "year"), FUN = cumsum))
+
+On Mon, Aug 10, 2026 at 6:43?AM Eric Berger <ericjberger at gmail.com> wrote:
+>
+> I asked ChatGPT (5.5 Medium). Here is its analysis
+>
+> The problem is not Feb. 29 itself. The problem is that aggregate()
+> changes its return structure depending on whether all groups have the
+> same length.
+> In your first version, years have different numbers of days: most have
+> 365, leap years have 366. So aggregate(...)
+> returns a grouped result where each year?s cumsum() is kept as a list element.
+> Then this works by accident:
+> unlist(...[2], use.names = FALSE)
+> because it flattens the list year by year.
+> But after you remove Feb. 29, every year has exactly 365 rows. Now
+> aggregate() sees that every cumsum() result has the same length, so it
+> ?simplifies? the result into a matrix-like structure. When you then
+> unlist() it, the values are no longer flattened in the chronological
+> order you expect.
+> The clean fix is: do not use aggregate() for this. Use ave().
+>
+> mydf1 <- data.frame(
+>   Data = seq(
+>     as.POSIXct("2003-01-01", format = "%Y-%m-%d", tz = "Etc/GMT-1"),
+>     as.POSIXct("2023-12-31", format = "%Y-%m-%d", tz = "Etc/GMT-1"),
+>     by = "1 day"
+>   ),
+>   daily_mean = round(runif(7670, 0, 2), digits = 2)
+> )
+>
+> mydf1 <- mydf1[format(mydf1$Data, "%m-%d") != "02-29", ]
+>
+> mydf1$yearly_sum <- ave(
+>   mydf1$daily_mean,
+>   as.integer(format(mydf1$Data, "%Y")),
+>   FUN = cumsum
+> )
+>
+> You can also force your original aggregate() approach to behave more
+> consistently by adding simplify = FALSE:
+>
+> tmp <- aggregate(
+>   daily_mean ~ as.integer(format(mydf1$Data, "%Y")),
+>   data = mydf1,
+>   FUN = cumsum,
+>   simplify = FALSE
+> )
+>
+> mydf1$yearly_sum <- unlist(tmp$daily_mean, use.names = FALSE)
+>
+>
+>
+>
+>
+>
+>
+> On Mon, Aug 10, 2026 at 1:07?PM Stefano Sofia via R-help
+> <r-help at r-project.org> wrote:
+> >
+> > Dear R-list users,
+> >
+> > I've got problems to use the function aggregate.
+> >
+> >
+> > Here there is an example:
+> >
+> >
+> > mydf <- data.frame(Data=seq(as.POSIXct("2003-01-01", format = "%Y-%m-%d", tz="Etc/GMT-1"), as.POSIXct("2023-12-31", format = "%Y-%m-%d", tz="Etc/GMT-1"), by="1 day"), daily_mean = round(runif(7670, 0, 2), digits=2))
+> >
+> > mydf$yearly_sum <- unlist(aggregate(daily_mean~as.integer(format(mydf$Data, "%Y")), data=mydf, cumsum)[2], use.names = FALSE)
+> >
+> >
+> > The column "yearly_sum" is the sum of the column "daily_mean" with a reset at the beginning of each year.
+> >
+> > If for my analysis I want to remove the 29th of February, "yearly_sum" does not work anymore:
+> >
+> >
+> > mydf1 <- data.frame(Data=seq(as.POSIXct("2003-01-01", format = "%Y-%m-%d", tz="Etc/GMT-1"), as.POSIXct("2023-12-31", format = "%Y-%m-%d", tz="Etc/GMT-1"), by="1 day"), daily_mean = round(runif(7670, 0, 2), digits=2))
+> >
+> > mydf1 <- mydf1[format(mydf1$Data, "%m-%d") != "02-29", ]
+> >
+> > mydf1$yearly_sum <- unlist(aggregate(daily_mean~as.integer(format(mydf1$Data, "%Y")), data=mydf1, cumsum)[2], use.names = FALSE)
+> >
+> >
+> > In this case the column "yearly_sum" does not sum the values, and honestly I do not understand what is happening. Why?
+> >
+> > Could somebody help me? I already spent a big amount of hours with no success.
+> >
+> >
+> > Thank you for your attention and you help
+> >
+> > Stefano
+> >
+> >
+> >
+> >
+> >          (oo)
+> > --oOO--( )--OOo--------------------------------------
+> > Stefano Sofia MSc, PhD
+> > Civil Protection Department - Marche Region - Italy
+> > Meteo Section
+> > Snow Section
+> > Via Colle Ameno 5
+> > 60126 Torrette di Ancona, Ancona (AN)
+> > Uff: +39 071 806 7743
+> > E-mail: stefano.sofia at regione.marche.it
+> > ---Oo---------oO----------------------------------------
+> >
+> > ________________________________
+> >
+> > AVVISO IMPORTANTE: Questo messaggio di posta elettronica pu? contenere informazioni confidenziali, pertanto ? destinato solo a persone autorizzate alla ricezione. I messaggi di posta elettronica per i client di Regione Marche possono contenere informazioni confidenziali e con privilegi legali. Se non si ? il destinatario specificato, non leggere, copiare, inoltrare o archiviare questo messaggio. Se si ? ricevuto questo messaggio per errore, inoltrarlo al mittente ed eliminarlo completamente dal sistema del proprio computer. Ai sensi dell'art. Ai sensi dell'art. 2.4 dell'allegato 1 alla DGR n. 74/2021, si segnala che, in caso di necessit? ed urgenza, la risposta al presente messaggio di posta elettronica pu? essere visionata da persone estranee al destinatario.
+> > IMPORTANT NOTICE: This e-mail message is intended to be received only by persons entitled to receive the confidential information it may contain. E-mail messages to clients of Regione Marche may contain information that is confidential and legally privileged. Please do not read, copy, forward, or store this message unless you are an intended recipient of it. If you have received this message in error, please forward it to the sender and delete it completely from your computer system.
+> >
+> >         [[alternative HTML version deleted]]
+> >
+> > ______________________________________________
+> > R-help at r-project.org mailing list -- To UNSUBSCRIBE and more, see
+> > https://stat.ethz.ch/mailman/listinfo/r-help
+> > PLEASE do read the posting guide https://www.R-project.org/posting-guide.html
+> > and provide commented, minimal, self-contained, reproducible code.
+>
+> ______________________________________________
+> R-help at r-project.org mailing list -- To UNSUBSCRIBE and more, see
+> https://stat.ethz.ch/mailman/listinfo/r-help
+> PLEASE do read the posting guide https://www.R-project.org/posting-guide.html
+> and provide commented, minimal, self-contained, reproducible code.
+
+
+
+-- 
+Statistics & Software Consulting
+GKX Group, GKX Associates Inc.
+tel: 1-877-GKX-GROUP
+email: ggrothendieck at gmail.com
+
+
+From k@t|e @end|ng |rom herr|c@ne@c@  Sun Aug  9 17:28:12 2026
+From: k@t|e @end|ng |rom herr|c@ne@c@ (Katie)
+Date: Sun, 09 Aug 2026 11:28:12 -0400
+Subject: [R] R User Groups in Canada?
+Message-ID: <a47a8cb9bf034800a2485eb99bb22308@herricane.ca>
+
+Hello all,
+
+I'm creating a list of Canadian user groups, and am wondering if anyone 
+knows of any in Canada dedicated to R?
+
+Thanks,
+Katie
+
+
+From murdoch@dunc@n @end|ng |rom gm@||@com  Tue Aug 11 17:40:39 2026
+From: murdoch@dunc@n @end|ng |rom gm@||@com (Duncan Murdoch)
+Date: Tue, 11 Aug 2026 11:40:39 -0400
+Subject: [R] R User Groups in Canada?
+In-Reply-To: <a47a8cb9bf034800a2485eb99bb22308@herricane.ca>
+References: <a47a8cb9bf034800a2485eb99bb22308@herricane.ca>
+Message-ID: <3c2d5883-5a2d-4ca3-8c43-6b7ce1fd21b7@gmail.com>
+
+On 2026-08-09 11:28 a.m., Katie wrote:
+> Hello all,
+> 
+> I'm creating a list of Canadian user groups, and am wondering if anyone
+> knows of any in Canada dedicated to R?
+I don't know how many of them are still active, but there are 8 of them 
+listed here:
+
+  https://jumpingrivers.github.io/meetingsR/r-user-groups.html
+
+Duncan Murdoch
+
+
+From pro|jcn@@h @end|ng |rom gm@||@com  Tue Aug 11 18:27:06 2026
+From: pro|jcn@@h @end|ng |rom gm@||@com (J C Nash)
+Date: Tue, 11 Aug 2026 12:27:06 -0400
+Subject: [R] R User Groups in Canada?
+In-Reply-To: <3c2d5883-5a2d-4ca3-8c43-6b7ce1fd21b7@gmail.com>
+References: <a47a8cb9bf034800a2485eb99bb22308@herricane.ca>
+ <3c2d5883-5a2d-4ca3-8c43-6b7ce1fd21b7@gmail.com>
+Message-ID: <e4b253a8-3601-486c-a711-c1ae74ec6797@gmail.com>
+
+Sadly, OGRUG has been dormant for a long time. The two of us (Joseph Potvin and I) couldn't
+get anyone to step up and talk about what they were doing.
+
+We'll be glad to hand over the reins (there was an R mailing list, and I think it still works)
+if anyone has energy.
+
+John Nash
+
+
+On 2026-08-11 11:40, Duncan Murdoch wrote:
+> On 2026-08-09 11:28 a.m., Katie wrote:
+>> Hello all,
+>>
+>> I'm creating a list of Canadian user groups, and am wondering if anyone
+>> knows of any in Canada dedicated to R?
+> I don't know how many of them are still active, but there are 8 of them listed here:
+> 
+>  ?https://jumpingrivers.github.io/meetingsR/r-user-groups.html
+> 
+> Duncan Murdoch
+> 
+> ______________________________________________
+> R-help at r-project.org mailing list -- To UNSUBSCRIBE and more, see
+> https://stat.ethz.ch/mailman/listinfo/r-help
+> PLEASE do read the posting guide https://www.R-project.org/posting-guide.html
+> and provide commented, minimal, self-contained, reproducible code.
+
+
+From k@t|e @end|ng |rom herr|c@ne@c@  Tue Aug 11 18:50:53 2026
+From: k@t|e @end|ng |rom herr|c@ne@c@ (Katie)
+Date: Tue, 11 Aug 2026 12:50:53 -0400
+Subject: [R] R User Groups in Canada?
+In-Reply-To: <e4b253a8-3601-486c-a711-c1ae74ec6797@gmail.com>
+References: <a47a8cb9bf034800a2485eb99bb22308@herricane.ca>
+ <3c2d5883-5a2d-4ca3-8c43-6b7ce1fd21b7@gmail.com>
+ <e4b253a8-3601-486c-a711-c1ae74ec6797@gmail.com>
+Message-ID: <24838b28f7bb04a461da80d378996f74@herricane.ca>
+
+Hi John,
+
+I wonder if only the SAS-users discuss what they're doing? You know, the 
+SAS users that "dominate" every organization in Canada (or at least 
+scream the loudest).
+
+Bizarre!
+
+-Katie
+
+On 2026-08-11 12:27, J C Nash wrote:
+> Sadly, OGRUG has been dormant for a long time. The two of us (Joseph 
+> Potvin and I) couldn't
+> get anyone to step up and talk about what they were doing.
+> 
+> We'll be glad to hand over the reins (there was an R mailing list, and 
+> I think it still works)
+> if anyone has energy.
+> 
+> John Nash
+> 
+> 
+> On 2026-08-11 11:40, Duncan Murdoch wrote:
+>> On 2026-08-09 11:28 a.m., Katie wrote:
+>>> Hello all,
+>>> 
+>>> I'm creating a list of Canadian user groups, and am wondering if 
+>>> anyone
+>>> knows of any in Canada dedicated to R?
+>> I don't know how many of them are still active, but there are 8 of 
+>> them listed here:
+>> 
+>>  ?https://jumpingrivers.github.io/meetingsR/r-user-groups.html
+>> 
+>> Duncan Murdoch
+>> 
+>> ______________________________________________
+>> R-help at r-project.org mailing list -- To UNSUBSCRIBE and more, see
+>> https://stat.ethz.ch/mailman/listinfo/r-help
+>> PLEASE do read the posting guide 
+>> https://www.R-project.org/posting-guide.html
+>> and provide commented, minimal, self-contained, reproducible code.
+
+
