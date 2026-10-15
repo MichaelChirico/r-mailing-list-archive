@@ -1,0 +1,630 @@
+From Thom@@@SOEIRO @end|ng |rom @p-hm@|r  Fri Oct  2 23:03:32 2026
+From: Thom@@@SOEIRO @end|ng |rom @p-hm@|r (SOEIRO Thomas)
+Date: Fri, 2 Oct 2026 21:03:32 +0000
+Subject: [Rd] Treat multiline expressions as a single block in R Console
+ history #1666
+Message-ID: <c7f0c87ddf974915a2c4c8be1ee38358@ap-hm.fr>
+
+Dear all,
+
+
+When copy-pasting a multiline expression into R in a console, the expression is treated as a single block in the history on Linux, but not on Windows.
+
+
+For example, when copy-pasting
+
+
+c(
+
+  1,
+
+  2
+
+)
+
+
+into R then pressing enter arrow up, I get the entiere expression on Linux, but only `)` on Windows.
+
+
+Is it expected? Can it be improved? If so, is it suitable for a Bugzilla wishlist item?
+
+
+Thanks,
+
+Thomas
+
+
+From @hmed@@t@te@me @end|ng |rom gm@||@com  Sat Oct  3 01:03:46 2026
+From: @hmed@@t@te@me @end|ng |rom gm@||@com (Ahmed S. Jabbar)
+Date: Sat, 3 Oct 2026 02:03:46 +0300
+Subject: [Rd] [PATCH] PR#19144: wilcox.test / .psignrank upper tail
+ precision and out-of-domain fix
+Message-ID: <CAPj8-CPVPqWK0zYjtwLeF72Sw64ULL55xfMFOkH3TbATXoAfkA@mail.gmail.com>
+
+Dear R-devel team,
+
+I would like to provide an analysis, a minimal patch, and regression tests
+for PR#19144 <https://bugs.r-project.org/show_bug.cgi?id=19144>
+
+
+The issue is that wilcox.test(exact = TRUE) can return a negative p-value
+in an extreme-tail case.
+
+Diagnosis
+The issue arises in .psignrank() in src/library/stats/R/wilcox.test.R. When
+zeros or ties are present, .psignrank() obtains a discrete probability mass
+vector d from .dsignrank(). The probabilities are computed using
+floating-point arithmetic, so their sum can differ slightly from one. For
+example, in the n = 100 reproducer, I obtain:
+    sum(d) = 1.0000000000000038
+on x86_64.
+
+For an observation near the upper end of the support, the current
+implementation computes the lower-tail probability as:
+    sum(d[s < e + 1e-08])
+and obtains the upper tail by complementing this value:
+    1 - y
+
+In the reproducing case, the cumulative sum is slightly greater than one,
+so the complement becomes:
+    -3.774758283725532e-15
+and the corresponding two-sided p-value is consequently negative as well.
+
+More generally, when the cumulative probability is close to one, forming a
+small tail probability by subtraction can also lead to substantial loss of
+relative precision.
+
+Proposed fix
+Instead of obtaining the upper tail by complementing the lower-tail sum,
+the proposed change sums the probability masses belonging directly to the
+requested tail:
+
+Index: src/library/stats/R/wilcox.test.R
+===================================================================
+--- src/library/stats/R/wilcox.test.R (revision 87400)
++++ src/library/stats/R/wilcox.test.R (working copy)
+@@ -1101,13 +1101,12 @@
+              seq.int(0, n * (n + 1)) / 2
+     ## Density
+     d <- .dsignrank(s, n, z)
+-    y[i] <- vapply(q[i],
+-                   function(e) {
+-                       ## NOTE: C code in src/nmath uses a fuzz of 1e-7.
+-                       sum(d[s < e + 1e-8])
+-                   },
+-                   0)
+-    if(lower.tail) y else 1 - y
++    if(lower.tail) {
++        y[i] <- vapply(q[i], function(e) sum(d[s < e + 1e-8]), 0)
++    } else {
++        y[i] <- vapply(q[i], function(e) sum(d[s > e - 1e-8]), 0)
++    }
++    y
+ }
+
+ .qsignrank <-
+
+
+===================================================================
+This avoids the subtraction of two nearly equal floating-point quantities
+when the upper tail is requested.
+
+Verification
+I tested the change using the reproducer from PR#19144 and additional cases
+involving zeros and ties.
+
+For the n = 100 reproducer, with rank sum q = 4755, an independently
+computed integer generating-polynomial dynamic-programming calculation
+gives the exact upper-tail probability:
+    819334086710 / 2^99 = 1.292681258640963e-18.
+
+With the proposed change, .psignrank() returns:
+    1.292681258640968e-18
+for this tail, corresponding to a relative error of approximately 3.9e-15.
+
+The patch also removes the negative result in the original reproducing case
+without requiring clipping or other post-hoc correction of the probability.
+
+The accompanying regression tests cover:
+- the original PR#19144 reproducer;
+- p-value domain checks;
+- comparison with the independently computed exact combinatorial reference;
+- tail monotonicity; and
+- additional cases involving zeros and ties.
+
+I have attached the following files:
+- wilcox_bug19144.patch ? minimal patch against the R sources;
+- reg-tests-wilcox.R ? regression tests for the reported issue and the
+numerical behavior described above.
+
+I would appreciate any comments on the diagnosis, the proposed
+implementation, or the form and placement of the regression tests.
+
+Best regards,
+
+--
+Ahmed Sattar Jabbar
+Department of Statistics | Mustansiriyah University
+Baghdad, Iraq
+
+Email:  ahmed.state.me at gmail.com
+ORCID:  https://orcid.org/0009-0006-4614-735X
+GitHub: https://github.com/amjed-droid
+
+From ggrothend|eck @end|ng |rom gm@||@com  Sat Oct  3 13:38:33 2026
+From: ggrothend|eck @end|ng |rom gm@||@com (Gabor Grothendieck)
+Date: Sat, 3 Oct 2026 07:38:33 -0400
+Subject: [Rd] Treat multiline expressions as a single block in R Console
+ history #1666
+In-Reply-To: <c7f0c87ddf974915a2c4c8be1ee38358@ap-hm.fr>
+References: <c7f0c87ddf974915a2c4c8be1ee38358@ap-hm.fr>
+Message-ID: <CAP01uRmsxc_UL1FxGoxEs6M8smg_MAJWCYuMuF6P39GdfWDDVw@mail.gmail.com>
+
+Put this function in your .Rprofile file:
+
+compress_clipboard <- function(sep = " ") {
+  readLines("clipboard") |> paste(collapse = sep) |> writeClipboard()
+}
+
+and then run:
+
+compress_clipboard()
+
+before pasting.  Depending on what is on the clipboard you may need to
+supply a different sep argument.
+
+On Fri, Oct 2, 2026 at 5:03?PM SOEIRO Thomas via R-devel
+<r-devel at r-project.org> wrote:
+>
+> Dear all,
+>
+>
+> When copy-pasting a multiline expression into R in a console, the expression is treated as a single block in the history on Linux, but not on Windows.
+>
+>
+> For example, when copy-pasting
+>
+>
+> c(
+>
+>   1,
+>
+>   2
+>
+> )
+>
+>
+> into R then pressing enter arrow up, I get the entiere expression on Linux, but only `)` on Windows.
+>
+>
+> Is it expected? Can it be improved? If so, is it suitable for a Bugzilla wishlist item?
+>
+>
+> Thanks,
+>
+> Thomas
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+
+
+
+-- 
+Statistics & Software Consulting
+GKX Group, GKX Associates Inc.
+tel: 1-877-GKX-GROUP
+email: ggrothendieck at gmail.com
+
+
+From m@|| @end|ng |rom p@t-@@me  Sat Oct  3 11:56:13 2026
+From: m@|| @end|ng |rom p@t-@@me (Patrick Schratz)
+Date: Sat, 03 Oct 2026 11:56:13 +0200
+Subject: [Rd] 
+ [PATCH] Include Linux distribution identifiers in the default
+ HTTP User-Agent
+In-Reply-To: <88E9917B-0DA6-44AB-BFD5-231FC29139B2@R-project.org>
+References: <DB4F7DF2-739C-455A-BEB3-6D652B15B120@pat-s.me>
+ <6B2E4A44-19A3-4721-8DFB-5D47D86FC0E7@r-project.org>
+ <D69A4384-9BFD-42BA-9642-501B5BF132FF@pat-s.me>
+ <88E9917B-0DA6-44AB-BFD5-231FC29139B2@R-project.org>
+Message-ID: <436AF763-F8D1-40F1-A027-2F392CB77FB0@pat-s.me>
+
+Simon,
+
+thanks for the reply, and no worries about the delay.
+
+You are right that the current User-Agent is documented, and calling it a bug was wrong on my part. The libcurl point is also fair: my patch would have dropped `libcurl/<version>` from the header.
+
+I have since looked at the custom binary types added in 4.6.0 (r89368-r89372 and r89499). I will add the `bin/linux/<build>/contrib/<x.y>` layout to cran.rpkgs.com, so an R build with `R_PLATFORM_PKGTYPE` set gets binaries with no further setup. It **does not cover** the case I care about most, though:
+
+1. `R_PLATFORM_PKGTYPE` has to be set by whoever builds or ships R. On Linux that means distribution packagers, people building from source, rig, and most Docker and CI images. None of them set it today AFAIK. When it is unset, R 4.6 requests `src/contrib` just like 4.5.
+
+2. It cannot become a default in R. If R derived `pkgType` from os-release, every Linux user with the default type `"both"` would also request `bin/linux/<build>/contrib/<x.y>` from CRAN, which has no such directories. With cloud.r-project.org and R 4.6.1, `install.packages("cli")` then prints this on every call:
+
+```
+Warning: unable to access index for repository https://cloud.r-project.org/bin/linux/x86_64-ubuntu-noble/contrib/4.6:
+Package which is only available in source form, and may need compilation of C/C++/Fortran: 'cli'
+```
+
+3. R cannot check Linux binary compatibility from the platform information alone. The `Built` check from r89499 compares only the CPU and linux vs. non-linux, so in R 4.6.1 the following returns `TRUE`, i.e. a glibc binary passes on Alpine:
+
+```r
+utils:::.is.built.compatible("R 4.6.1; x86_64-pc-linux-gnu; 2026-09-01 10:00:00 UTC; unix", platform = "x86_64-pc-linux-musl")
+```
+
+I am not asking for a stricter check. It just means the repository has to pick the right binary, and for that it needs to know the system it is running on.
+
+In R 4.6.1, `--vanilla` and the default libcurl method, a request for `PACKAGES` carries only
+
+```
+User-Agent: libcurl/8.22.0
+```
+
+so the server sees neither the R version nor the platform. Every Linux binary repository I know of works around this with a per-distribution URL, an `HTTPUserAgent` line in `Rprofile.site`, or both; Posit Package Manager [documents such a snippet](https://docs.posit.co/rspm/admin/serving-binaries.html#binary-user-agents), and rocker adds it in [`setup_R.sh`](https://github.com/rocker-org/rocker-versioned2/blob/2b8857e9bf3f87bb248d3d803bd3f32ff4d31ab0/scripts/setup_R.sh#L36-L40). Posit's own R builds have gone further [since 2019](https://github.com/rstudio/r-builds/commit/a54183792753d4df38db27dabdfb4455f78a7f3d): rstudio/r-builds appends the os-release `ID` and `VERSION_ID` to `HTTPUserAgent` in the system Rprofile, so even `R --vanilla` sends `R/4.6.1 (ubuntu-24.04) R (...)`The information is already being sent, but only from builds whose maintainers patched it in, each in its own format. **That is what I would like to fix in R itself**: the same repos setting, e.g. in an `renv.lock` or a CI matrix, should work on any Linux system without client-side configuration.
+
+A revised proposal that leaves everything existing untouched:
+
+- The User-Agent stays exactly as it is, including the `R (` rule in `libcurl.c`.
+- On Linux, the libcurl method sends **one additional header**, built from `R.version`, the `ID` and `VERSION_ID` fields of os-release, and `gnu_get_libc_version()` (just `musl` on musl, which has no version API). Values are restricted to `[A-Za-z0-9._-]`, as in the earlier patch. The header name is open to suggestions.
+- An option, plus an environment variable for site-wide setups, turns it off (not sure if this is ever needed).
+
+For example:
+
+```
+R-Client: 4.6.1; x86_64-pc-linux-gnu; distro=ubuntu; version=24.04; libc=glibc-2.39
+```
+
+On privacy, I think browsers are the wrong comparison here - package managers match better. `pip` sends the distribution and libc in its User-Agent:
+
+```
+pip/26.2.1 {"cpu":"x86_64","distro":{"name":"AlmaLinux","version":"10.2","libc":{"lib":"glibc","version":"2.39"}},...}
+```
+
+and conda sends `Linux/<kernel> <distro>/<version> glibc/<version>`. PyPI uses this for its download statistics, while wheel selection happens on the client through platform tags. R has no such tags for Linux binaries, so the header would serve both purposes: statistics for CRAN and mirror operators, and correct binary selection for repositories that offer Linux binaries.
+
+If R Core is open to this in principle, I will rework the patch along these lines.
+
+Best,
+Patrick
+
+P.S. While reading the 4.6.0 changes I noticed that r89370 changed the `install.packages.check.source` condition in `src/library/utils/R/packages2.R` to `grepl("^[[:lower::]]+[.]binary", type)`, with an extra colon. In R 4.6.1 this returns `FALSE` for every type, including `"win.binary"` and `"mac.binary"`, so the source-version check that 4.5 did for Windows and macOS binaries is now skipped.
+
+	[[alternative HTML version deleted]]
+
+
+From ty|ermw @end|ng |rom gm@||@com  Mon Oct  5 07:43:31 2026
+From: ty|ermw @end|ng |rom gm@||@com (Tyler)
+Date: Mon, 5 Oct 2026 01:43:31 -0400
+Subject: [Rd] Ncell GC trigger reaches SIZE_MAX after grow/shrink/regrow in
+ AdjustHeapSize
+Message-ID: <CAJhwqzTLir5B=kvp-DaCi1=PO9VH8uZ2m-WHmabaAVxDMBOsAQ@mail.gmail.com>
+
+Hello,
+
+I found a reproducible node-heap sizing bug in R 4.6.0 on arm64 macOS.
+After allocating and releasing a list, shrinking the heap with gc(), and
+allocating a smaller list, the Ncell GC trigger becomes approximately
+1.844674e19, although fewer than one million Ncells are live.
+
+I encountered this while importing a large 3D scene into R, where
+suspiciously high swap usage and memory pressure/compression prompted an
+investigation. The import creates many small R objects, so delayed
+node-triggered collection could let unreachable objects accumulate and
+increase memory pressure. The base-R example below reproduces
+the threshold failure without the scene or any contributed packages.
+
+This reproduces in a fresh vanilla session using only base R. I also checked
+the source at the installed build's reported SVN revision and stepped
+through the failing calculation in the installed libR with LLDB.
+
+Reproducible example
+----------
+
+Save the following as gc-trigger.R and run Rscript --vanilla gc-trigger.R:
+
+    large = lapply(seq_len(2000000L), as.double)
+    invisible(gc())
+    rm(large)
+    for (i in 1:16) {
+      invisible(gc())
+    }
+    small = lapply(seq_len(600000L), as.double)
+    print(gc())
+
+Output:
+
+              used (Mb)   gc trigger         (Mb) limit (Mb) max used  (Mb)
+    Ncells  963857 51.5 1.844674e+19 9.851624e+14         NA  2783848 148.7
+    Vcells 1863472 14.3 8.388608e+06 6.400000e+01      65536  5119567  39.1
+
+Expected: an ordinary node-heap threshold appropriate to this small live
+heap, rather than a threshold near the unsigned 64-bit maximum.
+
+No contributed packages are needed. I reproduced this with R_GC_MEM_GROW,
+R_NSIZE, R_VSIZE, R_MAX_VSIZE, R_MAX_NSIZE and R_GCTORTURE unset.
+
+Please use a fresh process for this example. It also reproduces in a fresh
+interactive R --vanilla terminal session, but may not reproduce in an
+existing session. The predictor runs only during the first 49 node-heap
+growth adjustments (adjust_count starts at 1 and the condition is < 50)
+Its saved live-node count and the current heap thresholds also depend
+on earlier allocations. Existing objects can therefore change whether this
+particular sequence triggers the failure.
+
+Source and runtime diagnosis
+----------------------------
+
+In src/main/memory.c at SVN r89956, AdjustHeapSize() keeps last_in_use from
+the previous early-growth adjustment. The shrink path does not update it.
+When another growth adjustment follows a sufficiently large decline in
+live nodes, line 1200 evaluates:
+
+    R_size_t next_in_use = R_NodesInUse + (R_NodesInUse - last_in_use);
+
+R_size_t is size_t (src/include/Defn.h:1043). At the failing adjustment in
+the installed binary, LLDB showed:
+
+    R_NSize before adjustment:  1241534
+    R_NodesInUse:                963857
+    last_in_use:               2304622
+
+The mathematical prediction is -376908. Unsigned arithmetic instead
+produces 18446744073709174708. At line 1204, dividing that by R_NGrowFrac
+(0.70) produces approximately 2.6352491533870252e19, which is outside the
+range of size_t before the cast back to R_size_t.
+
+The ARM64 instructions in this binary implement that conversion with
+FCVTZU. Stepping over it produced 0xffffffffffffffff (SIZE_MAX). The
+unlimited R_MaxNSize then permits the resulting threshold. Continuing
+execution produces the gc() output above.
+
+The unsigned wrap is defined arithmetic, but the subsequent out-of-range
+floating-to-integer conversion is undefined in C. A standalone extraction
+of the arithmetic with these observed values also triggers Clang's
+-fsanitize=float-cast-overflow. Other architectures/compilers may therefore
+show a different symptom.
+
+Revision-specific sources:
+
+    https://svn.r-project.org/R/!svn/rvr/89956/trunk/src/main/memory.c
+    https://svn.r-project.org/R/!svn/rvr/89956/trunk/src/include/Defn.h
+
+The complete AdjustHeapSize() function is also unchanged in the trunk
+source snapshot I inspected at Git mirror commit
+d75f6a2224865f9ac0bee065de99af817a3a65e6:
+
+    https://github.com/wch/r-source/blob/d75f6a2224865f9ac0bee065de99af817a3a65e6/src/main/memory.c#L1179-L1236
+
+I have not built or run that trunk snapshot.
+
+Workaround and tested fix
+------------------------
+
+In a separate fresh session, setting mem.maxNSize(5e6) before the reproducer
+prevents the enormous trigger; my run ends with an Ncell trigger of
+1,244,355. A finite maximum of 1e9 also worked in earlier tests. This avoids
+accepting the erroneous growth request but it doesn't repair the arithmetic.
+
+I built matched unpatched and patched copies of R 4.6.0 from the release
+tarball. Its memory.c matches SVN r89956. Both builds use Apple clang 16
+and GNU Fortran 14.2 on arm64 macOS, with identical configure options
+apart from their isolated paths. The patch makes three changes:
+
+  1. Treat decreasing live-node usage as zero predicted incremental growth.
+  2. Compute the extrapolated threshold in double and require it to be
+     strictly below (double) R_SIZE_T_MAX before converting to R_size_t.
+  3. Check change <= R_MaxNSize - R_NSize, with R_NSize <= R_MaxNSize,
+     rather than adding change before checking the limit.
+
+In fresh vanilla processes, without a finite node limit:
+
+                        Live Ncells       Ncell GC trigger
+    Unpatched R              965367           1.844674e19
+    Patched R                965315              1531118
+
+The patched build also passes five repeated grow/shrink/regrow cycles
+(triggers approximately 1.47-1.78 million), steady growth through eight
+retained blocks, and five cycles with a finite five-million-node limit.
+The unpatched build fails the unbounded cycle test on its first round.
+An extraction of the patched function passes sanitizer tests for the
+observed history, finite limits, steady growth, out-of-range prediction
+and addition overflow.
+
+R's core basic/development checks passed in both builds.
+
+Based on these results, I recommend the guarded predictor and limit check,
+plus a fresh-process regression test: running the reproducer late in an
+existing test session may miss the early-growth window. My tests only
+confirmed the reproduciber is fixed on this platform.
+
+Environment
+-----------
+
+    R version 4.6.0 (2026-04-24), SVN revision 89956
+    Platform: aarch64-apple-darwin23
+    macOS Sequoia 15.7.3
+    Attached packages: stats, graphics, grDevices, utils, datasets,
+                       methods, base
+
+Tyler Morgan-Wall
+
+-------------- next part --------------
+An embedded and charset-unspecified text was scrubbed...
+Name: node-growth.patch.txt
+URL: <https://stat.ethz.ch/pipermail/r-devel/attachments/20261005/2c89ded0/attachment.txt>
+
+From Ach|m@Ze||e|@ @end|ng |rom u|bk@@c@@t  Wed Oct  7 09:04:08 2026
+From: Ach|m@Ze||e|@ @end|ng |rom u|bk@@c@@t (Achim Zeileis)
+Date: Wed, 7 Oct 2026 09:04:08 +0200 (CEST)
+Subject: [Rd] R-Forge status
+In-Reply-To: <57386c74-7667-4a9b-b535-08382e8d831f@gmail.com>
+References: <57386c74-7667-4a9b-b535-08382e8d831f@gmail.com>
+Message-ID: <05f91f77-9657-ac6e-81fc-bb4157aa3a38@uibk.ac.at>
+
+Hi everyone, hi Kevin,
+
+a quick update: the R-Forge team at WU Wien has now decided on a timeline 
+for the transition of R-Forge to a read-only site.
+
+- Until the end of 2026: R-Forge continues to work as normal. Project 
+pages, SVN, package builds, mailing lists, forums, and logins still work.
+
+- Starting from January 2027 (exact date tbd): R-Forge switches to 
+archive-only mode. All SVN repositories continue to work (via SSH only) 
+and a static snapshot of the web page is preserved. That means that 
+existing projects can be viewed but all other functionality will be 
+disabled (registering projects, package builds, mailing lists, forums, 
+logins).
+
+- From January 2028: SVN switches to read-only mode. Existing repository 
+history remains available, but no further commits can be made to any 
+codebase.
+
+This information will also be sent out to all R-Forge users in the next 
+days.
+
+Additionally, I have written up a few notes about how to transition from 
+R-Forge to Codeberg (or some other Git-based service like GitHub or 
+GitLab):
+
+https://www.zeileis.org/news/rforge_codeberg/
+
+Best wishes,
+Achim
+
+
+On Wed, 16 Sep 2026, Kevin R. Coombes wrote:
+
+> Hello,
+>
+> For the last couple of days (at least), I am unable to connect to 
+> r-forge.r-project.org.
+>
+> Is R-Forge down for scheduled maintenance?
+> Down for unscheduled repairs?
+> Down permanently?
+> Any ideas about when it will be back?
+>
+> Should I start preparing to move the R packages that I maintain and they host 
+> over to GitLab?
+>
+> Thanks for any updates you can provide.
+> ? ? Kevin
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+
+From d@v|@ @end|ng |rom po@|t@co  Wed Oct  7 16:45:54 2026
+From: d@v|@ @end|ng |rom po@|t@co (Davis Vaughan)
+Date: Wed, 7 Oct 2026 10:45:54 -0400
+Subject: [Rd] request for use cases for larger integers in R
+In-Reply-To: <09303393-9c39-d91a-db6c-17bc58e69eb9@uiowa.edu>
+References: <09303393-9c39-d91a-db6c-17bc58e69eb9@uiowa.edu>
+Message-ID: <CABzLhzw2_RqjY5hS-DXURiP=FYO7sQoM3xk_oEESTenksUN6Cg@mail.gmail.com>
+
+The clock package can represent up to nanosecond durations and time points
+without loss of precision, but this requires splitting an `int64_t` into
+two `double` values to hold on the R side. I'm fairly certain this would
+have been much easier if R had a native `int64_t` backed type. I remember
+choosing to use two `double`s so that I could still use `NA_real_` to mean
+"missing" without colliding with any valid `int64_t` value
+https://github.com/r-lib/clock/blob/f9ab06db5d6d7cc913e0dfa3bfde794554baaad8/src/duration.h#L133-L184
+
+On Fri, Jul 24, 2026 at 2:05?PM luke-tierney--- via R-devel <
+r-devel at r-project.org> wrote:
+
+> R integers are current limited to a magnitude ot 2^31 - 1. Integer
+> values up to a magnitude of 2^53 can be represented exatcly as
+> doubles. At times it would be useful to be able to handle larger
+> values.
+>
+> Several options for adding support for large integers to R are under
+> consideration, each with advantages and disadvantages. To help with
+> deciding how to move forward it would be helpful to have a collection
+> of use cases where something is either difficult or impossible to
+> achieve with the current R integer representations. Examples would be
+> most helpful if they are concrete enough to allow us to build test
+> cases.
+>
+> Thanks,
+>
+> luke
+>
+> --
+> Luke Tierney
+> Professor Emeritus
+> Department of Statistics and
+>     Actuarial Science
+> University of Iowa
+> 241 Schaeffer Hall                  email:   luke-tierney at uiowa.edu
+> Iowa City, IA 52242                 WWW:  http://stat.uiowa.edu
+>
+> ______________________________________________
+> R-devel at r-project.org mailing list
+> https://stat.ethz.ch/mailman/listinfo/r-devel
+>
+
+	[[alternative HTML version deleted]]
+
+
+From edd @end|ng |rom deb|@n@org  Thu Oct  8 16:52:11 2026
+From: edd @end|ng |rom deb|@n@org (Dirk Eddelbuettel)
+Date: Thu, 8 Oct 2026 09:52:11 -0500
+Subject: [Rd] 
+ [PATCH] Include Linux distribution identifiers in the default
+ HTTP User-Agent
+In-Reply-To: <436AF763-F8D1-40F1-A027-2F392CB77FB0@pat-s.me>
+References: <DB4F7DF2-739C-455A-BEB3-6D652B15B120@pat-s.me>
+ <6B2E4A44-19A3-4721-8DFB-5D47D86FC0E7@r-project.org>
+ <D69A4384-9BFD-42BA-9642-501B5BF132FF@pat-s.me>
+ <88E9917B-0DA6-44AB-BFD5-231FC29139B2@R-project.org>
+ <436AF763-F8D1-40F1-A027-2F392CB77FB0@pat-s.me>
+Message-ID: <27335.44571.45948.208289@paul.eddelbuettel.com>
+
+
+This discussion omits that you can 'trade breadth for depth': On systems that
+work via a package manager you can get more powerful behavior. I?aki (for
+Fedora), Detlef (for SuSE) and myself (for Ubuntu) have built and maintain
+such systems. While these cannot help on macOS or Windows, given that
+'approximately everybody' works on Linux as well (for example for continuous
+integration, in cloud instances, or via containers) it may be beneficial to
+take advantage of these systems. 
+
+As always, good to have choices.  
+
+Dirk
+
+-- 
+dirk.eddelbuettel.com | @eddelbuettel | edd at debian.org
+
+
+From j@d@m@on @end|ng |rom tru@c@  Fri Oct  9 20:25:59 2026
+From: j@d@m@on @end|ng |rom tru@c@ (Jordan Adamson)
+Date: Fri, 9 Oct 2026 18:25:59 +0000
+Subject: [Rd] Feature request: allow denominator n in var() and sd()
+Message-ID: <YTZPR01MB11879415BA8AC00300F65F2A9B4922@YTZPR01MB11879.CANPRD01.PROD.OUTLOOK.COM>
+
+Dear R-devel,
+Would R Core consider adding an optional argument to var() and sd() to allow calculation with denominator n?
+My motivation comes from teaching statistics through empirical distributions. For the empirical distribution assigning probability 1/n to each observation, the variance is exactly
+
+mean((x - mean(x))^2)
+
+The current var() applies Bessel?s correction. That is useful for unbiased estimation under i.i.d. sampling, but the uncorrected empirical moment is also useful for descriptive statistics and for teaching estimation by substituting the empirical distribution for an unknown distribution. These uses arise even when the observations constitute a sample.
+One possible argument would be correction = 1, retaining current behavior by default, with correction = 0 selecting denominator n. The same argument in sd() would preserve its relationship with var().
+There is already a precedent in cov.wt(..., method = "ML"). Making the choice available directly in var() and sd() would improve discoverability and avoid requiring a separate function for this basic calculation. Consistent support in cov() would also be desirable.
+I found a related R-devel discussion from February 2019: https://stat.ethz.ch/pipermail/r-devel/2019-February/077300.html
+The argument name and scope could follow R Core?s preferences.
+Thank you for considering this request,
+
+Jordan Adamson
+Assistant Professor, Economics Department
+Thompson Rivers University
+
+
+	[[alternative HTML version deleted]]
+
+

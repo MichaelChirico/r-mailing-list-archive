@@ -1,0 +1,81 @@
+From |kry|ov @end|ng |rom d|@root@org  Tue Aug  4 15:34:41 2026
+From: |kry|ov @end|ng |rom d|@root@org (Ivan Krylov)
+Date: Tue, 4 Aug 2026 16:34:41 +0300
+Subject: [R-SIG-Mac] 
+ Reproducing M1-San report for rlas, emplace_back<double>
+Message-ID: <20260804163442.6b0817f1@trisector>
+
+Hello,
+
+There's a pretty confusing problem with the 'rlas' package [1]. I
+wanted to debug it, but I'm stumped.
+
+Without a physical M1 machine, it's possible to approximate the M1-SAN
+configuration on GitHub Actions: Xcode/CLT 26.6, dependencies from the
+recipes, only the macOS version is 26.5.2 instead of 26.5.1. When I do
+that [2], the error doesn't happen.
+
+The last piece of code in the stack trace that lives in rlas.so is
+std::vector<double>::emplace_back():
+
+#1 0x000110d32cbc in double& std::__1::vector<double,
+std::__1::allocator<double>>::emplace_back<double>(double&&)+0xa4
+(rlas.so:arm64+0xe5acbc)
+
+In the binaries from GitHub there's always a 'cbnz' jump (on a path to
+__asan_report_store8, not a READ of size 32!) at address
+emplace_back+0xa4 [3], preceded by a non-jump instruction. There
+shouldn't be a way for a pointer to this instruction to appear in a
+stack frame. rlas.so:arm64+0xe5acbc contains some code from linked
+static libraries, not the emplace_back method. Evidently, there must be
+differences between how emplace_back<double> is compiled during the
+M1-San check and on GitHub.
+
+The next address in the stack trace is the memcpy() wrapper from
+AddressSanitizer:
+
+#0 0x0001038cef60 in memcpy+0x248
+(libclang_rt.asan_osx_dynamic.dylib:arm64e+0x8ef60)
+
+Disassembling libclang_rt.asan_osx_dynamic.dylib clearly shows the
+_wrap_memcpy function at address 0x8ef60, specifically, the call to
+__sanitizer::StackTrace::GetCurrentPc() at offset 0x248. But how did
+the code get there? There doesn't seem to be a reason for
+emplace_back() to be calling memcpy() with a pre-allocated but empty
+vector.
+
+One potential source of differences is the M1 machine having PROJ and
+GDAL compiled as shared libraries, not relying on the recipes. Just in
+case, I've tried compiling latest PROJ and GDAL on my Linux machine
+with sanitizer instrumentation and linking rlas with them; that didn't
+surface any issues either. I could try to install newer PROJ and GDAL
+on GitHub Actions as well, but that costs CPU and human time, and won't
+cause emplace_back() to be compiled differently.
+
+Any ideas? Is there a plausible way for ___asan_report_store8() to
+unexpectedly report a failure to load 32 bytes?
+
+-- 
+Best regards,
+Ivan
+
+[1] https://www.stats.ox.ac.uk/pub/bdr/M1-SAN/rlas/rlas-Ex.Rout
+
+[2] https://github.com/aitap/rlas/actions/runs/30809412830
+
+[3]
+
+double& std::__1::vector<double, std::__1::allocator<double>>::emplace_back<double>(double&&):
+  4e2510:       ff 43 01 d1     sub     sp, sp, #0x50   ## vector.h:1144:0
+...
+// check shadow byte before writing into pointer
+  4e25b0:       e8 6a 76 38     ldrb    w8, [x23, x22]  ## vector.h:1152:16
+  4e25b4:       88 07 00 35     cbnz    w8, 0x4e26a4 // <-- emplace_back+0xa4 is here
+// perform write into pointer
+  4e25b8:       74 02 00 f9     str     x20, [x19]
+...
+// shadow byte was non-zero, report write failure and crash
+  4e26a4:       e0 03 13 aa     mov     x0, x19 ## vector.h:1152:16
+  4e26a8:       f3 5c 71 94     bl      0x2139a74 ; symbol stub for: ___asan_report_store8
+
+
